@@ -1,0 +1,96 @@
+# Build directories
+build/
+Build/
+BUILD/
+
+# CMake files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+install_manifest.txt
+Makefile
+
+# Generated files
+*.elf
+*.bin
+*.hex
+*.uf2
+*.map
+*.lst
+*.dis
+
+# PIO generated headers
+*.pio.h
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# CLion
+.idea/
+cmake-build-*/
+
+# Compiled Object files
+*.o
+*.obj
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Compiled Static libraries
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*~
+*.swp
+*.swo
+*.tmp
+
+# Log files
+*.log
+
+# Backup files
+*.bak
+*.backup
+
+# IDE specific files
+*.cbp
+*.depend
+*.layout
+
+# Python cache (if using Python scripts)
+__pycache__/
+*.pyc
+*.pyo
+
+# Generated documentation
+docs/build/
+doc/build/
+
+# Configuration files that might contain secrets
+config.local.*
+secrets.*
