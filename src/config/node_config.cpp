@@ -1,5 +1,6 @@
 #include "node_config.h"
 #include "lora/message.h"  // For ADDRESS_UNREGISTERED
+#include "hal/logger.h"
 #include "pico/stdlib.h"
 #include <cstring>
 #include <stdio.h>
@@ -52,9 +53,10 @@ static const uint32_t crc32_table[256] = {
 };
 
 NodeConfigManager::NodeConfigManager(Flash& flash_hal) 
-    : flash_(flash_hal) {
+    : flash_(flash_hal), logger_("CONFIG") {
     // Use last sector of flash for configuration
     config_offset_ = flash_.getLastSectorOffset();
+    logger_.debug("Using config offset 0x%08lx", config_offset_);
 }
 
 bool NodeConfigManager::hasValidConfiguration() {
@@ -74,8 +76,8 @@ bool NodeConfigManager::loadConfiguration(NodeConfiguration& config) {
     
     // Check magic number
     if (config.magic != NODE_CONFIG_MAGIC) {
-        printf("Primary configuration magic number mismatch (found 0x%08lx, expected 0x%08x)\n", 
-               config.magic, NODE_CONFIG_MAGIC);
+        logger_.warn("Primary config magic mismatch (found 0x%08lx, expected 0x%08x)", 
+                    config.magic, NODE_CONFIG_MAGIC);
         
         // Attempt backup recovery
         return attemptBackupRecovery(config);
@@ -83,13 +85,13 @@ bool NodeConfigManager::loadConfiguration(NodeConfiguration& config) {
     
     // Verify CRC
     if (!verifyCRC(config)) {
-        printf("Primary configuration CRC verification failed\n");
+        logger_.warn("Primary configuration CRC verification failed");
         
         // Attempt backup recovery
         return attemptBackupRecovery(config);
     }
     
-    printf("Configuration loaded successfully from primary location\n");
+    logger_.info("Configuration loaded successfully from primary location");
     return true;
 }
 

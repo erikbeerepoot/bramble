@@ -10,8 +10,12 @@
 #include "lora/hub_router.h"
 #include "hal/neopixel.h"
 #include "hal/flash.h"
+#include "hal/logger.h"
 #include "config/node_config.h"
 #include "pico/unique_id.h"
+
+// Global logger for main application
+static Logger main_logger("MAIN");
 
 // SPI Defines - Feather RP2040 RFM95 LoRa board
 // Use SPI1: GPIO8(RX), GPIO14(SCK), GPIO15(TX)
@@ -49,7 +53,16 @@ int main()
     stdio_init_all();
     sleep_ms(2000); // Give USB time to enumerate
     
-    printf("=== Bramble Starting ===\n");
+    // Configure logging based on mode
+    if (DEMO_MODE) {
+        Logger::setLogLevel(LOG_DEBUG);  // Verbose logging for demo
+        main_logger.info("Starting in DEMO mode with DEBUG logging");
+    } else {
+        Logger::setLogLevel(LOG_WARN);   // Production: warnings and errors only
+        main_logger.info("Starting in PRODUCTION mode with WARN logging");
+    }
+    
+    main_logger.info("=== Bramble Starting ===");
 
     // Initialize hardware
     NeoPixel led(PIN_NEOPIXEL, 1);

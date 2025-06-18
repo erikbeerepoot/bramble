@@ -8,12 +8,14 @@
 // Flash memory starts at XIP_BASE in RP2040 memory map
 extern "C" char __flash_binary_end;
 
-Flash::Flash() {
+Flash::Flash() : logger_("FLASH") {
     // Feather RP2040 LoRa has 8MB external QSPI flash
     flash_size_ = 8 * 1024 * 1024;  // 8MB external QSPI flash
     
     // Initialize statistics
     resetStats();
+    
+    logger_.info("Initialized with %lu MB flash", flash_size_ / (1024 * 1024));
 }
 
 uint32_t Flash::getFlashSize() const {
@@ -68,7 +70,7 @@ FlashResult Flash::write(uint32_t offset, const uint8_t* data, size_t length, ui
     for (uint32_t attempt = 0; attempt <= max_retries; attempt++) {
         if (attempt > 0) {
             stats_.retry_count++;
-            printf("Flash write retry %lu/%lu at offset 0x%08lx\n", attempt, max_retries, offset);
+            logger_.warn("Write retry %lu/%lu at offset 0x%08lx", attempt, max_retries, offset);
         }
         
         // Perform the write operation
@@ -85,10 +87,10 @@ FlashResult Flash::write(uint32_t offset, const uint8_t* data, size_t length, ui
         }
         
         stats_.verify_failures++;
-        printf("Flash write verification failed at offset 0x%08lx\n", offset);
+        logger_.warn("Write verification failed at offset 0x%08lx", offset);
     }
     
-    printf("Flash write failed after %lu attempts at offset 0x%08lx\n", max_retries + 1, offset);
+    logger_.error("Write failed after %lu attempts at offset 0x%08lx", max_retries + 1, offset);
     return FLASH_ERROR_VERIFY_FAILED;
 }
 
@@ -111,7 +113,7 @@ FlashResult Flash::erase(uint32_t offset, size_t length, uint32_t max_retries) {
     for (uint32_t attempt = 0; attempt <= max_retries; attempt++) {
         if (attempt > 0) {
             stats_.retry_count++;
-            printf("Flash erase retry %lu/%lu at offset 0x%08lx\n", attempt, max_retries, offset);
+            logger_.warn("Erase retry %lu/%lu at offset 0x%08lx", attempt, max_retries, offset);
         }
         
         // Perform the erase operation
@@ -128,10 +130,10 @@ FlashResult Flash::erase(uint32_t offset, size_t length, uint32_t max_retries) {
         }
         
         stats_.verify_failures++;
-        printf("Flash erase verification failed at offset 0x%08lx\n", offset);
+        logger_.warn("Erase verification failed at offset 0x%08lx", offset);
     }
     
-    printf("Flash erase failed after %lu attempts at offset 0x%08lx\n", max_retries + 1, offset);
+    logger_.error("Erase failed after %lu attempts at offset 0x%08lx", max_retries + 1, offset);
     return FLASH_ERROR_ERASE_FAILED;
 }
 

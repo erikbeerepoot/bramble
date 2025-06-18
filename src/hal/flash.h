@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include "logger.h"
 
 /**
  * @brief Hardware Abstraction Layer for RP2040 flash memory operations
@@ -179,6 +180,7 @@ public:
 private:
     uint32_t flash_size_;        // Total flash size in bytes
     FlashStats stats_;           // Operation statistics
+    Logger logger_;              // Module logger
     
     /**
      * @brief Get flash base address in memory map

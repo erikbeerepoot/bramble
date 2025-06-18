@@ -63,6 +63,7 @@ else()
         src/lora/hub_router.cpp
         src/hal/neopixel.cpp
         src/hal/flash.cpp
+        src/hal/logger.cpp
         src/config/node_config.cpp
     )
     message(STATUS "Building production version")

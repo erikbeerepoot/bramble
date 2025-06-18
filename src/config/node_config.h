@@ -1,6 +1,7 @@
 #pragma once
 
 #include "hal/flash.h"
+#include "hal/logger.h"
 #include <stdint.h>
 
 /**
@@ -85,6 +86,7 @@ public:
 private:
     Flash& flash_;               // Reference to flash HAL
     uint32_t config_offset_;     // Offset in flash for configuration
+    Logger logger_;              // Module logger
     
     /**
      * @brief Calculate CRC32 for configuration
