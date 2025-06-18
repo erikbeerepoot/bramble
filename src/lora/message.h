@@ -5,7 +5,7 @@
 
 // Message protocol constants
 #define MESSAGE_MAGIC           0xBEEF
-#define MESSAGE_HEADER_SIZE     8
+#define MESSAGE_HEADER_SIZE     9
 #define MESSAGE_MAX_PAYLOAD     247
 #define MESSAGE_MAX_SIZE        (MESSAGE_HEADER_SIZE + MESSAGE_MAX_PAYLOAD)
 
@@ -176,6 +176,12 @@ struct __attribute__((packed)) Message {
  */
 class MessageHandler {
 public:
+    /**
+     * @brief Convert message type to human-readable string
+     * @param type Message type enum value
+     * @return String representation of message type
+     */
+    static const char* getMessageTypeName(uint8_t type);
     /**
      * @brief Create a sensor data message
      * @param src_addr Source address

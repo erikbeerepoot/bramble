@@ -4,7 +4,15 @@
 #include <string.h>
 
 ReliableMessenger::ReliableMessenger(SX1276* lora, uint16_t node_addr)
-    : lora_(lora), node_addr_(node_addr), next_seq_num_(1) {
+    : lora_(lora), node_addr_(node_addr) {
+    
+    // Use different sequence number ranges to prevent collisions
+    // Hub uses 1-127, nodes (including unregistered) use 128-255
+    if (node_addr == ADDRESS_HUB) {
+        next_seq_num_ = 1;   // Hub: 1-127
+    } else {
+        next_seq_num_ = 128; // Nodes and unregistered: 128-255
+    }
 }
 
 bool ReliableMessenger::sendActuatorCommand(uint16_t dst_addr, uint8_t actuator_type, uint8_t command,
@@ -17,7 +25,7 @@ bool ReliableMessenger::sendActuatorCommand(uint16_t dst_addr, uint8_t actuator_
     if (criticality == RELIABLE) flags |= MSG_FLAG_RELIABLE;
     if (criticality == CRITICAL) flags |= (MSG_FLAG_RELIABLE | MSG_FLAG_CRITICAL);
     
-    uint8_t seq_num = next_seq_num_++;
+    uint8_t seq_num = getNextSequenceNumber();
     
     // Create the actuator message with appropriate flags
     uint8_t buffer[MESSAGE_MAX_SIZE];
@@ -45,7 +53,7 @@ bool ReliableMessenger::sendSensorData(uint16_t dst_addr, uint8_t sensor_type,
     if (criticality == RELIABLE) flags |= MSG_FLAG_RELIABLE;
     if (criticality == CRITICAL) flags |= (MSG_FLAG_RELIABLE | MSG_FLAG_CRITICAL);
     
-    uint8_t seq_num = next_seq_num_++;
+    uint8_t seq_num = getNextSequenceNumber();
     
     // Create the sensor message with appropriate flags
     uint8_t buffer[MESSAGE_MAX_SIZE];
@@ -68,7 +76,7 @@ bool ReliableMessenger::sendHeartbeat(uint16_t dst_addr, uint32_t uptime_seconds
                                      uint8_t active_sensors, uint8_t error_flags) {
     if (!lora_) return false;
     
-    uint8_t seq_num = next_seq_num_++;
+    uint8_t seq_num = getNextSequenceNumber();
     
     // Create the heartbeat message (heartbeats are typically best effort)
     uint8_t buffer[MESSAGE_MAX_SIZE];
@@ -84,6 +92,55 @@ bool ReliableMessenger::sendHeartbeat(uint16_t dst_addr, uint32_t uptime_seconds
     }
     
     return send(buffer, length, BEST_EFFORT);
+}
+
+bool ReliableMessenger::sendRegistrationRequest(uint16_t dst_addr, uint64_t device_id,
+                                              uint8_t node_type, uint8_t capabilities,
+                                              uint16_t firmware_ver, const char* device_name) {
+    if (!lora_) return false;
+    
+    uint8_t seq_num = getNextSequenceNumber();
+    
+    // Create the registration message (always reliable)
+    uint8_t buffer[MESSAGE_MAX_SIZE];
+    size_t length = MessageHandler::createRegistrationMessage(
+        node_addr_, dst_addr, seq_num,
+        device_id, node_type, capabilities, firmware_ver, device_name,
+        buffer
+    );
+    
+    if (length == 0) {
+        printf("Failed to create registration message\n");
+        return false;
+    }
+    
+    printf("Sending registration request to hub (device_id=0x%016llX)\n", device_id);
+    return send(buffer, length, RELIABLE);
+}
+
+bool ReliableMessenger::sendRegistrationResponse(uint16_t dst_addr, uint64_t device_id,
+                                               uint16_t assigned_addr, uint8_t status,
+                                               uint8_t retry_interval, uint32_t network_time) {
+    if (!lora_) return false;
+    
+    uint8_t seq_num = getNextSequenceNumber();
+    
+    // Create the registration response message (always reliable)
+    uint8_t buffer[MESSAGE_MAX_SIZE];
+    size_t length = MessageHandler::createRegistrationResponse(
+        node_addr_, dst_addr, seq_num,
+        device_id, assigned_addr, status, retry_interval, network_time,
+        buffer
+    );
+    
+    if (length == 0) {
+        printf("Failed to create registration response message\n");
+        return false;
+    }
+    
+    printf("Sending registration response to 0x%04X (assigned_addr=0x%04X, status=%d)\n", 
+           dst_addr, assigned_addr, status);
+    return send(buffer, length, RELIABLE);
 }
 
 bool ReliableMessenger::send(const uint8_t* buffer, size_t length, 
@@ -131,13 +188,20 @@ bool ReliableMessenger::send(const uint8_t* buffer, size_t length,
 bool ReliableMessenger::processIncomingMessage(const uint8_t* buffer, size_t length) {
     if (!buffer || length == 0) return false;
     
+    // Debug: Show raw sequence number from buffer before parsing
+    if (length >= MESSAGE_HEADER_SIZE) {  // Ensure we have a full header
+        printf("DEBUG: Raw message buffer seq_num byte = %d (at index %d)\n", 
+               buffer[MESSAGE_HEADER_SIZE-1], MESSAGE_HEADER_SIZE-1);
+    }
+    
     Message message;
     if (!MessageHandler::parseMessage(buffer, length, &message)) {
         printf("Failed to parse incoming message\n");
         return false;
     }
     
-    printf("Received message type %d from 0x%04X\n", message.header.type, message.header.src_addr);
+    printf("Received %s message from 0x%04X\n", 
+           MessageHandler::getMessageTypeName(message.header.type), message.header.src_addr);
     
     // Handle ACK messages
     if (message.header.type == MSG_TYPE_ACK) {
@@ -152,6 +216,9 @@ bool ReliableMessenger::processIncomingMessage(const uint8_t* buffer, size_t len
     if (MessageHandler::requiresAck(&message)) {
         printf("Received %s message requiring ACK\n", 
                MessageHandler::isCritical(&message) ? "CRITICAL" : "RELIABLE");
+        
+        printf("DEBUG: Received message seq=%d from 0x%04X, sending ACK\n", 
+               message.header.seq_num, message.header.src_addr);
         
         // Send ACK back to sender
         sendAck(message.header.src_addr, message.header.seq_num, 0);
@@ -176,6 +243,34 @@ bool ReliableMessenger::processIncomingMessage(const uint8_t* buffer, size_t len
         if (sensor) {
             printf("Received sensor data: type=%d, len=%d\n", 
                    sensor->sensor_type, sensor->data_length);
+            return true;
+        }
+    }
+    
+    if (message.header.type == MSG_TYPE_REGISTRATION) {
+        const RegistrationPayload* reg_payload = MessageHandler::getRegistrationPayload(&message);
+        if (reg_payload) {
+            printf("Received registration request: device_id=0x%016llX, type=%d, capabilities=0x%02X, name='%s'\n",
+                   reg_payload->device_id, reg_payload->node_type, reg_payload->capabilities, reg_payload->device_name);
+            
+            // TODO: Handle registration request - this should be handled by hub logic
+            // For now, just acknowledge that we received it
+            return true;
+        }
+    }
+    
+    if (message.header.type == MSG_TYPE_REG_RESPONSE) {
+        const RegistrationResponsePayload* reg_response = MessageHandler::getRegistrationResponsePayload(&message);
+        if (reg_response) {
+            printf("Received registration response: device_id=0x%016llX, assigned_addr=0x%04X, status=%d\n",
+                   reg_response->device_id, reg_response->assigned_addr, reg_response->status);
+            
+            // TODO: Handle registration response - save assigned address if successful
+            if (reg_response->status == REG_SUCCESS) {
+                printf("Registration successful! Assigned address: 0x%04X\n", reg_response->assigned_addr);
+            } else {
+                printf("Registration failed with status: %d\n", reg_response->status);
+            }
             return true;
         }
     }
@@ -278,7 +373,9 @@ void ReliableMessenger::handleAck(const AckPayload* ack_payload) {
 }
 
 void ReliableMessenger::sendAck(uint16_t src_addr, uint8_t seq_num, uint8_t status) {
-    uint8_t my_seq = next_seq_num_++;
+    uint8_t my_seq = getNextSequenceNumber();
+    
+    printf("DEBUG: Creating ACK - my_seq=%d, ack_seq_num=%d, to=0x%04X\n", my_seq, seq_num, src_addr);
     
     uint8_t buffer[MESSAGE_MAX_SIZE];
     size_t length = MessageHandler::createAckMessage(
@@ -306,4 +403,18 @@ uint32_t ReliableMessenger::calculateRetryDelay(uint8_t retry_count) {
 
 uint32_t ReliableMessenger::getCurrentTime() {
     return to_ms_since_boot(get_absolute_time());
+}
+
+uint8_t ReliableMessenger::getNextSequenceNumber() {
+    uint8_t seq_num = next_seq_num_;
+    
+    // Handle sequence number wraparound within ranges
+    if (node_addr_ == ADDRESS_HUB) {
+        next_seq_num_ = (next_seq_num_ >= 127) ? 1 : next_seq_num_ + 1;
+    } else {
+        // All non-hub addresses (including unregistered nodes) use 128-255
+        next_seq_num_ = (next_seq_num_ >= 255) ? 128 : next_seq_num_ + 1;
+    }
+    
+    return seq_num;
 }

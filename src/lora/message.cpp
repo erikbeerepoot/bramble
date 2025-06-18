@@ -2,6 +2,20 @@
 #include <string.h>
 #include <stdio.h>
 
+const char* MessageHandler::getMessageTypeName(uint8_t type) {
+    switch (type) {
+        case MSG_TYPE_SENSOR_DATA:   return "SENSOR_DATA";
+        case MSG_TYPE_ACTUATOR_CMD:  return "ACTUATOR_CMD";
+        case MSG_TYPE_ACK:           return "ACK";
+        case MSG_TYPE_HEARTBEAT:     return "HEARTBEAT";
+        case MSG_TYPE_REGISTRATION:  return "REGISTRATION";
+        case MSG_TYPE_REG_RESPONSE:  return "REG_RESPONSE";
+        case MSG_TYPE_CONFIG:        return "CONFIG";
+        case MSG_TYPE_ROUTE:         return "ROUTE";
+        default:                     return "UNKNOWN";
+    }
+}
+
 size_t MessageHandler::createSensorMessage(uint16_t src_addr, uint16_t dst_addr, uint8_t seq_num,
                                           uint8_t sensor_type, const uint8_t* data, uint8_t data_length,
                                           uint8_t flags, uint8_t* buffer) {
@@ -171,16 +185,17 @@ bool MessageHandler::validateHeader(const MessageHeader* header) {
         return false;
     }
     
-    // Check addresses (hub address is 0x0000, broadcast is 0xFFFF)
-    // All other addresses should be in node range
+    // Check addresses - allow hub, broadcast, unregistered, and valid node addresses
     if (header->src_addr != ADDRESS_HUB && 
         header->src_addr != ADDRESS_BROADCAST &&
+        header->src_addr != ADDRESS_UNREGISTERED &&
         (header->src_addr < ADDRESS_MIN_NODE || header->src_addr > ADDRESS_MAX_NODE)) {
         return false;
     }
     
     if (header->dst_addr != ADDRESS_HUB && 
         header->dst_addr != ADDRESS_BROADCAST &&
+        header->dst_addr != ADDRESS_UNREGISTERED &&
         (header->dst_addr < ADDRESS_MIN_NODE || header->dst_addr > ADDRESS_MAX_NODE)) {
         return false;
     }

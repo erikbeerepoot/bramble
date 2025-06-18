@@ -36,7 +36,7 @@ static Logger main_logger("MAIN");
 #define MAIN_LOOP_DELAY_MS      100         // Main loop processing delay
 
 // Demo mode - set to false for production deployment
-#define DEMO_MODE               true
+#define DEMO_MODE               false
 
 // Automatically determine node address based on role
 #define NODE_ADDRESS            (IS_HUB ? ADDRESS_HUB : ADDRESS_UNREGISTERED)
@@ -61,7 +61,8 @@ int main()
         Logger::setLogLevel(LOG_DEBUG);  // Verbose logging for demo
         main_logger.info("Starting in DEMO mode with DEBUG logging");
     } else {
-        Logger::setLogLevel(LOG_WARN);   // Production: warnings and errors only
+        //CHANGE ME BACk
+        Logger::setLogLevel(LOG_DEBUG);   // Production: warnings and errors only
         main_logger.info("Starting in PRODUCTION mode with WARN logging");
     }
     
@@ -116,8 +117,24 @@ int main()
             main_logger.info("Using saved address 0x%04X", saved_config.assigned_address);
             // TODO: Update messenger to use saved address instead of ADDRESS_UNREGISTERED
         } else {
-            main_logger.info("No saved address - will register with hub");
-            // TODO: Implement registration request to hub
+            main_logger.info("No saved address - sending registration request to hub");
+            
+            // Get unique device ID
+            uint64_t device_id = getDeviceId();
+            
+            // Define node capabilities for this demo node
+            uint8_t capabilities = CAP_TEMPERATURE | CAP_SOIL_MOISTURE | CAP_BATTERY_MONITOR;
+            uint16_t firmware_version = 0x0100;  // Version 1.0
+            const char* device_name = "Demo Farm Node";
+            
+            // Send registration request
+            if (messenger.sendRegistrationRequest(HUB_ADDRESS, device_id, 
+                                                NODE_TYPE_SENSOR, capabilities,
+                                                firmware_version, device_name)) {
+                main_logger.info("Registration request sent to hub");
+            } else {
+                main_logger.warn("Failed to send registration request");
+            }
         }
         
         if (DEMO_MODE) {
@@ -225,6 +242,50 @@ void runHubMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led,
             // Process message normally (handles registration, ACKs, etc.)
             messenger.processIncomingMessage(rx_buffer, rx_len);
             
+            // Handle registration requests if this is a hub
+            if (rx_len >= sizeof(MessageHeader)) {
+                const MessageHeader* header = reinterpret_cast<const MessageHeader*>(rx_buffer);
+                if (header->type == MSG_TYPE_REGISTRATION) {
+                    const Message* msg = reinterpret_cast<const Message*>(rx_buffer);
+                    const RegistrationPayload* reg_payload = reinterpret_cast<const RegistrationPayload*>(msg->payload);
+                    
+                    // Register the node with AddressManager
+                    uint16_t assigned_addr = address_manager.registerNode(
+                        reg_payload->device_id,
+                        reg_payload->node_type,
+                        reg_payload->capabilities,
+                        reg_payload->firmware_ver,
+                        reg_payload->device_name
+                    );
+                    
+                    // Determine registration status
+                    uint8_t status = REG_SUCCESS;
+                    if (assigned_addr == 0x0000) {
+                        // Registration failed
+                        if (address_manager.isDeviceRegistered(reg_payload->device_id)) {
+                            status = REG_ERROR_DUPLICATE;
+                        } else {
+                            status = REG_ERROR_FULL;
+                        }
+                    }
+                    
+                    // Send registration response
+                    messenger.sendRegistrationResponse(
+                        header->src_addr,  // Send back to requesting node
+                        reg_payload->device_id,
+                        assigned_addr,
+                        status,
+                        30,  // Retry interval in seconds
+                        current_time / 1000  // Network time in seconds
+                    );
+                    
+                    if (status == REG_SUCCESS) {
+                        printf("Successfully registered node 0x%016llX with address 0x%04X\n",
+                               reg_payload->device_id, assigned_addr);
+                    }
+                }
+            }
+            
             // Check if message needs routing to another node
             if (rx_len >= sizeof(MessageHeader)) {
                 const MessageHeader* header = reinterpret_cast<const MessageHeader*>(rx_buffer);
@@ -265,16 +326,26 @@ void runDemoMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led,
     uint32_t last_heartbeat_time = 0;
     
     printf("=== DEMO MODE ACTIVE ===\n");
-    printf("- Colorful LED cycling\n");
     printf("- Test messages every 15 seconds\n");
     printf("- Verbose debug output\n");
     
     while (true) {
-        // Demo LED: Cycle through colors for visual feedback
-        static uint8_t hue = 0;
-        led.setPixelColor(0, NeoPixel::colorHSV(hue * 256, 255, 50));
-        led.show();
-        hue = (hue + 1) % 64;
+        // Demo LED: Use role-specific colors like production mode
+        if (hub_router) {
+            // Hub: Blue breathing pattern (same as production hub mode)
+            static uint8_t breath_counter = 0;
+            uint8_t brightness = (breath_counter < 64) ? breath_counter * 2 : (128 - breath_counter) * 2;
+            led.setPixelColor(0, 0, 0, brightness);  // Blue breathing
+            led.show();
+            breath_counter = (breath_counter + 1) % 128;
+        } else {
+            // Node: Green heartbeat (same as production node mode)
+            static uint8_t led_counter = 0;
+            uint8_t brightness = (led_counter < 10) ? led_counter * 5 : (20 - led_counter) * 5;
+            led.setPixelColor(0, 0, brightness, 0);  // Green heartbeat
+            led.show();
+            led_counter = (led_counter + 1) % 20;
+        }
         
         uint32_t current_time = to_ms_since_boot(get_absolute_time());
         

@@ -179,19 +179,28 @@ bramble/
 ## Development Todo List
 
 ### NOW (Critical for Production)
+- [ ] Implement hub registry persistence (save/load node registrations to flash on reboot)
 - [ ] Add comprehensive input validation and buffer overflow protection
 - [ ] Make hardcoded configuration values runtime configurable (intervals, addresses, etc)
+- [ ] Complete node registration flow: save assigned address to flash after successful registration
+- [ ] Update ReliableMessenger to use newly assigned address after registration
+- [ ] Add registration retry mechanism for failed registration attempts
 
 ### NEXT (Important Improvements)
 - [ ] Standardize header guards to use #pragma once consistently
 - [ ] Add error handling for SPI communications with timeout and retry logic
 - [ ] Implement interrupt-driven LoRa operation instead of polling
+- [ ] Add node de-registration mechanism (graceful shutdown)
+- [ ] Implement node address change/reassignment capability
+- [ ] Add network statistics tracking (messages sent/received, retries, failures)
 
 ### LATER (Future Features & Polish)
 - [ ] Replace TODO placeholders: implement actual sensor readings in production mode
 - [ ] Replace TODO placeholders: implement actuator command processing for valve/pump control
 - [ ] Remove hardcoded flash size and implement runtime detection
 - [ ] Migrate remaining printf statements to use Logger class throughout codebase
+- [ ] Implement address recycling for long-term inactive nodes (30+ days offline)
+- [ ] Add device ID-based address persistence (same device gets same address when returning)
 
 ### COMPLETED ✅
 - [x] Create test framework header with test runner
@@ -209,6 +218,11 @@ bramble/
 - [x] Create basic network status reporting
 - [x] Add proper error handling for flash operations with error recovery
 - [x] Implement Logger class system for power-efficient debugging
+- [x] Fix sequence number collision between hub and node (separate ranges: hub 1-127, nodes 128-255)
+- [x] Fix message header size mismatch bug (was 8, should be 9 bytes)
+- [x] Implement node registration request on startup
+- [x] Implement hub registration response handling
+- [x] Add human-readable message type logging
 
 ## Success Criteria
 - ✅ ~~Basic LoRa communication working~~

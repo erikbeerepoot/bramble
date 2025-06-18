@@ -70,6 +70,34 @@ public:
     bool sendHeartbeat(uint16_t dst_addr, uint32_t uptime_seconds, 
                       uint8_t battery_level, uint8_t signal_strength,
                       uint8_t active_sensors, uint8_t error_flags);
+    
+    /**
+     * @brief Send registration request to hub
+     * @param dst_addr Destination address (usually hub)
+     * @param device_id Unique device identifier
+     * @param node_type Type of node (sensor, actuator, etc.)
+     * @param capabilities Bitmask of node capabilities
+     * @param firmware_ver Firmware version
+     * @param device_name Human-readable device name
+     * @return true if registration request sent successfully
+     */
+    bool sendRegistrationRequest(uint16_t dst_addr, uint64_t device_id,
+                               uint8_t node_type, uint8_t capabilities,
+                               uint16_t firmware_ver, const char* device_name);
+    
+    /**
+     * @brief Send registration response to node
+     * @param dst_addr Destination address (requesting node)
+     * @param device_id Device ID from registration request
+     * @param assigned_addr Assigned address for the node
+     * @param status Registration status (success/error)
+     * @param retry_interval Retry interval for failed registrations
+     * @param network_time Current network time
+     * @return true if registration response sent successfully
+     */
+    bool sendRegistrationResponse(uint16_t dst_addr, uint64_t device_id,
+                                uint16_t assigned_addr, uint8_t status,
+                                uint8_t retry_interval, uint32_t network_time);
                        
     /**
      * @brief Generic send method for any message type
@@ -146,4 +174,10 @@ private:
      * @brief Get current time in milliseconds
      */
     uint32_t getCurrentTime();
+    
+    /**
+     * @brief Get next sequence number within appropriate range
+     * Hub uses 1-127, nodes use 128-255 to prevent collisions
+     */
+    uint8_t getNextSequenceNumber();
 };
