@@ -176,10 +176,45 @@ bramble/
 3. **Add power management** - Sleep modes for battery operation
 4. **Over-air firmware updates** - Remote node maintenance
 
+## Development Todo List
+
+### NOW (Critical for Production)
+- [ ] Add comprehensive input validation and buffer overflow protection
+- [ ] Make hardcoded configuration values runtime configurable (intervals, addresses, etc)
+
+### NEXT (Important Improvements)
+- [ ] Standardize header guards to use #pragma once consistently
+- [ ] Add error handling for SPI communications with timeout and retry logic
+- [ ] Implement interrupt-driven LoRa operation instead of polling
+
+### LATER (Future Features & Polish)
+- [ ] Replace TODO placeholders: implement actual sensor readings in production mode
+- [ ] Replace TODO placeholders: implement actuator command processing for valve/pump control
+- [ ] Remove hardcoded flash size and implement runtime detection
+- [ ] Migrate remaining printf statements to use Logger class throughout codebase
+
+### COMPLETED ✅
+- [x] Create test framework header with test runner
+- [x] Implement reliability test suite
+- [x] Add mock LoRa for controlled testing
+- [x] Create production vs test build configuration
+- [x] Clean up main.cpp for production use
+- [x] Enhance registration protocol with device ID and address response
+- [x] Implement address management system in hub
+- [x] Add persistent address storage in flash memory
+- [x] Create node-to-node routing via hub
+- [x] Add network discovery and active node tracking
+- [x] Implement heartbeat message protocol
+- [x] Add node online/offline status tracking
+- [x] Create basic network status reporting
+- [x] Add proper error handling for flash operations with error recovery
+- [x] Implement Logger class system for power-efficient debugging
+
 ## Success Criteria
 - ✅ ~~Basic LoRa communication working~~
-- [ ] Hub can communicate with 10+ nodes simultaneously  
+- ✅ ~~Hub can manage node registration and routing~~
 - ✅ ~~Sensor data transmitted reliably~~ (short range proven)
+- ✅ ~~Network discovery and heartbeat monitoring~~
 - [ ] Actuator commands have 99%+ delivery success
 - [ ] Battery nodes achieve 6+ month operation
 - [ ] Network auto-recovers from hub restart
