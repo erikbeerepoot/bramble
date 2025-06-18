@@ -138,13 +138,43 @@ bramble/
 - NeoPixel HAL for status indication
 - 20 dBm transmit power optimization
 - Basic sensor message transmission
+- **ReliableMessenger with ACK/retry mechanism** - Criticality-based delivery
+- **Integration test framework** - MockSX1276 for controlled testing
+- **Production/demo mode separation** - Clean architecture
 
-## Next Steps 🎯
-1. **Implement ACK/Retry for actuators** - Add reliable delivery
-2. **Create Hub vs Node firmware variants** - Different behaviors
-3. **Add real sensor integration** - Temperature/humidity sensor
-4. **Implement actuator control** - Valve switching capability
-5. **Add power management** - Sleep modes for battery operation
+## Current Priority: Auto Address Assignment 🎯
+### Phase: Network Registration System
+1. **Auto address assignment via registration**
+2. **Persistent address storage in flash**
+3. **Node-to-node routing via hub**
+4. **Network discovery and management**
+
+### Implementation Tasks:
+1. **Registration Protocol Enhancement**
+   - Expand registration message with unique device ID
+   - Add registration response with assigned address
+   - Handle registration failures and retries
+
+2. **Address Management System**
+   - Hub address allocation and tracking
+   - Node address persistence (flash storage)
+   - Address conflict detection and resolution
+
+3. **Node-to-Node Routing**
+   - Hub message forwarding capability
+   - Routing table management
+   - Route discovery mechanism
+
+4. **Network Discovery**
+   - Active node tracking in hub
+   - Node capability registration
+   - Network topology visualization
+
+## Future Steps 🔮
+1. **Add real sensor integration** - Temperature/humidity sensor
+2. **Implement actuator control** - Valve switching capability
+3. **Add power management** - Sleep modes for battery operation
+4. **Over-air firmware updates** - Remote node maintenance
 
 ## Success Criteria
 - ✅ ~~Basic LoRa communication working~~

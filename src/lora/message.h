@@ -16,10 +16,11 @@
 #define MSG_FLAG_BROADCAST      0x08  // Broadcast message (no ACK expected)
 
 // Address definitions
-#define ADDRESS_HUB             0x0000
-#define ADDRESS_BROADCAST       0xFFFF
-#define ADDRESS_MIN_NODE        0x0001
-#define ADDRESS_MAX_NODE        0xFFFE
+#define ADDRESS_HUB             0x0000      // Hub/gateway address
+#define ADDRESS_UNREGISTERED    0xFFFF      // Temporary address for unregistered nodes
+#define ADDRESS_BROADCAST       0xFFFE      // Broadcast to all registered nodes  
+#define ADDRESS_MIN_NODE        0x0001      // First assignable node address
+#define ADDRESS_MAX_NODE        0xFFFD      // Last assignable node address
 
 // Message types
 enum MessageType {
@@ -27,9 +28,10 @@ enum MessageType {
     MSG_TYPE_ACTUATOR_CMD   = 0x02,  // Reliable actuator commands
     MSG_TYPE_ACK            = 0x03,  // Acknowledgment
     MSG_TYPE_HEARTBEAT      = 0x04,  // Node heartbeat/status
-    MSG_TYPE_REGISTRATION   = 0x05,  // Node registration with hub
-    MSG_TYPE_CONFIG         = 0x06,  // Configuration updates
-    MSG_TYPE_ROUTE          = 0x07   // Message routing (future use)
+    MSG_TYPE_REGISTRATION   = 0x05,  // Node registration request
+    MSG_TYPE_REG_RESPONSE   = 0x06,  // Registration response with address assignment
+    MSG_TYPE_CONFIG         = 0x07,  // Configuration updates
+    MSG_TYPE_ROUTE          = 0x08   // Message routing (future use)
 };
 
 // Sensor data subtypes
@@ -53,6 +55,33 @@ enum ActuatorCommand {
     CMD_TURN_ON             = 0x01,
     CMD_TOGGLE              = 0x02,
     CMD_SET_LEVEL           = 0x03  // For variable speed/position actuators
+};
+
+// Node types for registration
+enum NodeType {
+    NODE_TYPE_SENSOR        = 0x01,  // Sensor-only node
+    NODE_TYPE_ACTUATOR      = 0x02,  // Actuator-only node
+    NODE_TYPE_HYBRID        = 0x03,  // Both sensor and actuator
+    NODE_TYPE_REPEATER      = 0x04   // Range extender (future)
+};
+
+// Node capability flags
+#define CAP_TEMPERATURE         0x01  // Temperature sensor
+#define CAP_HUMIDITY            0x02  // Humidity sensor
+#define CAP_SOIL_MOISTURE       0x04  // Soil moisture sensor
+#define CAP_BATTERY_MONITOR     0x08  // Battery level monitoring
+#define CAP_VALVE_CONTROL       0x10  // Valve actuator
+#define CAP_PUMP_CONTROL        0x20  // Pump actuator
+#define CAP_FAN_CONTROL         0x40  // Fan actuator
+#define CAP_SOLAR_POWERED       0x80  // Solar powered node
+
+// Registration status codes
+enum RegistrationStatus {
+    REG_SUCCESS             = 0x00,  // Registration successful
+    REG_ERROR_FULL          = 0x01,  // Network full (no addresses available)
+    REG_ERROR_DUPLICATE     = 0x02,  // Device ID already registered
+    REG_ERROR_INVALID       = 0x03,  // Invalid registration data
+    REG_ERROR_HUB_BUSY      = 0x04   // Hub temporarily unavailable
 };
 
 // Delivery criticality levels
@@ -104,13 +133,25 @@ struct __attribute__((packed)) HeartbeatPayload {
 };
 
 /**
- * @brief Registration payload
+ * @brief Registration request payload
  */
 struct __attribute__((packed)) RegistrationPayload {
-    uint8_t  node_type;     // Node type identifier
-    uint8_t  capabilities;  // Capability flags
+    uint64_t device_id;     // Unique device identifier (chip serial/MAC)
+    uint8_t  node_type;     // Node type (sensor/actuator/hybrid)
+    uint8_t  capabilities;  // Capability flags (what sensors/actuators available)
     uint16_t firmware_ver;  // Firmware version
     char     device_name[16]; // Human readable device name
+};
+
+/**
+ * @brief Registration response payload
+ */
+struct __attribute__((packed)) RegistrationResponsePayload {
+    uint64_t device_id;     // Echo back the device ID being registered
+    uint16_t assigned_addr; // Assigned node address (0x0000 if registration failed)
+    uint8_t  status;        // Registration status (RegistrationStatus enum)
+    uint8_t  retry_interval; // Seconds to wait before retry if failed
+    uint32_t network_time;  // Network time for synchronization
 };
 
 /**
@@ -186,10 +227,11 @@ public:
                                         uint8_t* buffer);
     
     /**
-     * @brief Create a registration message
-     * @param src_addr Source address
-     * @param dst_addr Destination address
+     * @brief Create a registration request message
+     * @param src_addr Source address (ADDRESS_UNREGISTERED for new nodes)
+     * @param dst_addr Destination address (ADDRESS_HUB)
      * @param seq_num Sequence number
+     * @param device_id Unique device identifier
      * @param node_type Node type identifier
      * @param capabilities Capability flags
      * @param firmware_ver Firmware version
@@ -198,9 +240,27 @@ public:
      * @return Length of created message, 0 on error
      */
     static size_t createRegistrationMessage(uint16_t src_addr, uint16_t dst_addr, uint8_t seq_num,
-                                           uint8_t node_type, uint8_t capabilities,
+                                           uint64_t device_id, uint8_t node_type, uint8_t capabilities,
                                            uint16_t firmware_ver, const char* device_name,
                                            uint8_t* buffer);
+    
+    /**
+     * @brief Create a registration response message
+     * @param src_addr Source address (ADDRESS_HUB)
+     * @param dst_addr Destination address (ADDRESS_UNREGISTERED or assigned address)
+     * @param seq_num Sequence number
+     * @param device_id Device ID being responded to
+     * @param assigned_addr Assigned address (0x0000 if registration failed)
+     * @param status Registration status
+     * @param retry_interval Retry interval in seconds (if failed)
+     * @param network_time Current network time
+     * @param buffer Output buffer (must be at least MESSAGE_MAX_SIZE bytes)
+     * @return Length of created message, 0 on error
+     */
+    static size_t createRegistrationResponse(uint16_t src_addr, uint16_t dst_addr, uint8_t seq_num,
+                                           uint64_t device_id, uint16_t assigned_addr, 
+                                           uint8_t status, uint8_t retry_interval,
+                                           uint32_t network_time, uint8_t* buffer);
     
     /**
      * @brief Create an ACK message
@@ -254,11 +314,18 @@ public:
     static const HeartbeatPayload* getHeartbeatPayload(const Message* message);
     
     /**
-     * @brief Get registration payload from message
+     * @brief Get registration request payload from message
      * @param message Message to extract from
      * @return Pointer to registration payload, NULL if not a registration message
      */
     static const RegistrationPayload* getRegistrationPayload(const Message* message);
+    
+    /**
+     * @brief Get registration response payload from message
+     * @param message Message to extract from
+     * @return Pointer to registration response payload, NULL if not a registration response
+     */
+    static const RegistrationResponsePayload* getRegistrationResponsePayload(const Message* message);
     
     /**
      * @brief Get ACK payload from message

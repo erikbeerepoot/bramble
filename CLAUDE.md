@@ -106,4 +106,4 @@ The main application has completely separate demo and production modes for clari
 ## Design Philosophy Principles
 * KISS (Keep It Simple, Stupid)
 * SOLID Principles
-
+* Use full words not abbreviations (e.g address vs addr)

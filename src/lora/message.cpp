@@ -64,7 +64,7 @@ size_t MessageHandler::createHeartbeatMessage(uint16_t src_addr, uint16_t dst_ad
 }
 
 size_t MessageHandler::createRegistrationMessage(uint16_t src_addr, uint16_t dst_addr, uint8_t seq_num,
-                                                 uint8_t node_type, uint8_t capabilities,
+                                                 uint64_t device_id, uint8_t node_type, uint8_t capabilities,
                                                  uint16_t firmware_ver, const char* device_name,
                                                  uint8_t* buffer) {
     if (!buffer) {
@@ -72,9 +72,10 @@ size_t MessageHandler::createRegistrationMessage(uint16_t src_addr, uint16_t dst
     }
     
     Message* msg = (Message*)buffer;
-    createHeader(MSG_TYPE_REGISTRATION, 0, src_addr, dst_addr, seq_num, &msg->header);
+    createHeader(MSG_TYPE_REGISTRATION, MSG_FLAG_RELIABLE, src_addr, dst_addr, seq_num, &msg->header);
     
     RegistrationPayload* payload = (RegistrationPayload*)msg->payload;
+    payload->device_id = device_id;
     payload->node_type = node_type;
     payload->capabilities = capabilities;
     payload->firmware_ver = firmware_ver;
@@ -88,6 +89,27 @@ size_t MessageHandler::createRegistrationMessage(uint16_t src_addr, uint16_t dst
     }
     
     return MESSAGE_HEADER_SIZE + sizeof(RegistrationPayload);
+}
+
+size_t MessageHandler::createRegistrationResponse(uint16_t src_addr, uint16_t dst_addr, uint8_t seq_num,
+                                                  uint64_t device_id, uint16_t assigned_addr, 
+                                                  uint8_t status, uint8_t retry_interval,
+                                                  uint32_t network_time, uint8_t* buffer) {
+    if (!buffer) {
+        return 0;
+    }
+    
+    Message* msg = (Message*)buffer;
+    createHeader(MSG_TYPE_REG_RESPONSE, MSG_FLAG_RELIABLE, src_addr, dst_addr, seq_num, &msg->header);
+    
+    RegistrationResponsePayload* payload = (RegistrationResponsePayload*)msg->payload;
+    payload->device_id = device_id;
+    payload->assigned_addr = assigned_addr;
+    payload->status = status;
+    payload->retry_interval = retry_interval;
+    payload->network_time = network_time;
+    
+    return MESSAGE_HEADER_SIZE + sizeof(RegistrationResponsePayload);
 }
 
 size_t MessageHandler::createAckMessage(uint16_t src_addr, uint16_t dst_addr, uint8_t seq_num,
@@ -191,6 +213,13 @@ const RegistrationPayload* MessageHandler::getRegistrationPayload(const Message*
         return nullptr;
     }
     return (const RegistrationPayload*)message->payload;
+}
+
+const RegistrationResponsePayload* MessageHandler::getRegistrationResponsePayload(const Message* message) {
+    if (!message || message->header.type != MSG_TYPE_REG_RESPONSE) {
+        return nullptr;
+    }
+    return (const RegistrationResponsePayload*)message->payload;
 }
 
 const AckPayload* MessageHandler::getAckPayload(const Message* message) {

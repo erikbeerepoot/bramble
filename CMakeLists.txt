@@ -59,6 +59,7 @@ else()
         src/lora/sx1276.cpp
         src/lora/message.cpp
         src/lora/reliable_messenger.cpp
+        src/lora/address_manager.cpp
         src/hal/neopixel.cpp
     )
     message(STATUS "Building production version")

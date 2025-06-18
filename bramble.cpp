@@ -7,6 +7,7 @@
 #include "lora/message.h"
 #include "lora/reliable_messenger.h"
 #include "hal/neopixel.h"
+#include "pico/unique_id.h"
 
 // SPI Defines - Feather RP2040 RFM95 LoRa board
 // Use SPI1: GPIO8(RX), GPIO14(SCK), GPIO15(TX)
@@ -33,6 +34,7 @@
 void runDemoMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led);
 void runProductionMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led);
 bool initializeHardware(SX1276& lora, NeoPixel& led);
+uint64_t getDeviceId();
 
 int main()
 {
@@ -221,4 +223,17 @@ void runProductionMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led
         
         sleep_ms(MAIN_LOOP_DELAY_MS);
     }
+}
+
+uint64_t getDeviceId() {
+    pico_unique_board_id_t board_id;
+    pico_get_unique_board_id(&board_id);
+    
+    // Convert 8-byte board ID to uint64_t
+    uint64_t device_id = 0;
+    for (int i = 0; i < PICO_UNIQUE_BOARD_ID_SIZE_BYTES; i++) {
+        device_id = (device_id << 8) | board_id.id[i];
+    }
+    
+    return device_id;
 }
