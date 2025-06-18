@@ -418,3 +418,11 @@ uint8_t ReliableMessenger::getNextSequenceNumber() {
     
     return seq_num;
 }
+
+void ReliableMessenger::updateNodeAddress(uint16_t new_addr) {
+    printf("Updating node address from 0x%04X to 0x%04X\n", node_addr_, new_addr);
+    node_addr_ = new_addr;
+    
+    // Note: We keep the same sequence number range (128-255) for all non-hub nodes
+    // This ensures continuity even after address assignment
+}

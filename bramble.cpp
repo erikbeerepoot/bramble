@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <string.h>
 #include "pico/stdlib.h"
 #include "hardware/spi.h"
 #include "hardware/timer.h"
@@ -36,7 +37,7 @@ static Logger main_logger("MAIN");
 #define MAIN_LOOP_DELAY_MS      100         // Main loop processing delay
 
 // Demo mode - set to false for production deployment
-#define DEMO_MODE               false
+#define DEMO_MODE               true
 
 // Automatically determine node address based on role
 #define NODE_ADDRESS            (IS_HUB ? ADDRESS_HUB : ADDRESS_UNREGISTERED)
@@ -50,6 +51,11 @@ void runHubMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led,
                 AddressManager& address_manager, HubRouter& hub_router);
 bool initializeHardware(SX1276& lora, NeoPixel& led);
 uint64_t getDeviceId();
+bool attemptRegistration(ReliableMessenger& messenger, SX1276& lora, 
+                        NodeConfigManager& config_manager, uint64_t device_id);
+void processIncomingMessage(uint8_t* rx_buffer, int rx_len, ReliableMessenger& messenger,
+                          AddressManager* address_manager, HubRouter* hub_router, 
+                          uint32_t current_time);
 
 int main()
 {
@@ -115,25 +121,19 @@ int main()
             saved_config.assigned_address != ADDRESS_UNREGISTERED) {
             
             main_logger.info("Using saved address 0x%04X", saved_config.assigned_address);
-            // TODO: Update messenger to use saved address instead of ADDRESS_UNREGISTERED
+            // Update messenger to use saved address
+            messenger.updateNodeAddress(saved_config.assigned_address);
         } else {
-            main_logger.info("No saved address - sending registration request to hub");
+            main_logger.info("No saved address - attempting registration with hub");
             
             // Get unique device ID
             uint64_t device_id = getDeviceId();
             
-            // Define node capabilities for this demo node
-            uint8_t capabilities = CAP_TEMPERATURE | CAP_SOIL_MOISTURE | CAP_BATTERY_MONITOR;
-            uint16_t firmware_version = 0x0100;  // Version 1.0
-            const char* device_name = "Demo Farm Node";
-            
-            // Send registration request
-            if (messenger.sendRegistrationRequest(HUB_ADDRESS, device_id, 
-                                                NODE_TYPE_SENSOR, capabilities,
-                                                firmware_version, device_name)) {
-                main_logger.info("Registration request sent to hub");
+            // Attempt registration with retry mechanism
+            if (attemptRegistration(messenger, lora, config_manager, device_id)) {
+                main_logger.info("Registration successful!");
             } else {
-                main_logger.warn("Failed to send registration request");
+                main_logger.warn("Registration failed after all attempts - continuing with unregistered address");
             }
         }
         
@@ -239,75 +239,8 @@ void runHubMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led,
             printf("Hub received message (len=%d, RSSI=%d dBm)\n", 
                    rx_len, lora.getRssi());
             
-            // Process message normally (handles registration, ACKs, etc.)
-            messenger.processIncomingMessage(rx_buffer, rx_len);
-            
-            // Handle registration requests if this is a hub
-            if (rx_len >= sizeof(MessageHeader)) {
-                const MessageHeader* header = reinterpret_cast<const MessageHeader*>(rx_buffer);
-                if (header->type == MSG_TYPE_REGISTRATION) {
-                    const Message* msg = reinterpret_cast<const Message*>(rx_buffer);
-                    const RegistrationPayload* reg_payload = reinterpret_cast<const RegistrationPayload*>(msg->payload);
-                    
-                    // Register the node with AddressManager
-                    uint16_t assigned_addr = address_manager.registerNode(
-                        reg_payload->device_id,
-                        reg_payload->node_type,
-                        reg_payload->capabilities,
-                        reg_payload->firmware_ver,
-                        reg_payload->device_name
-                    );
-                    
-                    // Determine registration status
-                    uint8_t status = REG_SUCCESS;
-                    if (assigned_addr == 0x0000) {
-                        // Registration failed
-                        if (address_manager.isDeviceRegistered(reg_payload->device_id)) {
-                            status = REG_ERROR_DUPLICATE;
-                        } else {
-                            status = REG_ERROR_FULL;
-                        }
-                    }
-                    
-                    // Send registration response
-                    messenger.sendRegistrationResponse(
-                        header->src_addr,  // Send back to requesting node
-                        reg_payload->device_id,
-                        assigned_addr,
-                        status,
-                        30,  // Retry interval in seconds
-                        current_time / 1000  // Network time in seconds
-                    );
-                    
-                    if (status == REG_SUCCESS) {
-                        printf("Successfully registered node 0x%016llX with address 0x%04X\n",
-                               reg_payload->device_id, assigned_addr);
-                    }
-                }
-            }
-            
-            // Check if message needs routing to another node
-            if (rx_len >= sizeof(MessageHeader)) {
-                const MessageHeader* header = reinterpret_cast<const MessageHeader*>(rx_buffer);
-                uint16_t source_address = header->src_addr;
-                
-                // Update node activity tracking
-                address_manager.updateLastSeen(source_address, current_time);
-                hub_router.updateRouteOnline(source_address);
-                
-                // Handle heartbeat messages with status logging
-                if (header->type == MSG_TYPE_HEARTBEAT) {
-                    const HeartbeatPayload* heartbeat = 
-                        reinterpret_cast<const HeartbeatPayload*>(rx_buffer + sizeof(MessageHeader));
-                    
-                    printf("Heartbeat from 0x%04X: uptime=%lus, battery=%u%%, signal=%u, sensors=0x%02X\n",
-                           source_address, heartbeat->uptime_seconds, heartbeat->battery_level,
-                           heartbeat->signal_strength, heartbeat->active_sensors);
-                }
-                
-                // Try to route the message if it's not for the hub
-                hub_router.processMessage(rx_buffer, rx_len, source_address);
-            }
+            // Use common message processing function
+            processIncomingMessage(rx_buffer, rx_len, messenger, &address_manager, &hub_router, current_time);
         } else if (rx_len < 0) {
             lora.startReceive();
         }
@@ -391,18 +324,8 @@ void runDemoMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led,
             printf("Received message (len=%d, RSSI=%d dBm, SNR=%.1f dB)\n", 
                    rx_len, lora.getRssi(), lora.getSnr());
             
-            // Process message normally
-            messenger.processIncomingMessage(rx_buffer, rx_len);
-            
-            // If running as hub, also handle routing
-            if (hub_router && rx_len >= sizeof(MessageHeader)) {
-                const MessageHeader* header = reinterpret_cast<const MessageHeader*>(rx_buffer);
-                uint16_t source_address = header->src_addr;
-                
-                // Update node as online and try routing
-                hub_router->updateRouteOnline(source_address);
-                hub_router->processMessage(rx_buffer, rx_len, source_address);
-            }
+            // Use common message processing function
+            processIncomingMessage(rx_buffer, rx_len, messenger, address_manager, hub_router, current_time);
         } else if (rx_len < 0) {
             printf("Receive error (CRC or buffer issue)\n");
             lora.startReceive();
@@ -470,8 +393,8 @@ void runProductionMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led
         int rx_len = lora.receive(rx_buffer, sizeof(rx_buffer));
         
         if (rx_len > 0) {
-            // Process with reliable messenger (handles ACKs and commands automatically)
-            messenger.processIncomingMessage(rx_buffer, rx_len);
+            // Use common message processing function  
+            processIncomingMessage(rx_buffer, rx_len, messenger, address_manager, hub_router, current_time);
             
             // TODO: Add command processing for actuator control
             // Parse incoming actuator commands and control valves/pumps accordingly
@@ -497,4 +420,191 @@ uint64_t getDeviceId() {
     }
     
     return device_id;
+}
+
+bool attemptRegistration(ReliableMessenger& messenger, SX1276& lora, 
+                        NodeConfigManager& config_manager, uint64_t device_id) {
+    const int MAX_REGISTRATION_ATTEMPTS = 3;
+    const uint32_t REGISTRATION_TIMEOUT_MS = 10000;  // 10 seconds per attempt
+    const uint32_t RETRY_DELAY_MS = 5000;  // 5 seconds between attempts
+    
+    // Define node capabilities
+    uint8_t capabilities = CAP_TEMPERATURE | CAP_SOIL_MOISTURE | CAP_BATTERY_MONITOR;
+    uint16_t firmware_version = 0x0100;  // Version 1.0
+    const char* device_name = "Demo Farm Node";
+    
+    for (int attempt = 1; attempt <= MAX_REGISTRATION_ATTEMPTS; attempt++) {
+        printf("Registration attempt %d/%d\n", attempt, MAX_REGISTRATION_ATTEMPTS);
+        
+        // Send registration request
+        if (!messenger.sendRegistrationRequest(HUB_ADDRESS, device_id, 
+                                             NODE_TYPE_SENSOR, capabilities,
+                                             firmware_version, device_name)) {
+            printf("Failed to send registration request\n");
+            if (attempt < MAX_REGISTRATION_ATTEMPTS) {
+                sleep_ms(RETRY_DELAY_MS);
+                continue;
+            }
+            return false;
+        }
+        
+        // Wait for registration response
+        uint32_t start_time = to_ms_since_boot(get_absolute_time());
+        uint16_t assigned_address = ADDRESS_UNREGISTERED;
+        bool response_received = false;
+        
+        while (to_ms_since_boot(get_absolute_time()) - start_time < REGISTRATION_TIMEOUT_MS) {
+            // Check for incoming messages
+            uint8_t rx_buffer[MESSAGE_MAX_SIZE];
+            int rx_len = lora.receive(rx_buffer, sizeof(rx_buffer));
+            
+            if (rx_len > 0) {
+                Message message;
+                if (MessageHandler::parseMessage(rx_buffer, rx_len, &message)) {
+                    // Process the message
+                    messenger.processIncomingMessage(rx_buffer, rx_len);
+                    
+                    // Check if it's a registration response
+                    if (message.header.type == MSG_TYPE_REG_RESPONSE) {
+                        const RegistrationResponsePayload* reg_response = 
+                            MessageHandler::getRegistrationResponsePayload(&message);
+                        
+                        if (reg_response && reg_response->device_id == device_id) {
+                            response_received = true;
+                            
+                            if (reg_response->status == REG_SUCCESS) {
+                                assigned_address = reg_response->assigned_addr;
+                                printf("Registration successful! Assigned address: 0x%04X\n", 
+                                       assigned_address);
+                                
+                                // Update messenger with new address
+                                messenger.updateNodeAddress(assigned_address);
+                                
+                                // Save configuration to flash
+                                NodeConfiguration new_config = {};  // Initialize all fields to zero
+                                new_config.magic = 0xBEEF1234;  // Use the correct magic number
+                                new_config.assigned_address = assigned_address;
+                                new_config.device_id = device_id;
+                                new_config.node_type = NODE_TYPE_SENSOR;
+                                new_config.capabilities = capabilities;
+                                new_config.firmware_version = firmware_version;
+                                new_config.registration_time = to_ms_since_boot(get_absolute_time()) / 1000;
+                                strncpy(new_config.device_name, device_name, sizeof(new_config.device_name) - 1);
+                                
+                                if (config_manager.saveConfiguration(new_config)) {
+                                    printf("Configuration saved to flash\n");
+                                } else {
+                                    printf("Warning: Failed to save configuration to flash\n");
+                                }
+                                
+                                return true;
+                            } else {
+                                printf("Registration failed with status: %d\n", reg_response->status);
+                                
+                                // If duplicate, no point retrying
+                                if (reg_response->status == REG_ERROR_DUPLICATE) {
+                                    printf("Device already registered, aborting\n");
+                                    return false;
+                                }
+                            }
+                            break;
+                        }
+                    }
+                }
+            } else if (rx_len < 0) {
+                lora.startReceive();
+            }
+            
+            // Update message retries
+            messenger.update();
+            
+            // Small delay to prevent tight loop
+            sleep_ms(100);
+        }
+        
+        if (!response_received) {
+            printf("Registration timeout - no response from hub\n");
+        }
+        
+        if (attempt < MAX_REGISTRATION_ATTEMPTS) {
+            printf("Retrying in %d seconds...\n", RETRY_DELAY_MS / 1000);
+            sleep_ms(RETRY_DELAY_MS);
+        }
+    }
+    
+    return false;
+}
+
+void processIncomingMessage(uint8_t* rx_buffer, int rx_len, ReliableMessenger& messenger,
+                          AddressManager* address_manager, HubRouter* hub_router, 
+                          uint32_t current_time) {
+    // Process message with reliable messenger (handles ACKs, sensor data, etc.)
+    messenger.processIncomingMessage(rx_buffer, rx_len);
+    
+    // If not a hub, we're done
+    if (!hub_router || !address_manager || rx_len < sizeof(MessageHeader)) {
+        return;
+    }
+    
+    // Hub-specific processing
+    const MessageHeader* header = reinterpret_cast<const MessageHeader*>(rx_buffer);
+    uint16_t source_address = header->src_addr;
+    
+    // Update node activity tracking
+    address_manager->updateLastSeen(source_address, current_time);
+    hub_router->updateRouteOnline(source_address);
+    
+    // Handle registration requests
+    if (header->type == MSG_TYPE_REGISTRATION) {
+        const Message* msg = reinterpret_cast<const Message*>(rx_buffer);
+        const RegistrationPayload* reg_payload = reinterpret_cast<const RegistrationPayload*>(msg->payload);
+        
+        // Register the node with AddressManager
+        uint16_t assigned_addr = address_manager->registerNode(
+            reg_payload->device_id,
+            reg_payload->node_type,
+            reg_payload->capabilities,
+            reg_payload->firmware_ver,
+            reg_payload->device_name
+        );
+        
+        // Determine registration status
+        uint8_t status = REG_SUCCESS;
+        if (assigned_addr == 0x0000) {
+            // Registration failed
+            if (address_manager->isDeviceRegistered(reg_payload->device_id)) {
+                status = REG_ERROR_DUPLICATE;
+            } else {
+                status = REG_ERROR_FULL;
+            }
+        }
+        
+        // Send registration response
+        messenger.sendRegistrationResponse(
+            header->src_addr,  // Send back to requesting node
+            reg_payload->device_id,
+            assigned_addr,
+            status,
+            30,  // Retry interval in seconds
+            current_time / 1000  // Network time in seconds
+        );
+        
+        if (status == REG_SUCCESS) {
+            printf("Successfully registered node 0x%016llX with address 0x%04X\n",
+                   reg_payload->device_id, assigned_addr);
+        }
+    }
+    
+    // Handle heartbeat messages with status logging  
+    if (header->type == MSG_TYPE_HEARTBEAT) {
+        const HeartbeatPayload* heartbeat = 
+            reinterpret_cast<const HeartbeatPayload*>(rx_buffer + sizeof(MessageHeader));
+        
+        printf("Heartbeat from 0x%04X: uptime=%lus, battery=%u%%, signal=%u, sensors=0x%02X\n",
+               source_address, heartbeat->uptime_seconds, heartbeat->battery_level,
+               heartbeat->signal_strength, heartbeat->active_sensors);
+    }
+    
+    // Try to route the message if it's not for the hub
+    hub_router->processMessage(rx_buffer, rx_len, source_address);
 }

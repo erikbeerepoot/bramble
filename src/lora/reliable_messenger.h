@@ -134,6 +134,12 @@ public:
      * @return true if ACK received for this sequence number
      */
     bool wasAcknowledged(uint8_t seq_num);
+    
+    /**
+     * @brief Update the node address (used after successful registration)
+     * @param new_addr New address to use for sending messages
+     */
+    void updateNodeAddress(uint16_t new_addr);
 
 private:
     SX1276* lora_;
