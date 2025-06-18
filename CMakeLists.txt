@@ -61,6 +61,8 @@ else()
         src/lora/reliable_messenger.cpp
         src/lora/address_manager.cpp
         src/hal/neopixel.cpp
+        src/hal/flash.cpp
+        src/config/node_config.cpp
     )
     message(STATUS "Building production version")
 endif()
@@ -88,6 +90,8 @@ target_link_libraries(bramble
         hardware_timer
         hardware_clocks
         hardware_pio
+        hardware_flash
+        hardware_sync
         )
 
 # Generate PIO headers

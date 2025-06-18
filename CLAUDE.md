@@ -105,5 +105,5 @@ The main application has completely separate demo and production modes for clari
 
 ## Design Philosophy Principles
 * KISS (Keep It Simple, Stupid)
-* SOLID Principles
+* Clearly seperate concerns (especially "hardware hiding" -- the HAL should be separate from the domain logic)
 * Use full words not abbreviations (e.g address vs addr)
