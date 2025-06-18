@@ -60,6 +60,7 @@ else()
         src/lora/message.cpp
         src/lora/reliable_messenger.cpp
         src/lora/address_manager.cpp
+        src/lora/hub_router.cpp
         src/hal/neopixel.cpp
         src/hal/flash.cpp
         src/config/node_config.cpp
