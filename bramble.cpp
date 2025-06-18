@@ -19,13 +19,20 @@
 #define PIN_DIO0 21
 #define PIN_NEOPIXEL 4
 
-int64_t alarm_callback(alarm_id_t id, void *user_data) {
-    // Put your timeout handler code in here
-    return 0;
-}
+// Application configuration
+#define NODE_ADDRESS            0x0001      // This node's address
+#define HUB_ADDRESS             0x0000      // Hub/gateway address
+#define SENSOR_INTERVAL_MS      30000       // Send sensor data every 30 seconds
+#define HEARTBEAT_INTERVAL_MS   60000       // Send heartbeat every minute
+#define MAIN_LOOP_DELAY_MS      100         // Main loop processing delay
 
+// Demo mode - set to false for production deployment
+#define DEMO_MODE               true
 
-
+// Forward declarations
+void runDemoMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led);
+void runProductionMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led);
+bool initializeHardware(SX1276& lora, NeoPixel& led);
 
 int main()
 {
@@ -34,15 +41,44 @@ int main()
     
     printf("=== Bramble Starting ===\n");
 
-    // Initialize NeoPixel LED
+    // Initialize hardware
     NeoPixel led(PIN_NEOPIXEL, 1);
+    SX1276 lora(SPI_PORT, PIN_CS, PIN_RST, PIN_DIO0);
+    
+    if (!initializeHardware(lora, led)) {
+        printf("Hardware initialization failed!\n");
+        while(true) {
+            sleep_ms(1000);
+        }
+    }
+    
+    // Initialize reliable messenger
+    ReliableMessenger messenger(&lora, NODE_ADDRESS);
+    
+    // Start in receive mode
+    lora.startReceive();
+    
+    // Run appropriate mode
+    if (DEMO_MODE) {
+        printf("Starting DEMO mode - sending test messages\n");
+        runDemoMode(messenger, lora, led);
+    } else {
+        printf("Starting PRODUCTION mode - real sensor monitoring\n");
+        runProductionMode(messenger, lora, led);
+    }
+    
+    return 0; // Should never reach here
+}
+
+bool initializeHardware(SX1276& lora, NeoPixel& led) {
+    // Initialize NeoPixel LED
     if (!led.begin()) {
         printf("Failed to initialize NeoPixel!\n");
-    } else {
-        printf("NeoPixel initialized successfully!\n");
+        return false;
     }
+    printf("NeoPixel initialized successfully!\n");
 
-    // SPI initialisation. This example will use SPI at 1MHz.
+    // SPI initialization - 1MHz for reliable communication
     spi_init(SPI_PORT, 1000*1000);
     gpio_set_function(PIN_MISO, GPIO_FUNC_SPI);
     gpio_set_function(PIN_CS,   GPIO_FUNC_SIO);
@@ -53,42 +89,34 @@ int main()
     gpio_set_dir(PIN_CS, GPIO_OUT);
     gpio_put(PIN_CS, 1);
     
-    printf("System Clock Frequency is %d Hz\n", clock_get_hz(clk_sys));
-    printf("USB Clock Frequency is %d Hz\n", clock_get_hz(clk_usb));
+    printf("System Clock: %d Hz, USB Clock: %d Hz\n", 
+           clock_get_hz(clk_sys), clock_get_hz(clk_usb));
     
     // Initialize SX1276 LoRa module
     printf("Initializing SX1276 LoRa module...\n");
-    SX1276 lora(SPI_PORT, PIN_CS, PIN_RST, PIN_DIO0);
-    
     if (!lora.begin()) {
         printf("Failed to initialize SX1276!\n");
-        while(true) {
-            sleep_ms(1000);
-        }
+        return false;
     }
-    
-    printf("SX1276 initialized successfully!\n");
     
     // Set higher transmit power for better signal strength
     lora.setTxPower(20);  // 20 dBm = 100mW (maximum)
-    printf("Set transmit power to 20 dBm\n");
+    printf("SX1276 initialized successfully! (TX Power: 20 dBm)\n");
     
-    printf("Starting LoRa communication test...\n");
+    return true;
+}
+
+void runDemoMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led) {
+    uint32_t last_demo_time = 0;
+    uint32_t last_heartbeat_time = 0;
     
-    // Initialize reliable messenger
-    ReliableMessenger messenger(&lora, 0x0001);  // Node address 0x0001
-    
-    // Test data
-    uint8_t test_data[] = {0x12, 0x34, 0x56, 0x78};
-    static uint32_t last_sensor_time = 0;
-    static uint32_t last_actuator_time = 0;
-    
-    // Start in receive mode
-    lora.startReceive();
-    printf("Starting reliable messaging test...\n");
+    printf("=== DEMO MODE ACTIVE ===\n");
+    printf("- Colorful LED cycling\n");
+    printf("- Test messages every 15 seconds\n");
+    printf("- Verbose debug output\n");
     
     while (true) {
-        // Status LED - cycle through colors during operation
+        // Demo LED: Cycle through colors for visual feedback
         static uint8_t hue = 0;
         led.setPixelColor(0, NeoPixel::colorHSV(hue * 256, 255, 50));
         led.show();
@@ -96,31 +124,28 @@ int main()
         
         uint32_t current_time = to_ms_since_boot(get_absolute_time());
         
-        // Send different types of messages to test criticality levels
-        static uint32_t last_critical_time = 0;
-        
-        // Send sensor data every 15 seconds (best effort - fire and forget)
-        if (current_time - last_sensor_time >= 15000) {
-            printf("--- Sending BEST_EFFORT sensor data ---\n");
-            messenger.sendSensorData(0x0000, SENSOR_TEMPERATURE, test_data, sizeof(test_data), BEST_EFFORT);
-            last_sensor_time = current_time;
+        // Send test messages every 15 seconds
+        if (current_time - last_demo_time >= 15000) {
+            printf("--- DEMO: Sending test messages ---\n");
+            
+            // Test temperature reading (best effort)
+            uint8_t temp_data[] = {0x12, 0x34};
+            messenger.sendSensorData(HUB_ADDRESS, SENSOR_TEMPERATURE, 
+                                   temp_data, sizeof(temp_data), BEST_EFFORT);
+            
+            // Test moisture reading (reliable - critical for irrigation decisions)
+            uint8_t moisture_data[] = {0x45, 0x67};
+            messenger.sendSensorData(HUB_ADDRESS, SENSOR_SOIL_MOISTURE, 
+                                   moisture_data, sizeof(moisture_data), RELIABLE);
+            
+            last_demo_time = current_time;
         }
         
-        // Send reliable sensor data every 20 seconds (for critical feedback loops)
-        if (current_time - last_actuator_time >= 20000) {
-            printf("--- Sending RELIABLE moisture sensor reading (pre-watering check) ---\n");
-            uint8_t moisture_data[] = {0x45, 0x67};  // Mock moisture reading
-            messenger.sendSensorData(0x0000, SENSOR_SOIL_MOISTURE, moisture_data, sizeof(moisture_data), RELIABLE);
-            last_actuator_time = current_time;
-        }
-        
-        // Send critical actuator command every 25 seconds
-        if (current_time - last_critical_time >= 25000) {
-            printf("--- Sending CRITICAL valve command (emergency shutoff) ---\n");
-            uint8_t valve_params[] = {0x01};  // Valve ID 1
-            messenger.sendActuatorCommand(0x0002, ACTUATOR_VALVE, CMD_TURN_OFF, 
-                                        valve_params, sizeof(valve_params), CRITICAL);
-            last_critical_time = current_time;
+        // Send heartbeat every minute
+        if (current_time - last_heartbeat_time >= HEARTBEAT_INTERVAL_MS) {
+            printf("--- DEMO: Sending heartbeat ---\n");
+            // TODO: Implement actual heartbeat message with node status
+            last_heartbeat_time = current_time;
         }
         
         // Check for incoming messages
@@ -130,17 +155,70 @@ int main()
         if (rx_len > 0) {
             printf("Received message (len=%d, RSSI=%d dBm, SNR=%.1f dB)\n", 
                    rx_len, lora.getRssi(), lora.getSnr());
-            
-            // Process with reliable messenger (handles ACKs automatically)
             messenger.processIncomingMessage(rx_buffer, rx_len);
         } else if (rx_len < 0) {
             printf("Receive error (CRC or buffer issue)\n");
             lora.startReceive();
         }
         
-        // Update retry timers
+        // Update retry timers for reliable message delivery
         messenger.update();
         
-        sleep_ms(100);  // Main loop delay
+        sleep_ms(MAIN_LOOP_DELAY_MS);
+    }
+}
+
+void runProductionMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led) {
+    uint32_t last_sensor_time = 0;
+    uint32_t last_heartbeat_time = 0;
+    uint8_t led_counter = 0;
+    
+    printf("=== PRODUCTION MODE ACTIVE ===\n");
+    printf("- Green LED heartbeat\n");
+    printf("- Sensor readings every %d seconds\n", SENSOR_INTERVAL_MS / 1000);
+    printf("- Minimal power consumption\n");
+    
+    while (true) {
+        // Production LED: Subtle green heartbeat
+        uint8_t brightness = (led_counter < 10) ? led_counter * 5 : (20 - led_counter) * 5;
+        led.setPixelColor(0, 0, brightness, 0);  // Green heartbeat
+        led.show();
+        led_counter = (led_counter + 1) % 20;
+        
+        uint32_t current_time = to_ms_since_boot(get_absolute_time());
+        
+        // Send sensor data periodically
+        if (current_time - last_sensor_time >= SENSOR_INTERVAL_MS) {
+            // TODO: Replace with actual sensor readings
+            // Example: Read temperature, humidity, soil moisture, battery level
+            printf("Sensor reading cycle\n");
+            last_sensor_time = current_time;
+        }
+        
+        // Send heartbeat to hub
+        if (current_time - last_heartbeat_time >= HEARTBEAT_INTERVAL_MS) {
+            printf("Heartbeat\n");
+            // TODO: Implement actual heartbeat message with node status
+            last_heartbeat_time = current_time;
+        }
+        
+        // Check for incoming messages (commands from hub, ACKs, etc.)
+        uint8_t rx_buffer[MESSAGE_MAX_SIZE];
+        int rx_len = lora.receive(rx_buffer, sizeof(rx_buffer));
+        
+        if (rx_len > 0) {
+            // Process with reliable messenger (handles ACKs and commands automatically)
+            messenger.processIncomingMessage(rx_buffer, rx_len);
+            
+            // TODO: Add command processing for actuator control
+            // Parse incoming actuator commands and control valves/pumps accordingly
+        } else if (rx_len < 0) {
+            lora.startReceive();  // Restart receive mode after error
+        }
+        
+        // Update retry timers for reliable message delivery
+        messenger.update();
+        
+        sleep_ms(MAIN_LOOP_DELAY_MS);
     }
 }

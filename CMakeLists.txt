@@ -37,15 +37,32 @@ set(PICO_CXX_ENABLE_RTTI 1)
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
 
-# Add executable. Default name is the project name, version 0.1
+# Build configuration: production or test
+option(BUILD_TESTS "Build test version instead of production" OFF)
 
-add_executable(bramble 
-    bramble.cpp 
-    src/lora/sx1276.cpp
-    src/lora/message.cpp
-    src/lora/reliable_messenger.cpp
-    src/hal/neopixel.cpp
-)
+if(BUILD_TESTS)
+    # Test executable
+    add_executable(bramble 
+        src/tests/test_main.cpp
+        src/tests/test_framework.cpp
+        src/tests/reliability_tests.cpp
+        src/tests/mock_sx1276.cpp
+        src/lora/message.cpp
+        src/lora/reliable_messenger.cpp
+        src/hal/neopixel.cpp
+    )
+    message(STATUS "Building test version")
+else()
+    # Production executable
+    add_executable(bramble 
+        bramble.cpp 
+        src/lora/sx1276.cpp
+        src/lora/message.cpp
+        src/lora/reliable_messenger.cpp
+        src/hal/neopixel.cpp
+    )
+    message(STATUS "Building production version")
+endif()
 
 pico_set_program_name(bramble "bramble")
 pico_set_program_version(bramble "0.1")

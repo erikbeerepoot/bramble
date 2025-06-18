@@ -15,6 +15,7 @@ This is a Raspberry Pi Pico project using the Pico SDK. This project will use a 
 
 ### Common Commands
 
+#### Production Build
 ```bash
 # Configure build (run from project root)
 cmake -B build
@@ -29,6 +30,18 @@ cmake --build build --verbose
 rm -rf build && cmake -B build && cmake --build build
 ```
 
+#### Test Build
+```bash
+# Configure test build
+cmake -B build -DBUILD_TESTS=ON
+
+# Build test version
+cmake --build build
+
+# Clean test build
+rm -rf build && cmake -B build -DBUILD_TESTS=ON && cmake --build build
+```
+
 The build outputs are in the `build/` directory. The main executable will be `bramble.uf2` which can be copied to the Pico when it's in bootloader mode.
 
 ## Hardware Configuration
@@ -41,11 +54,49 @@ The build outputs are in the `build/` directory. The main executable will be `br
 
 ## Code Architecture
 
-The project structure is minimal with a single source file:
-- `bramble.cpp`: Main application demonstrating SPI setup, timer callbacks, and system clock reporting
-- `CMakeLists.txt`: Build configuration with Pico SDK integration
+The project follows a modular design with HAL abstraction:
+- `bramble.cpp`: Main application with LoRa communication and reliability testing
+- `src/hal/`: Hardware abstraction layer (NeoPixel, sensors, actuators)
+- `src/lora/`: LoRa communication (SX1276 driver, message protocol, reliability)
+- `src/tests/`: Integration test framework with mock hardware
+- `CMakeLists.txt`: Build configuration supporting both production and test builds
 - `pico_sdk_import.cmake`: SDK import script
-- Code should be modular, with a HAL and the application code built on top of it.
+
+### Current Features
+- **NeoPixel LED Control**: WS2812 support via PIO
+- **LoRa Communication**: SX1276 driver with proper pin configuration
+- **Message Protocol**: Structured messages with ACK/retry mechanism  
+- **Reliability System**: Criticality-based delivery (BEST_EFFORT, RELIABLE, CRITICAL)
+- **Integration Tests**: Mock-based testing framework for controlled reliability testing
+
+### Testing
+- Production build: Standard firmware for hardware deployment
+- Test build: Includes integration test suite with MockSX1276 for reliability validation
+- Build with `-DBUILD_TESTS=ON` to compile test version
+
+### Production Configuration
+The main application has completely separate demo and production modes for clarity:
+
+**Demo Mode** (`DEMO_MODE = true` in bramble.cpp):
+- Runs `runDemoMode()` function with its own main loop
+- Colorful LED cycling for visual feedback
+- Sends test messages every 15 seconds
+- Verbose debug output to console
+- Ideal for development and system verification
+
+**Production Mode** (`DEMO_MODE = false`):
+- Runs `runProductionMode()` function with its own main loop
+- Green LED heartbeat indication only
+- Minimal console output (reduces power consumption)
+- Sensor readings every 30 seconds, heartbeat every 60 seconds
+- Clear TODO markers for actual sensor/actuator integration
+- Ready for deployment with real hardware
+
+**Benefits of Separation**:
+- Easy to understand each mode independently
+- No conditional logic scattered throughout code
+- Simple to maintain and debug each mode
+- Clear separation of concerns
 
 ## Process
 
