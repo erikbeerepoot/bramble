@@ -63,21 +63,33 @@ bool NodeConfigManager::hasValidConfiguration() {
 }
 
 bool NodeConfigManager::loadConfiguration(NodeConfiguration& config) {
-    // Read configuration from flash
-    if (!flash_.read(config_offset_, (uint8_t*)&config, sizeof(config))) {
-        return false;
+    // Try to read configuration from primary location
+    FlashResult result = flash_.read(config_offset_, (uint8_t*)&config, sizeof(config));
+    if (result != FLASH_SUCCESS) {
+        printf("Failed to read configuration from primary location: %s\n", Flash::resultToString(result));
+        
+        // Attempt backup recovery
+        return attemptBackupRecovery(config);
     }
     
     // Check magic number
     if (config.magic != NODE_CONFIG_MAGIC) {
-        return false;
+        printf("Primary configuration magic number mismatch (found 0x%08lx, expected 0x%08x)\n", 
+               config.magic, NODE_CONFIG_MAGIC);
+        
+        // Attempt backup recovery
+        return attemptBackupRecovery(config);
     }
     
     // Verify CRC
     if (!verifyCRC(config)) {
-        return false;
+        printf("Primary configuration CRC verification failed\n");
+        
+        // Attempt backup recovery
+        return attemptBackupRecovery(config);
     }
     
+    printf("Configuration loaded successfully from primary location\n");
     return true;
 }
 
@@ -87,27 +99,73 @@ bool NodeConfigManager::saveConfiguration(const NodeConfiguration& config) {
     config_copy.magic = NODE_CONFIG_MAGIC;
     config_copy.crc32 = calculateCRC32(config_copy);
     
-    // Erase the sector first
-    if (!flash_.erase(config_offset_, FLASH_SECTOR_SIZE)) {
-        printf("Failed to erase configuration sector\n");
-        return false;
+    printf("Saving configuration to flash at offset 0x%08lx\n", config_offset_);
+    
+    // Erase the sector first with retry
+    FlashResult erase_result = flash_.erase(config_offset_, FLASH_SECTOR_SIZE, 3);
+    if (erase_result != FLASH_SUCCESS) {
+        printf("Failed to erase configuration sector: %s\n", Flash::resultToString(erase_result));
+        
+        // Attempt error recovery - try alternate backup location if available
+        return attemptBackupSave(config_copy);
     }
     
-    // Write configuration
-    if (!flash_.write(config_offset_, (const uint8_t*)&config_copy, sizeof(config_copy))) {
-        printf("Failed to write configuration\n");
-        return false;
+    // Write configuration with retry
+    FlashResult write_result = flash_.write(config_offset_, (const uint8_t*)&config_copy, sizeof(config_copy), 3);
+    if (write_result != FLASH_SUCCESS) {
+        printf("Failed to write configuration: %s\n", Flash::resultToString(write_result));
+        
+        // Attempt error recovery - try alternate backup location if available
+        return attemptBackupSave(config_copy);
     }
     
-    printf("Configuration saved to flash at offset 0x%08x\n", config_offset_);
+    // Verify the save was successful by reading it back
+    NodeConfiguration verify_config;
+    if (!loadConfiguration(verify_config)) {
+        printf("Configuration save verification failed\n");
+        return attemptBackupSave(config_copy);
+    }
+    
+    // Compare key fields to ensure integrity
+    if (verify_config.device_id != config_copy.device_id ||
+        verify_config.assigned_address != config_copy.assigned_address ||
+        verify_config.node_type != config_copy.node_type) {
+        printf("Configuration save verification failed - data mismatch\n");
+        return attemptBackupSave(config_copy);
+    }
+    
+    printf("Configuration saved and verified successfully at offset 0x%08lx\n", config_offset_);
     return true;
 }
 
 bool NodeConfigManager::clearConfiguration() {
-    // Simply erase the sector
-    if (!flash_.erase(config_offset_, FLASH_SECTOR_SIZE)) {
-        printf("Failed to clear configuration\n");
+    printf("Clearing configuration from flash\n");
+    
+    // Erase the primary configuration sector with retry
+    FlashResult result = flash_.erase(config_offset_, FLASH_SECTOR_SIZE, 3);
+    if (result != FLASH_SUCCESS) {
+        printf("Failed to clear primary configuration sector: %s\n", Flash::resultToString(result));
+        
+        // Also try to clear backup sector if it exists
+        uint32_t backup_offset = getBackupConfigOffset();
+        if (backup_offset != config_offset_) {
+            FlashResult backup_result = flash_.erase(backup_offset, FLASH_SECTOR_SIZE, 3);
+            if (backup_result != FLASH_SUCCESS) {
+                printf("Failed to clear backup configuration sector: %s\n", Flash::resultToString(backup_result));
+                return false;
+            }
+            printf("Backup configuration sector cleared\n");
+        }
         return false;
+    }
+    
+    // Also clear backup sector for complete cleanup
+    uint32_t backup_offset = getBackupConfigOffset();
+    if (backup_offset != config_offset_) {
+        FlashResult backup_result = flash_.erase(backup_offset, FLASH_SECTOR_SIZE, 1);
+        if (backup_result == FLASH_SUCCESS) {
+            printf("Backup configuration sector also cleared\n");
+        }
     }
     
     printf("Configuration cleared from flash\n");
@@ -162,4 +220,72 @@ uint32_t NodeConfigManager::calculateCRC32(const NodeConfiguration& config) {
 bool NodeConfigManager::verifyCRC(const NodeConfiguration& config) {
     uint32_t calculated_crc = calculateCRC32(config);
     return calculated_crc == config.crc32;
+}
+
+uint32_t NodeConfigManager::getBackupConfigOffset() const {
+    // Use second-to-last sector for backup configuration
+    return flash_.getFlashSize() - (2 * FLASH_SECTOR_SIZE);
+}
+
+bool NodeConfigManager::attemptBackupSave(const NodeConfiguration& config) {
+    printf("Attempting to save configuration to backup location\n");
+    
+    uint32_t backup_offset = getBackupConfigOffset();
+    
+    // Erase backup sector
+    FlashResult erase_result = flash_.erase(backup_offset, FLASH_SECTOR_SIZE, 2);
+    if (erase_result != FLASH_SUCCESS) {
+        printf("Failed to erase backup configuration sector: %s\n", Flash::resultToString(erase_result));
+        return false;
+    }
+    
+    // Write to backup location
+    FlashResult write_result = flash_.write(backup_offset, (const uint8_t*)&config, sizeof(config), 2);
+    if (write_result != FLASH_SUCCESS) {
+        printf("Failed to write backup configuration: %s\n", Flash::resultToString(write_result));
+        return false;
+    }
+    
+    printf("Configuration saved to backup location at offset 0x%08lx\n", backup_offset);
+    return true;
+}
+
+bool NodeConfigManager::attemptBackupRecovery(NodeConfiguration& config) {
+    printf("Attempting to recover configuration from backup location\n");
+    
+    uint32_t backup_offset = getBackupConfigOffset();
+    
+    // Try to read from backup location
+    FlashResult result = flash_.read(backup_offset, (uint8_t*)&config, sizeof(config));
+    if (result != FLASH_SUCCESS) {
+        printf("Failed to read backup configuration: %s\n", Flash::resultToString(result));
+        return false;
+    }
+    
+    // Verify backup configuration
+    if (config.magic != NODE_CONFIG_MAGIC) {
+        printf("Backup configuration magic number invalid\n");
+        return false;
+    }
+    
+    if (!verifyCRC(config)) {
+        printf("Backup configuration CRC verification failed\n");
+        return false;
+    }
+    
+    printf("Configuration successfully recovered from backup\n");
+    
+    // Try to restore to primary location
+    uint32_t primary_offset = config_offset_;
+    FlashResult erase_result = flash_.erase(primary_offset, FLASH_SECTOR_SIZE, 2);
+    if (erase_result == FLASH_SUCCESS) {
+        FlashResult write_result = flash_.write(primary_offset, (const uint8_t*)&config, sizeof(config), 2);
+        if (write_result == FLASH_SUCCESS) {
+            printf("Configuration restored to primary location\n");
+        } else {
+            printf("Warning: Could not restore configuration to primary location\n");
+        }
+    }
+    
+    return true;
 }

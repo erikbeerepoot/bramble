@@ -99,4 +99,24 @@ private:
      * @return true if CRC matches
      */
     bool verifyCRC(const NodeConfiguration& config);
+    
+    /**
+     * @brief Get backup configuration offset (second-to-last sector)
+     * @return Backup sector offset
+     */
+    uint32_t getBackupConfigOffset() const;
+    
+    /**
+     * @brief Attempt to save configuration to backup location
+     * @param config Configuration to save
+     * @return true if backup save successful
+     */
+    bool attemptBackupSave(const NodeConfiguration& config);
+    
+    /**
+     * @brief Try to recover configuration from backup location
+     * @param config Output configuration
+     * @return true if recovery successful
+     */
+    bool attemptBackupRecovery(NodeConfiguration& config);
 };

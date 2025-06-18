@@ -21,7 +21,36 @@
 #define FLASH_BLOCK_SIZE         65536
 
 /**
- * @brief Low-level flash memory interface
+ * @brief Flash operation result codes
+ */
+enum FlashResult {
+    FLASH_SUCCESS = 0,           // Operation successful
+    FLASH_ERROR_INVALID_PARAM,   // Invalid parameters
+    FLASH_ERROR_ALIGNMENT,       // Alignment error
+    FLASH_ERROR_BOUNDS,          // Out of bounds access
+    FLASH_ERROR_WRITE_PROTECTED, // Write to protected area
+    FLASH_ERROR_VERIFY_FAILED,   // Write verification failed
+    FLASH_ERROR_ERASE_FAILED,    // Erase operation failed
+    FLASH_ERROR_TIMEOUT,         // Operation timed out
+    FLASH_ERROR_HARDWARE         // Hardware failure
+};
+
+/**
+ * @brief Flash operation statistics
+ */
+struct FlashStats {
+    uint32_t reads_attempted;
+    uint32_t reads_successful;
+    uint32_t writes_attempted;
+    uint32_t writes_successful;
+    uint32_t erases_attempted;
+    uint32_t erases_successful;
+    uint32_t verify_failures;
+    uint32_t retry_count;
+};
+
+/**
+ * @brief Low-level flash memory interface with comprehensive error handling
  */
 class Flash {
 public:
@@ -34,35 +63,39 @@ public:
     uint32_t getFlashSize() const;
     
     /**
-     * @brief Read data from flash
-     * @param offset Offset from start of flash (must be aligned to 4 bytes)
+     * @brief Read data from flash with error handling
+     * @param offset Offset from start of flash
      * @param buffer Buffer to read into
      * @param length Number of bytes to read
-     * @return true if read successful
+     * @return FlashResult indicating success or failure type
      */
-    bool read(uint32_t offset, uint8_t* buffer, size_t length);
+    FlashResult read(uint32_t offset, uint8_t* buffer, size_t length);
     
     /**
-     * @brief Write data to flash
+     * @brief Write data to flash with verification and retry
      * @param offset Offset from start of flash (must be aligned to page boundary)
      * @param data Data to write
      * @param length Number of bytes to write (must be multiple of page size)
-     * @return true if write successful
+     * @param max_retries Maximum retry attempts (default: 3)
+     * @return FlashResult indicating success or failure type
      * 
      * @note Flash must be erased before writing
      * @note This operation will disable interrupts during write
+     * @note Automatically verifies write and retries on failure
      */
-    bool write(uint32_t offset, const uint8_t* data, size_t length);
+    FlashResult write(uint32_t offset, const uint8_t* data, size_t length, uint32_t max_retries = 3);
     
     /**
-     * @brief Erase flash sectors
+     * @brief Erase flash sectors with verification and retry
      * @param offset Offset from start of flash (must be aligned to sector boundary)
      * @param length Number of bytes to erase (must be multiple of sector size)
-     * @return true if erase successful
+     * @param max_retries Maximum retry attempts (default: 3)
+     * @return FlashResult indicating success or failure type
      * 
      * @note This operation will disable interrupts during erase
+     * @note Automatically verifies erase and retries on failure
      */
-    bool erase(uint32_t offset, size_t length);
+    FlashResult erase(uint32_t offset, size_t length, uint32_t max_retries = 3);
     
     /**
      * @brief Check if offset is aligned to page boundary
@@ -108,12 +141,77 @@ public:
         return getFlashSize() - FLASH_SECTOR_SIZE;
     }
     
+    /**
+     * @brief Verify data integrity after write/erase
+     * @param offset Offset to verify
+     * @param expected_data Expected data (nullptr for erase verification)
+     * @param length Length to verify
+     * @return FlashResult indicating verification result
+     */
+    FlashResult verifyData(uint32_t offset, const uint8_t* expected_data, size_t length);
+    
+    /**
+     * @brief Get error statistics
+     * @return Flash operation statistics
+     */
+    const FlashStats& getStats() const { return stats_; }
+    
+    /**
+     * @brief Reset error statistics
+     */
+    void resetStats();
+    
+    /**
+     * @brief Convert FlashResult to human-readable string
+     * @param result Flash result code
+     * @return String description of result
+     */
+    static const char* resultToString(FlashResult result);
+    
+    /**
+     * @brief Check if flash sector is erased (all 0xFF)
+     * @param offset Sector offset
+     * @param length Sector length
+     * @return true if sector is erased
+     */
+    bool isSectorErased(uint32_t offset, size_t length);
+    
 private:
     uint32_t flash_size_;        // Total flash size in bytes
+    FlashStats stats_;           // Operation statistics
     
     /**
      * @brief Get flash base address in memory map
      * @return Flash base address
      */
     const uint8_t* getFlashBase() const;
+    
+    /**
+     * @brief Perform low-level write operation
+     * @param offset Flash offset
+     * @param data Data to write
+     * @param length Data length
+     * @return FlashResult indicating success/failure
+     */
+    FlashResult performWrite(uint32_t offset, const uint8_t* data, size_t length);
+    
+    /**
+     * @brief Perform low-level erase operation
+     * @param offset Flash offset
+     * @param length Erase length
+     * @return FlashResult indicating success/failure
+     */
+    FlashResult performErase(uint32_t offset, size_t length);
+    
+    /**
+     * @brief Validate operation parameters
+     * @param offset Flash offset
+     * @param length Operation length
+     * @param require_page_align Require page alignment
+     * @param require_sector_align Require sector alignment
+     * @return FlashResult indicating validation result
+     */
+    FlashResult validateParams(uint32_t offset, size_t length, 
+                              bool require_page_align = false, 
+                              bool require_sector_align = false);
 };
