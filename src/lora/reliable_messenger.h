@@ -2,6 +2,7 @@
 
 #include "message.h"
 #include "sx1276.h"
+#include "../hal/logger.h"
 #include <map>
 
 // Retry configuration
@@ -146,6 +147,7 @@ private:
     uint16_t node_addr_;
     uint8_t next_seq_num_;
     std::map<uint8_t, PendingMessage> pending_messages_;
+    Logger logger_;
     
     /**
      * @brief Send a message immediately

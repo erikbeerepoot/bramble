@@ -6,6 +6,9 @@
 #include <queue>
 #include <map>
 
+// Configuration constants
+#define NODE_OFFLINE_TIMEOUT_MS  (15 * 60 * 1000)  // 15 minutes
+
 /**
  * @brief Routing table entry for node-to-node communication
  */
@@ -13,8 +16,10 @@ struct RouteEntry {
     uint16_t destination_address;    // Final destination
     uint16_t next_hop_address;       // Next hop (for multi-hop routing - future)
     uint32_t last_used_time;         // When route was last used
+    uint32_t last_online_time;       // When node was last seen online
     uint8_t hop_count;               // Number of hops to destination
     bool is_direct;                  // True if direct connection to destination
+    bool is_online;                  // Current online status
 };
 
 /**

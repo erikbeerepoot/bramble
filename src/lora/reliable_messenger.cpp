@@ -4,7 +4,7 @@
 #include <string.h>
 
 ReliableMessenger::ReliableMessenger(SX1276* lora, uint16_t node_addr)
-    : lora_(lora), node_addr_(node_addr) {
+    : lora_(lora), node_addr_(node_addr), logger_("ReliableMessenger") {
     
     // Use different sequence number ranges to prevent collisions
     // Hub uses 1-127, nodes (including unregistered) use 128-255
@@ -36,7 +36,7 @@ bool ReliableMessenger::sendActuatorCommand(uint16_t dst_addr, uint8_t actuator_
     );
     
     if (length == 0) {
-        printf("Failed to create actuator message\n");
+        logger_.error("Failed to create actuator message\n");
         return false;
     }
     
@@ -64,7 +64,7 @@ bool ReliableMessenger::sendSensorData(uint16_t dst_addr, uint8_t sensor_type,
     );
     
     if (length == 0) {
-        printf("Failed to create sensor message\n");
+        logger_.error("Failed to create sensor message\n");
         return false;
     }
     
@@ -87,7 +87,7 @@ bool ReliableMessenger::sendHeartbeat(uint16_t dst_addr, uint32_t uptime_seconds
     );
     
     if (length == 0) {
-        printf("Failed to create heartbeat message\n");
+        logger_.error("Failed to create heartbeat message\n");
         return false;
     }
     
@@ -110,11 +110,11 @@ bool ReliableMessenger::sendRegistrationRequest(uint16_t dst_addr, uint64_t devi
     );
     
     if (length == 0) {
-        printf("Failed to create registration message\n");
+        logger_.error("Failed to create registration message\n");
         return false;
     }
     
-    printf("Sending registration request to hub (device_id=0x%016llX)\n", device_id);
+    logger_.info("Sending registration request to hub (device_id=0x%016llX)\n", device_id);
     return send(buffer, length, RELIABLE);
 }
 
@@ -134,11 +134,11 @@ bool ReliableMessenger::sendRegistrationResponse(uint16_t dst_addr, uint64_t dev
     );
     
     if (length == 0) {
-        printf("Failed to create registration response message\n");
+        logger_.error("Failed to create registration response message\n");
         return false;
     }
     
-    printf("Sending registration response to 0x%04X (assigned_addr=0x%04X, status=%d)\n", 
+    logger_.info("Sending registration response to 0x%04X (assigned_addr=0x%04X, status=%d)\n", 
            dst_addr, assigned_addr, status);
     return send(buffer, length, RELIABLE);
 }
@@ -149,20 +149,20 @@ bool ReliableMessenger::send(const uint8_t* buffer, size_t length,
     
     // Send immediately
     if (!sendMessage(buffer, length)) {
-        printf("Failed to send message\n");
+        logger_.error("Failed to send message\n");
         return false;
     }
     
     // For BEST_EFFORT, we're done - fire and forget
     if (criticality == BEST_EFFORT) {
-        printf("Sent message (best effort)\n");
+        logger_.info("Sent message (best effort)\n");
         return true;
     }
     
     // For RELIABLE and CRITICAL, add to pending messages for ACK tracking
     Message msg;
     if (!MessageHandler::parseMessage(buffer, length, &msg)) {
-        printf("Failed to parse sent message for tracking\n");
+        logger_.error("Failed to parse sent message for tracking\n");
         return false;
     }
     
@@ -188,12 +188,6 @@ bool ReliableMessenger::send(const uint8_t* buffer, size_t length,
 bool ReliableMessenger::processIncomingMessage(const uint8_t* buffer, size_t length) {
     if (!buffer || length == 0) return false;
     
-    // Debug: Show raw sequence number from buffer before parsing
-    if (length >= MESSAGE_HEADER_SIZE) {  // Ensure we have a full header
-        printf("DEBUG: Raw message buffer seq_num byte = %d (at index %d)\n", 
-               buffer[MESSAGE_HEADER_SIZE-1], MESSAGE_HEADER_SIZE-1);
-    }
-    
     Message message;
     if (!MessageHandler::parseMessage(buffer, length, &message)) {
         printf("Failed to parse incoming message\n");
@@ -214,12 +208,9 @@ bool ReliableMessenger::processIncomingMessage(const uint8_t* buffer, size_t len
     
     // Handle any message that requires ACK based on flags
     if (MessageHandler::requiresAck(&message)) {
-        printf("Received %s message requiring ACK\n", 
+        logger_.info("Received %s message requiring ACK\n", 
                MessageHandler::isCritical(&message) ? "CRITICAL" : "RELIABLE");
-        
-        printf("DEBUG: Received message seq=%d from 0x%04X, sending ACK\n", 
-               message.header.seq_num, message.header.src_addr);
-        
+            
         // Send ACK back to sender
         sendAck(message.header.src_addr, message.header.seq_num, 0);
     }
@@ -228,7 +219,7 @@ bool ReliableMessenger::processIncomingMessage(const uint8_t* buffer, size_t len
     if (message.header.type == MSG_TYPE_ACTUATOR_CMD) {
         const ActuatorPayload* actuator = MessageHandler::getActuatorPayload(&message);
         if (actuator) {
-            printf("Received actuator command: type=%d, cmd=%d\n", 
+            logger_.info("Received actuator command: type=%d, cmd=%d\n", 
                    actuator->actuator_type, actuator->command);
             
             // TODO: Execute the actuator command here
@@ -241,7 +232,7 @@ bool ReliableMessenger::processIncomingMessage(const uint8_t* buffer, size_t len
     if (message.header.type == MSG_TYPE_SENSOR_DATA) {
         const SensorPayload* sensor = MessageHandler::getSensorPayload(&message);
         if (sensor) {
-            printf("Received sensor data: type=%d, len=%d\n", 
+            logger_.info("Received sensor data: type=%d, len=%d\n", 
                    sensor->sensor_type, sensor->data_length);
             return true;
         }
@@ -250,7 +241,7 @@ bool ReliableMessenger::processIncomingMessage(const uint8_t* buffer, size_t len
     if (message.header.type == MSG_TYPE_REGISTRATION) {
         const RegistrationPayload* reg_payload = MessageHandler::getRegistrationPayload(&message);
         if (reg_payload) {
-            printf("Received registration request: device_id=0x%016llX, type=%d, capabilities=0x%02X, name='%s'\n",
+            logger_.info("Received registration request: device_id=0x%016llX, type=%d, capabilities=0x%02X, name='%s'\n",
                    reg_payload->device_id, reg_payload->node_type, reg_payload->capabilities, reg_payload->device_name);
             
             // TODO: Handle registration request - this should be handled by hub logic
@@ -262,14 +253,14 @@ bool ReliableMessenger::processIncomingMessage(const uint8_t* buffer, size_t len
     if (message.header.type == MSG_TYPE_REG_RESPONSE) {
         const RegistrationResponsePayload* reg_response = MessageHandler::getRegistrationResponsePayload(&message);
         if (reg_response) {
-            printf("Received registration response: device_id=0x%016llX, assigned_addr=0x%04X, status=%d\n",
+            logger_.info("Received registration response: device_id=0x%016llX, assigned_addr=0x%04X, status=%d\n",
                    reg_response->device_id, reg_response->assigned_addr, reg_response->status);
             
             // TODO: Handle registration response - save assigned address if successful
             if (reg_response->status == REG_SUCCESS) {
-                printf("Registration successful! Assigned address: 0x%04X\n", reg_response->assigned_addr);
+                logger_.info("Registration successful! Assigned address: 0x%04X\n", reg_response->assigned_addr);
             } else {
-                printf("Registration failed with status: %d\n", reg_response->status);
+                logger_.error("Registration failed with status: %d\n", reg_response->status);
             }
             return true;
         }
@@ -304,7 +295,7 @@ void ReliableMessenger::update() {
             
             // For non-critical messages, give up after MAX_RETRIES
             if (!is_critical && pending.retry_count >= MAX_RETRIES) {
-                printf("Message seq=%d failed after %d retries, giving up\n", 
+                logger_.error("Message seq=%d failed after %d retries, giving up\n", 
                        pending.seq_num, MAX_RETRIES);
                 it = pending_messages_.erase(it);
                 continue;
@@ -312,7 +303,7 @@ void ReliableMessenger::update() {
             
             // For critical messages, keep trying but with longer delays
             if (is_critical && pending.retry_count >= MAX_RETRIES) {
-                printf("CRITICAL message seq=%d still failing (attempt %d), continuing...\n", 
+                logger_.error("CRITICAL message seq=%d still failing (attempt %d), continuing...\n", 
                        pending.seq_num, pending.retry_count + 1);
             }
             
@@ -321,11 +312,11 @@ void ReliableMessenger::update() {
             pending.last_send_time = current_time;
             pending.next_retry_time = current_time + calculateRetryDelay(pending.retry_count);
             
-            printf("Retrying message seq=%d (attempt %d/%d)\n", 
+            logger_.error("Retrying message seq=%d (attempt %d/%d)\n", 
                    pending.seq_num, pending.retry_count, MAX_RETRIES);
             
             if (!sendMessage(pending.buffer, pending.length)) {
-                printf("Failed to resend message seq=%d\n", pending.seq_num);
+                logger_.error("Failed to resend message seq=%d\n", pending.seq_num);
             }
         }
         
@@ -365,17 +356,15 @@ void ReliableMessenger::handleAck(const AckPayload* ack_payload) {
     auto it = pending_messages_.find(ack_payload->ack_seq_num);
     if (it != pending_messages_.end()) {
         it->second.ack_received = true;
-        printf("Received ACK for seq=%d, status=%d\n", 
+        logger_.info("Received ACK for seq=%d, status=%d\n", 
                ack_payload->ack_seq_num, ack_payload->status);
     } else {
-        printf("Received ACK for unknown seq=%d\n", ack_payload->ack_seq_num);
+        logger_.error("Received ACK for unknown seq=%d\n", ack_payload->ack_seq_num);
     }
 }
 
 void ReliableMessenger::sendAck(uint16_t src_addr, uint8_t seq_num, uint8_t status) {
     uint8_t my_seq = getNextSequenceNumber();
-    
-    printf("DEBUG: Creating ACK - my_seq=%d, ack_seq_num=%d, to=0x%04X\n", my_seq, seq_num, src_addr);
     
     uint8_t buffer[MESSAGE_MAX_SIZE];
     size_t length = MessageHandler::createAckMessage(
@@ -386,9 +375,9 @@ void ReliableMessenger::sendAck(uint16_t src_addr, uint8_t seq_num, uint8_t stat
     
     if (length > 0) {
         sendMessage(buffer, length);
-        printf("Sent ACK for seq=%d to 0x%04X\n", seq_num, src_addr);
+        logger_.info("Sent ACK for seq=%d to 0x%04X\n", seq_num, src_addr);
     } else {
-        printf("Failed to create ACK message\n");
+        logger_.error("Failed to create ACK message\n");
     }
 }
 
@@ -420,7 +409,7 @@ uint8_t ReliableMessenger::getNextSequenceNumber() {
 }
 
 void ReliableMessenger::updateNodeAddress(uint16_t new_addr) {
-    printf("Updating node address from 0x%04X to 0x%04X\n", node_addr_, new_addr);
+    logger_.info("Updating node address from 0x%04X to 0x%04X\n", node_addr_, new_addr);
     node_addr_ = new_addr;
     
     // Note: We keep the same sequence number range (128-255) for all non-hub nodes

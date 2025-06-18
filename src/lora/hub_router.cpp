@@ -74,18 +74,31 @@ bool HubRouter::forwardMessage(const uint8_t* buffer, size_t length,
 }
 
 void HubRouter::updateRouteOnline(uint16_t node_address) {
-    printf("Node 0x%04X came online\n", node_address);
+    uint32_t current_time = getCurrentTime();
+    
+    // Get or create routing table entry
+    RouteEntry& route = routing_table_[node_address];
+    
+    // Check if this is a transition from offline to online
+    bool was_offline = !route.is_online || 
+                      (current_time - route.last_online_time > NODE_OFFLINE_TIMEOUT_MS);
+    
+    // Only log "came online" if node was previously offline or unknown
+    if (was_offline || route.last_online_time == 0) {
+        printf("Node 0x%04X came online\n", node_address);
+        
+        // Process any queued messages for this node since it's now available
+        processQueuedMessages();
+    }
     
     // Update routing table
-    RouteEntry& route = routing_table_[node_address];
     route.destination_address = node_address;
     route.next_hop_address = node_address;  // Direct connection
-    route.last_used_time = getCurrentTime();
+    route.last_used_time = current_time;
+    route.last_online_time = current_time;
     route.hop_count = 1;
     route.is_direct = true;
-    
-    // Process any queued messages for this node
-    processQueuedMessages();
+    route.is_online = true;
 }
 
 void HubRouter::updateRouteOffline(uint16_t node_address) {
@@ -181,6 +194,16 @@ uint32_t HubRouter::clearOldRoutes(uint32_t current_time, uint32_t max_age_ms) {
     
     auto it = routing_table_.begin();
     while (it != routing_table_.end()) {
+        // Check if node has been inactive for the offline timeout period
+        bool should_mark_offline = (current_time - it->second.last_online_time > NODE_OFFLINE_TIMEOUT_MS);
+        
+        if (should_mark_offline && it->second.is_online) {
+            printf("Node 0x%04X went offline (inactive for %d minutes)\n", 
+                   it->first, NODE_OFFLINE_TIMEOUT_MS / (60 * 1000));
+            it->second.is_online = false;
+        }
+        
+        // Only remove very old routes (much older than offline timeout)
         if (current_time - it->second.last_used_time > max_age_ms) {
             printf("Clearing old route to 0x%04X\n", it->first);
             it = routing_table_.erase(it);
