@@ -43,6 +43,7 @@ add_executable(bramble
     bramble.cpp 
     src/lora/sx1276.cpp
     src/lora/message.cpp
+    src/lora/reliable_messenger.cpp
     src/hal/neopixel.cpp
 )
 

@@ -5,6 +5,7 @@
 #include "hardware/clocks.h"
 #include "lora/sx1276.h"
 #include "lora/message.h"
+#include "lora/reliable_messenger.h"
 #include "hal/neopixel.h"
 
 // SPI Defines - Feather RP2040 RFM95 LoRa board
@@ -74,17 +75,17 @@ int main()
     
     printf("Starting LoRa communication test...\n");
     
-    // Test message creation and transmission
-    uint8_t msg_buffer[MESSAGE_MAX_SIZE];
-    uint8_t test_data[] = {0x12, 0x34, 0x56, 0x78};
-    uint8_t seq_num = 0;
+    // Initialize reliable messenger
+    ReliableMessenger messenger(&lora, 0x0001);  // Node address 0x0001
     
-    static uint32_t last_tx_time = 0;
-    static bool rx_mode = true;
+    // Test data
+    uint8_t test_data[] = {0x12, 0x34, 0x56, 0x78};
+    static uint32_t last_sensor_time = 0;
+    static uint32_t last_actuator_time = 0;
     
     // Start in receive mode
     lora.startReceive();
-    printf("Starting in receive mode...\n");
+    printf("Starting reliable messaging test...\n");
     
     while (true) {
         // Status LED - cycle through colors during operation
@@ -95,69 +96,51 @@ int main()
         
         uint32_t current_time = to_ms_since_boot(get_absolute_time());
         
-        // Send message every 5 seconds
-        if (current_time - last_tx_time >= 5000) {
-            rx_mode = false;
+        // Send different types of messages to test criticality levels
+        static uint32_t last_critical_time = 0;
+        
+        // Send sensor data every 15 seconds (best effort - fire and forget)
+        if (current_time - last_sensor_time >= 15000) {
+            printf("--- Sending BEST_EFFORT sensor data ---\n");
+            messenger.sendSensorData(0x0000, SENSOR_TEMPERATURE, test_data, sizeof(test_data), BEST_EFFORT);
+            last_sensor_time = current_time;
+        }
+        
+        // Send reliable sensor data every 20 seconds (for critical feedback loops)
+        if (current_time - last_actuator_time >= 20000) {
+            printf("--- Sending RELIABLE moisture sensor reading (pre-watering check) ---\n");
+            uint8_t moisture_data[] = {0x45, 0x67};  // Mock moisture reading
+            messenger.sendSensorData(0x0000, SENSOR_SOIL_MOISTURE, moisture_data, sizeof(moisture_data), RELIABLE);
+            last_actuator_time = current_time;
+        }
+        
+        // Send critical actuator command every 25 seconds
+        if (current_time - last_critical_time >= 25000) {
+            printf("--- Sending CRITICAL valve command (emergency shutoff) ---\n");
+            uint8_t valve_params[] = {0x01};  // Valve ID 1
+            messenger.sendActuatorCommand(0x0002, ACTUATOR_VALVE, CMD_TURN_OFF, 
+                                        valve_params, sizeof(valve_params), CRITICAL);
+            last_critical_time = current_time;
+        }
+        
+        // Check for incoming messages
+        uint8_t rx_buffer[MESSAGE_MAX_SIZE];
+        int rx_len = lora.receive(rx_buffer, sizeof(rx_buffer));
+        
+        if (rx_len > 0) {
+            printf("Received message (len=%d, RSSI=%d dBm, SNR=%.1f dB)\n", 
+                   rx_len, lora.getRssi(), lora.getSnr());
             
-            // Create a test sensor message
-            size_t msg_len = MessageHandler::createSensorMessage(
-                0x0001,  // Source: Node 1
-                0x0000,  // Destination: Hub
-                seq_num++,
-                SENSOR_TEMPERATURE,
-                test_data,
-                sizeof(test_data),
-                msg_buffer
-            );
-            
-            if (msg_len > 0) {
-                printf("Sending message (seq=%d, len=%d)...\n", seq_num-1, msg_len);
-                
-                if (lora.send(msg_buffer, msg_len)) {
-                    // Wait for transmission to complete
-                    while (!lora.isTxDone()) {
-                        sleep_ms(10);
-                    }
-                    printf("Message sent successfully!\n");
-                } else {
-                    printf("Failed to send message!\n");
-                }
-            }
-            
-            last_tx_time = current_time;
-            
-            // Return to receive mode
+            // Process with reliable messenger (handles ACKs automatically)
+            messenger.processIncomingMessage(rx_buffer, rx_len);
+        } else if (rx_len < 0) {
+            printf("Receive error (CRC or buffer issue)\n");
             lora.startReceive();
-            rx_mode = true;
-            printf("Back to receive mode\n");
         }
         
-        // Check for incoming messages (only when in RX mode)
-        if (rx_mode) {
-            uint8_t rx_buffer[MESSAGE_MAX_SIZE];
-            int rx_len = lora.receive(rx_buffer, sizeof(rx_buffer));
-            
-            if (rx_len > 0) {
-                printf("Received message (len=%d, RSSI=%d dBm, SNR=%.1f dB)\n", 
-                       rx_len, lora.getRssi(), lora.getSnr());
-                
-                // Parse the message
-                Message parsed_msg;
-                if (MessageHandler::parseMessage(rx_buffer, rx_len, &parsed_msg)) {
-                    printf("  From: 0x%04X, To: 0x%04X, Type: %d, Seq: %d\n",
-                           parsed_msg.header.src_addr, parsed_msg.header.dst_addr,
-                           parsed_msg.header.type, parsed_msg.header.seq_num);
-                }
-                
-                // Stay in receive mode after receiving
-                lora.startReceive();
-            } else if (rx_len < 0) {
-                printf("Receive error (CRC or buffer issue)\n");
-                // Restart receive mode on error
-                lora.startReceive();
-            }
-        }
+        // Update retry timers
+        messenger.update();
         
-        sleep_ms(100);  // Small delay for main loop
+        sleep_ms(100);  // Main loop delay
     }
 }

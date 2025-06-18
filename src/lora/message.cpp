@@ -4,13 +4,13 @@
 
 size_t MessageHandler::createSensorMessage(uint16_t src_addr, uint16_t dst_addr, uint8_t seq_num,
                                           uint8_t sensor_type, const uint8_t* data, uint8_t data_length,
-                                          uint8_t* buffer) {
+                                          uint8_t flags, uint8_t* buffer) {
     if (!buffer || !data || data_length > 32) {
         return 0;
     }
     
     Message* msg = (Message*)buffer;
-    createHeader(MSG_TYPE_SENSOR_DATA, src_addr, dst_addr, seq_num, &msg->header);
+    createHeader(MSG_TYPE_SENSOR_DATA, flags, src_addr, dst_addr, seq_num, &msg->header);
     
     SensorPayload* payload = (SensorPayload*)msg->payload;
     payload->sensor_type = sensor_type;
@@ -23,13 +23,13 @@ size_t MessageHandler::createSensorMessage(uint16_t src_addr, uint16_t dst_addr,
 size_t MessageHandler::createActuatorMessage(uint16_t src_addr, uint16_t dst_addr, uint8_t seq_num,
                                             uint8_t actuator_type, uint8_t command,
                                             const uint8_t* params, uint8_t param_length,
-                                            uint8_t* buffer) {
+                                            uint8_t flags, uint8_t* buffer) {
     if (!buffer || param_length > 16) {
         return 0;
     }
     
     Message* msg = (Message*)buffer;
-    createHeader(MSG_TYPE_ACTUATOR_CMD, src_addr, dst_addr, seq_num, &msg->header);
+    createHeader(MSG_TYPE_ACTUATOR_CMD, flags, src_addr, dst_addr, seq_num, &msg->header);
     
     ActuatorPayload* payload = (ActuatorPayload*)msg->payload;
     payload->actuator_type = actuator_type;
@@ -52,7 +52,7 @@ size_t MessageHandler::createHeartbeatMessage(uint16_t src_addr, uint16_t dst_ad
     }
     
     Message* msg = (Message*)buffer;
-    createHeader(MSG_TYPE_HEARTBEAT, src_addr, dst_addr, seq_num, &msg->header);
+    createHeader(MSG_TYPE_HEARTBEAT, 0, src_addr, dst_addr, seq_num, &msg->header);
     
     HeartbeatPayload* payload = (HeartbeatPayload*)msg->payload;
     payload->battery_level = battery_level;
@@ -72,7 +72,7 @@ size_t MessageHandler::createRegistrationMessage(uint16_t src_addr, uint16_t dst
     }
     
     Message* msg = (Message*)buffer;
-    createHeader(MSG_TYPE_REGISTRATION, src_addr, dst_addr, seq_num, &msg->header);
+    createHeader(MSG_TYPE_REGISTRATION, 0, src_addr, dst_addr, seq_num, &msg->header);
     
     RegistrationPayload* payload = (RegistrationPayload*)msg->payload;
     payload->node_type = node_type;
@@ -98,7 +98,7 @@ size_t MessageHandler::createAckMessage(uint16_t src_addr, uint16_t dst_addr, ui
     }
     
     Message* msg = (Message*)buffer;
-    createHeader(MSG_TYPE_ACK, src_addr, dst_addr, seq_num, &msg->header);
+    createHeader(MSG_TYPE_ACK, 0, src_addr, dst_addr, seq_num, &msg->header);
     
     AckPayload* payload = (AckPayload*)msg->payload;
     payload->ack_seq_num = ack_seq_num;
@@ -200,11 +200,22 @@ const AckPayload* MessageHandler::getAckPayload(const Message* message) {
     return (const AckPayload*)message->payload;
 }
 
-void MessageHandler::createHeader(uint8_t type, uint16_t src_addr, uint16_t dst_addr,
+void MessageHandler::createHeader(uint8_t type, uint8_t flags, uint16_t src_addr, uint16_t dst_addr,
                                  uint8_t seq_num, MessageHeader* header) {
     header->magic = MESSAGE_MAGIC;
     header->type = type;
+    header->flags = flags;
     header->src_addr = src_addr;
     header->dst_addr = dst_addr;
     header->seq_num = seq_num;
+}
+
+bool MessageHandler::requiresAck(const Message* message) {
+    if (!message) return false;
+    return (message->header.flags & MSG_FLAG_RELIABLE) != 0;
+}
+
+bool MessageHandler::isCritical(const Message* message) {
+    if (!message) return false;
+    return (message->header.flags & MSG_FLAG_CRITICAL) != 0;
 }

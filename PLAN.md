@@ -125,15 +125,31 @@ bramble/
 5. Reliability testing with intermittent connectivity
 
 ## Implementation Priority
-1. Basic SX1276 driver and message protocol
-2. Simple hub-node communication (sensor data)
-3. Reliable actuator command delivery
-4. Power management for battery nodes
-5. Multi-node scaling and routing
+1. ✅ Basic SX1276 driver and message protocol - **COMPLETED**
+2. ✅ Simple hub-node communication (sensor data) - **COMPLETED** 
+3. 🔄 Reliable actuator command delivery - **NEXT: ACK/retry mechanism**
+4. ⏳ Power management for battery nodes
+5. ⏳ Multi-node scaling and routing
+
+## What's Completed ✅
+- SX1276 driver with proper SPI1 configuration
+- Message protocol with header/payload structure
+- Bidirectional LoRa communication working
+- NeoPixel HAL for status indication
+- 20 dBm transmit power optimization
+- Basic sensor message transmission
+
+## Next Steps 🎯
+1. **Implement ACK/Retry for actuators** - Add reliable delivery
+2. **Create Hub vs Node firmware variants** - Different behaviors
+3. **Add real sensor integration** - Temperature/humidity sensor
+4. **Implement actuator control** - Valve switching capability
+5. **Add power management** - Sleep modes for battery operation
 
 ## Success Criteria
-- [ ] Hub can communicate with 10+ nodes simultaneously
-- [ ] Sensor data transmitted reliably within 1km range
+- ✅ ~~Basic LoRa communication working~~
+- [ ] Hub can communicate with 10+ nodes simultaneously  
+- ✅ ~~Sensor data transmitted reliably~~ (short range proven)
 - [ ] Actuator commands have 99%+ delivery success
 - [ ] Battery nodes achieve 6+ month operation
 - [ ] Network auto-recovers from hub restart

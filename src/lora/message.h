@@ -9,6 +9,12 @@
 #define MESSAGE_MAX_PAYLOAD     247
 #define MESSAGE_MAX_SIZE        (MESSAGE_HEADER_SIZE + MESSAGE_MAX_PAYLOAD)
 
+// Message flags
+#define MSG_FLAG_RELIABLE       0x01  // Requires ACK
+#define MSG_FLAG_CRITICAL       0x02  // Critical message (persistent retry)
+#define MSG_FLAG_PRIORITY       0x04  // High priority message
+#define MSG_FLAG_BROADCAST      0x08  // Broadcast message (no ACK expected)
+
 // Address definitions
 #define ADDRESS_HUB             0x0000
 #define ADDRESS_BROADCAST       0xFFFF
@@ -49,12 +55,20 @@ enum ActuatorCommand {
     CMD_SET_LEVEL           = 0x03  // For variable speed/position actuators
 };
 
+// Delivery criticality levels
+enum DeliveryCriticality {
+    BEST_EFFORT = 0,        // Fire and forget (default)
+    RELIABLE = 1,           // ACK required, limited retries
+    CRITICAL = 2            // ACK required, persistent retry
+};
+
 /**
  * @brief Message header structure
  */
 struct __attribute__((packed)) MessageHeader {
     uint16_t magic;         // Magic number (0xBEEF)
     uint8_t  type;          // Message type
+    uint8_t  flags;         // Message flags (reliability, priority, etc.)
     uint16_t src_addr;      // Source address
     uint16_t dst_addr;      // Destination address  
     uint8_t  seq_num;       // Sequence number
@@ -128,12 +142,13 @@ public:
      * @param sensor_type Type of sensor
      * @param data Sensor data
      * @param data_length Length of sensor data
+     * @param flags Message flags (reliability, priority, etc.)
      * @param buffer Output buffer (must be at least MESSAGE_MAX_SIZE bytes)
      * @return Length of created message, 0 on error
      */
     static size_t createSensorMessage(uint16_t src_addr, uint16_t dst_addr, uint8_t seq_num,
                                      uint8_t sensor_type, const uint8_t* data, uint8_t data_length,
-                                     uint8_t* buffer);
+                                     uint8_t flags, uint8_t* buffer);
     
     /**
      * @brief Create an actuator command message
@@ -144,13 +159,14 @@ public:
      * @param command Command to execute
      * @param params Command parameters
      * @param param_length Length of parameters
+     * @param flags Message flags (reliability, priority, etc.)
      * @param buffer Output buffer (must be at least MESSAGE_MAX_SIZE bytes)
      * @return Length of created message, 0 on error
      */
     static size_t createActuatorMessage(uint16_t src_addr, uint16_t dst_addr, uint8_t seq_num,
                                        uint8_t actuator_type, uint8_t command, 
                                        const uint8_t* params, uint8_t param_length,
-                                       uint8_t* buffer);
+                                       uint8_t flags, uint8_t* buffer);
     
     /**
      * @brief Create a heartbeat message
@@ -250,16 +266,31 @@ public:
      * @return Pointer to ACK payload, NULL if not an ACK message
      */
     static const AckPayload* getAckPayload(const Message* message);
+    
+    /**
+     * @brief Helper: Check if message requires ACK
+     * @param message Message to check
+     * @return true if ACK required
+     */
+    static bool requiresAck(const Message* message);
+    
+    /**
+     * @brief Helper: Check if message is critical
+     * @param message Message to check  
+     * @return true if critical priority
+     */
+    static bool isCritical(const Message* message);
 
 private:
     /**
      * @brief Create message header
      * @param type Message type
+     * @param flags Message flags
      * @param src_addr Source address
      * @param dst_addr Destination address
      * @param seq_num Sequence number
      * @param header Output header structure
      */
-    static void createHeader(uint8_t type, uint16_t src_addr, uint16_t dst_addr, 
+    static void createHeader(uint8_t type, uint8_t flags, uint16_t src_addr, uint16_t dst_addr, 
                             uint8_t seq_num, MessageHeader* header);
 };
