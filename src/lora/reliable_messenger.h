@@ -56,6 +56,20 @@ public:
     bool sendSensorData(uint16_t dst_addr, uint8_t sensor_type, 
                        const uint8_t* data, uint8_t data_length,
                        DeliveryCriticality criticality = BEST_EFFORT);
+    
+    /**
+     * @brief Send heartbeat message with node status
+     * @param dst_addr Destination address (usually hub)
+     * @param uptime_seconds Node uptime in seconds
+     * @param battery_level Battery percentage (0-100, 255=external power)
+     * @param signal_strength Last received RSSI (absolute value)
+     * @param active_sensors Bitmask of active sensors
+     * @param error_flags Error status flags
+     * @return true if heartbeat sent successfully
+     */
+    bool sendHeartbeat(uint16_t dst_addr, uint32_t uptime_seconds, 
+                      uint8_t battery_level, uint8_t signal_strength,
+                      uint8_t active_sensors, uint8_t error_flags);
                        
     /**
      * @brief Generic send method for any message type

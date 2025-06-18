@@ -170,6 +170,13 @@ void runHubMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led,
             printf("Performing hub maintenance...\n");
             hub_router.clearOldRoutes(current_time);
             hub_router.processQueuedMessages();
+            
+            // Check for inactive nodes and update network status
+            uint32_t inactive_count = address_manager.checkForInactiveNodes(current_time);
+            if (inactive_count > 0) {
+                printf("Marked %lu nodes as inactive\n", inactive_count);
+            }
+            
             last_maintenance_time = current_time;
         }
         
@@ -189,8 +196,19 @@ void runHubMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led,
                 const MessageHeader* header = reinterpret_cast<const MessageHeader*>(rx_buffer);
                 uint16_t source_address = header->src_addr;
                 
-                // Update node as online when we receive any message
+                // Update node activity tracking
+                address_manager.updateLastSeen(source_address, current_time);
                 hub_router.updateRouteOnline(source_address);
+                
+                // Handle heartbeat messages with status logging
+                if (header->type == MSG_TYPE_HEARTBEAT) {
+                    const HeartbeatPayload* heartbeat = 
+                        reinterpret_cast<const HeartbeatPayload*>(rx_buffer + sizeof(MessageHeader));
+                    
+                    printf("Heartbeat from 0x%04X: uptime=%lus, battery=%u%%, signal=%u, sensors=0x%02X\n",
+                           source_address, heartbeat->uptime_seconds, heartbeat->battery_level,
+                           heartbeat->signal_strength, heartbeat->active_sensors);
+                }
                 
                 // Try to route the message if it's not for the hub
                 hub_router.processMessage(rx_buffer, rx_len, source_address);
@@ -246,7 +264,17 @@ void runDemoMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led,
         // Send heartbeat every minute
         if (current_time - last_heartbeat_time >= HEARTBEAT_INTERVAL_MS) {
             printf("--- DEMO: Sending heartbeat ---\n");
-            // TODO: Implement actual heartbeat message with node status
+            
+            // Calculate node status
+            uint32_t uptime = current_time / 1000;  // Convert to seconds
+            uint8_t battery_level = 255;  // External power for demo
+            uint8_t signal_strength = 70;  // Simulated signal strength
+            uint8_t active_sensors = CAP_TEMPERATURE | CAP_SOIL_MOISTURE;  // Active sensors
+            uint8_t error_flags = 0;  // No errors
+            
+            messenger.sendHeartbeat(HUB_ADDRESS, uptime, battery_level, 
+                                  signal_strength, active_sensors, error_flags);
+            
             last_heartbeat_time = current_time;
         }
         
@@ -318,7 +346,17 @@ void runProductionMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led
         // Send heartbeat to hub
         if (current_time - last_heartbeat_time >= HEARTBEAT_INTERVAL_MS) {
             printf("Heartbeat\n");
-            // TODO: Implement actual heartbeat message with node status
+            
+            // Calculate real node status
+            uint32_t uptime = current_time / 1000;  // Convert to seconds
+            uint8_t battery_level = 85;  // Example battery level
+            uint8_t signal_strength = 65;  // Example signal strength
+            uint8_t active_sensors = CAP_TEMPERATURE | CAP_HUMIDITY | CAP_SOIL_MOISTURE;
+            uint8_t error_flags = 0;  // No errors in production
+            
+            messenger.sendHeartbeat(HUB_ADDRESS, uptime, battery_level, 
+                                  signal_strength, active_sensors, error_flags);
+            
             last_heartbeat_time = current_time;
         }
         

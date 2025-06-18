@@ -126,10 +126,11 @@ struct __attribute__((packed)) ActuatorPayload {
  * @brief Heartbeat payload
  */
 struct __attribute__((packed)) HeartbeatPayload {
-    uint8_t  battery_level; // Battery level (0-100%)
-    uint8_t  signal_quality;// Signal quality (0-100%)
-    uint32_t uptime_seconds;// Uptime in seconds
-    uint8_t  status_flags;  // Status flags
+    uint32_t uptime_seconds;    // How long node has been running
+    uint8_t  battery_level;     // Battery percentage (0-100, 255=external power)
+    uint8_t  signal_strength;   // Last received RSSI (absolute value)
+    uint8_t  active_sensors;    // Bitmask of active sensors
+    uint8_t  error_flags;       // Error status flags
 };
 
 /**

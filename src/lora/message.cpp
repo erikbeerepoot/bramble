@@ -55,10 +55,11 @@ size_t MessageHandler::createHeartbeatMessage(uint16_t src_addr, uint16_t dst_ad
     createHeader(MSG_TYPE_HEARTBEAT, 0, src_addr, dst_addr, seq_num, &msg->header);
     
     HeartbeatPayload* payload = (HeartbeatPayload*)msg->payload;
-    payload->battery_level = battery_level;
-    payload->signal_quality = signal_quality;
     payload->uptime_seconds = uptime_seconds;
-    payload->status_flags = status_flags;
+    payload->battery_level = battery_level;
+    payload->signal_strength = signal_quality;  // Using signal_quality param as signal_strength
+    payload->active_sensors = 0;  // Default to no sensors active
+    payload->error_flags = status_flags;
     
     return MESSAGE_HEADER_SIZE + sizeof(HeartbeatPayload);
 }

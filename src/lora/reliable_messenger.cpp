@@ -63,6 +63,29 @@ bool ReliableMessenger::sendSensorData(uint16_t dst_addr, uint8_t sensor_type,
     return send(buffer, length, criticality);
 }
 
+bool ReliableMessenger::sendHeartbeat(uint16_t dst_addr, uint32_t uptime_seconds, 
+                                     uint8_t battery_level, uint8_t signal_strength,
+                                     uint8_t active_sensors, uint8_t error_flags) {
+    if (!lora_) return false;
+    
+    uint8_t seq_num = next_seq_num_++;
+    
+    // Create the heartbeat message (heartbeats are typically best effort)
+    uint8_t buffer[MESSAGE_MAX_SIZE];
+    size_t length = MessageHandler::createHeartbeatMessage(
+        node_addr_, dst_addr, seq_num,
+        battery_level, signal_strength, uptime_seconds, error_flags,
+        buffer
+    );
+    
+    if (length == 0) {
+        printf("Failed to create heartbeat message\n");
+        return false;
+    }
+    
+    return send(buffer, length, BEST_EFFORT);
+}
+
 bool ReliableMessenger::send(const uint8_t* buffer, size_t length, 
                             DeliveryCriticality criticality) {
     if (!lora_ || !buffer || length == 0) return false;
