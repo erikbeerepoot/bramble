@@ -29,7 +29,7 @@ static Logger main_logger("MAIN");
 #define PIN_NEOPIXEL 4
 
 // Application configuration
-#define NODE_ADDRESS            ADDRESS_HUB      // Set to ADDRESS_HUB for hub mode, or specific address for node
+#define IS_HUB                  true        // Set to true for hub, false for node
 #define HUB_ADDRESS             ADDRESS_HUB      // Hub/gateway address
 #define SENSOR_INTERVAL_MS      30000       // Send sensor data every 30 seconds
 #define HEARTBEAT_INTERVAL_MS   60000       // Send heartbeat every minute
@@ -37,6 +37,9 @@ static Logger main_logger("MAIN");
 
 // Demo mode - set to false for production deployment
 #define DEMO_MODE               true
+
+// Automatically determine node address based on role
+#define NODE_ADDRESS            (IS_HUB ? ADDRESS_HUB : ADDRESS_UNREGISTERED)
 
 // Forward declarations
 void runDemoMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led, 
@@ -82,7 +85,7 @@ int main()
     lora.startReceive();
     
     // Check if this device should run as hub
-    if (NODE_ADDRESS == ADDRESS_HUB) {
+    if (IS_HUB) {
         printf("Starting as HUB - managing network and routing\n");
         
         // Initialize hub components
@@ -99,11 +102,29 @@ int main()
         }
     } else {
         // Run as regular node
+        main_logger.info("Starting as NODE - will auto-register with hub");
+        
+        // Initialize node configuration for potential address assignment
+        Flash flash_hal;
+        NodeConfigManager config_manager(flash_hal);
+        
+        // Check if we have a saved address from previous registration
+        NodeConfiguration saved_config;
+        if (config_manager.loadConfiguration(saved_config) && 
+            saved_config.assigned_address != ADDRESS_UNREGISTERED) {
+            
+            main_logger.info("Using saved address 0x%04X", saved_config.assigned_address);
+            // TODO: Update messenger to use saved address instead of ADDRESS_UNREGISTERED
+        } else {
+            main_logger.info("No saved address - will register with hub");
+            // TODO: Implement registration request to hub
+        }
+        
         if (DEMO_MODE) {
-            printf("Starting NODE DEMO mode - sending test messages\n");
+            main_logger.info("Starting NODE DEMO mode - sending test messages");
             runDemoMode(messenger, lora, led);
         } else {
-            printf("Starting NODE PRODUCTION mode - real sensor monitoring\n");
+            main_logger.info("Starting NODE PRODUCTION mode - real sensor monitoring");
             runProductionMode(messenger, lora, led);
         }
     }

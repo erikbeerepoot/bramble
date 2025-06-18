@@ -124,9 +124,13 @@ rm -rf build && cmake -B build && cmake --build build
 ### Node vs Hub Mode
 Set in `bramble.cpp`:
 ```cpp
-#define NODE_ADDRESS    ADDRESS_HUB      // Hub mode
-#define NODE_ADDRESS    0x0001           // Node mode
+#define IS_HUB          true    // Hub mode
+#define IS_HUB          false   // Node mode (auto-registers with hub)
 ```
+
+**Node Address Assignment**:
+- **Hub**: Uses `ADDRESS_HUB` (0x0000) 
+- **Nodes**: Start with `ADDRESS_UNREGISTERED` (0xFFFF), then auto-register to get assigned addresses (0x0001, 0x0002, etc.)
 
 ### Demo vs Production Mode
 ```cpp
