@@ -9,6 +9,10 @@
 #define MESSAGE_MAX_PAYLOAD     247
 #define MESSAGE_MAX_SIZE        (MESSAGE_HEADER_SIZE + MESSAGE_MAX_PAYLOAD)
 
+// Payload data limits
+#define MAX_SENSOR_DATA_LENGTH  32      // Maximum sensor data array size
+#define MAX_ACTUATOR_PARAMS     16      // Maximum actuator parameters array size
+
 // Message flags
 #define MSG_FLAG_RELIABLE       0x01  // Requires ACK
 #define MSG_FLAG_CRITICAL       0x02  // Critical message (persistent retry)
@@ -81,7 +85,8 @@ enum RegistrationStatus {
     REG_ERROR_FULL          = 0x01,  // Network full (no addresses available)
     REG_ERROR_DUPLICATE     = 0x02,  // Device ID already registered
     REG_ERROR_INVALID       = 0x03,  // Invalid registration data
-    REG_ERROR_HUB_BUSY      = 0x04   // Hub temporarily unavailable
+    REG_ERROR_HUB_BUSY      = 0x04,  // Hub temporarily unavailable
+    REG_ERROR_INTERNAL      = 0x05   // Internal hub error
 };
 
 // Delivery criticality levels
@@ -298,6 +303,15 @@ public:
      * @return true if header is valid
      */
     static bool validateHeader(const MessageHeader* header);
+    
+    /**
+     * @brief Validate message payload content
+     * @param header Message header (for type information)
+     * @param payload Payload data to validate
+     * @param payload_length Length of payload data
+     * @return true if payload is valid for the message type
+     */
+    static bool validatePayload(const MessageHeader* header, const uint8_t* payload, size_t payload_length);
     
     /**
      * @brief Get sensor payload from message

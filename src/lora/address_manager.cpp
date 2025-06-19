@@ -13,6 +13,26 @@ AddressManager::AddressManager() : next_available_address_(ADDRESS_MIN_NODE) {
 
 uint16_t AddressManager::registerNode(uint64_t device_id, uint8_t node_type, uint8_t capabilities,
                                       uint16_t firmware_version, const char* device_name) {
+    // Input validation
+    if (device_id == 0) {
+        logger.error("Invalid device_id: cannot be zero");
+        return 0x0000;
+    }
+    
+    if (node_type < NODE_TYPE_SENSOR || node_type > NODE_TYPE_REPEATER) {
+        logger.error("Invalid node_type: %d", node_type);
+        return 0x0000;
+    }
+    
+    if (device_name) {
+        // Check for null termination within reasonable length
+        size_t name_len = strnlen(device_name, 32); // Check up to 32 chars
+        if (name_len >= 32) {
+            logger.error("Device name too long or not null-terminated");
+            return 0x0000;
+        }
+    }
+    
     // Check if device is already registered
     if (isDeviceRegistered(device_id)) {
         uint16_t existing_address = getDeviceAddress(device_id);

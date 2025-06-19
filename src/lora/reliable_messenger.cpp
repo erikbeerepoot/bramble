@@ -167,6 +167,11 @@ bool ReliableMessenger::send(const uint8_t* buffer, size_t length,
     }
     
     PendingMessage pending;
+    // Validate buffer size before copying
+    if (length > sizeof(pending.buffer)) {
+        logger_.error("Message too large for pending buffer (%zu > %zu)", length, sizeof(pending.buffer));
+        return false;
+    }
     memcpy(pending.buffer, buffer, length);
     pending.length = length;
     pending.seq_num = msg.header.seq_num;

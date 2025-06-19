@@ -19,7 +19,13 @@ const char* MessageHandler::getMessageTypeName(uint8_t type) {
 size_t MessageHandler::createSensorMessage(uint16_t src_addr, uint16_t dst_addr, uint8_t seq_num,
                                           uint8_t sensor_type, const uint8_t* data, uint8_t data_length,
                                           uint8_t flags, uint8_t* buffer) {
-    if (!buffer || !data || data_length > 32) {
+    if (!buffer || !data || data_length > MAX_SENSOR_DATA_LENGTH) {
+        return 0;
+    }
+    
+    // Validate total message size
+    size_t total_size = MESSAGE_HEADER_SIZE + sizeof(SensorPayload) + data_length;
+    if (total_size > MESSAGE_MAX_SIZE) {
         return 0;
     }
     
@@ -29,7 +35,11 @@ size_t MessageHandler::createSensorMessage(uint16_t src_addr, uint16_t dst_addr,
     SensorPayload* payload = (SensorPayload*)msg->payload;
     payload->sensor_type = sensor_type;
     payload->data_length = data_length;
-    memcpy(payload->data, data, data_length);
+    
+    // Ensure we don't write beyond the data array bounds
+    if (data_length > 0) {
+        memcpy(payload->data, data, data_length);
+    }
     
     return MESSAGE_HEADER_SIZE + sizeof(uint8_t) + sizeof(uint8_t) + data_length;
 }
@@ -38,7 +48,13 @@ size_t MessageHandler::createActuatorMessage(uint16_t src_addr, uint16_t dst_add
                                             uint8_t actuator_type, uint8_t command,
                                             const uint8_t* params, uint8_t param_length,
                                             uint8_t flags, uint8_t* buffer) {
-    if (!buffer || param_length > 16) {
+    if (!buffer || param_length > MAX_ACTUATOR_PARAMS) {
+        return 0;
+    }
+    
+    // Validate total message size
+    size_t total_size = MESSAGE_HEADER_SIZE + sizeof(ActuatorPayload) + param_length;
+    if (total_size > MESSAGE_MAX_SIZE) {
         return 0;
     }
     
@@ -50,6 +66,7 @@ size_t MessageHandler::createActuatorMessage(uint16_t src_addr, uint16_t dst_add
     payload->command = command;
     payload->param_length = param_length;
     
+    // Only copy if we have valid parameters and they fit
     if (params && param_length > 0) {
         memcpy(payload->params, params, param_length);
     }
@@ -82,8 +99,21 @@ size_t MessageHandler::createRegistrationMessage(uint16_t src_addr, uint16_t dst
                                                  uint64_t device_id, uint8_t node_type, uint8_t capabilities,
                                                  uint16_t firmware_ver, const char* device_name,
                                                  uint8_t* buffer) {
-    if (!buffer) {
+    if (!buffer || device_id == 0) {
         return 0;
+    }
+    
+    // Validate node type
+    if (node_type < NODE_TYPE_SENSOR || node_type > NODE_TYPE_REPEATER) {
+        return 0;
+    }
+    
+    // Validate device name if provided
+    if (device_name) {
+        size_t name_len = strnlen(device_name, 32);
+        if (name_len >= 32) {
+            return 0; // Name too long or not null-terminated
+        }
     }
     
     Message* msg = (Message*)buffer;
@@ -149,6 +179,11 @@ bool MessageHandler::parseMessage(const uint8_t* data, size_t length, Message* m
         return false;
     }
     
+    // Validate total message size
+    if (length > MESSAGE_MAX_SIZE) {
+        return false;
+    }
+    
     // Copy header
     memcpy(&message->header, data, MESSAGE_HEADER_SIZE);
     
@@ -165,6 +200,11 @@ bool MessageHandler::parseMessage(const uint8_t* data, size_t length, Message* m
     
     if (payload_length > 0) {
         memcpy(message->payload, data + MESSAGE_HEADER_SIZE, payload_length);
+    }
+    
+    // Validate payload content based on message type
+    if (!validatePayload(&message->header, message->payload, payload_length)) {
+        return false;
     }
     
     return true;
@@ -198,6 +238,116 @@ bool MessageHandler::validateHeader(const MessageHeader* header) {
         header->dst_addr != ADDRESS_UNREGISTERED &&
         (header->dst_addr < ADDRESS_MIN_NODE || header->dst_addr > ADDRESS_MAX_NODE)) {
         return false;
+    }
+    
+    return true;
+}
+
+bool MessageHandler::validatePayload(const MessageHeader* header, const uint8_t* payload, size_t payload_length) {
+    if (!header) {
+        return false;
+    }
+    
+    // Validate payload size and content based on message type
+    switch (header->type) {
+        case MSG_TYPE_SENSOR_DATA: {
+            if (payload_length < sizeof(SensorPayload)) {
+                return false;
+            }
+            const SensorPayload* sensor = (const SensorPayload*)payload;
+            // Validate sensor data length doesn't exceed maximum
+            if (sensor->data_length > MAX_SENSOR_DATA_LENGTH) {
+                return false;
+            }
+            // Validate total payload size matches expected size
+            if (payload_length != sizeof(SensorPayload) + sensor->data_length) {
+                return false;
+            }
+            break;
+        }
+        
+        case MSG_TYPE_ACTUATOR_CMD: {
+            if (payload_length < sizeof(ActuatorPayload)) {
+                return false;
+            }
+            const ActuatorPayload* actuator = (const ActuatorPayload*)payload;
+            // Validate parameter length doesn't exceed maximum
+            if (actuator->param_length > MAX_ACTUATOR_PARAMS) {
+                return false;
+            }
+            // Validate total payload size matches expected size
+            if (payload_length != sizeof(ActuatorPayload) + actuator->param_length) {
+                return false;
+            }
+            break;
+        }
+        
+        case MSG_TYPE_HEARTBEAT: {
+            if (payload_length != sizeof(HeartbeatPayload)) {
+                return false;
+            }
+            const HeartbeatPayload* heartbeat = (const HeartbeatPayload*)payload;
+            // Validate battery level is within range
+            if (heartbeat->battery_level > 100) {
+                return false;
+            }
+            // Validate signal strength is within range
+            if (heartbeat->signal_strength > 100) {
+                return false;
+            }
+            break;
+        }
+        
+        case MSG_TYPE_REGISTRATION: {
+            if (payload_length != sizeof(RegistrationPayload)) {
+                return false;
+            }
+            const RegistrationPayload* reg = (const RegistrationPayload*)payload;
+            // Validate device name is null-terminated
+            bool null_terminated = false;
+            for (size_t i = 0; i < sizeof(reg->device_name); i++) {
+                if (reg->device_name[i] == '\0') {
+                    null_terminated = true;
+                    break;
+                }
+            }
+            if (!null_terminated) {
+                return false;
+            }
+            break;
+        }
+        
+        case MSG_TYPE_REG_RESPONSE: {
+            if (payload_length != sizeof(RegistrationResponsePayload)) {
+                return false;
+            }
+            const RegistrationResponsePayload* response = (const RegistrationResponsePayload*)payload;
+            // Validate status code is within valid range
+            if (response->status > REG_ERROR_INTERNAL) {
+                return false;
+            }
+            break;
+        }
+        
+        case MSG_TYPE_ACK: {
+            if (payload_length != sizeof(AckPayload)) {
+                return false;
+            }
+            break;
+        }
+        
+        case MSG_TYPE_ROUTE: {
+            // Route messages can have variable length payloads
+            // Just validate it doesn't exceed maximum
+            if (payload_length > MESSAGE_MAX_PAYLOAD) {
+                return false;
+            }
+            break;
+        }
+        
+        default:
+            // Unknown message type should have been caught in header validation
+            return false;
     }
     
     return true;

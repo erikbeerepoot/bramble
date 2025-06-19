@@ -179,7 +179,6 @@ bramble/
 ## Development Todo List
 
 ### NOW (Critical for Production)
-- [ ] Add comprehensive input validation and buffer overflow protection
 - [ ] Make hardcoded configuration values runtime configurable (intervals, addresses, etc)
 
 ### NEXT (Important Improvements)
@@ -227,6 +226,7 @@ bramble/
 - [x] Update ReliableMessenger to use newly assigned address after registration
 - [x] Add registration retry mechanism for failed registration attempts
 - [x] Implement hub registry persistence (save/load node registrations to flash on reboot)
+- [x] Add comprehensive input validation and buffer overflow protection
 
 ## Success Criteria
 - ✅ ~~Basic LoRa communication working~~
