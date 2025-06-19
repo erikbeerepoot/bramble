@@ -15,6 +15,13 @@
 #include "config/node_config.h"
 #include "pico/unique_id.h"
 
+// Include sleep headers if pico-extras is available
+#ifdef PICO_EXTRAS_PATH
+#include "pico/sleep.h"
+#include "hardware/rosc.h"
+#define PICO_EXTRAS_AVAILABLE
+#endif
+
 // Global logger for main application
 static Logger main_logger("MAIN");
 
@@ -56,6 +63,7 @@ bool attemptRegistration(ReliableMessenger& messenger, SX1276& lora,
 void processIncomingMessage(uint8_t* rx_buffer, int rx_len, ReliableMessenger& messenger,
                           AddressManager* address_manager, HubRouter* hub_router, 
                           uint32_t current_time);
+void sleepUntilInterrupt();
 
 int main()
 {
@@ -87,6 +95,13 @@ int main()
     
     // Initialize reliable messenger
     ReliableMessenger messenger(&lora, NODE_ADDRESS);
+    
+    // Enable interrupt mode for efficient operation
+    if (lora.enableInterruptMode()) {
+        main_logger.info("Interrupt mode enabled - efficient power usage");
+    } else {
+        main_logger.warn("Failed to enable interrupt mode - using polling");
+    }
     
     // Start in receive mode
     lora.startReceive();
@@ -231,25 +246,36 @@ void runHubMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led,
             last_maintenance_time = current_time;
         }
         
-        // Check for incoming messages
-        uint8_t rx_buffer[MESSAGE_MAX_SIZE];
-        int rx_len = lora.receive(rx_buffer, sizeof(rx_buffer));
+        // Check for interrupts first (more efficient than polling)
+        if (lora.isInterruptPending()) {
+            lora.handleInterrupt();
+        }
         
-        if (rx_len > 0) {
-            printf("Hub received message (len=%d, RSSI=%d dBm)\n", 
-                   rx_len, lora.getRssi());
+        // Check for incoming messages
+        if (lora.isMessageReady()) {
+            uint8_t rx_buffer[MESSAGE_MAX_SIZE];
+            int rx_len = lora.receive(rx_buffer, sizeof(rx_buffer));
             
-            // Use common message processing function
-            processIncomingMessage(rx_buffer, rx_len, messenger, &address_manager, &hub_router, current_time);
-        } else if (rx_len < 0) {
-            lora.startReceive();
+            if (rx_len > 0) {
+                printf("Hub received message (len=%d, RSSI=%d dBm)\n", 
+                       rx_len, lora.getRssi());
+                
+                // Use common message processing function
+                processIncomingMessage(rx_buffer, rx_len, messenger, &address_manager, &hub_router, current_time);
+            } else if (rx_len < 0) {
+                lora.startReceive();
+            }
         }
         
         // Update retry timers and process queued messages
         messenger.update();
         hub_router.processQueuedMessages();
         
-        sleep_ms(MAIN_LOOP_DELAY_MS);
+        // Sleep efficiently between iterations
+        if (!lora.isInterruptPending()) {
+            sleepUntilInterrupt();
+        }
+        // If interrupt is pending, loop immediately to process it
     }
 }
 
@@ -316,19 +342,26 @@ void runDemoMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led,
             last_heartbeat_time = current_time;
         }
         
-        // Check for incoming messages
-        uint8_t rx_buffer[MESSAGE_MAX_SIZE];
-        int rx_len = lora.receive(rx_buffer, sizeof(rx_buffer));
+        // Check for interrupts first (more efficient than polling)
+        if (lora.isInterruptPending()) {
+            lora.handleInterrupt();
+        }
         
-        if (rx_len > 0) {
-            printf("Received message (len=%d, RSSI=%d dBm, SNR=%.1f dB)\n", 
-                   rx_len, lora.getRssi(), lora.getSnr());
+        // Check for incoming messages
+        if (lora.isMessageReady()) {
+            uint8_t rx_buffer[MESSAGE_MAX_SIZE];
+            int rx_len = lora.receive(rx_buffer, sizeof(rx_buffer));
             
-            // Use common message processing function
-            processIncomingMessage(rx_buffer, rx_len, messenger, address_manager, hub_router, current_time);
-        } else if (rx_len < 0) {
-            printf("Receive error (CRC or buffer issue)\n");
-            lora.startReceive();
+            if (rx_len > 0) {
+                printf("Received message (len=%d, RSSI=%d dBm, SNR=%.1f dB)\n", 
+                       rx_len, lora.getRssi(), lora.getSnr());
+                
+                // Use common message processing function
+                processIncomingMessage(rx_buffer, rx_len, messenger, address_manager, hub_router, current_time);
+            } else if (rx_len < 0) {
+                printf("Receive error (CRC or buffer issue)\n");
+                lora.startReceive();
+            }
         }
         
         // Update retry timers for reliable message delivery
@@ -339,7 +372,11 @@ void runDemoMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led,
             hub_router->processQueuedMessages();
         }
         
-        sleep_ms(MAIN_LOOP_DELAY_MS);
+        // Sleep efficiently between iterations
+        if (!lora.isInterruptPending()) {
+            sleepUntilInterrupt();
+        }
+        // If interrupt is pending, loop immediately to process it
     }
 }
 
@@ -388,24 +425,35 @@ void runProductionMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led
             last_heartbeat_time = current_time;
         }
         
-        // Check for incoming messages (commands from hub, ACKs, etc.)
-        uint8_t rx_buffer[MESSAGE_MAX_SIZE];
-        int rx_len = lora.receive(rx_buffer, sizeof(rx_buffer));
+        // Check for interrupts first (more efficient than polling)
+        if (lora.isInterruptPending()) {
+            lora.handleInterrupt();
+        }
         
-        if (rx_len > 0) {
-            // Use common message processing function  
-            processIncomingMessage(rx_buffer, rx_len, messenger, address_manager, hub_router, current_time);
+        // Check for incoming messages (commands from hub, ACKs, etc.)
+        if (lora.isMessageReady()) {
+            uint8_t rx_buffer[MESSAGE_MAX_SIZE];
+            int rx_len = lora.receive(rx_buffer, sizeof(rx_buffer));
             
-            // TODO: Add command processing for actuator control
-            // Parse incoming actuator commands and control valves/pumps accordingly
-        } else if (rx_len < 0) {
-            lora.startReceive();  // Restart receive mode after error
+            if (rx_len > 0) {
+                // Use common message processing function  
+                processIncomingMessage(rx_buffer, rx_len, messenger, address_manager, hub_router, current_time);
+                
+                // TODO: Add command processing for actuator control
+                // Parse incoming actuator commands and control valves/pumps accordingly
+            } else if (rx_len < 0) {
+                lora.startReceive();  // Restart receive mode after error
+            }
         }
         
         // Update retry timers for reliable message delivery
         messenger.update();
         
-        sleep_ms(MAIN_LOOP_DELAY_MS);
+        // Sleep efficiently between iterations
+        if (!lora.isInterruptPending()) {
+            sleepUntilInterrupt();
+        }
+        // If interrupt is pending, loop immediately to process it
     }
 }
 
@@ -454,13 +502,19 @@ bool attemptRegistration(ReliableMessenger& messenger, SX1276& lora,
         bool response_received = false;
         
         while (to_ms_since_boot(get_absolute_time()) - start_time < REGISTRATION_TIMEOUT_MS) {
-            // Check for incoming messages
-            uint8_t rx_buffer[MESSAGE_MAX_SIZE];
-            int rx_len = lora.receive(rx_buffer, sizeof(rx_buffer));
+            // Check for interrupts first
+            if (lora.isInterruptPending()) {
+                lora.handleInterrupt();
+            }
             
-            if (rx_len > 0) {
-                Message message;
-                if (MessageHandler::parseMessage(rx_buffer, rx_len, &message)) {
+            // Check for incoming messages
+            if (lora.isMessageReady()) {
+                uint8_t rx_buffer[MESSAGE_MAX_SIZE];
+                int rx_len = lora.receive(rx_buffer, sizeof(rx_buffer));
+                
+                if (rx_len > 0) {
+                    Message message;
+                    if (MessageHandler::parseMessage(rx_buffer, rx_len, &message)) {
                     // Process the message
                     messenger.processIncomingMessage(rx_buffer, rx_len);
                     
@@ -511,8 +565,9 @@ bool attemptRegistration(ReliableMessenger& messenger, SX1276& lora,
                         }
                     }
                 }
-            } else if (rx_len < 0) {
-                lora.startReceive();
+                } else if (rx_len < 0) {
+                    lora.startReceive();
+                }
             }
             
             // Update message retries
@@ -607,4 +662,22 @@ void processIncomingMessage(uint8_t* rx_buffer, int rx_len, ReliableMessenger& m
     
     // Try to route the message if it's not for the hub
     hub_router->processMessage(rx_buffer, rx_len, source_address);
+}
+
+void sleepUntilInterrupt() {
+    // Without pico-extras, we use a short sleep that still provides power savings
+    // The interrupt will wake us if a message arrives before the sleep completes
+    sleep_ms(50);  // 50ms provides good balance between power and responsiveness
+    
+    // With pico-extras installed, you could use:
+    // #ifdef PICO_EXTRAS_AVAILABLE
+    //     // Configure DIO0 pin as wake source
+    //     sleep_run_from_xosc();
+    //     sleep_goto_dormant_until_pin(PIN_DIO0, true, true);  // Wake on high edge
+    //     // Clocks are restored automatically after wake
+    // #endif
+    
+    // To install pico-extras:
+    // git clone https://github.com/raspberrypi/pico-extras.git
+    // Then rebuild with: rm -rf build && cmake -B build && cmake --build build
 }

@@ -28,6 +28,15 @@ set(PICO_BOARD adafruit_feather_rp2040 CACHE STRING "Board type")
 # Pull in Raspberry Pi Pico SDK (must be before project)
 include(pico_sdk_import.cmake)
 
+# Pull in Pico extras (if available)
+set(PICO_EXTRAS_PATH ${CMAKE_CURRENT_LIST_DIR}/pico-extras)
+if(EXISTS ${PICO_EXTRAS_PATH})
+    include(${PICO_EXTRAS_PATH}/external/pico_extras_import.cmake)
+    message(STATUS "Found pico-extras at ${PICO_EXTRAS_PATH}")
+else()
+    message(WARNING "pico-extras not found at ${PICO_EXTRAS_PATH}. Sleep functionality will be limited.")
+endif()
+
 project(bramble C CXX ASM)
 
 set(PICO_CXX_ENABLE_EXCEPTIONS 1)
@@ -97,6 +106,14 @@ target_link_libraries(bramble
         hardware_flash
         hardware_sync
         )
+
+# Add pico-extras libraries if available
+if(EXISTS ${PICO_EXTRAS_PATH})
+    target_link_libraries(bramble 
+            hardware_sleep
+            hardware_rosc
+            )
+endif()
 
 # Generate PIO headers
 pico_generate_pio_header(bramble ${CMAKE_CURRENT_LIST_DIR}/src/hal/ws2812.pio)

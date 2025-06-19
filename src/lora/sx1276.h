@@ -142,12 +142,20 @@ public:
     void setCrc(bool enable_crc);
     
     /**
-     * @brief Send a packet
+     * @brief Send a packet (blocking in non-interrupt mode)
      * @param data Pointer to data buffer
      * @param length Length of data to send (max 255 bytes)
      * @return true if packet was queued for transmission
      */
     bool send(const uint8_t* data, size_t length);
+    
+    /**
+     * @brief Send a packet asynchronously (non-blocking, requires interrupt mode)
+     * @param data Data to send
+     * @param length Data length (max 255 bytes)
+     * @return true if transmission started successfully
+     */
+    bool sendAsync(const uint8_t* data, size_t length);
     
     /**
      * @brief Check if transmission is complete
@@ -197,9 +205,54 @@ public:
     void startReceive();
     
     /**
+     * @brief Enable interrupt mode using DIO0 pin
+     * @param callback Function to call when interrupt fires (optional)
+     * @return true if interrupt mode enabled successfully
+     */
+    bool enableInterruptMode(gpio_irq_callback_t callback = nullptr);
+    
+    /**
+     * @brief Disable interrupt mode
+     */
+    void disableInterruptMode();
+    
+    /**
+     * @brief Check if an interrupt has fired (must be called from main context)
+     * @return true if interrupt pending
+     */
+    bool isInterruptPending() const { return interrupt_pending_; }
+    
+    /**
+     * @brief Handle pending interrupt (call after isInterruptPending returns true)
+     * @return Interrupt flags that were set
+     */
+    uint8_t handleInterrupt();
+    
+    /**
+     * @brief Check if a message is ready after interrupt
+     * @return true if RX done with valid message
+     */
+    bool isMessageReady() const { return message_ready_; }
+    
+    /**
+     * @brief Check if transmission is complete after interrupt
+     * @return true if TX done
+     */
+    bool isTxComplete() const { return tx_complete_; }
+    
+    /**
+     * @brief Clear interrupt flags
+     */
+    void clearInterruptFlags();
+    
+    /**
      * @brief Reset the module (if reset pin connected)
      */
     void reset();
+    
+    // For interrupt handler access
+    int getDio0Pin() const { return dio0_pin_; }
+    void setInterruptPending() { interrupt_pending_ = true; }
 
 private:
     SPIDevice spi_;
@@ -215,6 +268,13 @@ private:
     bool crc_enabled_;
     
     Logger logger_;
+    
+    // Interrupt mode support
+    volatile bool interrupt_pending_;
+    volatile bool message_ready_;
+    volatile bool tx_complete_;
+    bool interrupt_enabled_;
+    gpio_irq_callback_t user_callback_;
     
     /**
      * @brief Write to SX1276 register

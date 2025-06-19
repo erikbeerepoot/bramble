@@ -1,13 +1,26 @@
 #include "sx1276.h"
 #include <stdio.h>
 #include <string.h>
+#include "hardware/gpio.h"
+
+// Global pointer for interrupt handler (single radio instance)
+static SX1276* g_sx1276_instance = nullptr;
+
+// GPIO interrupt handler
+static void sx1276_dio0_isr(uint gpio, uint32_t events) {
+    if (g_sx1276_instance && gpio == g_sx1276_instance->getDio0Pin() && (events & GPIO_IRQ_EDGE_RISE)) {
+        g_sx1276_instance->setInterruptPending();
+    }
+}
 
 SX1276::SX1276(spi_inst_t* spi_port, uint cs_pin, int rst_pin, int dio0_pin)
     : spi_(spi_port, cs_pin), rst_pin_(rst_pin), dio0_pin_(dio0_pin),
       frequency_(SX1276_DEFAULT_FREQUENCY), tx_power_(SX1276_DEFAULT_TX_POWER),
       spreading_factor_(SX1276_DEFAULT_SPREADING_FACTOR), bandwidth_(SX1276_DEFAULT_BANDWIDTH),
       coding_rate_(SX1276_DEFAULT_CODING_RATE), preamble_length_(SX1276_DEFAULT_PREAMBLE_LENGTH),
-      crc_enabled_(SX1276_DEFAULT_CRC), logger_("SX1276") {
+      crc_enabled_(SX1276_DEFAULT_CRC), logger_("SX1276"),
+      interrupt_pending_(false), message_ready_(false), tx_complete_(false),
+      interrupt_enabled_(false), user_callback_(nullptr) {
     
     // Configure reset pin if provided
     if (rst_pin_ >= 0) {
@@ -190,30 +203,89 @@ bool SX1276::send(const uint8_t* data, size_t length) {
     return true;
 }
 
-bool SX1276::isTxDone() {
-    uint8_t irq_flags = readRegister(SX1276_REG_IRQ_FLAGS);
-    if (irq_flags & SX1276_IRQ_TX_DONE_MASK) {
-        // Clear TX done flag
-        writeRegister(SX1276_REG_IRQ_FLAGS, SX1276_IRQ_TX_DONE_MASK);
-        return true;
+bool SX1276::sendAsync(const uint8_t* data, size_t length) {
+    if (!interrupt_enabled_) {
+        logger_.error("Async send requires interrupt mode");
+        return false;
     }
-    return false;
+    
+    if (length > 255) {
+        return false;
+    }
+    
+    // Clear TX complete flag
+    tx_complete_ = false;
+    
+    // Put in standby mode
+    setMode(SX1276_MODE_LONG_RANGE_MODE | SX1276_MODE_STDBY);
+    
+    // Clear IRQ flags
+    writeRegister(SX1276_REG_IRQ_FLAGS, 0xFF);
+    
+    // Set FIFO TX base address
+    writeRegister(SX1276_REG_FIFO_ADDR_PTR, 0x80);
+    writeRegister(SX1276_REG_FIFO_TX_BASE_ADDR, 0x80);
+    
+    // Write payload length
+    writeRegister(SX1276_REG_PAYLOAD_LENGTH, length);
+    
+    // Write payload to FIFO using bulk transfer
+    uint8_t tx_buf[256]; // Max LoRa packet size + 1 for register
+    SPIError result = spi_.writeBuffer(SX1276_REG_FIFO, data, length, tx_buf);
+    if (result != SPI_SUCCESS) {
+        logger_.error("Failed to write FIFO");
+        return false;
+    }
+    
+    // Start transmission - interrupt will fire when done
+    setMode(SX1276_MODE_LONG_RANGE_MODE | SX1276_MODE_TX);
+    
+    return true;
+}
+
+bool SX1276::isTxDone() {
+    if (interrupt_enabled_) {
+        // In interrupt mode, check the flag
+        return tx_complete_;
+    } else {
+        // In polling mode, check register
+        uint8_t irq_flags = readRegister(SX1276_REG_IRQ_FLAGS);
+        if (irq_flags & SX1276_IRQ_TX_DONE_MASK) {
+            // Clear TX done flag
+            writeRegister(SX1276_REG_IRQ_FLAGS, SX1276_IRQ_TX_DONE_MASK);
+            return true;
+        }
+        return false;
+    }
 }
 
 int SX1276::receive(uint8_t* buffer, size_t max_length) {
-    uint8_t irq_flags = readRegister(SX1276_REG_IRQ_FLAGS);
-    
-    if (!(irq_flags & SX1276_IRQ_RX_DONE_MASK)) {
-        return 0; // No packet received
+    // In interrupt mode, check if message is ready
+    if (interrupt_enabled_ && !message_ready_) {
+        return 0; // No packet ready
     }
     
-    // Clear RX done flag
-    writeRegister(SX1276_REG_IRQ_FLAGS, SX1276_IRQ_RX_DONE_MASK);
+    uint8_t irq_flags;
     
-    // Check for CRC error
-    if (irq_flags & 0x20) { // CRC error flag
-        writeRegister(SX1276_REG_IRQ_FLAGS, 0x20);
-        return -1; // CRC error
+    if (interrupt_enabled_) {
+        // Interrupt already cleared the flags, just check message_ready
+        message_ready_ = false; // Clear for next message
+    } else {
+        // Polling mode - check flags directly
+        irq_flags = readRegister(SX1276_REG_IRQ_FLAGS);
+        
+        if (!(irq_flags & SX1276_IRQ_RX_DONE_MASK)) {
+            return 0; // No packet received
+        }
+        
+        // Clear RX done flag
+        writeRegister(SX1276_REG_IRQ_FLAGS, SX1276_IRQ_RX_DONE_MASK);
+        
+        // Check for CRC error
+        if (irq_flags & 0x20) { // CRC error flag
+            writeRegister(SX1276_REG_IRQ_FLAGS, 0x20);
+            return -1; // CRC error
+        }
     }
     
     // Get packet length
@@ -239,8 +311,12 @@ int SX1276::receive(uint8_t* buffer, size_t max_length) {
 }
 
 bool SX1276::available() {
-    uint8_t irq_flags = readRegister(SX1276_REG_IRQ_FLAGS);
-    return (irq_flags & SX1276_IRQ_RX_DONE_MASK) != 0;
+    if (interrupt_enabled_) {
+        return message_ready_;
+    } else {
+        uint8_t irq_flags = readRegister(SX1276_REG_IRQ_FLAGS);
+        return (irq_flags & SX1276_IRQ_RX_DONE_MASK) != 0;
+    }
 }
 
 int SX1276::getRssi() {
@@ -384,4 +460,91 @@ bool SX1276::waitForModeReady(uint8_t target_mode, uint32_t timeout_ms) {
         
         sleep_ms(1);
     }
+}
+
+bool SX1276::enableInterruptMode(gpio_irq_callback_t callback) {
+    if (dio0_pin_ < 0) {
+        logger_.error("DIO0 pin not configured");
+        return false;
+    }
+    
+    // Store callback if provided
+    user_callback_ = callback;
+    
+    // Configure DIO0 mapping for RxDone/TxDone (mapping = 00)
+    uint8_t dio_mapping1 = readRegister(SX1276_REG_DIO_MAPPING_1);
+    dio_mapping1 &= 0x3F;  // Clear DIO0 mapping bits [7:6]
+    dio_mapping1 |= 0x00;  // Set mapping to 00 (RxDone in RX mode, TxDone in TX mode)
+    writeRegister(SX1276_REG_DIO_MAPPING_1, dio_mapping1);
+    
+    // Set up global instance pointer for ISR
+    g_sx1276_instance = this;
+    
+    // Enable GPIO interrupt on rising edge
+    gpio_set_irq_enabled_with_callback(dio0_pin_, GPIO_IRQ_EDGE_RISE, true, &sx1276_dio0_isr);
+    
+    interrupt_enabled_ = true;
+    interrupt_pending_ = false;
+    message_ready_ = false;
+    tx_complete_ = false;
+    
+    logger_.info("Interrupt mode enabled on DIO0 (GPIO %d)", dio0_pin_);
+    return true;
+}
+
+void SX1276::disableInterruptMode() {
+    if (dio0_pin_ >= 0 && interrupt_enabled_) {
+        gpio_set_irq_enabled(dio0_pin_, GPIO_IRQ_EDGE_RISE, false);
+        interrupt_enabled_ = false;
+        g_sx1276_instance = nullptr;
+        logger_.info("Interrupt mode disabled");
+    }
+}
+
+uint8_t SX1276::handleInterrupt() {
+    if (!interrupt_pending_) {
+        return 0;
+    }
+    
+    // Clear pending flag
+    interrupt_pending_ = false;
+    
+    // Read interrupt flags
+    uint8_t irq_flags = readRegister(SX1276_REG_IRQ_FLAGS);
+    
+    // Clear all interrupt flags by writing them back
+    writeRegister(SX1276_REG_IRQ_FLAGS, irq_flags);
+    
+    // Process interrupt flags
+    if (irq_flags & SX1276_IRQ_RX_DONE_MASK) {
+        // Check for CRC error
+        if (irq_flags & 0x20) {  // CRC error flag
+            logger_.warn("RX CRC error");
+            message_ready_ = false;
+        } else {
+            message_ready_ = true;
+            logger_.debug("RX done, message ready");
+        }
+    }
+    
+    if (irq_flags & SX1276_IRQ_TX_DONE_MASK) {
+        tx_complete_ = true;
+        logger_.debug("TX done");
+        
+        // Automatically go back to RX mode after TX
+        startReceive();
+    }
+    
+    // Call user callback if provided
+    if (user_callback_) {
+        user_callback_(dio0_pin_, GPIO_IRQ_EDGE_RISE);
+    }
+    
+    return irq_flags;
+}
+
+void SX1276::clearInterruptFlags() {
+    message_ready_ = false;
+    tx_complete_ = false;
+    interrupt_pending_ = false;
 }
