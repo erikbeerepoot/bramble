@@ -55,6 +55,9 @@ bool ReliableMessenger::sendSensorData(uint16_t dst_addr, uint8_t sensor_type,
     
     uint8_t seq_num = getNextSequenceNumber();
     
+    logger_.debug("sendSensorData: src=0x%04X, dst=0x%04X, type=%d, criticality=%d", 
+                  node_addr_, dst_addr, sensor_type, criticality);
+    
     // Create the sensor message with appropriate flags
     uint8_t buffer[MESSAGE_MAX_SIZE];
     size_t length = MessageHandler::createSensorMessage(
@@ -67,6 +70,8 @@ bool ReliableMessenger::sendSensorData(uint16_t dst_addr, uint8_t sensor_type,
         logger_.error("Failed to create sensor message");
         return false;
     }
+    
+    logger_.debug("Created sensor message: len=%zu", length);
     
     return send(buffer, length, criticality);
 }
@@ -162,7 +167,13 @@ bool ReliableMessenger::send(const uint8_t* buffer, size_t length,
     // For RELIABLE and CRITICAL, add to pending messages for ACK tracking
     Message msg;
     if (!MessageHandler::parseMessage(buffer, length, &msg)) {
-        logger_.error("Failed to parse sent message for tracking");
+        logger_.error("Failed to parse sent message for tracking (len=%zu, criticality=%d)", length, criticality);
+        // Log first few bytes of the message for debugging
+        if (length >= MESSAGE_HEADER_SIZE) {
+            const MessageHeader* hdr = reinterpret_cast<const MessageHeader*>(buffer);
+            logger_.error("Header: magic=0x%04X, type=%d, flags=0x%02X, src=0x%04X, dst=0x%04X, seq=%d",
+                         hdr->magic, hdr->type, hdr->flags, hdr->src_addr, hdr->dst_addr, hdr->seq_num);
+        }
         return false;
     }
     

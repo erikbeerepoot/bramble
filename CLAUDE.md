@@ -100,7 +100,8 @@ The main application has completely separate demo and production modes for clari
 
 ## Process
 
-* Use a PLAN.md file to plan out your tasks
+* Use a plans/PLAN.md file to plan out your tasks
+* Create subplans when working on features, so we can iterate on the design before implementation.
 * Maintain that file as a progress file
 * Current development todo list is maintained in PLAN.md under "Development Todo List" section
 * Organized as NOW (critical), NEXT (important), LATER (future), and COMPLETED

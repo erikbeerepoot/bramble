@@ -30,7 +30,7 @@ static Logger main_logger("MAIN");
 #define PIN_NEOPIXEL 4
 
 // Application configuration
-#define IS_HUB                  true        // Set to true for hub, false for node
+#define IS_HUB                  false        // Set to true for hub, false for node
 #define HUB_ADDRESS             ADDRESS_HUB      // Hub/gateway address
 #define SENSOR_INTERVAL_MS      30000       // Send sensor data every 30 seconds
 #define HEARTBEAT_INTERVAL_MS   60000       // Send heartbeat every minute

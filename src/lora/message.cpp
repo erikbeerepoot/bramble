@@ -251,7 +251,7 @@ bool MessageHandler::validatePayload(const MessageHeader* header, const uint8_t*
     // Validate payload size and content based on message type
     switch (header->type) {
         case MSG_TYPE_SENSOR_DATA: {
-            if (payload_length < sizeof(SensorPayload)) {
+            if (payload_length < 2) {  // Need at least sensor_type and data_length
                 return false;
             }
             const SensorPayload* sensor = (const SensorPayload*)payload;
@@ -260,14 +260,15 @@ bool MessageHandler::validatePayload(const MessageHeader* header, const uint8_t*
                 return false;
             }
             // Validate total payload size matches expected size
-            if (payload_length != sizeof(SensorPayload) + sensor->data_length) {
+            // payload should be: sensor_type (1) + data_length (1) + actual data bytes
+            if (payload_length != 2 + sensor->data_length) {
                 return false;
             }
             break;
         }
         
         case MSG_TYPE_ACTUATOR_CMD: {
-            if (payload_length < sizeof(ActuatorPayload)) {
+            if (payload_length < 3) {  // Need at least actuator_type, command, and param_length
                 return false;
             }
             const ActuatorPayload* actuator = (const ActuatorPayload*)payload;
@@ -276,7 +277,8 @@ bool MessageHandler::validatePayload(const MessageHeader* header, const uint8_t*
                 return false;
             }
             // Validate total payload size matches expected size
-            if (payload_length != sizeof(ActuatorPayload) + actuator->param_length) {
+            // payload should be: actuator_type (1) + command (1) + param_length (1) + actual param bytes
+            if (payload_length != 3 + actuator->param_length) {
                 return false;
             }
             break;
