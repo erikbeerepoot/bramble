@@ -64,7 +64,9 @@ else()
         src/hal/neopixel.cpp
         src/hal/flash.cpp
         src/hal/logger.cpp
+        src/hal/spi_device.cpp
         src/config/node_config.cpp
+        src/config/hub_config.cpp
     )
     message(STATUS "Building production version")
 endif()

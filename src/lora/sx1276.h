@@ -3,6 +3,8 @@
 #include "pico/stdlib.h"
 #include "hardware/spi.h"
 #include "hardware/gpio.h"
+#include "../hal/logger.h"
+#include "../hal/spi_device.h"
 
 // SX1276 Register Map
 #define SX1276_REG_FIFO                 0x00
@@ -66,6 +68,10 @@
 #define SX1276_DEFAULT_CODING_RATE      5           // 4/5
 #define SX1276_DEFAULT_PREAMBLE_LENGTH  8           // 8 symbols
 #define SX1276_DEFAULT_CRC              true        // CRC enabled
+
+// Timing constants
+#define SX1276_MODE_READY_TIMEOUT_MS    100         // 100ms timeout for mode changes
+#define SX1276_TX_READY_TIMEOUT_MS      1000        // 1s timeout for TX ready
 
 /**
  * @brief SX1276 LoRa transceiver driver for Raspberry Pi Pico
@@ -196,8 +202,7 @@ public:
     void reset();
 
 private:
-    spi_inst_t* spi_;
-    uint cs_pin_;
+    SPIDevice spi_;
     int rst_pin_;
     int dio0_pin_;
     
@@ -208,6 +213,8 @@ private:
     int coding_rate_;
     int preamble_length_;
     bool crc_enabled_;
+    
+    Logger logger_;
     
     /**
      * @brief Write to SX1276 register
@@ -246,4 +253,12 @@ private:
      * @return Register value
      */
     uint8_t getBandwidthRegValue(uint32_t bandwidth_hz);
+    
+    /**
+     * @brief Wait for mode to be ready
+     * @param target_mode Expected mode
+     * @param timeout_ms Timeout in milliseconds
+     * @return true if mode ready, false on timeout
+     */
+    bool waitForModeReady(uint8_t target_mode, uint32_t timeout_ms = SX1276_MODE_READY_TIMEOUT_MS);
 };

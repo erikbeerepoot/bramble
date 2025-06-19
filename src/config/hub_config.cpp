@@ -1,5 +1,6 @@
 #include "hub_config.h"
 #include "../hal/logger.h"
+#include "../hal/flash.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -29,15 +30,16 @@ bool HubConfigManager::saveRegistry(const HubRegistry& registry) {
     HubRegistry temp_registry = registry;
     temp_registry.header.crc32 = calculateCRC32((const uint8_t*)&temp_registry, data_size);
     
-    // Erase flash sector
-    if (!flash_.eraseSector(REGISTRY_FLASH_OFFSET)) {
-        logger.error("Failed to erase flash sector for registry");
+    // Erase flash sectors for registry
+    size_t erase_size = ((sizeof(HubRegistry) + FLASH_SECTOR_SIZE - 1) / FLASH_SECTOR_SIZE) * FLASH_SECTOR_SIZE;
+    if (flash_.erase(REGISTRY_FLASH_OFFSET, erase_size) != FLASH_SUCCESS) {
+        logger.error("Failed to erase flash for registry");
         return false;
     }
     
     // Write registry data
     size_t total_size = sizeof(HubRegistry);
-    if (!flash_.write(REGISTRY_FLASH_OFFSET, (const uint8_t*)&temp_registry, total_size)) {
+    if (flash_.write(REGISTRY_FLASH_OFFSET, (const uint8_t*)&temp_registry, total_size) != FLASH_SUCCESS) {
         logger.error("Failed to write registry to flash");
         return false;
     }
@@ -51,7 +53,7 @@ bool HubConfigManager::loadRegistry(HubRegistry& registry) {
     
     // Read registry from flash
     size_t total_size = sizeof(HubRegistry);
-    if (!flash_.read(REGISTRY_FLASH_OFFSET, (uint8_t*)&registry, total_size)) {
+    if (flash_.read(REGISTRY_FLASH_OFFSET, (uint8_t*)&registry, total_size) != FLASH_SUCCESS) {
         logger.error("Failed to read registry from flash");
         return false;
     }

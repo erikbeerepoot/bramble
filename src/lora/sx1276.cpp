@@ -3,16 +3,11 @@
 #include <string.h>
 
 SX1276::SX1276(spi_inst_t* spi_port, uint cs_pin, int rst_pin, int dio0_pin)
-    : spi_(spi_port), cs_pin_(cs_pin), rst_pin_(rst_pin), dio0_pin_(dio0_pin),
+    : spi_(spi_port, cs_pin), rst_pin_(rst_pin), dio0_pin_(dio0_pin),
       frequency_(SX1276_DEFAULT_FREQUENCY), tx_power_(SX1276_DEFAULT_TX_POWER),
       spreading_factor_(SX1276_DEFAULT_SPREADING_FACTOR), bandwidth_(SX1276_DEFAULT_BANDWIDTH),
       coding_rate_(SX1276_DEFAULT_CODING_RATE), preamble_length_(SX1276_DEFAULT_PREAMBLE_LENGTH),
-      crc_enabled_(SX1276_DEFAULT_CRC) {
-    
-    // Configure CS pin
-    gpio_init(cs_pin_);
-    gpio_set_dir(cs_pin_, GPIO_OUT);
-    gpio_put(cs_pin_, 1); // CS high (inactive)
+      crc_enabled_(SX1276_DEFAULT_CRC), logger_("SX1276") {
     
     // Configure reset pin if provided
     if (rst_pin_ >= 0) {
@@ -181,9 +176,11 @@ bool SX1276::send(const uint8_t* data, size_t length) {
     // Write payload length
     writeRegister(SX1276_REG_PAYLOAD_LENGTH, length);
     
-    // Write payload to FIFO
-    for (size_t i = 0; i < length; i++) {
-        writeRegister(SX1276_REG_FIFO, data[i]);
+    // Write payload to FIFO using bulk transfer
+    SPIError result = spi_.writeBuffer(SX1276_REG_FIFO, data, length);
+    if (result != SPI_SUCCESS) {
+        logger_.error("Failed to write FIFO: %s", spi_.getLastError());
+        return false;
     }
     
     // Start transmission
@@ -228,9 +225,11 @@ int SX1276::receive(uint8_t* buffer, size_t max_length) {
     uint8_t fifo_addr = readRegister(SX1276_REG_FIFO_RX_CURRENT_ADDR);
     writeRegister(SX1276_REG_FIFO_ADDR_PTR, fifo_addr);
     
-    // Read packet data from FIFO
-    for (int i = 0; i < packet_length; i++) {
-        buffer[i] = readRegister(SX1276_REG_FIFO);
+    // Read packet data from FIFO using bulk transfer
+    SPIError result = spi_.readBuffer(SX1276_REG_FIFO, buffer, packet_length);
+    if (result != SPI_SUCCESS) {
+        logger_.error("Failed to read FIFO: %s", spi_.getLastError());
+        return -1;
     }
     
     return packet_length;
@@ -286,22 +285,19 @@ void SX1276::reset() {
 }
 
 void SX1276::writeRegister(uint8_t reg, uint8_t value) {
-    uint8_t tx_buf[2] = {reg | 0x80, value}; // MSB=1 for write
-    
-    gpio_put(cs_pin_, 0);
-    spi_write_blocking(spi_, tx_buf, 2);
-    gpio_put(cs_pin_, 1);
+    SPIError result = spi_.writeRegister(reg, value);
+    if (result != SPI_SUCCESS) {
+        logger_.error("Failed to write register 0x%02X: %s", reg, spi_.getLastError());
+    }
 }
 
 uint8_t SX1276::readRegister(uint8_t reg) {
-    uint8_t tx_buf[2] = {reg & 0x7F, 0x00}; // MSB=0 for read
-    uint8_t rx_buf[2];
-    
-    gpio_put(cs_pin_, 0);
-    spi_write_read_blocking(spi_, tx_buf, rx_buf, 2);
-    gpio_put(cs_pin_, 1);
-    
-    return rx_buf[1];
+    uint8_t value = 0;
+    SPIError result = spi_.readRegister(reg, &value);
+    if (result != SPI_SUCCESS) {
+        logger_.error("Failed to read register 0x%02X: %s", reg, spi_.getLastError());
+    }
+    return value;
 }
 
 void SX1276::setMode(uint8_t mode) {
@@ -359,5 +355,30 @@ uint8_t SX1276::getBandwidthRegValue(uint32_t bandwidth_hz) {
         case 250000: return 0x08;
         case 500000: return 0x09;
         default:     return 0x07; // Default to 125kHz
+    }
+}
+
+bool SX1276::waitForModeReady(uint8_t target_mode, uint32_t timeout_ms) {
+    uint32_t start_time = to_ms_since_boot(get_absolute_time());
+    
+    // Mask out the low power mode bit for comparison
+    uint8_t mode_mask = 0x07;
+    uint8_t target = target_mode & mode_mask;
+    
+    while (true) {
+        uint8_t current_mode = readRegister(SX1276_REG_OP_MODE);
+        
+        if ((current_mode & mode_mask) == target) {
+            return true;
+        }
+        
+        uint32_t elapsed = to_ms_since_boot(get_absolute_time()) - start_time;
+        if (elapsed >= timeout_ms) {
+            logger_.error("Mode change timeout: target=0x%02X, current=0x%02X, elapsed=%lu ms", 
+                   target_mode, current_mode, elapsed);
+            return false;
+        }
+        
+        sleep_ms(1);
     }
 }
