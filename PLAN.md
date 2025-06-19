@@ -179,10 +179,9 @@ bramble/
 ## Development Todo List
 
 ### NOW (Critical for Production)
-- [ ] Make hardcoded configuration values runtime configurable (intervals, addresses, etc)
+*No critical production items remaining - moving to NEXT section*
 
 ### NEXT (Important Improvements)
-- [ ] Standardize header guards to use #pragma once consistently
 - [ ] Add error handling for SPI communications with timeout and retry logic
 - [ ] Implement interrupt-driven LoRa operation instead of polling
 - [ ] Add node de-registration mechanism (graceful shutdown)
@@ -227,6 +226,8 @@ bramble/
 - [x] Add registration retry mechanism for failed registration attempts
 - [x] Implement hub registry persistence (save/load node registrations to flash on reboot)
 - [x] Add comprehensive input validation and buffer overflow protection
+- [x] Make hardcoded configuration values runtime configurable (DEFERRED - see RUNTIME_CONFIG_PLAN.md)
+- [x] Standardize header guards to use #pragma once consistently
 
 ## Success Criteria
 - ✅ ~~Basic LoRa communication working~~

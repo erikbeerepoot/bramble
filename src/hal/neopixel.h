@@ -1,5 +1,4 @@
-#ifndef NEOPIXEL_H
-#define NEOPIXEL_H
+#pragma once
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -32,5 +31,3 @@ public:
     static neopixel_color_t colorRGB(uint8_t r, uint8_t g, uint8_t b);
     static neopixel_color_t colorHSV(uint16_t hue, uint8_t sat, uint8_t val);
 };
-
-#endif
