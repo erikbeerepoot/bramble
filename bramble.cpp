@@ -37,14 +37,20 @@ static Logger main_logger("MAIN");
 #define PIN_NEOPIXEL 4
 
 // Application configuration
-#define IS_HUB                  false        // Set to true for hub, false for node
+// IS_HUB is now defined by CMake (1 for hub, 0 for node)
+#ifndef IS_HUB
+#error "IS_HUB must be defined by build system"
+#endif
+
+// DEMO_MODE is now defined by CMake (1 for demo, 0 for production)
+#ifndef DEMO_MODE
+#error "DEMO_MODE must be defined by build system"
+#endif
+
 #define HUB_ADDRESS             ADDRESS_HUB      // Hub/gateway address
 #define SENSOR_INTERVAL_MS      30000       // Send sensor data every 30 seconds
 #define HEARTBEAT_INTERVAL_MS   60000       // Send heartbeat every minute
 #define MAIN_LOOP_DELAY_MS      100         // Main loop processing delay
-
-// Demo mode - set to false for production deployment
-#define DEMO_MODE               true
 
 // Automatically determine node address based on role
 #define NODE_ADDRESS            (IS_HUB ? ADDRESS_HUB : ADDRESS_UNREGISTERED)

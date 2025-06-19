@@ -199,6 +199,7 @@ bool SX1276::send(const uint8_t* data, size_t length) {
     
     // Start transmission
     setMode(SX1276_MODE_LONG_RANGE_MODE | SX1276_MODE_TX);
+    logger_.debug("Started transmission, waiting for TX done interrupt");
     
     return true;
 }
@@ -477,6 +478,10 @@ bool SX1276::enableInterruptMode(gpio_irq_callback_t callback) {
     dio_mapping1 |= 0x00;  // Set mapping to 00 (RxDone in RX mode, TxDone in TX mode)
     writeRegister(SX1276_REG_DIO_MAPPING_1, dio_mapping1);
     
+    // Verify the mapping was set correctly
+    uint8_t verify = readRegister(SX1276_REG_DIO_MAPPING_1);
+    logger_.debug("DIO mapping register set to 0x%02X", verify);
+    
     // Set up global instance pointer for ISR
     g_sx1276_instance = this;
     
@@ -511,6 +516,7 @@ uint8_t SX1276::handleInterrupt() {
     
     // Read interrupt flags
     uint8_t irq_flags = readRegister(SX1276_REG_IRQ_FLAGS);
+    logger_.debug("Interrupt fired, flags=0x%02X", irq_flags);
     
     // Clear all interrupt flags by writing them back
     writeRegister(SX1276_REG_IRQ_FLAGS, irq_flags);
@@ -529,7 +535,7 @@ uint8_t SX1276::handleInterrupt() {
     
     if (irq_flags & SX1276_IRQ_TX_DONE_MASK) {
         tx_complete_ = true;
-        logger_.debug("TX done");
+        logger_.debug("TX done interrupt received!");
         
         // Automatically go back to RX mode after TX
         startReceive();

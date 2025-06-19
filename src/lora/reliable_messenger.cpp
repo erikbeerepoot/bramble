@@ -356,9 +356,22 @@ bool ReliableMessenger::sendMessage(const uint8_t* buffer, size_t length) {
     }
     
     // Wait for transmission to complete
+    logger_.debug("Waiting for TX to complete...");
+    int wait_count = 0;
     while (!lora_->isTxDone()) {
-        sleep_ms(10);
+        // Check for interrupts while waiting
+        if (lora_->isInterruptPending()) {
+            logger_.debug("TX interrupt pending, handling...");
+            lora_->handleInterrupt();
+        }
+        sleep_ms(1);
+        wait_count++;
+        if (wait_count > 5000) {  // 5 second timeout
+            logger_.error("TX timeout - no interrupt received");
+            return false;
+        }
     }
+    logger_.debug("TX complete after %d ms", wait_count);
     
     // Return to receive mode
     lora_->startReceive();

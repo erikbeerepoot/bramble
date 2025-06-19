@@ -51,7 +51,7 @@ option(BUILD_TESTS "Build test version instead of production" OFF)
 
 if(BUILD_TESTS)
     # Test executable
-    add_executable(bramble 
+    add_executable(bramble_test 
         src/tests/test_main.cpp
         src/tests/test_framework.cpp
         src/tests/reliability_tests.cpp
@@ -61,10 +61,35 @@ if(BUILD_TESTS)
         src/hal/neopixel.cpp
     )
     message(STATUS "Building test version")
+    
+    # Common test settings
+    pico_set_program_name(bramble_test "bramble_test")
+    pico_set_program_version(bramble_test "0.1")
+    pico_enable_stdio_uart(bramble_test 0)
+    pico_enable_stdio_usb(bramble_test 1)
+    
+    # Test libraries
+    target_link_libraries(bramble_test pico_stdlib)
+    target_include_directories(bramble_test PRIVATE
+        ${CMAKE_CURRENT_LIST_DIR}
+        ${CMAKE_CURRENT_LIST_DIR}/src
+    )
+    
+    target_link_libraries(bramble_test 
+        hardware_spi
+        hardware_timer
+        hardware_clocks
+        hardware_pio
+        hardware_flash
+        hardware_sync
+    )
+    
+    pico_generate_pio_header(bramble_test ${CMAKE_CURRENT_LIST_DIR}/src/hal/ws2812.pio)
+    pico_add_extra_outputs(bramble_test)
+    
 else()
-    # Production executable
-    add_executable(bramble 
-        bramble.cpp 
+    # Common source files for both hub and node
+    set(COMMON_SOURCES
         src/lora/sx1276.cpp
         src/lora/message.cpp
         src/lora/reliable_messenger.cpp
@@ -77,46 +102,80 @@ else()
         src/config/node_config.cpp
         src/config/hub_config.cpp
     )
-    message(STATUS "Building production version")
+    
+    # Hub executable
+    add_executable(bramble_hub 
+        bramble.cpp 
+        ${COMMON_SOURCES}
+    )
+    target_compile_definitions(bramble_hub PRIVATE IS_HUB=1)
+    message(STATUS "Building hub version")
+    
+    # Node executable
+    add_executable(bramble_node
+        bramble.cpp 
+        ${COMMON_SOURCES}
+    )
+    target_compile_definitions(bramble_node PRIVATE IS_HUB=0)
+    message(STATUS "Building node version")
+    
+    # Add demo mode option
+    option(DEMO_MODE "Build in demo mode with verbose output" ON)
+    if(DEMO_MODE)
+        target_compile_definitions(bramble_hub PRIVATE DEMO_MODE=1)
+        target_compile_definitions(bramble_node PRIVATE DEMO_MODE=1)
+        message(STATUS "Demo mode enabled")
+    else()
+        target_compile_definitions(bramble_hub PRIVATE DEMO_MODE=0)
+        target_compile_definitions(bramble_node PRIVATE DEMO_MODE=0)
+        message(STATUS "Production mode enabled")
+    endif()
 endif()
 
-pico_set_program_name(bramble "bramble")
-pico_set_program_version(bramble "0.1")
-
-# Modify the below lines to enable/disable output over UART/USB
-pico_enable_stdio_uart(bramble 0)
-pico_enable_stdio_usb(bramble 1)
-
-# Add the standard library to the build
-target_link_libraries(bramble
-        pico_stdlib)
-
-# Add the standard include files to the build
-target_include_directories(bramble PRIVATE
-        ${CMAKE_CURRENT_LIST_DIR}
-        ${CMAKE_CURRENT_LIST_DIR}/src
-)
-
-# Add any user requested libraries
-target_link_libraries(bramble 
-        hardware_spi
-        hardware_timer
-        hardware_clocks
-        hardware_pio
-        hardware_flash
-        hardware_sync
+# Configure both hub and node targets if not building tests
+if(NOT BUILD_TESTS)
+    # Hub configuration
+    pico_set_program_name(bramble_hub "bramble_hub")
+    pico_set_program_version(bramble_hub "0.1")
+    pico_enable_stdio_uart(bramble_hub 0)
+    pico_enable_stdio_usb(bramble_hub 1)
+    
+    # Node configuration  
+    pico_set_program_name(bramble_node "bramble_node")
+    pico_set_program_version(bramble_node "0.1")
+    pico_enable_stdio_uart(bramble_node 0)
+    pico_enable_stdio_usb(bramble_node 1)
+    
+    # Common libraries for both targets
+    foreach(target bramble_hub bramble_node)
+        target_link_libraries(${target} pico_stdlib)
+        
+        target_include_directories(${target} PRIVATE
+            ${CMAKE_CURRENT_LIST_DIR}
+            ${CMAKE_CURRENT_LIST_DIR}/src
         )
-
-# Add pico-extras libraries if available
-if(EXISTS ${PICO_EXTRAS_PATH})
-    target_link_libraries(bramble 
-            hardware_sleep
-            hardware_rosc
+        
+        target_link_libraries(${target} 
+            hardware_spi
+            hardware_timer
+            hardware_clocks
+            hardware_pio
+            hardware_flash
+            hardware_sync
+        )
+        
+        # Add pico-extras libraries if available
+        if(EXISTS ${PICO_EXTRAS_PATH})
+            target_link_libraries(${target} 
+                hardware_sleep
+                hardware_rosc
             )
+        endif()
+        
+        # Generate PIO headers
+        pico_generate_pio_header(${target} ${CMAKE_CURRENT_LIST_DIR}/src/hal/ws2812.pio)
+        
+        pico_add_extra_outputs(${target})
+    endforeach()
 endif()
-
-# Generate PIO headers
-pico_generate_pio_header(bramble ${CMAKE_CURRENT_LIST_DIR}/src/hal/ws2812.pio)
-
-pico_add_extra_outputs(bramble)
 
