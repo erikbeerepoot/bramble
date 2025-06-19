@@ -177,9 +177,10 @@ bool SX1276::send(const uint8_t* data, size_t length) {
     writeRegister(SX1276_REG_PAYLOAD_LENGTH, length);
     
     // Write payload to FIFO using bulk transfer
-    SPIError result = spi_.writeBuffer(SX1276_REG_FIFO, data, length);
+    uint8_t tx_buf[256]; // Max LoRa packet size + 1 for register
+    SPIError result = spi_.writeBuffer(SX1276_REG_FIFO, data, length, tx_buf);
     if (result != SPI_SUCCESS) {
-        logger_.error("Failed to write FIFO: %s", spi_.getLastError());
+        logger_.error("Failed to write FIFO");
         return false;
     }
     
@@ -226,9 +227,11 @@ int SX1276::receive(uint8_t* buffer, size_t max_length) {
     writeRegister(SX1276_REG_FIFO_ADDR_PTR, fifo_addr);
     
     // Read packet data from FIFO using bulk transfer
-    SPIError result = spi_.readBuffer(SX1276_REG_FIFO, buffer, packet_length);
+    uint8_t tx_buf[256]; // Max LoRa packet size + 1 for register
+    uint8_t rx_buf[256];
+    SPIError result = spi_.readBuffer(SX1276_REG_FIFO, buffer, packet_length, tx_buf, rx_buf);
     if (result != SPI_SUCCESS) {
-        logger_.error("Failed to read FIFO: %s", spi_.getLastError());
+        logger_.error("Failed to read FIFO");
         return -1;
     }
     
@@ -287,7 +290,7 @@ void SX1276::reset() {
 void SX1276::writeRegister(uint8_t reg, uint8_t value) {
     SPIError result = spi_.writeRegister(reg, value);
     if (result != SPI_SUCCESS) {
-        logger_.error("Failed to write register 0x%02X: %s", reg, spi_.getLastError());
+        logger_.error("Failed to write register 0x%02X", reg);
     }
 }
 
@@ -295,7 +298,7 @@ uint8_t SX1276::readRegister(uint8_t reg) {
     uint8_t value = 0;
     SPIError result = spi_.readRegister(reg, &value);
     if (result != SPI_SUCCESS) {
-        logger_.error("Failed to read register 0x%02X: %s", reg, spi_.getLastError());
+        logger_.error("Failed to read register 0x%02X", reg);
     }
     return value;
 }
