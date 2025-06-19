@@ -1,6 +1,7 @@
 #pragma once
 
 #include "message.h"
+#include "../hal/flash.h"
 #include <map>
 #include <vector>
 
@@ -114,6 +115,20 @@ public:
      * @brief Print network status for debugging
      */
     void printNetworkStatus();
+    
+    /**
+     * @brief Save registry for persistence
+     * @param flash Flash interface to use
+     * @return true if saved successfully
+     */
+    bool persist(Flash& flash);
+    
+    /**
+     * @brief Load registry from persistent storage
+     * @param flash Flash interface to use
+     * @return true if loaded successfully
+     */
+    bool load(Flash& flash);
 
 private:
     std::map<uint16_t, NodeInfo> node_registry_;      // Address -> NodeInfo mapping

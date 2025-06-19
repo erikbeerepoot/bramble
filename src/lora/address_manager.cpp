@@ -1,7 +1,11 @@
 #include "address_manager.h"
+#include "../config/hub_config.h"
+#include "../hal/logger.h"
 #include "pico/stdlib.h"
 #include <stdio.h>
 #include <cstring>
+
+static Logger logger("AddressManager");
 
 AddressManager::AddressManager() : next_available_address_(ADDRESS_MIN_NODE) {
     // Initialize with first available node address
@@ -199,4 +203,99 @@ uint16_t AddressManager::findNextAvailableAddress() {
 
 uint32_t AddressManager::getCurrentTime() {
     return to_ms_since_boot(get_absolute_time());
+}
+
+bool AddressManager::persist(Flash& flash) {
+    logger.info("Persisting address manager registry");
+    
+    // Create hub registry structure
+    HubRegistry registry = {};
+    registry.header.magic = 0xBEEF5678;
+    registry.header.version = 1;
+    registry.header.next_address = next_available_address_;
+    registry.header.node_count = 0;
+    registry.header.save_time = getCurrentTime();
+    
+    // Convert NodeInfo entries to RegistryNodeEntry format
+    uint16_t node_index = 0;
+    for (const auto& [address, node_info] : node_registry_) {
+        if (node_index >= MAX_REGISTRY_NODES) {
+            logger.error("Too many nodes to persist (%d max)", MAX_REGISTRY_NODES);
+            break;
+        }
+        
+        RegistryNodeEntry& entry = registry.nodes[node_index];
+        entry.device_id = node_info.device_id;
+        entry.assigned_address = node_info.assigned_address;
+        entry.node_type = node_info.node_type;
+        entry.capabilities = node_info.capabilities;
+        entry.firmware_version = node_info.firmware_version;
+        entry.registration_time = node_info.registration_time;
+        entry.last_seen_time = node_info.last_seen_time;
+        entry.is_active = node_info.is_active ? 1 : 0;
+        
+        strncpy(entry.device_name, node_info.device_name, sizeof(entry.device_name) - 1);
+        entry.device_name[sizeof(entry.device_name) - 1] = '\0';
+        
+        node_index++;
+    }
+    
+    registry.header.node_count = node_index;
+    
+    // Use HubConfigManager to save
+    HubConfigManager config_manager(flash);
+    bool success = config_manager.saveRegistry(registry);
+    
+    if (success) {
+        logger.info("Successfully persisted %d nodes", node_index);
+    } else {
+        logger.error("Failed to persist registry");
+    }
+    
+    return success;
+}
+
+bool AddressManager::load(Flash& flash) {
+    logger.info("Loading address manager registry from persistent storage");
+    
+    // Use HubConfigManager to load
+    HubConfigManager config_manager(flash);
+    HubRegistry registry;
+    
+    if (!config_manager.loadRegistry(registry)) {
+        logger.warn("No valid registry found in storage, starting with empty registry");
+        return false;
+    }
+    
+    // Clear existing registry
+    node_registry_.clear();
+    device_to_address_.clear();
+    
+    // Restore next available address
+    next_available_address_ = registry.header.next_address;
+    
+    // Convert RegistryNodeEntry entries back to NodeInfo format
+    for (uint16_t i = 0; i < registry.header.node_count; i++) {
+        const RegistryNodeEntry& entry = registry.nodes[i];
+        
+        NodeInfo node_info;
+        node_info.device_id = entry.device_id;
+        node_info.assigned_address = entry.assigned_address;
+        node_info.node_type = entry.node_type;
+        node_info.capabilities = entry.capabilities;
+        node_info.firmware_version = entry.firmware_version;
+        node_info.registration_time = entry.registration_time;
+        node_info.last_seen_time = entry.last_seen_time;
+        node_info.is_active = (entry.is_active != 0);
+        
+        strncpy(node_info.device_name, entry.device_name, sizeof(node_info.device_name) - 1);
+        node_info.device_name[sizeof(node_info.device_name) - 1] = '\0';
+        
+        // Add to registries
+        node_registry_[node_info.assigned_address] = node_info;
+        device_to_address_[node_info.device_id] = node_info.assigned_address;
+    }
+    
+    logger.info("Successfully loaded %d nodes from persistent storage", registry.header.node_count);
+    return true;
 }

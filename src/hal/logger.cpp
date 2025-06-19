@@ -87,6 +87,7 @@ void Logger::updateUsbStatus() {
     
     // Simple heuristic: Check if stdio USB is initialized
     // In a real implementation, you might check USB enumeration status
+    //TODO : Replace with actual USB connection check
     usb_connected_ = stdio_usb_connected();
 }
 

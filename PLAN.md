@@ -179,12 +179,8 @@ bramble/
 ## Development Todo List
 
 ### NOW (Critical for Production)
-- [ ] Implement hub registry persistence (save/load node registrations to flash on reboot)
 - [ ] Add comprehensive input validation and buffer overflow protection
 - [ ] Make hardcoded configuration values runtime configurable (intervals, addresses, etc)
-- [x] Complete node registration flow: save assigned address to flash after successful registration
-- [x] Update ReliableMessenger to use newly assigned address after registration
-- [x] Add registration retry mechanism for failed registration attempts
 
 ### NEXT (Important Improvements)
 - [ ] Standardize header guards to use #pragma once consistently
@@ -227,6 +223,10 @@ bramble/
 - [x] Update ReliableMessenger to use newly assigned address after registration
 - [x] Add registration retry mechanism for failed registration attempts
 - [x] Refactor message processing to prevent code duplication between demo/production/hub modes
+- [x] Complete node registration flow: save assigned address to flash after successful registration
+- [x] Update ReliableMessenger to use newly assigned address after registration
+- [x] Add registration retry mechanism for failed registration attempts
+- [x] Implement hub registry persistence (save/load node registrations to flash on reboot)
 
 ## Success Criteria
 - ✅ ~~Basic LoRa communication working~~
