@@ -182,7 +182,6 @@ bramble/
 *No critical production items remaining - moving to NEXT section*
 
 ### NEXT (Important Improvements)
-- [ ] Add error handling for SPI communications with timeout and retry logic
 - [ ] Implement interrupt-driven LoRa operation instead of polling
 - [ ] Add node de-registration mechanism (graceful shutdown)
 - [ ] Implement node address change/reassignment capability
@@ -228,6 +227,7 @@ bramble/
 - [x] Add comprehensive input validation and buffer overflow protection
 - [x] Make hardcoded configuration values runtime configurable (DEFERRED - see RUNTIME_CONFIG_PLAN.md)
 - [x] Standardize header guards to use #pragma once consistently
+- [x] Add error handling for SPI communications with timeout and retry logic
 
 ## Success Criteria
 - ✅ ~~Basic LoRa communication working~~

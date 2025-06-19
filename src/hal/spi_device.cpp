@@ -2,8 +2,8 @@
 #include <string.h>
 #include <stdio.h>
 
-SPIDevice::SPIDevice(spi_inst_t* spi_port, uint cs_pin, uint32_t timeout_ms, uint8_t max_retries)
-    : spi_(spi_port), cs_pin_(cs_pin), timeout_ms_(timeout_ms), max_retries_(max_retries),
+SPIDevice::SPIDevice(spi_inst_t* spi_port, uint cs_pin, uint32_t perf_threshold_ms, uint8_t max_retries)
+    : spi_(spi_port), cs_pin_(cs_pin), perf_threshold_ms_(perf_threshold_ms), max_retries_(max_retries),
       read_mask_(0x7F), write_mask_(0x80), logger_("SPIDevice") {
     
     // Initialize CS pin
@@ -19,8 +19,8 @@ void SPIDevice::setRegisterMasks(uint8_t read_mask, uint8_t write_mask) {
     write_mask_ = write_mask;
 }
 
-void SPIDevice::setErrorHandling(uint32_t timeout_ms, uint8_t max_retries) {
-    timeout_ms_ = timeout_ms;
+void SPIDevice::setErrorHandling(uint32_t perf_threshold_ms, uint8_t max_retries) {
+    perf_threshold_ms_ = perf_threshold_ms;
     max_retries_ = max_retries;
 }
 
@@ -34,9 +34,6 @@ bool SPIDevice::performTransfer(const uint8_t* tx_buf, uint8_t* rx_buf, size_t l
         return false;
     }
     
-    // Start timeout tracking
-    uint32_t start_time = to_ms_since_boot(get_absolute_time());
-    
     setChipSelect(true); // CS low
     
     int result;
@@ -49,14 +46,6 @@ bool SPIDevice::performTransfer(const uint8_t* tx_buf, uint8_t* rx_buf, size_t l
     }
     
     setChipSelect(false); // CS high
-    
-    // Check for timeout
-    uint32_t elapsed = to_ms_since_boot(get_absolute_time()) - start_time;
-    if (elapsed > timeout_ms_) {
-        snprintf(last_error_, sizeof(last_error_), "SPI timeout: %lu ms", elapsed);
-        logger_.error(last_error_);
-        return false;
-    }
     
     // Check if transfer completed successfully
     if (result != (int)length) {

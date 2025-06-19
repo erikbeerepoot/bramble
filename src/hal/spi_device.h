@@ -6,8 +6,8 @@
 #include "logger.h"
 
 // SPI Communication configuration
-#define SPI_DEFAULT_TIMEOUT_MS      10      // 10ms timeout for SPI operations
-#define SPI_DEFAULT_MAX_RETRIES     3       // Maximum retries for SPI operations
+#define SPI_DEFAULT_PERF_THRESHOLD_MS  10   // 10ms performance monitoring threshold
+#define SPI_DEFAULT_MAX_RETRIES        3    // Maximum retries for SPI operations
 
 // SPI Error codes
 enum SPIError {
@@ -33,11 +33,11 @@ public:
      * @brief Construct a new SPI device wrapper
      * @param spi_port SPI instance (spi0 or spi1)
      * @param cs_pin Chip select GPIO pin
-     * @param timeout_ms SPI operation timeout in milliseconds
+     * @param perf_threshold_ms Performance monitoring threshold in milliseconds
      * @param max_retries Maximum retry attempts
      */
     SPIDevice(spi_inst_t* spi_port, uint cs_pin, 
-              uint32_t timeout_ms = SPI_DEFAULT_TIMEOUT_MS,
+              uint32_t perf_threshold_ms = SPI_DEFAULT_PERF_THRESHOLD_MS,
               uint8_t max_retries = SPI_DEFAULT_MAX_RETRIES);
     
     /**
@@ -92,11 +92,11 @@ public:
     void setRegisterMasks(uint8_t read_mask, uint8_t write_mask);
     
     /**
-     * @brief Update timeout and retry settings
-     * @param timeout_ms New timeout in milliseconds
+     * @brief Update performance threshold and retry settings
+     * @param perf_threshold_ms New performance monitoring threshold in milliseconds
      * @param max_retries New maximum retry count
      */
-    void setErrorHandling(uint32_t timeout_ms, uint8_t max_retries);
+    void setErrorHandling(uint32_t perf_threshold_ms, uint8_t max_retries);
     
     /**
      * @brief Get the last error details
@@ -107,7 +107,7 @@ public:
 private:
     spi_inst_t* spi_;
     uint cs_pin_;
-    uint32_t timeout_ms_;
+    uint32_t perf_threshold_ms_;
     uint8_t max_retries_;
     uint8_t read_mask_;
     uint8_t write_mask_;
