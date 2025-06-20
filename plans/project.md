@@ -127,7 +127,7 @@ bramble/
 ## Implementation Priority
 1. ✅ Basic SX1276 driver and message protocol - **COMPLETED**
 2. ✅ Simple hub-node communication (sensor data) - **COMPLETED** 
-3. 🔄 Reliable actuator command delivery - **NEXT: ACK/retry mechanism**
+3. ✅ Reliable actuator command delivery - **NEXT: ACK/retry mechanism**
 4. ⏳ Power management for battery nodes
 5. ⏳ Multi-node scaling and routing
 

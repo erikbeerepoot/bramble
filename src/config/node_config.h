@@ -16,7 +16,7 @@ struct __attribute__((packed)) NodeConfiguration {
     uint32_t magic;              // Magic number to validate data (0xBEEF1234)
     uint16_t assigned_address;   // Assigned network address
     uint64_t device_id;          // Device unique ID
-    uint32_t registration_time;  // When node was first registered
+    uint32_t registration_time;  // DEPRECATED - kept for flash compatibility, always 0
     char device_name[16];        // Device name
     uint8_t node_type;           // Node type
     uint8_t capabilities;        // Node capabilities

@@ -368,7 +368,7 @@ public:
      * @return true if critical priority
      */
     static bool isCritical(const Message* message);
-
+    
 private:
     /**
      * @brief Create message header

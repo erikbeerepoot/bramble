@@ -21,8 +21,9 @@ struct __attribute__((packed)) RegistryNodeEntry {
     uint8_t node_type;            // Node type
     uint8_t capabilities;         // Node capabilities
     uint16_t firmware_version;    // Firmware version
-    uint32_t registration_time;   // When node was registered
-    uint32_t last_seen_time;      // Last communication time
+    uint32_t registration_time;   // DEPRECATED - kept for flash compatibility, always 0
+    uint32_t last_seen_time;      // Last communication time (since boot)
+    uint32_t inactive_duration_ms; // Accumulated inactive time (survives reboots)
     char device_name[16];         // Device name
     uint8_t is_active;            // Active status
     uint8_t reserved[3];          // Padding for alignment

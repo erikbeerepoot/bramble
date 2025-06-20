@@ -99,7 +99,7 @@ public:
     bool sendRegistrationResponse(uint16_t dst_addr, uint64_t device_id,
                                 uint16_t assigned_addr, uint8_t status,
                                 uint8_t retry_interval, uint32_t network_time);
-                       
+    
     /**
      * @brief Generic send method for any message type
      * @param buffer Pre-built message buffer

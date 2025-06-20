@@ -15,8 +15,9 @@ struct NodeInfo {
     uint8_t capabilities;           // Node capabilities flags
     uint16_t firmware_version;      // Firmware version
     char device_name[16];           // Human readable name
-    uint32_t registration_time;     // When node was registered (ms since boot)
     uint32_t last_seen_time;        // Last communication time (ms since boot)
+    uint32_t last_check_time;       // Last time we checked/updated inactive duration
+    uint32_t inactive_duration_ms;  // Total accumulated time inactive (survives reboots)
     bool is_active;                 // Node is currently active
 };
 
@@ -95,6 +96,14 @@ public:
      * @return Number of nodes marked as inactive
      */
     uint32_t checkForInactiveNodes(uint32_t current_time, uint32_t timeout_ms = 300000); // 5 minutes default
+    
+    /**
+     * @brief Deregister nodes that have been inactive for extended period
+     * @param current_time Current time in milliseconds
+     * @param deregister_timeout_ms Timeout for deregistering inactive nodes
+     * @return Number of nodes deregistered
+     */
+    uint32_t deregisterInactiveNodes(uint32_t current_time, uint32_t deregister_timeout_ms = 86400000); // 24 hours default
     
     /**
      * @brief Get total number of registered nodes

@@ -136,26 +136,26 @@ int main()
         Flash flash_hal;
         NodeConfigManager config_manager(flash_hal);
         
+        // Get unique device ID
+        uint64_t device_id = getDeviceId();
+        
         // Check if we have a saved address from previous registration
         NodeConfiguration saved_config;
         if (config_manager.loadConfiguration(saved_config) && 
             saved_config.assigned_address != ADDRESS_UNREGISTERED) {
             
-            main_logger.info("Using saved address 0x%04X", saved_config.assigned_address);
-            // Update messenger to use saved address
+            main_logger.info("Found saved address 0x%04X - using it while re-registering", saved_config.assigned_address);
+            // Update messenger to use saved address immediately
             messenger.updateNodeAddress(saved_config.assigned_address);
         } else {
-            main_logger.info("No saved address - attempting registration with hub");
-            
-            // Get unique device ID
-            uint64_t device_id = getDeviceId();
-            
-            // Attempt registration with retry mechanism
-            if (attemptRegistration(messenger, lora, config_manager, device_id)) {
-                main_logger.info("Registration successful!");
-            } else {
-                main_logger.warn("Registration failed after all attempts - continuing with unregistered address");
-            }
+            main_logger.info("No saved address - using unregistered address");
+        }
+        
+        // Always attempt registration with hub to get authoritative address
+        if (attemptRegistration(messenger, lora, config_manager, device_id)) {
+            main_logger.info("Registration successful!");
+        } else {
+            main_logger.warn("Registration failed - continuing with current address");
         }
         
         if (DEMO_MODE) {
@@ -247,6 +247,16 @@ void runHubMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led,
             uint32_t inactive_count = address_manager.checkForInactiveNodes(current_time);
             if (inactive_count > 0) {
                 printf("Marked %lu nodes as inactive\n", inactive_count);
+            }
+            
+            // Deregister nodes that have been inactive for extended period
+            uint32_t deregistered_count = address_manager.deregisterInactiveNodes(current_time);
+            if (deregistered_count > 0) {
+                printf("Deregistered %lu nodes (inactive > %lu hours)\n", 
+                       deregistered_count, 86400000UL / 3600000UL); // Convert ms to hours
+                // Persist the updated registry to flash
+                Flash flash_hal;
+                address_manager.persist(flash_hal);
             }
             
             last_maintenance_time = current_time;
@@ -548,7 +558,7 @@ bool attemptRegistration(ReliableMessenger& messenger, SX1276& lora,
                                 new_config.node_type = NODE_TYPE_SENSOR;
                                 new_config.capabilities = capabilities;
                                 new_config.firmware_version = firmware_version;
-                                new_config.registration_time = to_ms_since_boot(get_absolute_time()) / 1000;
+                                new_config.registration_time = 0;  // Deprecated field, kept for compatibility
                                 strncpy(new_config.device_name, device_name, sizeof(new_config.device_name) - 1);
                                 
                                 if (config_manager.saveConfiguration(new_config)) {
