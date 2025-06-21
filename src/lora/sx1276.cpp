@@ -246,8 +246,21 @@ bool SX1276::sendAsync(const uint8_t* data, size_t length) {
 
 bool SX1276::isTxDone() {
     if (interrupt_enabled_) {
-        // In interrupt mode, check the flag
-        return tx_complete_;
+        // In interrupt mode, check the flag first
+        if (tx_complete_) {
+            return true;
+        }
+        
+        // Fallback: Also check register directly in case interrupt was missed
+        uint8_t irq_flags = readRegister(SX1276_REG_IRQ_FLAGS);
+        if (irq_flags & SX1276_IRQ_TX_DONE_MASK) {
+            logger_.warn("TX done flag set in register but interrupt was missed!");
+            // Clear TX done flag
+            writeRegister(SX1276_REG_IRQ_FLAGS, SX1276_IRQ_TX_DONE_MASK);
+            tx_complete_ = true;
+            return true;
+        }
+        return false;
     } else {
         // In polling mode, check register
         uint8_t irq_flags = readRegister(SX1276_REG_IRQ_FLAGS);
@@ -481,6 +494,12 @@ bool SX1276::enableInterruptMode(gpio_irq_callback_t callback) {
     // Verify the mapping was set correctly
     uint8_t verify = readRegister(SX1276_REG_DIO_MAPPING_1);
     logger_.debug("DIO mapping register set to 0x%02X", verify);
+    
+    // Ensure interrupts are not masked - enable all interrupts
+    writeRegister(SX1276_REG_IRQ_FLAGS_MASK, 0x00);  // 0x00 = all interrupts enabled
+    uint8_t mask_verify = readRegister(SX1276_REG_IRQ_FLAGS_MASK);
+    logger_.debug("IRQ mask register set to 0x%02X (0x00 = all enabled)", mask_verify);
+    
     
     // Set up global instance pointer for ISR
     g_sx1276_instance = this;

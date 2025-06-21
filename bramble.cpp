@@ -328,7 +328,7 @@ void runDemoMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led,
             // Hub: Blue breathing pattern (same as production hub mode)
             static uint8_t breath_counter = 0;
             uint8_t brightness = (breath_counter < 64) ? breath_counter * 2 : (128 - breath_counter) * 2;
-            led.setPixel(0, 0, brightness, 0);  // Blue breathing            
+            led.setPixel(0, 0, 0, brightness);  // Blue breathing            
             led.show();
             breath_counter = (breath_counter + 1) % 128;
         } else {

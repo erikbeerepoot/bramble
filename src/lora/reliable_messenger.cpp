@@ -378,6 +378,8 @@ bool ReliableMessenger::sendMessage(const uint8_t* buffer, size_t length) {
             logger_.debug("TX interrupt pending, handling...");
             lora_->handleInterrupt();
         }
+        
+        
         sleep_ms(1);
         wait_count++;
         if (wait_count > 5000) {  // 5 second timeout
