@@ -151,7 +151,7 @@ public:
      * @param length Length to verify
      * @return FlashResult indicating verification result
      */
-    FlashResult verifyData(uint32_t offset, const uint8_t *expected_data, size_t length);
+    bool verifyData(uint32_t offset, const uint8_t *expected_data, size_t length);
 
     /**
      * @brief Get error statistics

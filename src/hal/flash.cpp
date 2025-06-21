@@ -148,41 +148,30 @@ FlashResult Flash::erase(uint32_t offset, size_t length, uint32_t max_retries)
     return FLASH_ERROR_ERASE_FAILED;
 }
 
-FlashResult Flash::verifyData(uint32_t offset, const uint8_t *expected_data, size_t length)
-{
-    // Allocate buffer for verification read
-    uint8_t *verify_buffer = new uint8_t[length];
-    if (!verify_buffer)
-    {
-        return FLASH_ERROR_HARDWARE;
+bool Flash::verifyData(uint32_t offset, const uint8_t* expected_data, size_t length) {
+    if (!expected_data || length == 0) {
+        return false;
     }
 
-    // Read data from flash
-    const uint8_t *flash_address = getFlashBase() + offset;
-    memcpy(verify_buffer, flash_address, length);
+    // For QSPI flash, we can read directly from memory-mapped region
+    const uint8_t* flash_ptr = getFlashBase() + offset;
 
-    bool verification_passed = true;
+    // Direct memory comparison
+    bool match = (memcmp(flash_ptr, expected_data, length) == 0);
 
-    if (expected_data)
-    {
-        // Verify against expected data (for write verification)
-        verification_passed = (memcmp(verify_buffer, expected_data, length) == 0);
-    }
-    else
-    {
-        // Verify erase (should be all 0xFF)
-        for (size_t i = 0; i < length; i++)
-        {
-            if (verify_buffer[i] != 0xFF)
-            {
-                verification_passed = false;
-                break;
+    if (!match) {
+        logger_.error("Verification failed at offset 0x%08lx", offset);
+
+        // Log first few mismatched bytes for debugging
+        for (size_t i = 0; i < length && i < 16; i++) {
+            if (flash_ptr[i] != expected_data[i]) {
+                logger_.debug("  Offset 0x%08lx: expected 0x%02X, got 0x%02X",
+                            offset + i, expected_data[i], flash_ptr[i]);
             }
         }
     }
 
-    delete[] verify_buffer;
-    return verification_passed ? FLASH_SUCCESS : FLASH_ERROR_VERIFY_FAILED;
+    return match;
 }
 
 FlashResult Flash::performWrite(uint32_t offset, const uint8_t *data, size_t length)
