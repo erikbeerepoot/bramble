@@ -18,15 +18,24 @@ void ApplicationMode::run() {
     // Call startup hook
     onStart();
     
+    // If using multicore, start the task manager on Core 1
+    task_manager_.start();
+    
+    // Add LED update task if pattern exists
+    if (led_pattern_) {
+        task_manager_.addTask(
+            [this](uint32_t time) { updateLED(time); },
+            10,  // Update every 10ms for smooth animation
+            "LED Update"
+        );
+    }
+    
     // Main loop
     while (true) {
         uint32_t current_time = to_ms_since_boot(get_absolute_time());
         
-        // Update LED pattern
-        updateLED(current_time);
-        
-        // Handle periodic tasks
-        handlePeriodicTasks(current_time);
+        // Update tasks (only if not using multicore)
+        task_manager_.update(current_time);
         
         // Check for interrupts first (more efficient than polling)
         if (lora_.isInterruptPending()) {

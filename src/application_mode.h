@@ -1,7 +1,10 @@
 #pragma once
 #include <cstdint>
+#include <memory>
 #include "lora/message.h"
 #include "hal/neopixel.h"
+#include "led_patterns.h"
+#include "periodic_task_manager.h"
 
 // Forward declarations
 class ReliableMessenger;
@@ -23,15 +26,18 @@ protected:
     AddressManager* address_manager_;
     HubRouter* hub_router_;
     NetworkStats* network_stats_;
+    std::unique_ptr<LEDPattern> led_pattern_;
+    PeriodicTaskManager task_manager_;
     
 public:
     ApplicationMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led,
                    AddressManager* address_manager = nullptr,
                    HubRouter* hub_router = nullptr,
-                   NetworkStats* network_stats = nullptr)
+                   NetworkStats* network_stats = nullptr,
+                   bool use_multicore = true)
         : messenger_(messenger), lora_(lora), led_(led),
           address_manager_(address_manager), hub_router_(hub_router),
-          network_stats_(network_stats) {}
+          network_stats_(network_stats), task_manager_(use_multicore) {}
     
     virtual ~ApplicationMode() = default;
     
@@ -45,13 +51,12 @@ protected:
      * @brief Update LED pattern for this mode
      * @param current_time Current system time in milliseconds
      */
-    virtual void updateLED(uint32_t current_time) = 0;
+    virtual void updateLED(uint32_t current_time) {
+        if (led_pattern_) {
+            led_pattern_->update(current_time);
+        }
+    }
     
-    /**
-     * @brief Handle periodic tasks specific to this mode
-     * @param current_time Current system time in milliseconds
-     */
-    virtual void handlePeriodicTasks(uint32_t current_time) = 0;
     
     /**
      * @brief Process incoming message specific to this mode

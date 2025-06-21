@@ -167,6 +167,7 @@ if(NOT BUILD_TESTS)
             hardware_pio
             hardware_flash
             hardware_sync
+            pico_multicore
         )
         
         # Add pico-extras libraries if available
