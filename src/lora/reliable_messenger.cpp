@@ -3,8 +3,8 @@
 #include <stdio.h>
 #include <string.h>
 
-ReliableMessenger::ReliableMessenger(SX1276* lora, uint16_t node_addr)
-    : lora_(lora), node_addr_(node_addr), logger_("ReliableMessenger") {
+ReliableMessenger::ReliableMessenger(SX1276* lora, uint16_t node_addr, NetworkStats* stats)
+    : lora_(lora), node_addr_(node_addr), logger_("ReliableMessenger"), network_stats_(stats) {
     
     // Use different sequence number ranges to prevent collisions
     // Hub uses 1-127, nodes (including unregistered) use 128-255
@@ -191,6 +191,7 @@ bool ReliableMessenger::send(const uint8_t* buffer, size_t length,
     pending.retry_count = 0;
     pending.next_retry_time = getCurrentTime() + ACK_TIMEOUT_MS;
     pending.ack_received = false;
+    pending.criticality = criticality;
     
     pending_messages_[msg.header.seq_num] = pending;
     
@@ -229,6 +230,11 @@ bool ReliableMessenger::processIncomingMessage(const uint8_t* buffer, size_t len
             
         // Send ACK back to sender
         sendAck(message.header.src_addr, message.header.seq_num, 0);
+        
+        // Record ACK sent for statistics
+        if (network_stats_) {
+            network_stats_->recordAckSent(message.header.src_addr);
+        }
     }
     
     // Handle specific message types
@@ -295,7 +301,7 @@ void ReliableMessenger::update() {
         
         // Remove acknowledged messages
         if (pending.ack_received) {
-            printf("Message seq=%d acknowledged, removing from pending", pending.seq_num);
+            logger_.debug("Message seq=%d acknowledged, removing from pending", pending.seq_num);
             it = pending_messages_.erase(it);
             continue;
         }
@@ -313,6 +319,14 @@ void ReliableMessenger::update() {
             if (!is_critical && pending.retry_count >= MAX_RETRIES) {
                 logger_.error("Message seq=%d failed after %d retries, giving up", 
                        pending.seq_num, MAX_RETRIES);
+                
+                // Record timeout for network statistics
+                if (network_stats_) {
+                    network_stats_->recordTimeout(pending.dst_addr, pending.criticality);
+                    network_stats_->recordMessageSent(pending.dst_addr, pending.criticality,
+                                                    false, pending.retry_count);
+                }
+                
                 it = pending_messages_.erase(it);
                 continue;
             }
@@ -387,6 +401,13 @@ void ReliableMessenger::handleAck(const AckPayload* ack_payload) {
         it->second.ack_received = true;
         logger_.info("Received ACK for seq=%d, status=%d", 
                ack_payload->ack_seq_num, ack_payload->status);
+        
+        // Record successful delivery in network statistics
+        if (network_stats_) {
+            network_stats_->recordMessageSent(it->second.dst_addr, it->second.criticality,
+                                            true, it->second.retry_count);
+            network_stats_->recordAckReceived(it->second.dst_addr);
+        }
     } else {
         logger_.error("Received ACK for unknown seq=%d", ack_payload->ack_seq_num);
     }

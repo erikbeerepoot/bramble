@@ -95,6 +95,7 @@ else()
         src/lora/reliable_messenger.cpp
         src/lora/address_manager.cpp
         src/lora/hub_router.cpp
+        src/lora/network_stats.cpp
         src/hal/neopixel.cpp
         src/hal/flash.cpp
         src/hal/logger.cpp

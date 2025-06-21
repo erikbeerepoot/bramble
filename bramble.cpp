@@ -9,6 +9,7 @@
 #include "lora/reliable_messenger.h"
 #include "lora/address_manager.h"
 #include "lora/hub_router.h"
+#include "lora/network_stats.h"
 #include "hal/neopixel.h"
 #include "hal/flash.h"
 #include "hal/logger.h"
@@ -57,18 +58,22 @@ static Logger main_logger("MAIN");
 
 // Forward declarations
 void runDemoMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led, 
-                 AddressManager* address_manager = nullptr, HubRouter* hub_router = nullptr);
+                 AddressManager* address_manager = nullptr, HubRouter* hub_router = nullptr,
+                 NetworkStats* network_stats = nullptr);
 void runProductionMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led,
-                       AddressManager* address_manager = nullptr, HubRouter* hub_router = nullptr);
+                       AddressManager* address_manager = nullptr, HubRouter* hub_router = nullptr,
+                       NetworkStats* network_stats = nullptr);
 void runHubMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led,
-                AddressManager& address_manager, HubRouter& hub_router);
+                AddressManager& address_manager, HubRouter& hub_router,
+                NetworkStats* network_stats);
 bool initializeHardware(SX1276& lora, NeoPixel& led);
 uint64_t getDeviceId();
 bool attemptRegistration(ReliableMessenger& messenger, SX1276& lora, 
                         NodeConfigManager& config_manager, uint64_t device_id);
 void processIncomingMessage(uint8_t* rx_buffer, int rx_len, ReliableMessenger& messenger,
                           AddressManager* address_manager, HubRouter* hub_router, 
-                          uint32_t current_time);
+                          uint32_t current_time, NetworkStats* network_stats = nullptr,
+                          SX1276* lora = nullptr);
 void sleepUntilInterrupt();
 
 int main()
@@ -99,9 +104,6 @@ int main()
         }
     }
     
-    // Initialize reliable messenger
-    ReliableMessenger messenger(&lora, NODE_ADDRESS);
-    
     // Enable interrupt mode for efficient operation
     if (lora.enableInterruptMode()) {
         main_logger.info("Interrupt mode enabled - efficient power usage");
@@ -111,6 +113,15 @@ int main()
     
     // Start in receive mode
     lora.startReceive();
+    
+    // Initialize network statistics (only for hub)
+    NetworkStats* network_stats = nullptr;
+    if (IS_HUB) {
+        network_stats = new NetworkStats();
+    }
+    
+    // Initialize reliable messenger with optional network stats
+    ReliableMessenger messenger(&lora, NODE_ADDRESS, network_stats);
     
     // Check if this device should run as hub
     if (IS_HUB) {
@@ -123,10 +134,10 @@ int main()
         
         if (DEMO_MODE) {
             printf("Starting HUB DEMO mode\n");
-            runDemoMode(messenger, lora, led, &address_manager, &hub_router);
+            runDemoMode(messenger, lora, led, &address_manager, &hub_router, network_stats);
         } else {
             printf("Starting HUB PRODUCTION mode\n");
-            runHubMode(messenger, lora, led, address_manager, hub_router);
+            runHubMode(messenger, lora, led, address_manager, hub_router, network_stats);
         }
     } else {
         // Run as regular node
@@ -160,10 +171,10 @@ int main()
         
         if (DEMO_MODE) {
             main_logger.info("Starting NODE DEMO mode - sending test messages");
-            runDemoMode(messenger, lora, led);
+            runDemoMode(messenger, lora, led, nullptr, nullptr, network_stats);
         } else {
             main_logger.info("Starting NODE PRODUCTION mode - real sensor monitoring");
-            runProductionMode(messenger, lora, led);
+            runProductionMode(messenger, lora, led, nullptr, nullptr, network_stats);
         }
     }
     
@@ -207,7 +218,8 @@ bool initializeHardware(SX1276& lora, NeoPixel& led) {
 }
 
 void runHubMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led,
-                AddressManager& address_manager, HubRouter& hub_router) {
+                AddressManager& address_manager, HubRouter& hub_router,
+                NetworkStats* network_stats) {
     uint32_t last_stats_time = 0;
     uint32_t last_maintenance_time = 0;
     
@@ -234,6 +246,18 @@ void runHubMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led,
                    routed, queued, dropped);
             
             printf("Registered nodes: %u\n", address_manager.getRegisteredNodeCount());
+            
+            // Print network statistics if available
+            if (network_stats) {
+                // Update node counts
+                network_stats->updateNodeCounts(
+                    address_manager.getRegisteredNodeCount(),
+                    address_manager.getActiveNodeCount(),
+                    address_manager.getRegisteredNodeCount() - address_manager.getActiveNodeCount()
+                );
+                network_stats->printSummary();
+            }
+            
             last_stats_time = current_time;
         }
         
@@ -277,7 +301,7 @@ void runHubMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led,
                        rx_len, lora.getRssi());
                 
                 // Use common message processing function
-                processIncomingMessage(rx_buffer, rx_len, messenger, &address_manager, &hub_router, current_time);
+                processIncomingMessage(rx_buffer, rx_len, messenger, &address_manager, &hub_router, current_time, network_stats, &lora);
             } else if (rx_len < 0) {
                 lora.startReceive();
             }
@@ -296,7 +320,8 @@ void runHubMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led,
 }
 
 void runDemoMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led, 
-                 AddressManager* address_manager, HubRouter* hub_router) {
+                 AddressManager* address_manager, HubRouter* hub_router,
+                 NetworkStats* network_stats) {
     uint32_t last_demo_time = 0;
     uint32_t last_heartbeat_time = 0;
     
@@ -373,7 +398,7 @@ void runDemoMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led,
                        rx_len, lora.getRssi(), lora.getSnr());
                 
                 // Use common message processing function
-                processIncomingMessage(rx_buffer, rx_len, messenger, address_manager, hub_router, current_time);
+                processIncomingMessage(rx_buffer, rx_len, messenger, address_manager, hub_router, current_time, network_stats, &lora);
             } else if (rx_len < 0) {
                 printf("Receive error (CRC or buffer issue)\n");
                 lora.startReceive();
@@ -397,7 +422,8 @@ void runDemoMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led,
 }
 
 void runProductionMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led,
-                       AddressManager* address_manager, HubRouter* hub_router) {
+                       AddressManager* address_manager, HubRouter* hub_router,
+                       NetworkStats* network_stats) {
     uint32_t last_sensor_time = 0;
     uint32_t last_heartbeat_time = 0;
     uint8_t led_counter = 0;
@@ -453,7 +479,7 @@ void runProductionMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led
             
             if (rx_len > 0) {
                 // Use common message processing function  
-                processIncomingMessage(rx_buffer, rx_len, messenger, address_manager, hub_router, current_time);
+                processIncomingMessage(rx_buffer, rx_len, messenger, address_manager, hub_router, current_time, network_stats, &lora);
                 
                 // TODO: Add command processing for actuator control
                 // Parse incoming actuator commands and control valves/pumps accordingly
@@ -608,9 +634,16 @@ bool attemptRegistration(ReliableMessenger& messenger, SX1276& lora,
 
 void processIncomingMessage(uint8_t* rx_buffer, int rx_len, ReliableMessenger& messenger,
                           AddressManager* address_manager, HubRouter* hub_router, 
-                          uint32_t current_time) {
+                          uint32_t current_time, NetworkStats* network_stats, SX1276* lora) {
     // Process message with reliable messenger (handles ACKs, sensor data, etc.)
     messenger.processIncomingMessage(rx_buffer, rx_len);
+    
+    // Record statistics if available
+    if (network_stats && lora && rx_len >= sizeof(MessageHeader)) {
+        const MessageHeader* header = reinterpret_cast<const MessageHeader*>(rx_buffer);
+        network_stats->recordMessageReceived(header->src_addr, lora->getRssi(), 
+                                           lora->getSnr(), false);
+    }
     
     // If not a hub, we're done
     if (!hub_router || !address_manager || rx_len < sizeof(MessageHeader)) {

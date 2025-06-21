@@ -2,6 +2,7 @@
 
 #include "message.h"
 #include "sx1276.h"
+#include "network_stats.h"
 #include "../hal/logger.h"
 #include <map>
 
@@ -22,6 +23,7 @@ struct PendingMessage {
     uint8_t retry_count;
     uint32_t next_retry_time;
     bool ack_received;
+    DeliveryCriticality criticality;
 };
 
 /**
@@ -29,7 +31,7 @@ struct PendingMessage {
  */
 class ReliableMessenger {
 public:
-    ReliableMessenger(SX1276* lora, uint16_t node_addr);
+    ReliableMessenger(SX1276* lora, uint16_t node_addr, NetworkStats* stats = nullptr);
     
     /**
      * @brief Send an actuator command with specified criticality
@@ -148,6 +150,7 @@ private:
     uint8_t next_seq_num_;
     std::map<uint8_t, PendingMessage> pending_messages_;
     Logger logger_;
+    NetworkStats* network_stats_;
     
     /**
      * @brief Send a message immediately
