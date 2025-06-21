@@ -34,7 +34,8 @@ enum FlashResult
     FLASH_ERROR_VERIFY_FAILED,   // Write verification failed
     FLASH_ERROR_ERASE_FAILED,    // Erase operation failed
     FLASH_ERROR_TIMEOUT,         // Operation timed out
-    FLASH_ERROR_HARDWARE         // Hardware failure
+    FLASH_ERROR_HARDWARE,        // Hardware failure
+    FLASH_ERROR_UNKNOWN = 255    // Unknown error -- default error case
 };
 
 /**
@@ -102,43 +103,36 @@ public:
     FlashResult erase(uint32_t offset, size_t length, uint32_t max_retries = 3);
 
     /**
-     * @brief Check if offset is aligned to page boundary
-     * @param offset Offset to check
-     * @return true if aligned to page boundary
+     * @brief Generic alignment check
+     * @tparam Boundary The alignment boundary to check against
+     * @param value The value to check
+     * @return true if aligned to boundary
      */
-    bool isPageAligned(uint32_t offset) const
+    template <uint32_t Boundary>
+    inline bool isAligned(uint32_t value) const
     {
-        return (offset % FLASH_PAGE_SIZE) == 0;
+        return (value % Boundary) == 0;
     }
 
-    /**
-     * @brief Check if offset is aligned to sector boundary
-     * @param offset Offset to check
-     * @return true if aligned to sector boundary
-     */
-    bool isSectorAligned(uint32_t offset) const
+    // Convenience methods using the generic template
+    inline bool isPageAligned(uint32_t offset) const
     {
-        return (offset % FLASH_SECTOR_SIZE) == 0;
+        return isAligned<FLASH_PAGE_SIZE>(offset);
     }
 
-    /**
-     * @brief Check if length is multiple of page size
-     * @param length Length to check
-     * @return true if multiple of page size
-     */
-    bool isPageMultiple(size_t length) const
+    inline bool isSectorAligned(uint32_t offset) const
     {
-        return (length % FLASH_PAGE_SIZE) == 0;
+        return isAligned<FLASH_SECTOR_SIZE>(offset);
     }
 
-    /**
-     * @brief Check if length is multiple of sector size
-     * @param length Length to check
-     * @return true if multiple of sector size
-     */
-    bool isSectorMultiple(size_t length) const
+    inline bool isPageMultiple(size_t length) const
     {
-        return (length % FLASH_SECTOR_SIZE) == 0;
+        return isAligned<FLASH_PAGE_SIZE>(static_cast<uint32_t>(length));
+    }
+
+    inline bool isSectorMultiple(size_t length) const
+    {
+        return isAligned<FLASH_SECTOR_SIZE>(static_cast<uint32_t>(length));
     }
 
     /**
