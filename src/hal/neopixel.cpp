@@ -1,154 +1,149 @@
 #include "neopixel.h"
-#include "hardware/pio.h"
-#include "hardware/clocks.h"
-#include "ws2812.pio.h"
-#include <cstdlib>
 #include <cstring>
-#include <algorithm>
 
-NeoPixel::NeoPixel(int pin, int num_pixels) 
-    : pin(pin), num_pixels(num_pixels), sm(0), offset(0), pixels(nullptr) {
-    pixels = (neopixel_color_t*)malloc(num_pixels * sizeof(neopixel_color_t));
-    if (pixels) {
+NeoPixel::NeoPixel(uint pin, uint num_pixels) : pio_pin(pin)
+{
+    pixels.resize(num_pixels, {0, 0, 0}); // Initialize all pixels to black
+
+    // Determine which PIO and state machine to use
+    bool pio0_available = false;
+    bool pio1_available = false;
+
+    // Check for available state machines
+    for (int i = 0; i < 4; i++)
+    {
+        if (!pio_sm_is_claimed(pio0, i))
+        {
+            pio = pio0;
+            sm = i;
+            pio0_available = true;
+            break;
+        }
+    }
+
+    if (!pio0_available)
+    {
+        for (int i = 0; i < 4; i++)
+        {
+            if (!pio_sm_is_claimed(pio1, i))
+            {
+                pio = pio1;
+                sm = i;
+                pio1_available = true;
+                break;
+            }
+        }
+    }
+
+    if (!pio0_available && !pio1_available)
+    {
+        // No state machines available
+        return;
+    }
+
+    // Claim the state machine
+    pio_sm_claim(pio, sm);
+
+    // Load the program
+    offset = pio_add_program(pio, &ws2812_program);
+    ws2812_program_init(pio, sm, offset, pio_pin, WS2812_FREQ, false);
+
+    initialized = true;
+}
+
+NeoPixel::~NeoPixel()
+{
+    if (initialized)
+    {
         clear();
+        show();
+        pio_sm_set_enabled(pio, sm, false);
+        pio_sm_unclaim(pio, sm);
+    }
+    // No need to free memory - std::vector handles it
+}
+
+void NeoPixel::setPixel(uint index, uint8_t r, uint8_t g, uint8_t b)
+{
+    if (index < pixels.size())
+    {
+        pixels[index] = {r, g, b};
     }
 }
 
-NeoPixel::~NeoPixel() {
-    if (pixels) {
-        free(pixels);
+void NeoPixel::setPixel(uint index, neopixel_color_t color)
+{
+    if (index < pixels.size())
+    {
+        pixels[index] = color;
     }
 }
 
-bool NeoPixel::begin() {
-    if (!pixels) return false;
-    
-    PIO pio = pio0;
-    
-    // Try to claim a state machine
-    this->sm = pio_claim_unused_sm(pio, true);
-    if (this->sm == -1) {
-        // Try pio1 if pio0 is full
-        pio = pio1;
-        this->sm = pio_claim_unused_sm(pio, true);
-        if (this->sm == -1) {
-            return false;
-        }
-    }
-    
-    // Load the PIO program
-    this->offset = pio_add_program(pio, &ws2812_program);
-    
-    // Initialize the state machine
-    ws2812_program_init(pio, this->sm, this->offset, this->pin, 800000, false);
-    
-    return true;
+void NeoPixel::clear()
+{
+    std::fill(pixels.begin(), pixels.end(), neopixel_color_t{0, 0, 0});
 }
 
-void NeoPixel::setPixelColor(int pixel_index, uint8_t r, uint8_t g, uint8_t b) {
-    if (pixel_index >= this->num_pixels || !pixels) return;
-    
-    pixels[pixel_index].r = r;
-    pixels[pixel_index].g = g;
-    pixels[pixel_index].b = b;
-}
+void NeoPixel::show()
+{
+    if (!initialized)
+        return;
 
-void NeoPixel::setPixelColor(int pixel_index, neopixel_color_t color) {
-    if (pixel_index >= this->num_pixels || !pixels) return;
-    
-    pixels[pixel_index] = color;
-}
+    for (const auto &pixel : pixels)
+    {
+        // Apply brightness scaling during output
+        uint8_t r = (pixel.r * global_brightness) / 255;
+        uint8_t g = (pixel.g * global_brightness) / 255;
+        uint8_t b = (pixel.b * global_brightness) / 255;
 
-void NeoPixel::clear() {
-    if (!pixels) return;
-    
-    for (uint i = 0; i < this->num_pixels; i++) {
-        pixels[i].r = 0;
-        pixels[i].g = 0;
-        pixels[i].b = 0;
-    }
-}
-
-void NeoPixel::show() {
-    if (!pixels) return;
-    
-    PIO pio = (this->sm < 4) ? pio0 : pio1;
-    uint actual_sm = this->sm & 3;
-    
-    for (uint i = 0; i < this->num_pixels; i++) {
         // WS2812 expects GRB format
-        uint32_t pixel_grb = ((uint32_t)pixels[i].g << 16) | 
-                            ((uint32_t)pixels[i].r << 8) | 
-                            pixels[i].b;
-        
-        pio_sm_put_blocking(pio, actual_sm, pixel_grb << 8u);
+        uint32_t pixel_data = ((uint32_t)g << 16) | ((uint32_t)r << 8) | (uint32_t)b;
+        pio_sm_put_blocking(pio, sm, pixel_data << 8);
     }
 }
 
-void NeoPixel::setBrightness(float brightness) {
-    brightness = std::max(0.0f, std::min(1.0f, brightness));
-    
-    if (!pixels) return;
-    
-    for (uint i = 0; i < this->num_pixels; i++) {
-        pixels[i].r = (uint8_t)(pixels[i].r * brightness);
-        pixels[i].g = (uint8_t)(pixels[i].g * brightness);
-        pixels[i].b = (uint8_t)(pixels[i].b * brightness);
-    }
+void NeoPixel::setBrightness(uint8_t brightness)
+{
+    global_brightness = brightness;
 }
 
-neopixel_color_t NeoPixel::colorRGB(uint8_t r, uint8_t g, uint8_t b) {
-    neopixel_color_t color;
-    color.r = r;
-    color.g = g;
-    color.b = b;
-    return color;
+uint NeoPixel::getNumPixels() const
+{
+    return pixels.size();
 }
 
-neopixel_color_t NeoPixel::colorHSV(uint16_t hue, uint8_t sat, uint8_t val) {
-    uint8_t r, g, b;
-    
-    hue = (hue * 1530L + 32768) / 65536;
-    
-    if (hue < 510) {
-        b = 0;
-        if (hue < 255) {
-            r = 255;
-            g = hue;
-        } else {
-            r = 510 - hue;
-            g = 255;
-        }
-    } else if (hue < 1020) {
-        r = 0;
-        if (hue < 765) {
-            g = 255;
-            b = hue - 510;
-        } else {
-            g = 1020 - hue;
-            b = 255;
-        }
-    } else if (hue < 1530) {
-        g = 0;
-        if (hue < 1275) {
-            r = hue - 1020;
-            b = 255;
-        } else {
-            r = 255;
-            b = 1530 - hue;
-        }
-    } else {
-        r = 255;
-        g = b = 0;
+// Simplified HSV to RGB conversion
+neopixel_color_t NeoPixel::colorHSV(uint16_t h, uint8_t s, uint8_t v)
+{
+    // Scale hue to 0-255 range for simpler calculation
+    uint8_t hue = h >> 8;
+
+    if (s == 0)
+    {
+        // Grayscale
+        return {v, v, v};
     }
-    
-    uint32_t v1 = 1 + val;
-    uint16_t s1 = 1 + sat;
-    uint8_t s2 = 255 - sat;
-    
-    r = ((((r * s1) >> 8) + s2) * v1) >> 8;
-    g = ((((g * s1) >> 8) + s2) * v1) >> 8;
-    b = ((((b * s1) >> 8) + s2) * v1) >> 8;
-    
-    return colorRGB(r, g, b);
+
+    uint8_t region = hue / 43; // 256 / 6 regions
+    uint8_t remainder = (hue - (region * 43)) * 6;
+
+    uint8_t p = (v * (255 - s)) >> 8;
+    uint8_t q = (v * (255 - ((s * remainder) >> 8))) >> 8;
+    uint8_t t = (v * (255 - ((s * (255 - remainder)) >> 8))) >> 8;
+
+    switch (region)
+    {
+    case 0:
+        return {v, t, p};
+    case 1:
+        return {q, v, p};
+    case 2:
+        return {p, v, t};
+    case 3:
+        return {p, q, v};
+    case 4:
+        return {t, p, v};
+    default:
+        return {v, p, q};
+    }
 }
