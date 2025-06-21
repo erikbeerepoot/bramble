@@ -29,9 +29,7 @@ void NetworkStats::recordMessageSent(uint16_t dst_addr, DeliveryCriticality crit
     }
     
     // Update global stats
-    MessageTypeStats& global = (criticality == CRITICAL) ? global_stats_.critical_total :
-                              (criticality == RELIABLE) ? global_stats_.reliable_total :
-                              global_stats_.best_effort_total;
+    MessageTypeStats& global = global_stats_.criticality_totals[static_cast<size_t>(criticality)];
     
     global.sent++;
     if (delivered) {
@@ -106,9 +104,7 @@ void NetworkStats::recordTimeout(uint16_t dst_addr, DeliveryCriticality critical
     }
     
     // Update global stats
-    MessageTypeStats& global = (criticality == CRITICAL) ? global_stats_.critical_total :
-                              (criticality == RELIABLE) ? global_stats_.reliable_total :
-                              global_stats_.best_effort_total;
+    MessageTypeStats& global = global_stats_.criticality_totals[static_cast<size_t>(criticality)];
     global.timeouts++;
 }
 
@@ -143,9 +139,9 @@ void NetworkStats::printSummary() const {
     logger_.info("Message Statistics:");
     logger_.info("  Total Sent: %lu (BE: %lu, R: %lu, C: %lu)",
                  global_stats_.getTotalMessagesSent(),
-                 global_stats_.best_effort_total.sent,
-                 global_stats_.reliable_total.sent,
-                 global_stats_.critical_total.sent);
+                 global_stats_.criticality_totals[BEST_EFFORT].sent,
+                 global_stats_.criticality_totals[RELIABLE].sent,
+                 global_stats_.criticality_totals[CRITICAL].sent);
     
     logger_.info("  Total Delivered: %lu", global_stats_.getTotalDelivered());
     logger_.info("  Total Received: %lu", global_stats_.total_messages_received);
@@ -153,22 +149,22 @@ void NetworkStats::printSummary() const {
     
     logger_.info("Reliability Metrics:");
     logger_.info("  Overall Delivery Rate: %.1f%%", global_stats_.getOverallDeliveryRate());
-    logger_.info("  Best Effort: %.1f%% delivery", global_stats_.best_effort_total.getDeliveryRate());
+    logger_.info("  Best Effort: %.1f%% delivery", global_stats_.criticality_totals[BEST_EFFORT].getDeliveryRate());
     logger_.info("  Reliable: %.1f%% delivery (%.2f avg retries)", 
-                 global_stats_.reliable_total.getDeliveryRate(),
-                 global_stats_.reliable_total.getAverageRetries());
+                 global_stats_.criticality_totals[RELIABLE].getDeliveryRate(),
+                 global_stats_.criticality_totals[RELIABLE].getAverageRetries());
     logger_.info("  Critical: %.1f%% delivery (%.2f avg retries, max %u)",
-                 global_stats_.critical_total.getDeliveryRate(),
-                 global_stats_.critical_total.getAverageRetries(),
-                 global_stats_.critical_total.max_retries);
+                 global_stats_.criticality_totals[CRITICAL].getDeliveryRate(),
+                 global_stats_.criticality_totals[CRITICAL].getAverageRetries(),
+                 global_stats_.criticality_totals[CRITICAL].max_retries);
     
     logger_.info("Error Statistics:");
     logger_.info("  CRC Errors: %lu", global_stats_.total_crc_errors);
     logger_.info("  Invalid Messages: %lu", global_stats_.total_invalid_messages);
     logger_.info("  Timeouts: %lu (R: %lu, C: %lu)",
-                 global_stats_.reliable_total.timeouts + global_stats_.critical_total.timeouts,
-                 global_stats_.reliable_total.timeouts,
-                 global_stats_.critical_total.timeouts);
+                 global_stats_.criticality_totals[RELIABLE].timeouts + global_stats_.criticality_totals[CRITICAL].timeouts,
+                 global_stats_.criticality_totals[RELIABLE].timeouts,
+                 global_stats_.criticality_totals[CRITICAL].timeouts);
     
     logger_.info("ACK Statistics:");
     logger_.info("  ACKs Sent: %lu", global_stats_.total_acks_sent);
@@ -191,13 +187,13 @@ void NetworkStats::printNodeStats(uint16_t address) const {
     logger_.info("Message Statistics:");
     logger_.info("  Sent: %lu total", node->getTotalMessagesSent());
     logger_.info("    Best Effort: %lu sent, %.1f%% delivered",
-                 node->best_effort_stats.sent, node->best_effort_stats.getDeliveryRate());
+                 node->criticality_stats[BEST_EFFORT].sent, node->criticality_stats[BEST_EFFORT].getDeliveryRate());
     logger_.info("    Reliable: %lu sent, %.1f%% delivered, %.2f avg retries",
-                 node->reliable_stats.sent, node->reliable_stats.getDeliveryRate(),
-                 node->reliable_stats.getAverageRetries());
+                 node->criticality_stats[RELIABLE].sent, node->criticality_stats[RELIABLE].getDeliveryRate(),
+                 node->criticality_stats[RELIABLE].getAverageRetries());
     logger_.info("    Critical: %lu sent, %.1f%% delivered, %.2f avg retries, max %u",
-                 node->critical_stats.sent, node->critical_stats.getDeliveryRate(),
-                 node->critical_stats.getAverageRetries(), node->critical_stats.max_retries);
+                 node->criticality_stats[CRITICAL].sent, node->criticality_stats[CRITICAL].getDeliveryRate(),
+                 node->criticality_stats[CRITICAL].getAverageRetries(), node->criticality_stats[CRITICAL].max_retries);
     
     logger_.info("  Received: %lu", node->messages_received);
     logger_.info("  Timeouts: %lu", node->getTotalTimeouts());

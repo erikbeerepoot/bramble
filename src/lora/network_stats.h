@@ -4,6 +4,8 @@
 #include <map>
 #include <cmath>
 #include <algorithm>
+#include <array>
+#include <numeric>
 #include "pico/time.h"
 #include "../hal/logger.h"
 #include "message.h"
@@ -28,13 +30,10 @@ public:
     }
     
     float getMean() const {
-        if (count_ == 0) return 0;
-        float sum = 0;
-        for (size_t i = 0; i < count_; i++) {
-            sum += values_[i];
+            if (count_ == 0) return 0;
+            return std::accumulate(values_, values_ + count_, 0.0f) / count_;
         }
-        return sum / count_;
-    }
+
     
     float getStdDev() const {
         if (count_ < 2) return 0;
@@ -48,22 +47,16 @@ public:
     }
     
     int16_t getMin() const {
-        if (count_ == 0) return 0;
-        int16_t min_val = values_[0];
-        for (size_t i = 1; i < count_; i++) {
-            if (values_[i] < min_val) min_val = values_[i];
+            if (count_ == 0) return 0;
+            return *std::min_element(values_, values_ + count_);
         }
-        return min_val;
-    }
+
     
     int16_t getMax() const {
-        if (count_ == 0) return 0;
-        int16_t max_val = values_[0];
-        for (size_t i = 1; i < count_; i++) {
-            if (values_[i] > max_val) max_val = values_[i];
+            if (count_ == 0) return 0;
+            return *std::max_element(values_, values_ + count_);
         }
-        return max_val;
-    }
+
     
     int16_t getPercentile(uint8_t percentile) const {
         if (count_ == 0 || percentile > 100) return 0;
@@ -142,10 +135,8 @@ struct MessageTypeStats {
  * @brief Statistics for a single node
  */
 struct NodeStatistics {
-    // Message counters by criticality level
-    MessageTypeStats best_effort_stats;
-    MessageTypeStats reliable_stats;
-    MessageTypeStats critical_stats;
+    // Message counters by criticality level (indexed by DeliveryCriticality)
+    std::array<MessageTypeStats, 3> criticality_stats;
     
     // Overall counters
     uint32_t messages_received = 0;      // Total messages received from this node
@@ -171,35 +162,34 @@ struct NodeStatistics {
     
     // Helper to get stats by criticality
     MessageTypeStats& getStatsByCriticality(DeliveryCriticality criticality) {
-        switch (criticality) {
-            case CRITICAL: return critical_stats;
-            case RELIABLE: return reliable_stats;
-            default: return best_effort_stats;
-        }
+        return criticality_stats[toIndex(criticality)];
     }
     
+private:
+    static size_t toIndex(DeliveryCriticality criticality) {
+        return static_cast<size_t>(criticality);
+    }
+    
+public:
+    
     const MessageTypeStats& getStatsByCriticality(DeliveryCriticality criticality) const {
-        switch (criticality) {
-            case CRITICAL: return critical_stats;
-            case RELIABLE: return reliable_stats;
-            default: return best_effort_stats;
-        }
+        return criticality_stats[toIndex(criticality)];
     }
     
     uint32_t getTotalMessagesSent() const {
-        return best_effort_stats.sent + reliable_stats.sent + critical_stats.sent;
+        return criticality_stats[BEST_EFFORT].sent + criticality_stats[RELIABLE].sent + criticality_stats[CRITICAL].sent;
     }
     
     uint32_t getTotalDelivered() const {
-        return best_effort_stats.delivered + reliable_stats.delivered + critical_stats.delivered;
+        return criticality_stats[BEST_EFFORT].delivered + criticality_stats[RELIABLE].delivered + criticality_stats[CRITICAL].delivered;
     }
     
     uint32_t getTotalTimeouts() const {
-        return reliable_stats.timeouts + critical_stats.timeouts;
+        return criticality_stats[RELIABLE].timeouts + criticality_stats[CRITICAL].timeouts;
     }
     
     uint32_t getTotalRetries() const {
-        return reliable_stats.retries + critical_stats.retries;
+        return criticality_stats[RELIABLE].retries + criticality_stats[CRITICAL].retries;
     }
     
     LinkQuality calculateLinkQuality(int16_t rssi) const {
@@ -229,10 +219,8 @@ struct NodeStatistics {
  * @brief Global network statistics
  */
 struct GlobalStatistics {
-    // Overall counters by criticality
-    MessageTypeStats best_effort_total;
-    MessageTypeStats reliable_total;
-    MessageTypeStats critical_total;
+    // Overall counters by criticality (indexed by DeliveryCriticality)
+    std::array<MessageTypeStats, 3> criticality_totals;
     
     // General counters
     uint32_t total_messages_received = 0;
@@ -258,17 +246,17 @@ struct GlobalStatistics {
     }
     
     uint32_t getTotalMessagesSent() const {
-        return best_effort_total.sent + reliable_total.sent + critical_total.sent;
+        return criticality_totals[BEST_EFFORT].sent + criticality_totals[RELIABLE].sent + criticality_totals[CRITICAL].sent;
     }
     
     uint32_t getTotalDelivered() const {
-        return best_effort_total.delivered + reliable_total.delivered + critical_total.delivered;
+        return criticality_totals[BEST_EFFORT].delivered + criticality_totals[RELIABLE].delivered + criticality_totals[CRITICAL].delivered;
     }
     
     float getOverallDeliveryRate() const {
         // Only count reliable and critical for overall delivery rate
-        uint32_t reliable_sent = reliable_total.sent + critical_total.sent;
-        uint32_t reliable_delivered = reliable_total.delivered + critical_total.delivered;
+        uint32_t reliable_sent = criticality_totals[RELIABLE].sent + criticality_totals[CRITICAL].sent;
+        uint32_t reliable_delivered = criticality_totals[RELIABLE].delivered + criticality_totals[CRITICAL].delivered;
         
         if (reliable_sent == 0) return 100.0f;
         return (float)reliable_delivered / reliable_sent * 100.0f;
