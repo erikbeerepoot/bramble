@@ -182,13 +182,6 @@ int main()
 }
 
 bool initializeHardware(SX1276& lora, NeoPixel& led) {
-    // Initialize NeoPixel LED
-    if (!led.begin()) {
-        printf("Failed to initialize NeoPixel!\n");
-        return false;
-    }
-    printf("NeoPixel initialized successfully!\n");
-
     // SPI initialization - 1MHz for reliable communication
     spi_init(SPI_PORT, 1000*1000);
     gpio_set_function(PIN_MISO, GPIO_FUNC_SPI);
@@ -232,7 +225,7 @@ void runHubMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led,
         // Hub LED: Blue breathing pattern
         static uint8_t breath_counter = 0;
         uint8_t brightness = (breath_counter < 64) ? breath_counter * 2 : (128 - breath_counter) * 2;
-        led.setPixelColor(0, 0, 0, brightness);  // Blue breathing
+        led.setPixel(0, 0, 0, brightness);  // Blue breathing
         led.show();
         breath_counter = (breath_counter + 1) % 128;
         
@@ -335,14 +328,14 @@ void runDemoMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led,
             // Hub: Blue breathing pattern (same as production hub mode)
             static uint8_t breath_counter = 0;
             uint8_t brightness = (breath_counter < 64) ? breath_counter * 2 : (128 - breath_counter) * 2;
-            led.setPixelColor(0, 0, 0, brightness);  // Blue breathing
+            led.setPixel(0, 0, brightness, 0);  // Blue breathing            
             led.show();
             breath_counter = (breath_counter + 1) % 128;
         } else {
             // Node: Green heartbeat (same as production node mode)
             static uint8_t led_counter = 0;
             uint8_t brightness = (led_counter < 10) ? led_counter * 5 : (20 - led_counter) * 5;
-            led.setPixelColor(0, 0, brightness, 0);  // Green heartbeat
+            led.setPixel(0, 0, brightness, 0);  // Green heartbeat
             led.show();
             led_counter = (led_counter + 1) % 20;
         }
@@ -436,7 +429,7 @@ void runProductionMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led
     while (true) {
         // Production LED: Subtle green heartbeat
         uint8_t brightness = (led_counter < 10) ? led_counter * 5 : (20 - led_counter) * 5;
-        led.setPixelColor(0, 0, brightness, 0);  // Green heartbeat
+        led.setPixel(0, 0, brightness, 0);  // Green heartbeat
         led.show();
         led_counter = (led_counter + 1) % 20;
         
