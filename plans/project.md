@@ -180,20 +180,17 @@ bramble/
 
 ### NOW (Critical for Production)
 *No critical production items remaining - moving to NEXT section*
+- [ ] Remove hardcoded flash size and implement runtime detection
 
 ### NEXT (Important Improvements)
-- [ ] Implement interrupt-driven LoRa operation instead of polling
-- [ ] Add node de-registration mechanism (graceful shutdown)
-- [ ] Implement node address change/reassignment capability
-- [ ] Add network statistics tracking (messages sent/received, retries, failures)
 
 ### LATER (Future Features & Polish)
 - [ ] Replace TODO placeholders: implement actual sensor readings in production mode
 - [ ] Replace TODO placeholders: implement actuator command processing for valve/pump control
-- [ ] Remove hardcoded flash size and implement runtime detection
 - [ ] Migrate remaining printf statements to use Logger class throughout codebase
-- [ ] Implement address recycling for long-term inactive nodes (30+ days offline)
-- [ ] Add device ID-based address persistence (same device gets same address when returning)
+- [ ] Add network statistics persistence (save to flash periodically)
+- [ ] Implement statistics reset command/mechanism
+
 
 ### COMPLETED ✅
 - [x] Create test framework header with test runner
@@ -228,6 +225,13 @@ bramble/
 - [x] Make hardcoded configuration values runtime configurable (DEFERRED - see RUNTIME_CONFIG_PLAN.md)
 - [x] Standardize header guards to use #pragma once consistently
 - [x] Add error handling for SPI communications with timeout and retry logic
+- [x] Add network statistics tracking (messages sent/received, retries, failures)
+- [x] Implement comprehensive NetworkStats class with per-node and global statistics
+- [x] Add signal quality tracking (RSSI/SNR) with rolling statistics
+- [x] Create link quality monitoring and categorization
+- [x] Simplify network stats implementation using STL algorithms and modern C++ features
+- [x] Implement interrupt-driven LoRa operation instead of polling
+- [x] Add node de-registration mechanism (graceful shutdown)
 
 ## Success Criteria
 - ✅ ~~Basic LoRa communication working~~

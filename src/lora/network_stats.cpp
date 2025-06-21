@@ -17,28 +17,12 @@ void NetworkStats::recordMessageSent(uint16_t dst_addr, DeliveryCriticality crit
     } else {
         NodeStatistics& node = getOrCreateNodeStats(dst_addr);
         MessageTypeStats& stats = node.getStatsByCriticality(criticality);
-        
-        stats.sent++;
-        if (delivered) {
-            stats.delivered++;
-            stats.retries += retries;
-            if (retries > stats.max_retries) {
-                stats.max_retries = retries;
-            }
-        }
+        updateSentMessageStats(stats, delivered, retries);
     }
     
     // Update global stats
     MessageTypeStats& global = global_stats_.criticality_totals[static_cast<size_t>(criticality)];
-    
-    global.sent++;
-    if (delivered) {
-        global.delivered++;
-        global.retries += retries;
-        if (retries > global.max_retries) {
-            global.max_retries = retries;
-        }
-    }
+    updateSentMessageStats(global, delivered, retries);
 }
 
 void NetworkStats::recordMessageReceived(uint16_t src_addr, int16_t rssi, float snr, bool crc_error) {
@@ -259,5 +243,16 @@ void NetworkStats::updateLinkQuality(NodeStatistics& stats, int16_t rssi, uint32
         
         logger_.debug("Node link quality changed to %s (RSSI: %d dBm)", 
                      stats.getLinkQualityString(), rssi);
+    }
+}
+
+void NetworkStats::updateSentMessageStats(MessageTypeStats& stats, bool delivered, uint8_t retries) {
+    stats.sent++;
+    if (delivered) {
+        stats.delivered++;
+        stats.retries += retries;
+        if (retries > stats.max_retries) {
+            stats.max_retries = retries;
+        }
     }
 }

@@ -16,12 +16,7 @@
 template<size_t WINDOW_SIZE = 100>
 class RollingStats {
 public:
-    RollingStats() : head_(0), count_(0) {
-        // Initialize array to avoid undefined values
-        for (size_t i = 0; i < WINDOW_SIZE; i++) {
-            values_[i] = 0;
-        }
-    }
+    RollingStats() : values_{}, head_(0), count_(0) {}
     
     void add(int16_t value) {
         values_[head_] = value;
@@ -99,6 +94,13 @@ private:
     size_t head_;
     size_t count_;
 };
+
+/**
+ * @brief Link quality thresholds in dBm
+ */
+constexpr int16_t RSSI_EXCELLENT_THRESHOLD = -60;
+constexpr int16_t RSSI_GOOD_THRESHOLD = -80;
+constexpr int16_t RSSI_FAIR_THRESHOLD = -100;
 
 /**
  * @brief Link quality categories
@@ -193,9 +195,9 @@ public:
     }
     
     LinkQuality calculateLinkQuality(int16_t rssi) const {
-        if (rssi > -60) return LINK_EXCELLENT;
-        if (rssi > -80) return LINK_GOOD;
-        if (rssi > -100) return LINK_FAIR;
+        if (rssi > RSSI_EXCELLENT_THRESHOLD) return LINK_EXCELLENT;
+        if (rssi > RSSI_GOOD_THRESHOLD) return LINK_GOOD;
+        if (rssi > RSSI_FAIR_THRESHOLD) return LINK_FAIR;
         return LINK_POOR;
     }
     
@@ -374,4 +376,12 @@ private:
      * @param current_time Current timestamp
      */
     void updateLinkQuality(NodeStatistics& stats, int16_t rssi, uint32_t current_time);
+    
+    /**
+     * @brief Update message statistics for sent messages
+     * @param stats Message type statistics to update
+     * @param delivered Whether the message was delivered
+     * @param retries Number of retries needed
+     */
+    void updateSentMessageStats(MessageTypeStats& stats, bool delivered, uint8_t retries);
 };
