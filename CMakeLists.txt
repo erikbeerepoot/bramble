@@ -102,6 +102,10 @@ else()
         src/hal/spi_device.cpp
         src/config/node_config.cpp
         src/config/hub_config.cpp
+        src/application_mode.cpp
+        src/demo_mode.cpp
+        src/hub_mode.cpp
+        src/production_mode.cpp
     )
     
     # Hub executable

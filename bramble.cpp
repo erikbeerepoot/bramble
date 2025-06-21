@@ -23,6 +23,11 @@
 #define PICO_EXTRAS_AVAILABLE
 #endif
 
+// Application modes
+#include "src/demo_mode.h"
+#include "src/hub_mode.h"
+#include "src/production_mode.h"
+
 // Global logger for main application
 static Logger main_logger("MAIN");
 
@@ -57,15 +62,6 @@ static Logger main_logger("MAIN");
 #define NODE_ADDRESS            (IS_HUB ? ADDRESS_HUB : ADDRESS_UNREGISTERED)
 
 // Forward declarations
-void runDemoMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led, 
-                 AddressManager* address_manager = nullptr, HubRouter* hub_router = nullptr,
-                 NetworkStats* network_stats = nullptr);
-void runProductionMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led,
-                       AddressManager* address_manager = nullptr, HubRouter* hub_router = nullptr,
-                       NetworkStats* network_stats = nullptr);
-void runHubMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led,
-                AddressManager& address_manager, HubRouter& hub_router,
-                NetworkStats* network_stats);
 bool initializeHardware(SX1276& lora, NeoPixel& led);
 uint64_t getDeviceId();
 bool attemptRegistration(ReliableMessenger& messenger, SX1276& lora, 
@@ -135,10 +131,12 @@ int main()
         
         if (DEMO_MODE) {
             printf("Starting HUB DEMO mode\n");
-            runDemoMode(messenger, lora, led, &address_manager, &hub_router, network_stats);
+            DemoMode mode(messenger, lora, led, &address_manager, &hub_router, network_stats);
+            mode.run();
         } else {
             printf("Starting HUB PRODUCTION mode\n");
-            runHubMode(messenger, lora, led, address_manager, hub_router, network_stats);
+            HubMode mode(messenger, lora, led, &address_manager, &hub_router, network_stats);
+            mode.run();
         }
     } else {
         // Run as regular node
@@ -172,10 +170,12 @@ int main()
         
         if (DEMO_MODE) {
             main_logger.info("Starting NODE DEMO mode - sending test messages");
-            runDemoMode(messenger, lora, led, nullptr, nullptr, network_stats);
+            DemoMode mode(messenger, lora, led, nullptr, nullptr, network_stats);
+            mode.run();
         } else {
             main_logger.info("Starting NODE PRODUCTION mode - real sensor monitoring");
-            runProductionMode(messenger, lora, led, nullptr, nullptr, network_stats);
+            ProductionMode mode(messenger, lora, led, nullptr, nullptr, network_stats);
+            mode.run();
         }
     }
     
@@ -211,287 +211,6 @@ bool initializeHardware(SX1276& lora, NeoPixel& led) {
     return true;
 }
 
-void runHubMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led,
-                AddressManager& address_manager, HubRouter& hub_router,
-                NetworkStats* network_stats) {
-    uint32_t last_stats_time = 0;
-    uint32_t last_maintenance_time = 0;
-    
-    printf("=== HUB MODE ACTIVE ===\n");
-    printf("- Managing node registrations\n");
-    printf("- Routing node-to-node messages\n");
-    printf("- Blue LED indicates hub status\n");
-    
-    while (true) {
-        // Hub LED: Blue breathing pattern
-        static uint8_t breath_counter = 0;
-        uint8_t brightness = (breath_counter < 64) ? breath_counter * 2 : (128 - breath_counter) * 2;
-        led.setPixel(0, 0, 0, brightness);  // Blue breathing
-        led.show();
-        breath_counter = (breath_counter + 1) % 128;
-        
-        uint32_t current_time = to_ms_since_boot(get_absolute_time());
-        
-        // Print routing stats every 30 seconds
-        if (current_time - last_stats_time >= 30000) {
-            uint32_t routed, queued, dropped;
-            hub_router.getRoutingStats(routed, queued, dropped);
-            printf("Hub stats - Routed: %lu, Queued: %lu, Dropped: %lu\n", 
-                   routed, queued, dropped);
-            
-            printf("Registered nodes: %u\n", address_manager.getRegisteredNodeCount());
-            
-            // Print network statistics if available
-            if (network_stats) {
-                // Update node counts
-                network_stats->updateNodeCounts(
-                    address_manager.getRegisteredNodeCount(),
-                    address_manager.getActiveNodeCount(),
-                    address_manager.getRegisteredNodeCount() - address_manager.getActiveNodeCount()
-                );
-                network_stats->printSummary();
-            }
-            
-            last_stats_time = current_time;
-        }
-        
-        // Perform maintenance every 5 minutes
-        if (current_time - last_maintenance_time >= 300000) {
-            printf("Performing hub maintenance...\n");
-            hub_router.clearOldRoutes(current_time);
-            hub_router.processQueuedMessages();
-            
-            // Check for inactive nodes and update network status
-            uint32_t inactive_count = address_manager.checkForInactiveNodes(current_time);
-            if (inactive_count > 0) {
-                printf("Marked %lu nodes as inactive\n", inactive_count);
-            }
-            
-            // Deregister nodes that have been inactive for extended period
-            uint32_t deregistered_count = address_manager.deregisterInactiveNodes(current_time);
-            if (deregistered_count > 0) {
-                printf("Deregistered %lu nodes (inactive > %lu hours)\n", 
-                       deregistered_count, 86400000UL / 3600000UL); // Convert ms to hours
-                // Persist the updated registry to flash
-                Flash flash_hal;
-                address_manager.persist(flash_hal);
-            }
-            
-            last_maintenance_time = current_time;
-        }
-        
-        // Check for interrupts first (more efficient than polling)
-        if (lora.isInterruptPending()) {
-            lora.handleInterrupt();
-        }
-        
-        // Check for incoming messages
-        if (lora.isMessageReady()) {
-            uint8_t rx_buffer[MESSAGE_MAX_SIZE];
-            int rx_len = lora.receive(rx_buffer, sizeof(rx_buffer));
-            
-            if (rx_len > 0) {
-                printf("Hub received message (len=%d, RSSI=%d dBm)\n", 
-                       rx_len, lora.getRssi());
-                
-                // Use common message processing function
-                processIncomingMessage(rx_buffer, rx_len, messenger, &address_manager, &hub_router, current_time, network_stats, &lora);
-            } else if (rx_len < 0) {
-                lora.startReceive();
-            }
-        }
-        
-        // Update retry timers and process queued messages
-        messenger.update();
-        hub_router.processQueuedMessages();
-        
-        // Sleep efficiently between iterations
-        if (!lora.isInterruptPending()) {
-            sleepUntilInterrupt();
-        }
-        // If interrupt is pending, loop immediately to process it
-    }
-}
-
-void runDemoMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led, 
-                 AddressManager* address_manager, HubRouter* hub_router,
-                 NetworkStats* network_stats) {
-    uint32_t last_demo_time = 0;
-    uint32_t last_heartbeat_time = 0;
-    
-    printf("=== DEMO MODE ACTIVE ===\n");
-    printf("- Test messages every 15 seconds\n");
-    printf("- Verbose debug output\n");
-    
-    while (true) {
-        // Demo LED: Use role-specific colors like production mode
-        if (hub_router) {
-            // Hub: Blue breathing pattern (same as production hub mode)
-            static uint8_t breath_counter = 0;
-            uint8_t brightness = (breath_counter < 64) ? breath_counter * 2 : (128 - breath_counter) * 2;
-            led.setPixel(0, 0, 0, brightness);  // Blue breathing            
-            led.show();
-            breath_counter = (breath_counter + 1) % 128;
-        } else {
-            // Node: Green heartbeat (same as production node mode)
-            static uint8_t led_counter = 0;
-            uint8_t brightness = (led_counter < 10) ? led_counter * 5 : (20 - led_counter) * 5;
-            led.setPixel(0, 0, brightness, 0);  // Green heartbeat
-            led.show();
-            led_counter = (led_counter + 1) % 20;
-        }
-        
-        uint32_t current_time = to_ms_since_boot(get_absolute_time());
-        
-        // Send test messages every 15 seconds
-        if (current_time - last_demo_time >= 15000) {
-            printf("--- DEMO: Sending test messages ---\n");
-            
-            // Test temperature reading (best effort)
-            uint8_t temp_data[] = {0x12, 0x34};
-            messenger.sendSensorData(HUB_ADDRESS, SENSOR_TEMPERATURE, 
-                                   temp_data, sizeof(temp_data), BEST_EFFORT);
-            
-            // Test moisture reading (reliable - critical for irrigation decisions)
-            uint8_t moisture_data[] = {0x45, 0x67};
-            messenger.sendSensorData(HUB_ADDRESS, SENSOR_SOIL_MOISTURE, 
-                                   moisture_data, sizeof(moisture_data), RELIABLE);
-            
-            last_demo_time = current_time;
-        }
-        
-        // Send heartbeat every minute
-        if (current_time - last_heartbeat_time >= HEARTBEAT_INTERVAL_MS) {
-            printf("--- DEMO: Sending heartbeat ---\n");
-            
-            // Calculate node status
-            uint32_t uptime = current_time / 1000;  // Convert to seconds
-            uint8_t battery_level = 255;  // External power for demo
-            uint8_t signal_strength = 70;  // Simulated signal strength
-            uint8_t active_sensors = CAP_TEMPERATURE | CAP_SOIL_MOISTURE;  // Active sensors
-            uint8_t error_flags = 0;  // No errors
-            
-            messenger.sendHeartbeat(HUB_ADDRESS, uptime, battery_level, 
-                                  signal_strength, active_sensors, error_flags);
-            
-            last_heartbeat_time = current_time;
-        }
-        
-        // Check for interrupts first (more efficient than polling)
-        if (lora.isInterruptPending()) {
-            lora.handleInterrupt();
-        }
-        
-        // Check for incoming messages
-        if (lora.isMessageReady()) {
-            uint8_t rx_buffer[MESSAGE_MAX_SIZE];
-            int rx_len = lora.receive(rx_buffer, sizeof(rx_buffer));
-            
-            if (rx_len > 0) {
-                printf("Received message (len=%d, RSSI=%d dBm, SNR=%.1f dB)\n", 
-                       rx_len, lora.getRssi(), lora.getSnr());
-                
-                // Use common message processing function
-                processIncomingMessage(rx_buffer, rx_len, messenger, address_manager, hub_router, current_time, network_stats, &lora);
-            } else if (rx_len < 0) {
-                printf("Receive error (CRC or buffer issue)\n");
-                lora.startReceive();
-            }
-        }
-        
-        // Update retry timers for reliable message delivery
-        messenger.update();
-        
-        // Update hub router if in hub mode
-        if (hub_router) {
-            hub_router->processQueuedMessages();
-        }
-        
-        // Sleep efficiently between iterations
-        if (!lora.isInterruptPending()) {
-            sleepUntilInterrupt();
-        }
-        // If interrupt is pending, loop immediately to process it
-    }
-}
-
-void runProductionMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led,
-                       AddressManager* address_manager, HubRouter* hub_router,
-                       NetworkStats* network_stats) {
-    uint32_t last_sensor_time = 0;
-    uint32_t last_heartbeat_time = 0;
-    uint8_t led_counter = 0;
-    
-    printf("=== PRODUCTION MODE ACTIVE ===\n");
-    printf("- Green LED heartbeat\n");
-    printf("- Sensor readings every %d seconds\n", SENSOR_INTERVAL_MS / 1000);
-    printf("- Minimal power consumption\n");
-    
-    while (true) {
-        // Production LED: Subtle green heartbeat
-        uint8_t brightness = (led_counter < 10) ? led_counter * 5 : (20 - led_counter) * 5;
-        led.setPixel(0, 0, brightness, 0);  // Green heartbeat
-        led.show();
-        led_counter = (led_counter + 1) % 20;
-        
-        uint32_t current_time = to_ms_since_boot(get_absolute_time());
-        
-        // Send sensor data periodically
-        if (current_time - last_sensor_time >= SENSOR_INTERVAL_MS) {
-            // TODO: Replace with actual sensor readings
-            // Example: Read temperature, humidity, soil moisture, battery level
-            printf("Sensor reading cycle\n");
-            last_sensor_time = current_time;
-        }
-        
-        // Send heartbeat to hub
-        if (current_time - last_heartbeat_time >= HEARTBEAT_INTERVAL_MS) {
-            printf("Heartbeat\n");
-            
-            // Calculate real node status
-            uint32_t uptime = current_time / 1000;  // Convert to seconds
-            uint8_t battery_level = 85;  // Example battery level
-            uint8_t signal_strength = 65;  // Example signal strength
-            uint8_t active_sensors = CAP_TEMPERATURE | CAP_HUMIDITY | CAP_SOIL_MOISTURE;
-            uint8_t error_flags = 0;  // No errors in production
-            
-            messenger.sendHeartbeat(HUB_ADDRESS, uptime, battery_level, 
-                                  signal_strength, active_sensors, error_flags);
-            
-            last_heartbeat_time = current_time;
-        }
-        
-        // Check for interrupts first (more efficient than polling)
-        if (lora.isInterruptPending()) {
-            lora.handleInterrupt();
-        }
-        
-        // Check for incoming messages (commands from hub, ACKs, etc.)
-        if (lora.isMessageReady()) {
-            uint8_t rx_buffer[MESSAGE_MAX_SIZE];
-            int rx_len = lora.receive(rx_buffer, sizeof(rx_buffer));
-            
-            if (rx_len > 0) {
-                // Use common message processing function  
-                processIncomingMessage(rx_buffer, rx_len, messenger, address_manager, hub_router, current_time, network_stats, &lora);
-                
-                // TODO: Add command processing for actuator control
-                // Parse incoming actuator commands and control valves/pumps accordingly
-            } else if (rx_len < 0) {
-                lora.startReceive();  // Restart receive mode after error
-            }
-        }
-        
-        // Update retry timers for reliable message delivery
-        messenger.update();
-        
-        // Sleep efficiently between iterations
-        if (!lora.isInterruptPending()) {
-            sleepUntilInterrupt();
-        }
-        // If interrupt is pending, loop immediately to process it
-    }
-}
 
 uint64_t getDeviceId() {
     pico_unique_board_id_t board_id;
