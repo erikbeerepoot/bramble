@@ -180,7 +180,6 @@ bramble/
 
 ### NOW (Critical for Production)
 *No critical production items remaining - moving to NEXT section*
-- [ ] Remove hardcoded flash size and implement runtime detection
 
 ### NEXT (Important Improvements)
 
