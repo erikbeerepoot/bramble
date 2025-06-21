@@ -6,7 +6,7 @@
 
 /**
  * @brief Hardware Abstraction Layer for RP2040 flash memory operations
- * 
+ *
  * Provides low-level flash read/write/erase operations
  * Flash memory layout:
  * - RP2040 has 2MB flash by default (varies by board)
@@ -17,14 +17,15 @@
  */
 
 // Flash memory constants for RP2040
-#define FLASH_SECTOR_SIZE        4096
-#define FLASH_PAGE_SIZE          256
-#define FLASH_BLOCK_SIZE         65536
+#define FLASH_SECTOR_SIZE 4096
+#define FLASH_PAGE_SIZE 256
+#define FLASH_BLOCK_SIZE 65536
 
 /**
  * @brief Flash operation result codes
  */
-enum FlashResult {
+enum FlashResult
+{
     FLASH_SUCCESS = 0,           // Operation successful
     FLASH_ERROR_INVALID_PARAM,   // Invalid parameters
     FLASH_ERROR_ALIGNMENT,       // Alignment error
@@ -39,7 +40,8 @@ enum FlashResult {
 /**
  * @brief Flash operation statistics
  */
-struct FlashStats {
+struct FlashStats
+{
     uint32_t reads_attempted;
     uint32_t reads_successful;
     uint32_t writes_attempted;
@@ -53,16 +55,17 @@ struct FlashStats {
 /**
  * @brief Low-level flash memory interface with comprehensive error handling
  */
-class Flash {
+class Flash
+{
 public:
     Flash();
-    
+
     /**
      * @brief Get total flash size in bytes
      * @return Flash size in bytes
      */
     uint32_t getFlashSize() const;
-    
+
     /**
      * @brief Read data from flash with error handling
      * @param offset Offset from start of flash
@@ -70,8 +73,8 @@ public:
      * @param length Number of bytes to read
      * @return FlashResult indicating success or failure type
      */
-    FlashResult read(uint32_t offset, uint8_t* buffer, size_t length);
-    
+    FlashResult read(uint32_t offset, uint8_t *buffer, size_t length);
+
     /**
      * @brief Write data to flash with verification and retry
      * @param offset Offset from start of flash (must be aligned to page boundary)
@@ -79,69 +82,74 @@ public:
      * @param length Number of bytes to write (must be multiple of page size)
      * @param max_retries Maximum retry attempts (default: 3)
      * @return FlashResult indicating success or failure type
-     * 
+     *
      * @note Flash must be erased before writing
      * @note This operation will disable interrupts during write
      * @note Automatically verifies write and retries on failure
      */
-    FlashResult write(uint32_t offset, const uint8_t* data, size_t length, uint32_t max_retries = 3);
-    
+    FlashResult write(uint32_t offset, const uint8_t *data, size_t length, uint32_t max_retries = 3);
+
     /**
      * @brief Erase flash sectors with verification and retry
      * @param offset Offset from start of flash (must be aligned to sector boundary)
      * @param length Number of bytes to erase (must be multiple of sector size)
      * @param max_retries Maximum retry attempts (default: 3)
      * @return FlashResult indicating success or failure type
-     * 
+     *
      * @note This operation will disable interrupts during erase
      * @note Automatically verifies erase and retries on failure
      */
     FlashResult erase(uint32_t offset, size_t length, uint32_t max_retries = 3);
-    
+
     /**
      * @brief Check if offset is aligned to page boundary
      * @param offset Offset to check
      * @return true if aligned to page boundary
      */
-    bool isPageAligned(uint32_t offset) const {
+    bool isPageAligned(uint32_t offset) const
+    {
         return (offset % FLASH_PAGE_SIZE) == 0;
     }
-    
+
     /**
      * @brief Check if offset is aligned to sector boundary
      * @param offset Offset to check
      * @return true if aligned to sector boundary
      */
-    bool isSectorAligned(uint32_t offset) const {
+    bool isSectorAligned(uint32_t offset) const
+    {
         return (offset % FLASH_SECTOR_SIZE) == 0;
     }
-    
+
     /**
      * @brief Check if length is multiple of page size
      * @param length Length to check
      * @return true if multiple of page size
      */
-    bool isPageMultiple(size_t length) const {
+    bool isPageMultiple(size_t length) const
+    {
         return (length % FLASH_PAGE_SIZE) == 0;
     }
-    
+
     /**
      * @brief Check if length is multiple of sector size
      * @param length Length to check
      * @return true if multiple of sector size
      */
-    bool isSectorMultiple(size_t length) const {
+    bool isSectorMultiple(size_t length) const
+    {
         return (length % FLASH_SECTOR_SIZE) == 0;
     }
-    
+
     /**
      * @brief Get offset of last sector (useful for storing configuration)
      * @return Offset of last sector in flash
      */
-    uint32_t getLastSectorOffset() const {
+    uint32_t getLastSectorOffset() const
+    {
         return getFlashSize() - FLASH_SECTOR_SIZE;
     }
-    
+
     /**
      * @brief Verify data integrity after write/erase
      * @param offset Offset to verify
@@ -149,26 +157,26 @@ public:
      * @param length Length to verify
      * @return FlashResult indicating verification result
      */
-    FlashResult verifyData(uint32_t offset, const uint8_t* expected_data, size_t length);
-    
+    FlashResult verifyData(uint32_t offset, const uint8_t *expected_data, size_t length);
+
     /**
      * @brief Get error statistics
      * @return Flash operation statistics
      */
-    const FlashStats& getStats() const { return stats_; }
-    
+    const FlashStats &getStats() const { return stats_; }
+
     /**
      * @brief Reset error statistics
      */
     void resetStats();
-    
+
     /**
      * @brief Convert FlashResult to human-readable string
      * @param result Flash result code
      * @return String description of result
      */
-    static const char* resultToString(FlashResult result);
-    
+    static const char *resultToString(FlashResult result);
+
     /**
      * @brief Check if flash sector is erased (all 0xFF)
      * @param offset Sector offset
@@ -176,18 +184,53 @@ public:
      * @return true if sector is erased
      */
     bool isSectorErased(uint32_t offset, size_t length);
-    
+
 private:
-    uint32_t flash_size_;        // Total flash size in bytes
-    FlashStats stats_;           // Operation statistics
-    Logger logger_;              // Module logger
-    
+    uint32_t flash_size_; // Total flash size in bytes
+    FlashStats stats_;    // Operation statistics
+    Logger logger_;       // Module logger
+
+    /**
+     * @brief Generic retry logic for flash operations
+     * @tparam Operation Callable that returns FlashResult
+     * @param op The operation to perform
+     * @param max_retries Maximum number of retries
+     * @param op_name Operation name for logging
+     * @return Result of the operation
+     */
+    template <typename Operation>
+    FlashResult retryOperation(Operation op, uint32_t max_retries, const char *op_name)
+    {
+        FlashResult result = FLASH_ERROR_UNKNOWN;
+
+        for (uint32_t attempt = 0; attempt <= max_retries; attempt++)
+        {
+            if (attempt > 0)
+            {
+                stats_.retry_count++;
+                logger_.warn("%s retry %lu/%lu", op_name, attempt, max_retries);
+            }
+
+            result = op();
+
+            if (result == FLASH_SUCCESS)
+            {
+                return FLASH_SUCCESS;
+            }
+
+            logger_.error("%s failed on attempt %lu: %s", op_name, attempt + 1,
+                          resultToString(result));
+        }
+
+        return result;
+    }
+
     /**
      * @brief Get flash base address in memory map
      * @return Flash base address
      */
-    const uint8_t* getFlashBase() const;
-    
+    const uint8_t *getFlashBase() const;
+
     /**
      * @brief Perform low-level write operation
      * @param offset Flash offset
@@ -195,8 +238,8 @@ private:
      * @param length Data length
      * @return FlashResult indicating success/failure
      */
-    FlashResult performWrite(uint32_t offset, const uint8_t* data, size_t length);
-    
+    FlashResult performWrite(uint32_t offset, const uint8_t *data, size_t length);
+
     /**
      * @brief Perform low-level erase operation
      * @param offset Flash offset
@@ -204,7 +247,7 @@ private:
      * @return FlashResult indicating success/failure
      */
     FlashResult performErase(uint32_t offset, size_t length);
-    
+
     /**
      * @brief Validate operation parameters
      * @param offset Flash offset
@@ -213,7 +256,7 @@ private:
      * @param require_sector_align Require sector alignment
      * @return FlashResult indicating validation result
      */
-    FlashResult validateParams(uint32_t offset, size_t length, 
-                              bool require_page_align = false, 
-                              bool require_sector_align = false);
+    FlashResult validateParams(uint32_t offset, size_t length,
+                               bool require_page_align = false,
+                               bool require_sector_align = false);
 };

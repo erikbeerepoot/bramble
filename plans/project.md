@@ -182,6 +182,7 @@ bramble/
 *No critical production items remaining - moving to NEXT section*
 
 ### NEXT (Important Improvements)
+- [ ] Implement code simplification plan (see plans/code_simplification_plan.md)
 
 ### LATER (Future Features & Polish)
 - [ ] Replace TODO placeholders: implement actual sensor readings in production mode
