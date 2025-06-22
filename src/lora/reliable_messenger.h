@@ -1,29 +1,26 @@
 #pragma once
 
 #include "message.h"
+#include "message_builder.h"
+#include "message_validator.h"
+#include "retry_policy.h"
 #include "sx1276.h"
 #include "network_stats.h"
 #include "../hal/logger.h"
 #include <map>
-
-// Retry configuration
-#define MAX_RETRIES 3
-#define ACK_TIMEOUT_MS 5000
-#define RETRY_BASE_DELAY_MS 1000
+#include <memory>
 
 /**
  * @brief Pending message for retry tracking
  */
 struct PendingMessage {
-    uint8_t buffer[MESSAGE_MAX_SIZE];
+    std::unique_ptr<uint8_t[]> buffer;
     size_t length;
-    uint8_t seq_num;
     uint16_t dst_addr;
-    uint32_t last_send_time;
-    uint8_t retry_count;
-    uint32_t next_retry_time;
-    bool ack_received;
+    uint32_t send_time;
+    uint8_t attempts;
     DeliveryCriticality criticality;
+    RetryPolicy::RetryConfig retry_config;
 };
 
 /**
@@ -174,12 +171,6 @@ private:
      */
     void sendAck(uint16_t src_addr, uint8_t seq_num, uint8_t status);
     
-    /**
-     * @brief Calculate next retry delay with exponential backoff
-     * @param retry_count Current retry attempt (0-based)
-     * @return Delay in milliseconds
-     */
-    uint32_t calculateRetryDelay(uint8_t retry_count);
     
     /**
      * @brief Get current time in milliseconds

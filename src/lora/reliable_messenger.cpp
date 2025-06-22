@@ -20,16 +20,12 @@ bool ReliableMessenger::sendActuatorCommand(uint16_t dst_addr, uint8_t actuator_
                                            DeliveryCriticality criticality) {
     if (!lora_) return false;
     
-    // Convert criticality to flags
-    uint8_t flags = 0;
-    if (criticality == RELIABLE) flags |= MSG_FLAG_RELIABLE;
-    if (criticality == CRITICAL) flags |= (MSG_FLAG_RELIABLE | MSG_FLAG_CRITICAL);
-    
+    uint8_t flags = MessageBuilder::criticalityToFlags(criticality);
     uint8_t seq_num = getNextSequenceNumber();
     
     // Create the actuator message with appropriate flags
     uint8_t buffer[MESSAGE_MAX_SIZE];
-    size_t length = MessageHandler::createActuatorMessage(
+    size_t length = MessageBuilder::createActuatorMessage(
         node_addr_, dst_addr, seq_num,
         actuator_type, command, params, param_length, flags,
         buffer
@@ -48,11 +44,7 @@ bool ReliableMessenger::sendSensorData(uint16_t dst_addr, uint8_t sensor_type,
                                       DeliveryCriticality criticality) {
     if (!lora_) return false;
     
-    // Convert criticality to flags
-    uint8_t flags = 0;
-    if (criticality == RELIABLE) flags |= MSG_FLAG_RELIABLE;
-    if (criticality == CRITICAL) flags |= (MSG_FLAG_RELIABLE | MSG_FLAG_CRITICAL);
-    
+    uint8_t flags = MessageBuilder::criticalityToFlags(criticality);
     uint8_t seq_num = getNextSequenceNumber();
     
     logger_.debug("sendSensorData: src=0x%04X, dst=0x%04X, type=%d, criticality=%d", 
@@ -60,7 +52,7 @@ bool ReliableMessenger::sendSensorData(uint16_t dst_addr, uint8_t sensor_type,
     
     // Create the sensor message with appropriate flags
     uint8_t buffer[MESSAGE_MAX_SIZE];
-    size_t length = MessageHandler::createSensorMessage(
+    size_t length = MessageBuilder::createSensorMessage(
         node_addr_, dst_addr, seq_num,
         sensor_type, data, data_length, flags,
         buffer
@@ -160,86 +152,72 @@ bool ReliableMessenger::send(const uint8_t* buffer, size_t length,
     
     // For BEST_EFFORT, we're done - fire and forget
     if (criticality == BEST_EFFORT) {
-        logger_.info("Sent message (best effort)");
+        logger_.info("Sent message (%s)", RetryPolicy::getPolicyName(criticality));
         return true;
     }
     
     // For RELIABLE and CRITICAL, add to pending messages for ACK tracking
-    Message msg;
-    if (!MessageHandler::parseMessage(buffer, length, &msg)) {
-        logger_.error("Failed to parse sent message for tracking (len=%zu, criticality=%d)", length, criticality);
-        // Log first few bytes of the message for debugging
-        if (length >= MESSAGE_HEADER_SIZE) {
-            const MessageHeader* hdr = reinterpret_cast<const MessageHeader*>(buffer);
-            logger_.error("Header: magic=0x%04X, type=%d, flags=0x%02X, src=0x%04X, dst=0x%04X, seq=%d",
-                         hdr->magic, hdr->type, hdr->flags, hdr->src_addr, hdr->dst_addr, hdr->seq_num);
-        }
+    if (!MessageValidator::validateMessage(buffer, length)) {
+        logger_.error("Invalid message for tracking");
         return false;
     }
+    
+    const Message* msg = reinterpret_cast<const Message*>(buffer);
     
     PendingMessage pending;
-    // Validate buffer size before copying
-    if (length > sizeof(pending.buffer)) {
-        logger_.error("Message too large for pending buffer (%zu > %zu)", length, sizeof(pending.buffer));
-        return false;
-    }
-    memcpy(pending.buffer, buffer, length);
+    pending.buffer = std::make_unique<uint8_t[]>(length);
+    memcpy(pending.buffer.get(), buffer, length);
     pending.length = length;
-    pending.seq_num = msg.header.seq_num;
-    pending.dst_addr = msg.header.dst_addr;
-    pending.last_send_time = getCurrentTime();
-    pending.retry_count = 0;
-    pending.next_retry_time = getCurrentTime() + ACK_TIMEOUT_MS;
-    pending.ack_received = false;
+    pending.dst_addr = msg->header.dst_addr;
+    pending.send_time = getCurrentTime();
+    pending.attempts = 0;
     pending.criticality = criticality;
+    pending.retry_config = RetryPolicy::getConfig(criticality);
     
-    pending_messages_[msg.header.seq_num] = pending;
+    pending_messages_[msg->header.seq_num] = std::move(pending);
     
-    const char* level = (criticality == CRITICAL) ? "CRITICAL" : "RELIABLE";
-    printf("Sent %s message (seq=%d) to 0x%04X, awaiting ACK", 
-           level, msg.header.seq_num, msg.header.dst_addr);
+    logger_.info("Sent %s message (seq=%d) to 0x%04X, awaiting ACK", 
+                RetryPolicy::getPolicyName(criticality), msg->header.seq_num, msg->header.dst_addr);
     
     return true;
 }
 
 bool ReliableMessenger::processIncomingMessage(const uint8_t* buffer, size_t length) {
-    if (!buffer || length == 0) return false;
-    
-    Message message;
-    if (!MessageHandler::parseMessage(buffer, length, &message)) {
-        printf("Failed to parse incoming message");
+    if (!MessageValidator::validateMessage(buffer, length)) {
+        logger_.error("Invalid incoming message");
         return false;
     }
     
-    printf("Received %s message from 0x%04X", 
-           MessageHandler::getMessageTypeName(message.header.type), message.header.src_addr);
+    const Message* message = reinterpret_cast<const Message*>(buffer);
+    
+    logger_.info("Received %s message from 0x%04X", 
+                MessageHandler::getMessageTypeName(message->header.type), message->header.src_addr);
     
     // Handle ACK messages
-    if (message.header.type == MSG_TYPE_ACK) {
-        const AckPayload* ack = MessageHandler::getAckPayload(&message);
-        if (ack) {
-            handleAck(ack);
-            return true;
-        }
+    if (message->header.type == MSG_TYPE_ACK) {
+        const AckPayload* ack = reinterpret_cast<const AckPayload*>(message->payload);
+        handleAck(ack);
+        return true;
     }
     
     // Handle any message that requires ACK based on flags
-    if (MessageHandler::requiresAck(&message)) {
+    if (message->header.flags & MSG_FLAG_RELIABLE) {
+        bool is_critical = (message->header.flags & MSG_FLAG_CRITICAL) != 0;
         logger_.info("Received %s message requiring ACK", 
-               MessageHandler::isCritical(&message) ? "CRITICAL" : "RELIABLE");
+                    is_critical ? "CRITICAL" : "RELIABLE");
             
         // Send ACK back to sender
-        sendAck(message.header.src_addr, message.header.seq_num, 0);
+        sendAck(message->header.src_addr, message->header.seq_num, 0);
         
         // Record ACK sent for statistics
         if (network_stats_) {
-            network_stats_->recordAckSent(message.header.src_addr);
+            network_stats_->recordAckSent(message->header.src_addr);
         }
     }
     
     // Handle specific message types
-    if (message.header.type == MSG_TYPE_ACTUATOR_CMD) {
-        const ActuatorPayload* actuator = MessageHandler::getActuatorPayload(&message);
+    if (message->header.type == MSG_TYPE_ACTUATOR_CMD) {
+        const ActuatorPayload* actuator = reinterpret_cast<const ActuatorPayload*>(message->payload);
         if (actuator) {
             logger_.info("Received actuator command: type=%d, cmd=%d", 
                    actuator->actuator_type, actuator->command);
@@ -251,8 +229,8 @@ bool ReliableMessenger::processIncomingMessage(const uint8_t* buffer, size_t len
         }
     }
     
-    if (message.header.type == MSG_TYPE_SENSOR_DATA) {
-        const SensorPayload* sensor = MessageHandler::getSensorPayload(&message);
+    if (message->header.type == MSG_TYPE_SENSOR_DATA) {
+        const SensorPayload* sensor = reinterpret_cast<const SensorPayload*>(message->payload);
         if (sensor) {
             logger_.info("Received sensor data: type=%d, len=%d", 
                    sensor->sensor_type, sensor->data_length);
@@ -260,8 +238,8 @@ bool ReliableMessenger::processIncomingMessage(const uint8_t* buffer, size_t len
         }
     }
     
-    if (message.header.type == MSG_TYPE_REGISTRATION) {
-        const RegistrationPayload* reg_payload = MessageHandler::getRegistrationPayload(&message);
+    if (message->header.type == MSG_TYPE_REGISTRATION) {
+        const RegistrationPayload* reg_payload = reinterpret_cast<const RegistrationPayload*>(message->payload);
         if (reg_payload) {
             logger_.info("Received registration request: device_id=0x%016llX, type=%d, capabilities=0x%02X, name='%s'",
                    reg_payload->device_id, reg_payload->node_type, reg_payload->capabilities, reg_payload->device_name);
@@ -272,8 +250,8 @@ bool ReliableMessenger::processIncomingMessage(const uint8_t* buffer, size_t len
         }
     }
     
-    if (message.header.type == MSG_TYPE_REG_RESPONSE) {
-        const RegistrationResponsePayload* reg_response = MessageHandler::getRegistrationResponsePayload(&message);
+    if (message->header.type == MSG_TYPE_REG_RESPONSE) {
+        const RegistrationResponsePayload* reg_response = reinterpret_cast<const RegistrationResponsePayload*>(message->payload);
         if (reg_response) {
             logger_.info("Received registration response: device_id=0x%016llX, assigned_addr=0x%04X, status=%d",
                    reg_response->device_id, reg_response->assigned_addr, reg_response->status);
@@ -297,69 +275,44 @@ void ReliableMessenger::update() {
     // Check for messages that need retry
     auto it = pending_messages_.begin();
     while (it != pending_messages_.end()) {
-        PendingMessage& pending = it->second;
+        auto& [seq_num, pending] = *it;
         
-        // Remove acknowledged messages
-        if (pending.ack_received) {
-            logger_.debug("Message seq=%d acknowledged, removing from pending", pending.seq_num);
-            it = pending_messages_.erase(it);
-            continue;
-        }
+        // Calculate time for next retry
+        uint32_t retry_delay = RetryPolicy::calculateDelay(pending.retry_config, pending.attempts);
+        uint32_t next_retry_time = pending.send_time + retry_delay;
         
-        // Check if retry time reached
-        if (current_time >= pending.next_retry_time) {
-            // Parse message to check criticality
-            Message msg;
-            bool is_critical = false;
-            if (MessageHandler::parseMessage(pending.buffer, pending.length, &msg)) {
-                is_critical = MessageHandler::isCritical(&msg);
-            }
-            
-            // For non-critical messages, give up after MAX_RETRIES
-            if (!is_critical && pending.retry_count >= MAX_RETRIES) {
-                logger_.error("Message seq=%d failed after %d retries, giving up", 
-                       pending.seq_num, MAX_RETRIES);
+        if (current_time >= next_retry_time) {
+            if (RetryPolicy::shouldRetry(pending.retry_config, pending.attempts + 1)) {
+                // Retry the message
+                pending.attempts++;
+                pending.send_time = current_time;
                 
-                // Record timeout for network statistics
+                logger_.info("Retry %d for seq=%d (%s)", pending.attempts, seq_num,
+                            RetryPolicy::getPolicyName(pending.criticality));
+                
+                if (!sendMessage(pending.buffer.get(), pending.length)) {
+                    logger_.error("Failed to resend message seq=%d", seq_num);
+                }
+            } else {
+                // Give up
+                logger_.error("Message seq=%d failed after %d attempts", seq_num, pending.attempts);
                 if (network_stats_) {
                     network_stats_->recordTimeout(pending.dst_addr, pending.criticality);
                     network_stats_->recordMessageSent(pending.dst_addr, pending.criticality,
-                                                    false, pending.retry_count);
+                                                    false, pending.attempts);
                 }
-                
                 it = pending_messages_.erase(it);
                 continue;
             }
-            
-            // For critical messages, keep trying but with longer delays
-            if (is_critical && pending.retry_count >= MAX_RETRIES) {
-                logger_.error("CRITICAL message seq=%d still failing (attempt %d), continuing...", 
-                       pending.seq_num, pending.retry_count + 1);
-            }
-            
-            // Retry the message
-            pending.retry_count++;
-            pending.last_send_time = current_time;
-            pending.next_retry_time = current_time + calculateRetryDelay(pending.retry_count);
-            
-            logger_.error("Retrying message seq=%d (attempt %d/%d)", 
-                   pending.seq_num, pending.retry_count, MAX_RETRIES);
-            
-            if (!sendMessage(pending.buffer, pending.length)) {
-                logger_.error("Failed to resend message seq=%d", pending.seq_num);
-            }
         }
-        
         ++it;
     }
 }
 
 bool ReliableMessenger::wasAcknowledged(uint8_t seq_num) {
-    auto it = pending_messages_.find(seq_num);
-    if (it == pending_messages_.end()) {
-        return false; // Message not found (might have been removed after ACK)
-    }
-    return it->second.ack_received;
+    // If message is still pending, it hasn't been acknowledged
+    // If it's not in pending, it was either acknowledged or never sent as reliable
+    return pending_messages_.find(seq_num) == pending_messages_.end();
 }
 
 bool ReliableMessenger::sendMessage(const uint8_t* buffer, size_t length) {
@@ -400,18 +353,22 @@ void ReliableMessenger::handleAck(const AckPayload* ack_payload) {
     
     auto it = pending_messages_.find(ack_payload->ack_seq_num);
     if (it != pending_messages_.end()) {
-        it->second.ack_received = true;
-        logger_.info("Received ACK for seq=%d, status=%d", 
-               ack_payload->ack_seq_num, ack_payload->status);
+        auto& [seq_num, pending] = *it;
         
-        // Record successful delivery in network statistics
+        logger_.info("ACK received for seq=%d, status=%d", 
+                    ack_payload->ack_seq_num, ack_payload->status);
+        
+        // Record successful transmission for statistics
         if (network_stats_) {
-            network_stats_->recordMessageSent(it->second.dst_addr, it->second.criticality,
-                                            true, it->second.retry_count);
-            network_stats_->recordAckReceived(it->second.dst_addr);
+            network_stats_->recordMessageSent(pending.dst_addr, pending.criticality, 
+                                            true, pending.attempts);
+            network_stats_->recordAckReceived(pending.dst_addr);
         }
+        
+        // Remove from pending
+        pending_messages_.erase(it);
     } else {
-        logger_.error("Received ACK for unknown seq=%d", ack_payload->ack_seq_num);
+        logger_.debug("Received ACK for unknown seq=%d", ack_payload->ack_seq_num);
     }
 }
 
@@ -419,11 +376,9 @@ void ReliableMessenger::sendAck(uint16_t src_addr, uint8_t seq_num, uint8_t stat
     uint8_t my_seq = getNextSequenceNumber();
     
     uint8_t buffer[MESSAGE_MAX_SIZE];
-    size_t length = MessageHandler::createAckMessage(
-        node_addr_, src_addr, my_seq,
-        seq_num, status,
-        buffer
-    );
+    AckPayload ack = { seq_num, status };
+    size_t length = MessageBuilder::createMessage(MSG_TYPE_ACK, 0, node_addr_, src_addr, 
+                                                 my_seq, ack, buffer);
     
     if (length > 0) {
         sendMessage(buffer, length);
@@ -433,14 +388,6 @@ void ReliableMessenger::sendAck(uint16_t src_addr, uint8_t seq_num, uint8_t stat
     }
 }
 
-uint32_t ReliableMessenger::calculateRetryDelay(uint8_t retry_count) {
-    // Exponential backoff: base_delay * 2^retry_count
-    uint32_t delay = RETRY_BASE_DELAY_MS;
-    for (uint8_t i = 0; i < retry_count && i < 4; i++) {
-        delay *= 2;
-    }
-    return delay;
-}
 
 uint32_t ReliableMessenger::getCurrentTime() {
     return to_ms_since_boot(get_absolute_time());

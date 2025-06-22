@@ -213,3 +213,44 @@ This plan outlines specific opportunities to simplify the Bramble codebase, redu
 - Changes maintain existing functionality
 - Incremental approach allows for easy rollback
 - Comprehensive testing after each phase
+
+## Progress Tracking
+
+### Phase 1: HAL Components ✓
+- [x] Flash retry logic with templates
+- [x] Alignment function consolidation  
+- [x] NeoPixel modernization with std::vector
+- [x] Logger simplification (57% reduction)
+
+### Phase 2: Main Application ✓
+- [x] Extract common loop framework (ApplicationMode base class)
+- [x] Create LED pattern classes (BreathingPattern, HeartbeatPattern, etc.)
+- [x] Implement periodic task manager (with multicore support!)
+- [x] Removed unnecessary handlePeriodicTasks method
+
+### Phase 3: LoRa Components ✓
+- [x] Template message creation functions (MessageBuilder)
+- [x] Consolidate validation logic (MessageValidator)  
+- [x] Implement policy-based retry system (RetryPolicy)
+
+### Phase 4: Configuration & Polish
+- [ ] Create configuration base class
+- [ ] Apply cross-cutting improvements
+- [ ] Update documentation
+
+## Actual Results So Far
+
+### Code Reduction Achieved
+- Logger: 218 → 94 lines (57% reduction)
+- Flash: Approx 50 lines saved
+- NeoPixel: Approx 40 lines saved
+- Application modes: ~200 lines saved through base class
+- Message handling: ~200 lines saved through templates/consolidation
+- **Total reduction so far**: ~700-800 lines
+
+### Key Improvements Made
+1. **Multicore support**: Added ability to run periodic tasks on Core 1
+2. **Policy-based retry**: Clean separation of retry logic per criticality
+3. **Template message building**: Type-safe message creation
+4. **Unified validation**: Single source of truth for message validation
+5. **Modern C++**: std::unique_ptr for pending messages, std::vector for pixels
