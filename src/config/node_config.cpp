@@ -20,7 +20,7 @@ bool NodeConfigManager::hasValidConfiguration() {
 bool NodeConfigManager::loadConfiguration(NodeConfiguration& config) {
     // Try to read configuration from primary location
     FlashResult result = flash_.read(flash_offset_, (uint8_t*)&config, sizeof(config));
-    if (result != FLASH_SUCCESS) {
+    if (result != FlashResult::Success) {
         printf("Failed to read configuration from primary location: %s\n", Flash::resultToString(result));
         
         // Attempt backup recovery
@@ -91,7 +91,7 @@ bool NodeConfigManager::clearConfiguration() {
         uint32_t backup_offset = getBackupOffset();
         if (backup_offset != flash_offset_) {
             FlashResult backup_result = flash_.erase(backup_offset, FLASH_SECTOR_SIZE, 3);
-            if (backup_result != FLASH_SUCCESS) {
+            if (backup_result != FlashResult::Success) {
                 printf("Failed to clear backup configuration sector: %s\n", Flash::resultToString(backup_result));
                 return false;
             }
@@ -104,7 +104,7 @@ bool NodeConfigManager::clearConfiguration() {
     uint32_t backup_offset = getBackupOffset();
     if (backup_offset != flash_offset_) {
         FlashResult backup_result = flash_.erase(backup_offset, FLASH_SECTOR_SIZE, 1);
-        if (backup_result == FLASH_SUCCESS) {
+        if (backup_result == FlashResult::Success) {
             printf("Backup configuration sector also cleared\n");
         }
     }
@@ -157,14 +157,14 @@ bool NodeConfigManager::attemptBackupSave(const NodeConfiguration& config) {
     
     // Erase backup sector
     FlashResult erase_result = flash_.erase(backup_offset, FLASH_SECTOR_SIZE, 2);
-    if (erase_result != FLASH_SUCCESS) {
+    if (erase_result != FlashResult::Success) {
         printf("Failed to erase backup configuration sector: %s\n", Flash::resultToString(erase_result));
         return false;
     }
     
     // Write to backup location
     FlashResult write_result = flash_.write(backup_offset, (const uint8_t*)&config, sizeof(config), 2);
-    if (write_result != FLASH_SUCCESS) {
+    if (write_result != FlashResult::Success) {
         printf("Failed to write backup configuration: %s\n", Flash::resultToString(write_result));
         return false;
     }
@@ -180,7 +180,7 @@ bool NodeConfigManager::attemptBackupRecovery(NodeConfiguration& config) {
     
     // Try to read from backup location
     FlashResult result = flash_.read(backup_offset, (uint8_t*)&config, sizeof(config));
-    if (result != FLASH_SUCCESS) {
+    if (result != FlashResult::Success) {
         printf("Failed to read backup configuration: %s\n", Flash::resultToString(result));
         return false;
     }
@@ -201,9 +201,9 @@ bool NodeConfigManager::attemptBackupRecovery(NodeConfiguration& config) {
     // Try to restore to primary location
     uint32_t primary_offset = flash_offset_;
     FlashResult erase_result = flash_.erase(primary_offset, FLASH_SECTOR_SIZE, 2);
-    if (erase_result == FLASH_SUCCESS) {
+    if (erase_result == FlashResult::Success) {
         FlashResult write_result = flash_.write(primary_offset, (const uint8_t*)&config, sizeof(config), 2);
-        if (write_result == FLASH_SUCCESS) {
+        if (write_result == FlashResult::Success) {
             printf("Configuration restored to primary location\n");
         } else {
             printf("Warning: Could not restore configuration to primary location\n");

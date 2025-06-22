@@ -79,11 +79,11 @@ int main()
     
     // Configure logging based on mode
     if (DEMO_MODE) {
-        Logger::setLogLevel(LOG_DEBUG);  // Verbose logging for demo
+        Logger::setLogLevel(LogLevel::Debug);  // Verbose logging for demo
         Logger::checkForUsbConnection(false);  // Always log in demo mode
         main_logger.info("Starting in DEMO mode with DEBUG logging");
     } else {
-        Logger::setLogLevel(LOG_WARN);   // Production: warnings and errors only
+        Logger::setLogLevel(LogLevel::Warn);   // Production: warnings and errors only
         Logger::checkForUsbConnection(true);  // Only log when USB connected to save power
         main_logger.info("Starting in PRODUCTION mode with WARN logging");
     }

@@ -35,14 +35,14 @@ FlashResult Flash::read(uint32_t offset, uint8_t *buffer, size_t length)
 
     // Validate parameters
     FlashResult validation = validateParams(offset, length);
-    if (validation != FLASH_SUCCESS)
+    if (validation != FlashResult::Success)
     {
         return validation;
     }
 
     if (!buffer)
     {
-        return FLASH_ERROR_INVALID_PARAM;
+        return FlashResult::ErrorInvalidParam;
     }
 
     // Direct memory read from QSPI flash via XIP (Execute In Place)
@@ -50,7 +50,7 @@ FlashResult Flash::read(uint32_t offset, uint8_t *buffer, size_t length)
     memcpy(buffer, flash_address, length);
 
     stats_.reads_successful++;
-    return FLASH_SUCCESS;
+    return FlashResult::Success;
 }
 
 FlashResult Flash::write(uint32_t offset, const uint8_t *data, size_t length, uint32_t max_retries)
@@ -59,50 +59,50 @@ FlashResult Flash::write(uint32_t offset, const uint8_t *data, size_t length, ui
 
     // Validate parameters
     FlashResult validation = validateParams(offset, length, true, false);
-    if (validation != FLASH_SUCCESS)
+    if (validation != FlashResult::Success)
     {
         return validation;
     }
 
     if (!data)
     {
-        return FLASH_ERROR_INVALID_PARAM;
+        return FlashResult::ErrorInvalidParam;
     }
 
     // Ensure we're not writing to the program area
     uint32_t program_end = (uint32_t)&__flash_binary_end - XIP_BASE;
     if (offset < program_end)
     {
-        return FLASH_ERROR_WRITE_PROTECTED;
+        return FlashResult::ErrorWriteProtected;
     }
 
     return retryOperation([this, offset, data, length]() -> FlashResult {
         // Perform write
         FlashResult write_result = performWrite(offset, data, length);
-        if (write_result != FLASH_SUCCESS) {
+        if (write_result != FlashResult::Success) {
             return write_result;
         }
 
         // Verify write
         if (!verifyData(offset, data, length)) {
             stats_.verify_failures++;
-            return FLASH_ERROR_VERIFY_FAILED;
+            return FlashResult::ErrorVerifyFailed;
         }
 
         stats_.writes_successful++;
         logger_.info("Write successful at offset 0x%08lx", offset);
-        return FLASH_SUCCESS;
+        return FlashResult::Success;
     }, max_retries, "Write");
 
     logger_.error("Write failed after %lu attempts at offset 0x%08lx", max_retries + 1, offset);
-    return FLASH_ERROR_VERIFY_FAILED;
+    return FlashResult::ErrorVerifyFailed;
 }
 
 FlashResult Flash::erase(uint32_t offset, size_t length, uint32_t max_retries)
 {
     // Validate parameters
     FlashResult validation = validateParams(offset, length, false, true);
-    if (validation != FLASH_SUCCESS)
+    if (validation != FlashResult::Success)
     {
         return validation;
     }
@@ -111,7 +111,7 @@ FlashResult Flash::erase(uint32_t offset, size_t length, uint32_t max_retries)
     uint32_t program_end = (uint32_t)&__flash_binary_end - XIP_BASE;
     if (offset < program_end)
     {
-        return FLASH_ERROR_WRITE_PROTECTED;
+        return FlashResult::ErrorWriteProtected;
     }
 
     // Retry loop for erase operation
@@ -127,25 +127,25 @@ FlashResult Flash::erase(uint32_t offset, size_t length, uint32_t max_retries)
                           {
         // Perform erase
         FlashResult erase_result = performErase(offset, erase_length);
-        if (erase_result != FLASH_SUCCESS) {
+        if (erase_result != FlashResult::Success) {
             return erase_result;
         }
 
         // Verify erase (all bytes should be 0xFF)
         uint8_t sample;
         for (size_t i = 0; i < erase_length; i += FLASH_PAGE_SIZE) {
-            if (read(offset + i, &sample, 1) != FLASH_SUCCESS || sample != 0xFF) {
+            if (read(offset + i, &sample, 1) != FlashResult::Success || sample != 0xFF) {
                 stats_.verify_failures++;
-                return FLASH_ERROR_VERIFY_FAILED;
+                return FlashResult::ErrorVerifyFailed;
             }
         }
         stats_.erases_successful++;
         logger_.info("Erase successful at offset 0x%08lx", offset);
 
-        return FLASH_SUCCESS; }, max_retries, "Erase");
+        return FlashResult::Success; }, max_retries, "Erase");
 
     logger_.error("Erase failed after %lu attempts at offset 0x%08lx", max_retries + 1, offset);
-    return FLASH_ERROR_ERASE_FAILED;
+    return FlashResult::ErrorEraseFailed;
 }
 
 bool Flash::verifyData(uint32_t offset, const uint8_t* expected_data, size_t length) {
@@ -186,7 +186,7 @@ FlashResult Flash::performWrite(uint32_t offset, const uint8_t *data, size_t len
     // Re-enable interrupts
     restore_interrupts(interrupt_status);
 
-    return FLASH_SUCCESS;
+    return FlashResult::Success;
 }
 
 FlashResult Flash::performErase(uint32_t offset, size_t length)
@@ -201,7 +201,7 @@ FlashResult Flash::performErase(uint32_t offset, size_t length)
     // Re-enable interrupts
     restore_interrupts(interrupt_status);
 
-    return FLASH_SUCCESS;
+    return FlashResult::Success;
 }
 
 FlashResult Flash::validateParams(uint32_t offset, size_t length,
@@ -210,31 +210,31 @@ FlashResult Flash::validateParams(uint32_t offset, size_t length,
     // Check bounds
     if (offset + length > flash_size_)
     {
-        return FLASH_ERROR_BOUNDS;
+        return FlashResult::ErrorBounds;
     }
 
     // Check alignment requirements
     if (require_page_align && !isPageAligned(offset))
     {
-        return FLASH_ERROR_ALIGNMENT;
+        return FlashResult::ErrorAlignment;
     }
 
     if (require_page_align && !isPageMultiple(length))
     {
-        return FLASH_ERROR_ALIGNMENT;
+        return FlashResult::ErrorAlignment;
     }
 
     if (require_sector_align && !isSectorAligned(offset))
     {
-        return FLASH_ERROR_ALIGNMENT;
+        return FlashResult::ErrorAlignment;
     }
 
     if (require_sector_align && !isSectorMultiple(length))
     {
-        return FLASH_ERROR_ALIGNMENT;
+        return FlashResult::ErrorAlignment;
     }
 
-    return FLASH_SUCCESS;
+    return FlashResult::Success;
 }
 
 bool Flash::isSectorErased(uint32_t offset, size_t length)
@@ -268,24 +268,26 @@ const char *Flash::resultToString(FlashResult result)
 {
     switch (result)
     {
-    case FLASH_SUCCESS:
+    case FlashResult::Success:
         return "Success";
-    case FLASH_ERROR_INVALID_PARAM:
+    case FlashResult::ErrorInvalidParam:
         return "Invalid parameter";
-    case FLASH_ERROR_ALIGNMENT:
+    case FlashResult::ErrorAlignment:
         return "Alignment error";
-    case FLASH_ERROR_BOUNDS:
+    case FlashResult::ErrorBounds:
         return "Out of bounds";
-    case FLASH_ERROR_WRITE_PROTECTED:
+    case FlashResult::ErrorWriteProtected:
         return "Write protected";
-    case FLASH_ERROR_VERIFY_FAILED:
+    case FlashResult::ErrorVerifyFailed:
         return "Verification failed";
-    case FLASH_ERROR_ERASE_FAILED:
+    case FlashResult::ErrorEraseFailed:
         return "Erase failed";
-    case FLASH_ERROR_TIMEOUT:
+    case FlashResult::ErrorTimeout:
         return "Timeout";
-    case FLASH_ERROR_HARDWARE:
+    case FlashResult::ErrorHardware:
         return "Hardware error";
+    case FlashResult::ErrorUnknown:
+        return "Unknown error";
     default:
         return "Unknown error";
     }

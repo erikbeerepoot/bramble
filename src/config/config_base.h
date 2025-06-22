@@ -82,7 +82,7 @@ public:
         FlashResult result = flash_.erase(flash_offset_, 
                                          ((size + FLASH_SECTOR_SIZE - 1) / FLASH_SECTOR_SIZE) * FLASH_SECTOR_SIZE, 
                                          3);
-        if (result != FLASH_SUCCESS) {
+        if (result != FlashResult::Success) {
             if (use_backup) {
                 return saveConfigToBackup(config, size);
             }
@@ -91,7 +91,7 @@ public:
         
         // Write with retry
         result = flash_.write(flash_offset_, reinterpret_cast<const uint8_t*>(&config), size, 3);
-        if (result != FLASH_SUCCESS) {
+        if (result != FlashResult::Success) {
             if (use_backup) {
                 return saveConfigToBackup(config, size);
             }
@@ -112,7 +112,7 @@ public:
     template<typename T>
     bool loadConfig(T& config, size_t size, bool use_backup = true) {
         FlashResult result = flash_.read(flash_offset_, reinterpret_cast<uint8_t*>(&config), size);
-        if (result != FLASH_SUCCESS) {
+        if (result != FlashResult::Success) {
             if (use_backup) {
                 return loadConfigFromBackup(config, size);
             }
@@ -127,7 +127,7 @@ public:
      */
     bool clearConfig(size_t size) {
         size_t erase_size = ((size + FLASH_SECTOR_SIZE - 1) / FLASH_SECTOR_SIZE) * FLASH_SECTOR_SIZE;
-        return flash_.erase(flash_offset_, erase_size, 3) == FLASH_SUCCESS;
+        return flash_.erase(flash_offset_, erase_size, 3) == FlashResult::Success;
     }
     
 private:
@@ -137,16 +137,16 @@ private:
         FlashResult result = flash_.erase(backup_offset,
                                          ((size + FLASH_SECTOR_SIZE - 1) / FLASH_SECTOR_SIZE) * FLASH_SECTOR_SIZE,
                                          2);
-        if (result != FLASH_SUCCESS) return false;
+        if (result != FlashResult::Success) return false;
         
         result = flash_.write(backup_offset, reinterpret_cast<const uint8_t*>(&config), size, 2);
-        return result == FLASH_SUCCESS;
+        return result == FlashResult::Success;
     }
     
     template<typename T>
     bool loadConfigFromBackup(T& config, size_t size) {
         uint32_t backup_offset = getBackupOffset();
         FlashResult result = flash_.read(backup_offset, reinterpret_cast<uint8_t*>(&config), size);
-        return result == FLASH_SUCCESS;
+        return result == FlashResult::Success;
     }
 };

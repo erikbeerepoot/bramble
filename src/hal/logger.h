@@ -6,12 +6,12 @@
 /**
  * @brief Logging levels for debug output control
  */
-enum LogLevel {
-    LOG_NONE = 0,    // No logging
-    LOG_ERROR = 1,   // Critical errors only
-    LOG_WARN = 2,    // Warnings and errors
-    LOG_INFO = 3,    // General information
-    LOG_DEBUG = 4    // Detailed debug output
+enum class LogLevel : uint8_t {
+    None = 0,       // No logging
+    Error = 1,      // Critical errors only
+    Warn = 2,       // Warnings and errors
+    Info = 3,       // General information
+    Debug = 4       // Detailed debug output
 };
 
 /**
@@ -33,7 +33,7 @@ private:
             return;
         }
         
-        if (global_level_ >= Level) {
+        if (static_cast<uint8_t>(global_level_) >= static_cast<uint8_t>(Level)) {
             printf("%s [%s]: ", prefix, module_name_);
             vprintf(fmt, args);
             printf("\n");
@@ -53,7 +53,7 @@ public:
     void error(const char* fmt, ...) const {
         va_list args;
         va_start(args, fmt);
-        log<LOG_ERROR>("ERR", fmt, args);
+        log<LogLevel::Error>("ERR", fmt, args);
         va_end(args);
     }
     
@@ -63,7 +63,7 @@ public:
     void warn(const char* fmt, ...) const {
         va_list args;
         va_start(args, fmt);
-        log<LOG_WARN>("WARN", fmt, args);
+        log<LogLevel::Warn>("WARN", fmt, args);
         va_end(args);
     }
     
@@ -73,7 +73,7 @@ public:
     void info(const char* fmt, ...) const {
         va_list args;
         va_start(args, fmt);
-        log<LOG_INFO>("INFO", fmt, args);
+        log<LogLevel::Info>("INFO", fmt, args);
         va_end(args);
     }
     
@@ -83,7 +83,7 @@ public:
     void debug(const char* fmt, ...) const {
         va_list args;
         va_start(args, fmt);
-        log<LOG_DEBUG>("DBG", fmt, args);
+        log<LogLevel::Debug>("DBG", fmt, args);
         va_end(args);
     }
     

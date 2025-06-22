@@ -4,27 +4,27 @@
 #include <stddef.h>
 
 // Message protocol constants
-#define MESSAGE_MAGIC           0xBEEF
-#define MESSAGE_HEADER_SIZE     9
-#define MESSAGE_MAX_PAYLOAD     247
-#define MESSAGE_MAX_SIZE        (MESSAGE_HEADER_SIZE + MESSAGE_MAX_PAYLOAD)
+constexpr uint16_t MESSAGE_MAGIC = 0xBEEF;
+constexpr size_t MESSAGE_HEADER_SIZE = 9;
+constexpr size_t MESSAGE_MAX_PAYLOAD = 247;
+constexpr size_t MESSAGE_MAX_SIZE = MESSAGE_HEADER_SIZE + MESSAGE_MAX_PAYLOAD;
 
 // Payload data limits
-#define MAX_SENSOR_DATA_LENGTH  32      // Maximum sensor data array size
-#define MAX_ACTUATOR_PARAMS     16      // Maximum actuator parameters array size
+constexpr size_t MAX_SENSOR_DATA_LENGTH = 32;      // Maximum sensor data array size
+constexpr size_t MAX_ACTUATOR_PARAMS = 16;         // Maximum actuator parameters array size
 
 // Message flags
-#define MSG_FLAG_RELIABLE       0x01  // Requires ACK
-#define MSG_FLAG_CRITICAL       0x02  // Critical message (persistent retry)
-#define MSG_FLAG_PRIORITY       0x04  // High priority message
-#define MSG_FLAG_BROADCAST      0x08  // Broadcast message (no ACK expected)
+constexpr uint8_t MSG_FLAG_RELIABLE = 0x01;        // Requires ACK
+constexpr uint8_t MSG_FLAG_CRITICAL = 0x02;        // Critical message (persistent retry)
+constexpr uint8_t MSG_FLAG_PRIORITY = 0x04;        // High priority message
+constexpr uint8_t MSG_FLAG_BROADCAST = 0x08;       // Broadcast message (no ACK expected)
 
 // Address definitions
-#define ADDRESS_HUB             0x0000      // Hub/gateway address
-#define ADDRESS_UNREGISTERED    0xFFFF      // Temporary address for unregistered nodes
-#define ADDRESS_BROADCAST       0xFFFE      // Broadcast to all registered nodes  
-#define ADDRESS_MIN_NODE        0x0001      // First assignable node address
-#define ADDRESS_MAX_NODE        0xFFFD      // Last assignable node address
+constexpr uint16_t ADDRESS_HUB = 0x0000;           // Hub/gateway address
+constexpr uint16_t ADDRESS_UNREGISTERED = 0xFFFF;  // Temporary address for unregistered nodes
+constexpr uint16_t ADDRESS_BROADCAST = 0xFFFE;     // Broadcast to all registered nodes  
+constexpr uint16_t ADDRESS_MIN_NODE = 0x0001;      // First assignable node address
+constexpr uint16_t ADDRESS_MAX_NODE = 0xFFFD;      // Last assignable node address
 
 // Message types
 enum MessageType {
@@ -70,14 +70,14 @@ enum NodeType {
 };
 
 // Node capability flags
-#define CAP_TEMPERATURE         0x01  // Temperature sensor
-#define CAP_HUMIDITY            0x02  // Humidity sensor
-#define CAP_SOIL_MOISTURE       0x04  // Soil moisture sensor
-#define CAP_BATTERY_MONITOR     0x08  // Battery level monitoring
-#define CAP_VALVE_CONTROL       0x10  // Valve actuator
-#define CAP_PUMP_CONTROL        0x20  // Pump actuator
-#define CAP_FAN_CONTROL         0x40  // Fan actuator
-#define CAP_SOLAR_POWERED       0x80  // Solar powered node
+constexpr uint8_t CAP_TEMPERATURE = 0x01;      // Temperature sensor
+constexpr uint8_t CAP_HUMIDITY = 0x02;         // Humidity sensor
+constexpr uint8_t CAP_SOIL_MOISTURE = 0x04;    // Soil moisture sensor
+constexpr uint8_t CAP_BATTERY_MONITOR = 0x08;  // Battery level monitoring
+constexpr uint8_t CAP_VALVE_CONTROL = 0x10;    // Valve actuator
+constexpr uint8_t CAP_PUMP_CONTROL = 0x20;     // Pump actuator
+constexpr uint8_t CAP_FAN_CONTROL = 0x40;      // Fan actuator
+constexpr uint8_t CAP_SOLAR_POWERED = 0x80;    // Solar powered node
 
 // Registration status codes
 enum RegistrationStatus {

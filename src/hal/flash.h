@@ -17,25 +17,25 @@
  */
 
 // Flash memory constants for RP2040
-#define FLASH_SECTOR_SIZE 4096
-#define FLASH_PAGE_SIZE 256
-#define FLASH_BLOCK_SIZE 65536
+constexpr size_t FLASH_SECTOR_SIZE = 4096;
+constexpr size_t FLASH_PAGE_SIZE = 256;
+constexpr size_t FLASH_BLOCK_SIZE = 65536;
 
 /**
  * @brief Flash operation result codes
  */
-enum FlashResult
+enum class FlashResult : uint8_t
 {
-    FLASH_SUCCESS = 0,           // Operation successful
-    FLASH_ERROR_INVALID_PARAM,   // Invalid parameters
-    FLASH_ERROR_ALIGNMENT,       // Alignment error
-    FLASH_ERROR_BOUNDS,          // Out of bounds access
-    FLASH_ERROR_WRITE_PROTECTED, // Write to protected area
-    FLASH_ERROR_VERIFY_FAILED,   // Write verification failed
-    FLASH_ERROR_ERASE_FAILED,    // Erase operation failed
-    FLASH_ERROR_TIMEOUT,         // Operation timed out
-    FLASH_ERROR_HARDWARE,        // Hardware failure
-    FLASH_ERROR_UNKNOWN = 255    // Unknown error -- default error case
+    Success = 0,                // Operation successful
+    ErrorInvalidParam,          // Invalid parameters
+    ErrorAlignment,             // Alignment error
+    ErrorBounds,                // Out of bounds access
+    ErrorWriteProtected,        // Write to protected area
+    ErrorVerifyFailed,          // Write verification failed
+    ErrorEraseFailed,           // Erase operation failed
+    ErrorTimeout,               // Operation timed out
+    ErrorHardware,              // Hardware failure
+    ErrorUnknown = 255          // Unknown error -- default error case
 };
 
 /**
@@ -195,7 +195,7 @@ private:
     template <typename Operation>
     FlashResult retryOperation(Operation op, uint32_t max_retries, const char *op_name)
     {
-        FlashResult result = FLASH_ERROR_UNKNOWN;
+        FlashResult result = FlashResult::ErrorUnknown;
 
         for (uint32_t attempt = 0; attempt <= max_retries; attempt++)
         {
@@ -207,9 +207,9 @@ private:
 
             result = op();
 
-            if (result == FLASH_SUCCESS)
+            if (result == FlashResult::Success)
             {
-                return FLASH_SUCCESS;
+                return FlashResult::Success;
             }
 
             logger_.error("%s failed on attempt %lu: %s", op_name, attempt + 1,
