@@ -1,105 +1,70 @@
 #include "message.h"
+#include "message_builder.h"
+#include "message_validator.h"
 #include <string.h>
 #include <stdio.h>
 
 const char* MessageHandler::getMessageTypeName(uint8_t type) {
     switch (type) {
-        case MSG_TYPE_SENSOR_DATA:     return "SENSOR_DATA";
-        case MSG_TYPE_ACTUATOR_CMD:    return "ACTUATOR_CMD";
-        case MSG_TYPE_ACK:             return "ACK";
-        case MSG_TYPE_HEARTBEAT:       return "HEARTBEAT";
-        case MSG_TYPE_REGISTRATION:    return "REGISTRATION";
-        case MSG_TYPE_REG_RESPONSE:    return "REG_RESPONSE";
-        case MSG_TYPE_CONFIG:          return "CONFIG";
-        case MSG_TYPE_ROUTE:           return "ROUTE";
-        default:                       return "UNKNOWN";
+        case MSG_TYPE_SENSOR_DATA:  return "SENSOR_DATA";
+        case MSG_TYPE_ACTUATOR_CMD: return "ACTUATOR_CMD";
+        case MSG_TYPE_ACK:          return "ACK";
+        case MSG_TYPE_HEARTBEAT:    return "HEARTBEAT";
+        case MSG_TYPE_REGISTRATION: return "REGISTRATION";
+        case MSG_TYPE_REG_RESPONSE: return "REG_RESPONSE";
+        case MSG_TYPE_CONFIG:       return "CONFIG";
+        case MSG_TYPE_ROUTE:        return "ROUTE";
+        default:                    return "UNKNOWN";
     }
 }
 
 size_t MessageHandler::createSensorMessage(uint16_t src_addr, uint16_t dst_addr, uint8_t seq_num,
                                           uint8_t sensor_type, const uint8_t* data, uint8_t data_length,
                                           uint8_t flags, uint8_t* buffer) {
-    if (!buffer || !data || data_length > MAX_SENSOR_DATA_LENGTH) {
+    if (!data || data_length > MAX_SENSOR_DATA_LENGTH) {
         return 0;
     }
     
-    // Validate total message size
-    size_t total_size = MESSAGE_HEADER_SIZE + sizeof(SensorPayload) + data_length;
-    if (total_size > MESSAGE_MAX_SIZE) {
-        return 0;
-    }
-    
-    Message* msg = (Message*)buffer;
-    createHeader(MSG_TYPE_SENSOR_DATA, flags, src_addr, dst_addr, seq_num, &msg->header);
-    
-    SensorPayload* payload = (SensorPayload*)msg->payload;
-    payload->sensor_type = sensor_type;
-    payload->data_length = data_length;
-    
-    // Ensure we don't write beyond the data array bounds
-    if (data_length > 0) {
-        memcpy(payload->data, data, data_length);
-    }
-    
-    return MESSAGE_HEADER_SIZE + sizeof(uint8_t) + sizeof(uint8_t) + data_length;
+    return MessageBuilder::createSensorMessage(src_addr, dst_addr, seq_num, 
+                                             sensor_type, data, data_length, 
+                                             flags, buffer);
 }
 
 size_t MessageHandler::createActuatorMessage(uint16_t src_addr, uint16_t dst_addr, uint8_t seq_num,
                                             uint8_t actuator_type, uint8_t command,
                                             const uint8_t* params, uint8_t param_length,
                                             uint8_t flags, uint8_t* buffer) {
-    if (!buffer || param_length > MAX_ACTUATOR_PARAMS) {
+    if (param_length > MAX_ACTUATOR_PARAMS) {
         return 0;
     }
     
-    // Validate total message size
-    size_t total_size = MESSAGE_HEADER_SIZE + sizeof(ActuatorPayload) + param_length;
-    if (total_size > MESSAGE_MAX_SIZE) {
-        return 0;
-    }
-    
-    Message* msg = (Message*)buffer;
-    createHeader(MSG_TYPE_ACTUATOR_CMD, flags, src_addr, dst_addr, seq_num, &msg->header);
-    
-    ActuatorPayload* payload = (ActuatorPayload*)msg->payload;
-    payload->actuator_type = actuator_type;
-    payload->command = command;
-    payload->param_length = param_length;
-    
-    // Only copy if we have valid parameters and they fit
-    if (params && param_length > 0) {
-        memcpy(payload->params, params, param_length);
-    }
-    
-    return MESSAGE_HEADER_SIZE + sizeof(uint8_t) + sizeof(uint8_t) + sizeof(uint8_t) + param_length;
+    return MessageBuilder::createActuatorMessage(src_addr, dst_addr, seq_num,
+                                               actuator_type, command,
+                                               params, param_length,
+                                               flags, buffer);
 }
 
 size_t MessageHandler::createHeartbeatMessage(uint16_t src_addr, uint16_t dst_addr, uint8_t seq_num,
                                              uint8_t battery_level, uint8_t signal_quality,
                                              uint32_t uptime_seconds, uint8_t status_flags,
                                              uint8_t* buffer) {
-    if (!buffer) {
-        return 0;
-    }
+    HeartbeatPayload payload = {
+        .uptime_seconds = uptime_seconds,
+        .battery_level = battery_level,
+        .signal_strength = signal_quality,
+        .active_sensors = 0,  // Default to no sensors active
+        .error_flags = status_flags
+    };
     
-    Message* msg = (Message*)buffer;
-    createHeader(MSG_TYPE_HEARTBEAT, 0, src_addr, dst_addr, seq_num, &msg->header);
-    
-    HeartbeatPayload* payload = (HeartbeatPayload*)msg->payload;
-    payload->uptime_seconds = uptime_seconds;
-    payload->battery_level = battery_level;
-    payload->signal_strength = signal_quality;  // Using signal_quality param as signal_strength
-    payload->active_sensors = 0;  // Default to no sensors active
-    payload->error_flags = status_flags;
-    
-    return MESSAGE_HEADER_SIZE + sizeof(HeartbeatPayload);
+    return MessageBuilder::createMessage<HeartbeatPayload>(
+        MSG_TYPE_HEARTBEAT, 0, src_addr, dst_addr, seq_num, payload, buffer);
 }
 
 size_t MessageHandler::createRegistrationMessage(uint16_t src_addr, uint16_t dst_addr, uint8_t seq_num,
                                                  uint64_t device_id, uint8_t node_type, uint8_t capabilities,
                                                  uint16_t firmware_ver, const char* device_name,
                                                  uint8_t* buffer) {
-    if (!buffer || device_id == 0) {
+    if (device_id == 0) {
         return 0;
     }
     
@@ -116,62 +81,50 @@ size_t MessageHandler::createRegistrationMessage(uint16_t src_addr, uint16_t dst
         }
     }
     
-    Message* msg = (Message*)buffer;
-    createHeader(MSG_TYPE_REGISTRATION, MSG_FLAG_RELIABLE, src_addr, dst_addr, seq_num, &msg->header);
-    
-    RegistrationPayload* payload = (RegistrationPayload*)msg->payload;
-    payload->device_id = device_id;
-    payload->node_type = node_type;
-    payload->capabilities = capabilities;
-    payload->firmware_ver = firmware_ver;
+    RegistrationPayload payload = {};
+    payload.device_id = device_id;
+    payload.node_type = node_type;
+    payload.capabilities = capabilities;
+    payload.firmware_ver = firmware_ver;
     
     // Copy device name, ensuring null termination
     if (device_name) {
-        strncpy(payload->device_name, device_name, sizeof(payload->device_name) - 1);
-        payload->device_name[sizeof(payload->device_name) - 1] = '\0';
+        strncpy(payload.device_name, device_name, sizeof(payload.device_name) - 1);
+        payload.device_name[sizeof(payload.device_name) - 1] = '\0';
     } else {
-        payload->device_name[0] = '\0';
+        payload.device_name[0] = '\0';
     }
     
-    return MESSAGE_HEADER_SIZE + sizeof(RegistrationPayload);
+    return MessageBuilder::createMessage<RegistrationPayload>(
+        MSG_TYPE_REGISTRATION, MSG_FLAG_RELIABLE, src_addr, dst_addr, seq_num, payload, buffer);
 }
 
 size_t MessageHandler::createRegistrationResponse(uint16_t src_addr, uint16_t dst_addr, uint8_t seq_num,
                                                   uint64_t device_id, uint16_t assigned_addr, 
                                                   uint8_t status, uint8_t retry_interval,
                                                   uint32_t network_time, uint8_t* buffer) {
-    if (!buffer) {
-        return 0;
-    }
+    RegistrationResponsePayload payload = {
+        .device_id = device_id,
+        .assigned_addr = assigned_addr,
+        .status = status,
+        .retry_interval = retry_interval,
+        .network_time = network_time
+    };
     
-    Message* msg = (Message*)buffer;
-    createHeader(MSG_TYPE_REG_RESPONSE, MSG_FLAG_RELIABLE, src_addr, dst_addr, seq_num, &msg->header);
-    
-    RegistrationResponsePayload* payload = (RegistrationResponsePayload*)msg->payload;
-    payload->device_id = device_id;
-    payload->assigned_addr = assigned_addr;
-    payload->status = status;
-    payload->retry_interval = retry_interval;
-    payload->network_time = network_time;
-    
-    return MESSAGE_HEADER_SIZE + sizeof(RegistrationResponsePayload);
+    return MessageBuilder::createMessage<RegistrationResponsePayload>(
+        MSG_TYPE_REG_RESPONSE, MSG_FLAG_RELIABLE, src_addr, dst_addr, seq_num, payload, buffer);
 }
 
 size_t MessageHandler::createAckMessage(uint16_t src_addr, uint16_t dst_addr, uint8_t seq_num,
                                        uint8_t ack_seq_num, uint8_t status,
                                        uint8_t* buffer) {
-    if (!buffer) {
-        return 0;
-    }
+    AckPayload payload = {
+        .ack_seq_num = ack_seq_num,
+        .status = status
+    };
     
-    Message* msg = (Message*)buffer;
-    createHeader(MSG_TYPE_ACK, 0, src_addr, dst_addr, seq_num, &msg->header);
-    
-    AckPayload* payload = (AckPayload*)msg->payload;
-    payload->ack_seq_num = ack_seq_num;
-    payload->status = status;
-    
-    return MESSAGE_HEADER_SIZE + sizeof(AckPayload);
+    return MessageBuilder::createMessage<AckPayload>(
+        MSG_TYPE_ACK, 0, src_addr, dst_addr, seq_num, payload, buffer);
 }
 
 bool MessageHandler::parseMessage(const uint8_t* data, size_t length, Message* message) {
@@ -225,18 +178,12 @@ bool MessageHandler::validateHeader(const MessageHeader* header) {
         return false;
     }
     
-    // Check addresses - allow hub, broadcast, unregistered, and valid node addresses
-    if (header->src_addr != ADDRESS_HUB && 
-        header->src_addr != ADDRESS_BROADCAST &&
-        header->src_addr != ADDRESS_UNREGISTERED &&
-        (header->src_addr < ADDRESS_MIN_NODE || header->src_addr > ADDRESS_MAX_NODE)) {
+    // Check addresses using MessageValidator
+    if (!MessageValidator::isValidAddress(header->src_addr)) {
         return false;
     }
     
-    if (header->dst_addr != ADDRESS_HUB && 
-        header->dst_addr != ADDRESS_BROADCAST &&
-        header->dst_addr != ADDRESS_UNREGISTERED &&
-        (header->dst_addr < ADDRESS_MIN_NODE || header->dst_addr > ADDRESS_MAX_NODE)) {
+    if (!MessageValidator::isValidAddress(header->dst_addr)) {
         return false;
     }
     

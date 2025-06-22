@@ -1,4 +1,5 @@
 #include "hub_router.h"
+#include "../utils/time_utils.h"
 #include "pico/stdlib.h"
 #include <stdio.h>
 #include <cstring>
@@ -51,7 +52,7 @@ bool HubRouter::forwardMessage(const uint8_t* buffer, size_t length,
     RouteEntry& route = routing_table_[destination_address];
     route.destination_address = destination_address;
     route.next_hop_address = destination_address;  // Direct connection for now
-    route.last_used_time = getCurrentTime();
+    route.last_used_time = TimeUtils::getCurrentTimeMs();
     route.hop_count = 1;
     route.is_direct = true;
     
@@ -74,7 +75,7 @@ bool HubRouter::forwardMessage(const uint8_t* buffer, size_t length,
 }
 
 void HubRouter::updateRouteOnline(uint16_t node_address) {
-    uint32_t current_time = getCurrentTime();
+    uint32_t current_time = TimeUtils::getCurrentTimeMs();
     
     // Get or create routing table entry
     RouteEntry& route = routing_table_[node_address];
@@ -113,7 +114,7 @@ void HubRouter::processQueuedMessages() {
         return;
     }
     
-    uint32_t current_time = getCurrentTime();
+    uint32_t current_time = TimeUtils::getCurrentTimeMs();
     std::queue<QueuedMessage> retry_queue;
     
     // Process all queued messages
@@ -245,7 +246,7 @@ bool HubRouter::queueMessage(const uint8_t* buffer, size_t length,
     memcpy(msg.buffer, buffer, length);
     msg.length = length;
     msg.destination_address = destination_address;
-    msg.queued_time = getCurrentTime();
+    msg.queued_time = TimeUtils::getCurrentTimeMs();
     msg.retry_count = 0;
     msg.requires_ack = requires_ack;
     
@@ -286,6 +287,3 @@ uint32_t HubRouter::removeExpiredMessages(uint32_t current_time) {
     return removed_count;
 }
 
-uint32_t HubRouter::getCurrentTime() {
-    return to_ms_since_boot(get_absolute_time());
-}

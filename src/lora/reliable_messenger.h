@@ -9,6 +9,7 @@
 #include "../hal/logger.h"
 #include <map>
 #include <memory>
+#include <functional>
 
 /**
  * @brief Pending message for retry tracking
@@ -182,4 +183,27 @@ private:
      * Hub uses 1-127, nodes use 128-255 to prevent collisions
      */
     uint8_t getNextSequenceNumber();
+    
+    /**
+     * @brief Template method for sending messages with common pattern
+     * @tparam CreateFunc Function/lambda that creates the message
+     * @param create Function that takes buffer and returns message length
+     * @param criticality Delivery criticality
+     * @param msg_type Message type name for logging
+     * @return true if message sent/queued successfully
+     */
+    template<typename CreateFunc>
+    bool sendWithBuilder(CreateFunc create, DeliveryCriticality criticality, const char* msg_type) {
+        if (!lora_) return false;
+        
+        uint8_t buffer[MESSAGE_MAX_SIZE];
+        size_t length = create(buffer);
+        
+        if (length == 0) {
+            logger_.error("Failed to create %s message", msg_type);
+            return false;
+        }
+        
+        return send(buffer, length, criticality);
+    }
 };

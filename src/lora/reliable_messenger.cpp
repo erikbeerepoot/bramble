@@ -1,4 +1,5 @@
 #include "reliable_messenger.h"
+#include "../utils/time_utils.h"
 #include "pico/stdlib.h"
 #include <stdio.h>
 #include <string.h>
@@ -18,126 +19,81 @@ ReliableMessenger::ReliableMessenger(SX1276* lora, uint16_t node_addr, NetworkSt
 bool ReliableMessenger::sendActuatorCommand(uint16_t dst_addr, uint8_t actuator_type, uint8_t command,
                                            const uint8_t* params, uint8_t param_length, 
                                            DeliveryCriticality criticality) {
-    if (!lora_) return false;
-    
     uint8_t flags = MessageBuilder::criticalityToFlags(criticality);
     uint8_t seq_num = getNextSequenceNumber();
     
-    // Create the actuator message with appropriate flags
-    uint8_t buffer[MESSAGE_MAX_SIZE];
-    size_t length = MessageBuilder::createActuatorMessage(
-        node_addr_, dst_addr, seq_num,
-        actuator_type, command, params, param_length, flags,
-        buffer
-    );
-    
-    if (length == 0) {
-        logger_.error("Failed to create actuator message");
-        return false;
-    }
-    
-    return send(buffer, length, criticality);
+    return sendWithBuilder([=](uint8_t* buffer) {
+        return MessageBuilder::createActuatorMessage(
+            node_addr_, dst_addr, seq_num,
+            actuator_type, command, params, param_length, flags,
+            buffer
+        );
+    }, criticality, "actuator");
 }
 
 bool ReliableMessenger::sendSensorData(uint16_t dst_addr, uint8_t sensor_type, 
                                       const uint8_t* data, uint8_t data_length,
                                       DeliveryCriticality criticality) {
-    if (!lora_) return false;
-    
     uint8_t flags = MessageBuilder::criticalityToFlags(criticality);
     uint8_t seq_num = getNextSequenceNumber();
     
     logger_.debug("sendSensorData: src=0x%04X, dst=0x%04X, type=%d, criticality=%d", 
                   node_addr_, dst_addr, sensor_type, criticality);
     
-    // Create the sensor message with appropriate flags
-    uint8_t buffer[MESSAGE_MAX_SIZE];
-    size_t length = MessageBuilder::createSensorMessage(
-        node_addr_, dst_addr, seq_num,
-        sensor_type, data, data_length, flags,
-        buffer
-    );
-    
-    if (length == 0) {
-        logger_.error("Failed to create sensor message");
-        return false;
-    }
-    
-    logger_.debug("Created sensor message: len=%zu", length);
-    
-    return send(buffer, length, criticality);
+    return sendWithBuilder([=](uint8_t* buffer) {
+        return MessageBuilder::createSensorMessage(
+            node_addr_, dst_addr, seq_num,
+            sensor_type, data, data_length, flags,
+            buffer
+        );
+    }, criticality, "sensor");
 }
 
 bool ReliableMessenger::sendHeartbeat(uint16_t dst_addr, uint32_t uptime_seconds, 
                                      uint8_t battery_level, uint8_t signal_strength,
                                      uint8_t active_sensors, uint8_t error_flags) {
-    if (!lora_) return false;
-    
     uint8_t seq_num = getNextSequenceNumber();
     
-    // Create the heartbeat message (heartbeats are typically best effort)
-    uint8_t buffer[MESSAGE_MAX_SIZE];
-    size_t length = MessageHandler::createHeartbeatMessage(
-        node_addr_, dst_addr, seq_num,
-        battery_level, signal_strength, uptime_seconds, error_flags,
-        buffer
-    );
-    
-    if (length == 0) {
-        logger_.error("Failed to create heartbeat message");
-        return false;
-    }
-    
-    return send(buffer, length, BEST_EFFORT);
+    return sendWithBuilder([=](uint8_t* buffer) {
+        return MessageHandler::createHeartbeatMessage(
+            node_addr_, dst_addr, seq_num,
+            battery_level, signal_strength, uptime_seconds, error_flags,
+            buffer
+        );
+    }, BEST_EFFORT, "heartbeat");
 }
 
 bool ReliableMessenger::sendRegistrationRequest(uint16_t dst_addr, uint64_t device_id,
                                               uint8_t node_type, uint8_t capabilities,
                                               uint16_t firmware_ver, const char* device_name) {
-    if (!lora_) return false;
-    
     uint8_t seq_num = getNextSequenceNumber();
     
-    // Create the registration message (always reliable)
-    uint8_t buffer[MESSAGE_MAX_SIZE];
-    size_t length = MessageHandler::createRegistrationMessage(
-        node_addr_, dst_addr, seq_num,
-        device_id, node_type, capabilities, firmware_ver, device_name,
-        buffer
-    );
-    
-    if (length == 0) {
-        logger_.error("Failed to create registration message");
-        return false;
-    }
-    
     logger_.info("Sending registration request to hub (device_id=0x%016llX)", device_id);
-    return send(buffer, length, RELIABLE);
+    
+    return sendWithBuilder([=](uint8_t* buffer) {
+        return MessageHandler::createRegistrationMessage(
+            node_addr_, dst_addr, seq_num,
+            device_id, node_type, capabilities, firmware_ver, device_name,
+            buffer
+        );
+    }, RELIABLE, "registration");
 }
 
 bool ReliableMessenger::sendRegistrationResponse(uint16_t dst_addr, uint64_t device_id,
                                                uint16_t assigned_addr, uint8_t status,
                                                uint8_t retry_interval, uint32_t network_time) {
-    if (!lora_) return false;
-    
     uint8_t seq_num = getNextSequenceNumber();
-    
-    // Create the registration response message (always reliable)
-    uint8_t buffer[MESSAGE_MAX_SIZE];
-    size_t length = MessageHandler::createRegistrationResponse(
-        node_addr_, dst_addr, seq_num,
-        device_id, assigned_addr, status, retry_interval, network_time,
-        buffer
-    );
-    
-    if (length == 0) {
-        logger_.error("Failed to create registration response message");
-        return false;
-    }
     
     logger_.info("Sending registration response to 0x%04X (assigned_addr=0x%04X, status=%d)", 
            dst_addr, assigned_addr, status);
-    return send(buffer, length, RELIABLE);
+    
+    return sendWithBuilder([=](uint8_t* buffer) {
+        return MessageHandler::createRegistrationResponse(
+            node_addr_, dst_addr, seq_num,
+            device_id, assigned_addr, status, retry_interval, network_time,
+            buffer
+        );
+    }, RELIABLE, "registration response");
 }
 
 bool ReliableMessenger::send(const uint8_t* buffer, size_t length, 
@@ -169,7 +125,7 @@ bool ReliableMessenger::send(const uint8_t* buffer, size_t length,
     memcpy(pending.buffer.get(), buffer, length);
     pending.length = length;
     pending.dst_addr = msg->header.dst_addr;
-    pending.send_time = getCurrentTime();
+    pending.send_time = TimeUtils::getCurrentTimeMs();
     pending.attempts = 0;
     pending.criticality = criticality;
     pending.retry_config = RetryPolicy::getConfig(criticality);
@@ -270,7 +226,7 @@ bool ReliableMessenger::processIncomingMessage(const uint8_t* buffer, size_t len
 }
 
 void ReliableMessenger::update() {
-    uint32_t current_time = getCurrentTime();
+    uint32_t current_time = TimeUtils::getCurrentTimeMs();
     
     // Check for messages that need retry
     auto it = pending_messages_.begin();
@@ -389,9 +345,7 @@ void ReliableMessenger::sendAck(uint16_t src_addr, uint8_t seq_num, uint8_t stat
 }
 
 
-uint32_t ReliableMessenger::getCurrentTime() {
-    return to_ms_since_boot(get_absolute_time());
-}
+
 
 uint8_t ReliableMessenger::getNextSequenceNumber() {
     uint8_t seq_num = next_seq_num_;
