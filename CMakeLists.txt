@@ -100,6 +100,7 @@ else()
         src/hal/flash.cpp
         src/hal/logger.cpp
         src/hal/spi_device.cpp
+        src/config/config_base.cpp
         src/config/node_config.cpp
         src/config/hub_config.cpp
         src/application_mode.cpp

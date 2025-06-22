@@ -3,22 +3,9 @@
 #include "../hal/flash.h"
 #include <string.h>
 #include <stdio.h>
+#include <cstddef>
 
 static Logger logger("HubConfig");
-
-// Simple CRC32 implementation for data integrity
-static uint32_t calculateCRC32(const uint8_t* data, size_t length) {
-    uint32_t crc = 0xFFFFFFFF;
-    
-    for (size_t i = 0; i < length; i++) {
-        crc ^= data[i];
-        for (int j = 0; j < 8; j++) {
-            crc = (crc >> 1) ^ (0xEDB88320 & -(crc & 1));
-        }
-    }
-    
-    return ~crc;
-}
 
 bool HubConfigManager::saveRegistry(const HubRegistry& registry) {
     logger.info("Saving hub registry to flash (nodes=%d)", registry.header.node_count);
@@ -30,17 +17,9 @@ bool HubConfigManager::saveRegistry(const HubRegistry& registry) {
     HubRegistry temp_registry = registry;
     temp_registry.header.crc32 = calculateCRC32((const uint8_t*)&temp_registry, data_size);
     
-    // Erase flash sectors for registry
-    size_t erase_size = ((sizeof(HubRegistry) + FLASH_SECTOR_SIZE - 1) / FLASH_SECTOR_SIZE) * FLASH_SECTOR_SIZE;
-    if (flash_.erase(REGISTRY_FLASH_OFFSET, erase_size) != FLASH_SUCCESS) {
-        logger.error("Failed to erase flash for registry");
-        return false;
-    }
-    
-    // Write registry data
-    size_t total_size = sizeof(HubRegistry);
-    if (flash_.write(REGISTRY_FLASH_OFFSET, (const uint8_t*)&temp_registry, total_size) != FLASH_SUCCESS) {
-        logger.error("Failed to write registry to flash");
+    // Use base class save method
+    if (!saveConfig(temp_registry, sizeof(HubRegistry))) {
+        logger.error("Failed to save registry");
         return false;
     }
     
@@ -51,9 +30,8 @@ bool HubConfigManager::saveRegistry(const HubRegistry& registry) {
 bool HubConfigManager::loadRegistry(HubRegistry& registry) {
     logger.info("Loading hub registry from flash");
     
-    // Read registry from flash
-    size_t total_size = sizeof(HubRegistry);
-    if (flash_.read(REGISTRY_FLASH_OFFSET, (uint8_t*)&registry, total_size) != FLASH_SUCCESS) {
+    // Use base class load method
+    if (!loadConfig(registry, sizeof(HubRegistry))) {
         logger.error("Failed to read registry from flash");
         return false;
     }

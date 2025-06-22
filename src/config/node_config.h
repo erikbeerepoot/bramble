@@ -1,8 +1,10 @@
 #pragma once
 
+#include "config_base.h"
 #include "hal/flash.h"
 #include "hal/logger.h"
 #include <stdint.h>
+#include <cstddef>
 
 /**
  * @brief Node configuration data stored in flash
@@ -29,7 +31,7 @@ static_assert(sizeof(NodeConfiguration) == FLASH_PAGE_SIZE,
               "NodeConfiguration must be exactly one flash page");
 
 // Magic number for valid configuration
-#define NODE_CONFIG_MAGIC        0xBEEF1234
+constexpr uint32_t NODE_CONFIG_MAGIC = 0xBEEF1234;
 
 /**
  * @brief High-level interface for node configuration persistence
@@ -37,7 +39,7 @@ static_assert(sizeof(NodeConfiguration) == FLASH_PAGE_SIZE,
  * Manages loading/saving node configuration to QSPI flash
  * Uses the last sector of flash for configuration storage
  */
-class NodeConfigManager {
+class NodeConfigManager : public ConfigurationBase {
 public:
     explicit NodeConfigManager(Flash& flash_hal);
     
@@ -84,16 +86,7 @@ public:
         uint16_t firmware_version);
     
 private:
-    Flash& flash_;               // Reference to flash HAL
-    uint32_t config_offset_;     // Offset in flash for configuration
     Logger logger_;              // Module logger
-    
-    /**
-     * @brief Calculate CRC32 for configuration
-     * @param config Configuration structure (excluding CRC field)
-     * @return CRC32 value
-     */
-    uint32_t calculateCRC32(const NodeConfiguration& config);
     
     /**
      * @brief Verify configuration CRC
@@ -101,12 +94,6 @@ private:
      * @return true if CRC matches
      */
     bool verifyCRC(const NodeConfiguration& config);
-    
-    /**
-     * @brief Get backup configuration offset (second-to-last sector)
-     * @return Backup sector offset
-     */
-    uint32_t getBackupConfigOffset() const;
     
     /**
      * @brief Attempt to save configuration to backup location

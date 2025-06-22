@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+#include "config_base.h"
 #include "../hal/flash.h"
 #include "../lora/message.h"
 
@@ -12,7 +13,7 @@
  */
 
 // Maximum number of nodes to store in registry
-#define MAX_REGISTRY_NODES      100
+constexpr uint32_t MAX_REGISTRY_NODES = 100;
 
 // Registry entry for a single node
 struct __attribute__((packed)) RegistryNodeEntry {
@@ -47,9 +48,10 @@ struct __attribute__((packed)) HubRegistry {
 };
 
 // Configuration management for hub
-class HubConfigManager {
+class HubConfigManager : public ConfigurationBase {
 public:
-    explicit HubConfigManager(Flash& flash) : flash_(flash) {}
+    explicit HubConfigManager(Flash& flash) 
+        : ConfigurationBase(flash, 0x1F0000) {}  // 1.9MB offset
     
     /**
      * @brief Save hub registry to flash
@@ -72,10 +74,6 @@ public:
     bool clearRegistry();
     
 private:
-    Flash& flash_;
     static constexpr uint32_t REGISTRY_MAGIC = 0xBEEF5678;
     static constexpr uint32_t REGISTRY_VERSION = 1;
-    
-    // Use a different flash offset than node config
-    static constexpr uint32_t REGISTRY_FLASH_OFFSET = 0x1F0000; // 1.9MB offset
 };
