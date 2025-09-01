@@ -94,3 +94,7 @@ doc/build/
 # Configuration files that might contain secrets
 config.local.*
 secrets.*
+
+# Cache directories
+.cache/
+.serena/cache/
