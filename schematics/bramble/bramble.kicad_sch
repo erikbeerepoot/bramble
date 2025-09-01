@@ -1,0 +1,142 @@
+(kicad_sch
+	(version 20250114)
+	(generator "eeschema")
+	(generator_version "9.0")
+	(uuid "e35d7dcf-51bd-456f-89cf-e52d660079b4")
+	(paper "A4")
+	(lib_symbols)
+	(polyline
+		(pts
+			(xy 15.24 15.24) (xy 203.2 15.24)
+		)
+		(stroke
+			(width 0)
+			(type solid)
+			(color 132 0 0 1)
+		)
+		(uuid "1131394d-ccfc-4898-84e5-6f8261e3195c")
+	)
+	(polyline
+		(pts
+			(xy 15.24 91.44) (xy 203.2 91.44)
+		)
+		(stroke
+			(width 0)
+			(type solid)
+			(color 132 0 0 1)
+		)
+		(uuid "75f71cb5-565e-4843-954e-96d65543df9c")
+	)
+	(polyline
+		(pts
+			(xy 203.2 91.44) (xy 203.2 15.24)
+		)
+		(stroke
+			(width 0)
+			(type solid)
+			(color 132 0 0 1)
+		)
+		(uuid "aaa69555-32a2-4bcc-a13c-658bd7d8d379")
+	)
+	(polyline
+		(pts
+			(xy 15.24 15.24) (xy 15.24 91.44)
+		)
+		(stroke
+			(width 0)
+			(type solid)
+			(color 132 0 0 1)
+		)
+		(uuid "b63eccb7-8c3b-4ad2-839e-1645e6f50a4c")
+	)
+	(sheet
+		(at 38.1 119.38)
+		(size 88.9 48.26)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0.0000)
+		)
+		(uuid "bb9b9b7a-c138-4a2d-b942-0b084d710870")
+		(property "Sheetname" "valve_indexer"
+			(at 38.1 118.6684 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "valve_indexer.kicad_sch"
+			(at 38.1 168.2246 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(instances
+			(project "bramble"
+				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4"
+					(page "3")
+				)
+			)
+		)
+	)
+	(sheet
+		(at 163.83 95.25)
+		(size 91.44 35.56)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0.0000)
+		)
+		(uuid "df1d8afa-9717-44ff-901e-40cae4aada91")
+		(property "Sheetname" "pmu"
+			(at 163.83 94.5384 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "pmu.kicad_sch"
+			(at 163.83 131.3946 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(instances
+			(project "bramble"
+				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4"
+					(page "2")
+				)
+			)
+		)
+	)
+	(sheet_instances
+		(path "/"
+			(page "1")
+		)
+	)
+	(embedded_fonts no)
+)
