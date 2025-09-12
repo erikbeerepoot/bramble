@@ -2539,10 +2539,10 @@
 		(uuid "45ff9039-5022-4396-85d1-7a0687e00141")
 	)
 	(junction
-		(at 167.64 68.58)
+		(at 160.02 73.66)
 		(diameter 0)
 		(color 0 0 0 0)
-		(uuid "4cb6ec60-89c9-4cf4-b88a-b9480a2c5898")
+		(uuid "4dce2bd4-3cf4-4bd0-8a19-d976036f889d")
 	)
 	(junction
 		(at 180.34 63.5)
@@ -2666,7 +2666,7 @@
 	)
 	(wire
 		(pts
-			(xy 149.86 73.66) (xy 167.64 73.66)
+			(xy 149.86 73.66) (xy 160.02 73.66)
 		)
 		(stroke
 			(width 0)
@@ -2726,26 +2726,6 @@
 	)
 	(wire
 		(pts
-			(xy 167.64 67.31) (xy 167.64 68.58)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "4f0c804d-b7ee-4a17-b882-e1b1dbb300d8")
-	)
-	(wire
-		(pts
-			(xy 149.86 68.58) (xy 167.64 68.58)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "5044bec5-46e7-40a2-80cd-3582a9cab6a2")
-	)
-	(wire
-		(pts
 			(xy 85.09 53.34) (xy 88.9 53.34)
 		)
 		(stroke
@@ -2783,6 +2763,16 @@
 			(type default)
 		)
 		(uuid "5c852ba4-3617-4f14-b9c2-5b1544dfaf7a")
+	)
+	(wire
+		(pts
+			(xy 160.02 73.66) (xy 162.56 73.66)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "5e362ec9-c5ec-4436-84af-9a908edabe09")
 	)
 	(wire
 		(pts
@@ -2846,16 +2836,6 @@
 	)
 	(wire
 		(pts
-			(xy 167.64 68.58) (xy 167.64 73.66)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "76c09995-3a07-40a6-bde7-48e05b4a9cf7")
-	)
-	(wire
-		(pts
 			(xy 66.04 116.84) (xy 66.04 114.3)
 		)
 		(stroke
@@ -2883,6 +2863,16 @@
 			(type default)
 		)
 		(uuid "81da0acf-8468-4b5d-88b7-150105afbeb0")
+	)
+	(wire
+		(pts
+			(xy 160.02 68.58) (xy 160.02 73.66)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "827309d2-0f25-4997-9839-e5dd819fc552")
 	)
 	(wire
 		(pts
@@ -3003,6 +2993,16 @@
 			(type default)
 		)
 		(uuid "c2424258-9252-45ea-b66f-4095f32df693")
+	)
+	(wire
+		(pts
+			(xy 149.86 68.58) (xy 160.02 68.58)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "c45c1612-3d97-4c0b-acea-19e38578fb0e")
 	)
 	(wire
 		(pts
@@ -3153,6 +3153,72 @@
 			(justify left bottom)
 		)
 		(uuid "f3a7f71f-c7cd-4dd1-8162-50ed72c08e4a")
+	)
+	(global_label "STM32_SUPPLY"
+		(shape input)
+		(at 212.09 39.37 90)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left)
+		)
+		(uuid "14f4f39c-50e5-49a0-b472-714a8b648702")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 212.09 22.173 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+				(hide yes)
+			)
+		)
+	)
+	(global_label "STM32_SUPPLY"
+		(shape input)
+		(at 162.56 73.66 0)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left)
+		)
+		(uuid "4b49a523-d29e-47d2-99cd-5d350568f17b")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 179.757 73.66 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+				(hide yes)
+			)
+		)
+	)
+	(global_label "STM32_SUPPLY"
+		(shape input)
+		(at 52.07 36.83 90)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left)
+		)
+		(uuid "5844fec8-6b51-4c68-b2ea-bc9d05914989")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 52.07 19.633 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+				(hide yes)
+			)
+		)
 	)
 	(hierarchical_label "UART_TX"
 		(shape input)
@@ -3471,72 +3537,6 @@
 			(project "bramble"
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/df1d8afa-9717-44ff-901e-40cae4aada91"
 					(reference "C4")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "power:+3.3V")
-		(at 167.64 67.31 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(uuid "2a9ed24a-4990-4cd5-9705-611fb3f69c43")
-		(property "Reference" "#PWR014"
-			(at 167.64 71.12 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Value" "+3.3V"
-			(at 167.64 62.23 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 167.64 67.31 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" ""
-			(at 167.64 67.31 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "Power symbol creates a global label with name \"+3.3V\""
-			(at 167.64 67.31 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "a223acd6-b81e-45f4-8372-1aba79d270ab")
-		)
-		(instances
-			(project "bramble"
-				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/df1d8afa-9717-44ff-901e-40cae4aada91"
-					(reference "#PWR014")
 					(unit 1)
 				)
 			)
@@ -4140,72 +4140,6 @@
 		)
 	)
 	(symbol
-		(lib_id "power:+3.3V")
-		(at 52.07 36.83 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(uuid "e0ad1688-7650-48df-8465-23402ec53f2f")
-		(property "Reference" "#PWR017"
-			(at 52.07 40.64 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Value" "+3.3V"
-			(at 52.07 31.75 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 52.07 36.83 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" ""
-			(at 52.07 36.83 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "Power symbol creates a global label with name \"+3.3V\""
-			(at 52.07 36.83 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "a7d09dfd-24d8-486c-9e87-fbb9ce066d3e")
-		)
-		(instances
-			(project "bramble"
-				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/df1d8afa-9717-44ff-901e-40cae4aada91"
-					(reference "#PWR017")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
 		(lib_id "Switch:SW_Push")
 		(at 187.96 63.5 0)
 		(unit 1)
@@ -4268,72 +4202,6 @@
 			(project ""
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/df1d8afa-9717-44ff-901e-40cae4aada91"
 					(reference "SW1")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "power:+3.3V")
-		(at 212.09 39.37 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(uuid "e3cbf882-45fb-4f75-9666-9c89ba5bb336")
-		(property "Reference" "#PWR011"
-			(at 212.09 43.18 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Value" "+3.3V"
-			(at 212.09 34.29 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 212.09 39.37 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" ""
-			(at 212.09 39.37 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "Power symbol creates a global label with name \"+3.3V\""
-			(at 212.09 39.37 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "aecdd33c-cf16-42a2-bab4-36a1ddf6d69f")
-		)
-		(instances
-			(project "bramble"
-				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/df1d8afa-9717-44ff-901e-40cae4aada91"
-					(reference "#PWR011")
 					(unit 1)
 				)
 			)

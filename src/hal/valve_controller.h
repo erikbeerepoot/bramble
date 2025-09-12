@@ -70,7 +70,7 @@ private:
  */
 class ValveController {
 public:
-    static constexpr uint8_t NUM_VALVES = 4;
+    static constexpr uint8_t NUM_VALVES = 2;  // Currently only 2 valves connected
     
     /**
      * @brief Initialize the valve controller
@@ -149,12 +149,12 @@ private:
     mutable critical_section_t mutex_;
     
     // GPIO pin assignments
-    static constexpr uint8_t PIN_HIGH_SIDE_A = 2;
-    static constexpr uint8_t PIN_LOW_SIDE_A = 3;
-    static constexpr uint8_t PIN_HIGH_SIDE_B = 6;
-    static constexpr uint8_t PIN_LOW_SIDE_B = 7;
+    static constexpr uint8_t PIN_MOTOR_LO_1 = 26;  // A0 pin
+    static constexpr uint8_t PIN_MOTOR_LO_2 = 27;  // A1 pin
+    static constexpr uint8_t PIN_MOTOR_HI_1 = 28;  // A2 pin
+    static constexpr uint8_t PIN_MOTOR_HI_2 = 29;  // A3 pin
     
-    static constexpr uint8_t VALVE_PINS[NUM_VALVES] = {8, 9, 10, 11};
+    static constexpr uint8_t VALVE_PINS[NUM_VALVES] = {24, 25};  // GPIO24 and GPIO25
     
     /**
      * @brief Ensure controller is initialized before use

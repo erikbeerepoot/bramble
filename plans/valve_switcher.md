@@ -12,16 +12,14 @@ Implementation of irrigation valve control system supporting DC latching solenoi
 
 ### GPIO Pin Allocation
 Based on current usage (SPI on 16-19, LoRa interrupt on others):
-- **H-Bridge Control:**
-  - HIGH_SIDE_A: GPIO 2
-  - LOW_SIDE_A: GPIO 3  
-  - HIGH_SIDE_B: GPIO 6
-  - LOW_SIDE_B: GPIO 7
-- **Valve Indexer:**
-  - VALVE_1: GPIO 8
-  - VALVE_2: GPIO 9
-  - VALVE_3: GPIO 10
-  - VALVE_4: GPIO 11
+- **H-Bridge Control (using analog-capable pins):**
+  - MOTOR_LO_1: GPIO 26 (A0 pin)
+  - MOTOR_LO_2: GPIO 27 (A1 pin)
+  - MOTOR_HI_1: GPIO 28 (A2 pin)
+  - MOTOR_HI_2: GPIO 29 (A3 pin)
+- **Valve Indexer (2 valves):**
+  - VALVE_1: GPIO 24 (D24 pin)
+  - VALVE_2: GPIO 25 (D25 pin)
 
 ## Implementation Details
 

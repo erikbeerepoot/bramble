@@ -15,9 +15,11 @@ void ValveController::initialize() {
     // Initialize critical section
     critical_section_init(&mutex_);
     
-    // Initialize H-bridge
-    hbridge_.initialize(PIN_HIGH_SIDE_A, PIN_LOW_SIDE_A,
-                       PIN_HIGH_SIDE_B, PIN_LOW_SIDE_B);
+    // Initialize H-bridge with new pin mapping
+    // For FORWARD: HI_1 + LO_2 active (current flows 1->2)
+    // For REVERSE: HI_2 + LO_1 active (current flows 2->1)
+    hbridge_.initialize(PIN_MOTOR_HI_1, PIN_MOTOR_LO_1,
+                       PIN_MOTOR_HI_2, PIN_MOTOR_LO_2);
     
     // Initialize valve indexer
     indexer_.initialize(VALVE_PINS, NUM_VALVES);
