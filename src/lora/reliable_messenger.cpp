@@ -178,8 +178,10 @@ bool ReliableMessenger::processIncomingMessage(const uint8_t* buffer, size_t len
             logger_.info("Received actuator command: type=%d, cmd=%d", 
                    actuator->actuator_type, actuator->command);
             
-            // TODO: Execute the actuator command here
-            // For now, just log receipt
+            // Call the actuator callback if set
+            if (actuator_callback_) {
+                actuator_callback_(actuator);
+            }
             
             return true;
         }

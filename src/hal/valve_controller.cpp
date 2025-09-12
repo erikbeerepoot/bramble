@@ -1,0 +1,161 @@
+#include "valve_controller.h"
+#include <cstdio>
+
+// Initialize static constexpr array
+constexpr uint8_t ValveController::VALVE_PINS[NUM_VALVES];
+
+void ValveController::initialize() {
+    if (initialized_) {
+        printf("WARNING: ValveController already initialized\n");
+        return;
+    }
+    
+    printf("Initializing ValveController...\n");
+    
+    // Initialize critical section
+    critical_section_init(&mutex_);
+    
+    // Initialize H-bridge
+    hbridge_.initialize(PIN_HIGH_SIDE_A, PIN_LOW_SIDE_A,
+                       PIN_HIGH_SIDE_B, PIN_LOW_SIDE_B);
+    
+    // Initialize valve indexer
+    indexer_.initialize(VALVE_PINS, NUM_VALVES);
+    
+    // Create DC latching drivers for all valves
+    for (uint8_t i = 0; i < NUM_VALVES; i++) {
+        drivers_[i] = std::make_unique<DCLatchingDriver>(&hbridge_);
+        valve_states_[i] = ValveState::UNKNOWN;
+    }
+    
+    initialized_ = true;
+    
+    // Close all valves to ensure known state
+    closeAllValves();
+    
+    printf("ValveController initialized with %d valves\n", NUM_VALVES);
+}
+
+void ValveController::openValve(uint8_t valve_id) {
+    ensureInitialized();
+    
+    if (!isValidValveId(valve_id)) {
+        printf("ERROR: Invalid valve ID %d\n", valve_id);
+        return;
+    }
+    
+    // Skip if already open
+    if (valve_states_[valve_id] == ValveState::OPEN) {
+        printf("Valve %d already open\n", valve_id);
+        return;
+    }
+    
+    operateValve(valve_id, true);
+}
+
+void ValveController::closeValve(uint8_t valve_id) {
+    ensureInitialized();
+    
+    if (!isValidValveId(valve_id)) {
+        printf("ERROR: Invalid valve ID %d\n", valve_id);
+        return;
+    }
+    
+    // Skip if already closed
+    if (valve_states_[valve_id] == ValveState::CLOSED) {
+        printf("Valve %d already closed\n", valve_id);
+        return;
+    }
+    
+    operateValve(valve_id, false);
+}
+
+void ValveController::closeAllValves() {
+    ensureInitialized();
+    
+    printf("Closing all valves...\n");
+    
+    for (uint8_t i = 0; i < NUM_VALVES; i++) {
+        if (valve_states_[i] != ValveState::CLOSED) {
+            closeValve(i);
+        }
+    }
+}
+
+ValveState ValveController::getValveState(uint8_t valve_id) const {
+    if (!isValidValveId(valve_id)) {
+        return ValveState::UNKNOWN;
+    }
+    
+    critical_section_enter_blocking(&mutex_);
+    ValveState state = valve_states_[valve_id];
+    critical_section_exit(&mutex_);
+    
+    return state;
+}
+
+uint8_t ValveController::getActiveValveMask() const {
+    uint8_t mask = 0;
+    
+    critical_section_enter_blocking(&mutex_);
+    
+    for (uint8_t i = 0; i < NUM_VALVES; i++) {
+        if (valve_states_[i] == ValveState::OPEN) {
+            mask |= (1 << i);
+        }
+    }
+    
+    critical_section_exit(&mutex_);
+    
+    return mask;
+}
+
+void ValveController::setValveType(uint8_t valve_id, ValveType type) {
+    ensureInitialized();
+    
+    if (!isValidValveId(valve_id)) {
+        printf("ERROR: Invalid valve ID %d\n", valve_id);
+        return;
+    }
+    
+    critical_section_enter_blocking(&mutex_);
+    
+    // For now, only DC latching is supported
+    if (type != ValveType::DC_LATCHING) {
+        printf("WARNING: Only DC_LATCHING valves supported currently\n");
+    }
+    
+    critical_section_exit(&mutex_);
+}
+
+void ValveController::ensureInitialized() const {
+    if (!initialized_) {
+        printf("ERROR: ValveController not initialized! Call initialize() first\n");
+    }
+}
+
+void ValveController::operateValve(uint8_t valve_id, bool open) {
+    critical_section_enter_blocking(&mutex_);
+    
+    printf("Operating valve %d: %s\n", valve_id, open ? "OPEN" : "CLOSE");
+    
+    // Select the valve
+    indexer_.selectValve(valve_id);
+    
+    // Small delay to ensure MOSFET is fully on
+    sleep_us(100);
+    
+    // Operate the valve through its driver
+    if (open) {
+        drivers_[valve_id]->open();
+        valve_states_[valve_id] = ValveState::OPEN;
+    } else {
+        drivers_[valve_id]->close();
+        valve_states_[valve_id] = ValveState::CLOSED;
+    }
+    
+    // Deselect all valves for safety
+    indexer_.deselectAll();
+    
+    critical_section_exit(&mutex_);
+}

@@ -29,6 +29,9 @@ struct PendingMessage {
  */
 class ReliableMessenger {
 public:
+    // Callback type for actuator commands
+    using ActuatorCallback = std::function<void(const ActuatorPayload*)>;
+    
     ReliableMessenger(SX1276* lora, uint16_t node_addr, NetworkStats* stats = nullptr);
     
     /**
@@ -141,6 +144,12 @@ public:
      * @param new_addr New address to use for sending messages
      */
     void updateNodeAddress(uint16_t new_addr);
+    
+    /**
+     * @brief Set callback for actuator commands
+     * @param callback Function to call when actuator command is received
+     */
+    void setActuatorCallback(ActuatorCallback callback) { actuator_callback_ = callback; }
 
 private:
     SX1276* lora_;
@@ -149,6 +158,7 @@ private:
     std::map<uint8_t, PendingMessage> pending_messages_;
     Logger logger_;
     NetworkStats* network_stats_;
+    ActuatorCallback actuator_callback_;
     
     /**
      * @brief Send a message immediately

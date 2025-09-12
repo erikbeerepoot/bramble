@@ -72,6 +72,12 @@ protected:
     virtual void onStart() {}
     
     /**
+     * @brief Handle incoming actuator commands (optional override)
+     * @param payload Actuator command payload
+     */
+    virtual void onActuatorCommand(const ActuatorPayload* payload) {}
+    
+    /**
      * @brief Check if we should use interrupt-based sleep
      * @return true to use sleep, false to continue immediately
      */

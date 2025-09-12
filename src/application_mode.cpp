@@ -15,6 +15,11 @@ extern void processIncomingMessage(uint8_t* rx_buffer, int rx_len, ReliableMesse
 extern void sleepUntilInterrupt();
 
 void ApplicationMode::run() {
+    // Set up actuator command callback
+    messenger_.setActuatorCallback([this](const ActuatorPayload* payload) {
+        onActuatorCommand(payload);
+    });
+    
     // Call startup hook
     onStart();
     
