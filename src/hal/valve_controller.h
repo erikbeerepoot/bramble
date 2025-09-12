@@ -73,6 +73,11 @@ public:
     static constexpr uint8_t NUM_VALVES = 2;  // Currently only 2 valves connected
     
     /**
+     * @brief Constructor - sets initial state
+     */
+    ValveController() : initialized_(false) {}
+    
+    /**
      * @brief Initialize the valve controller
      * 
      * Sets up H-bridge pins, valve indexer pins, and initializes

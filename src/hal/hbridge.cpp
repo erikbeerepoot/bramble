@@ -11,8 +11,7 @@ void HBridge::initialize(uint8_t pin_high_a, uint8_t pin_low_a,
     pin_high_side_b_ = pin_high_b;
     pin_low_side_b_ = pin_low_b;
     
-    // Initialize critical section for thread safety
-    critical_section_init(&mutex_);
+    // Thread safety not needed for single-threaded operation
     
     // Configure all pins as outputs, initially LOW
     configurePin(pin_high_side_a_);
@@ -43,8 +42,6 @@ void HBridge::pulse(Direction dir, uint32_t duration_ms) {
         duration_ms = MAX_PULSE_DURATION_MS;
     }
     
-    critical_section_enter_blocking(&mutex_);
-    
     // Set active flag
     is_active_ = true;
     
@@ -73,15 +70,11 @@ void HBridge::pulse(Direction dir, uint32_t duration_ms) {
     
     // Clear active flag
     is_active_ = false;
-    
-    critical_section_exit(&mutex_);
 }
 
 void HBridge::off() {
-    critical_section_enter_blocking(&mutex_);
     setAllPinsLow();
     is_active_ = false;
-    critical_section_exit(&mutex_);
 }
 
 void HBridge::setAllPinsLow() {

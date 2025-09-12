@@ -50,8 +50,8 @@ Bramble implements a hub-and-spoke network architecture where:
 
 ```
 bramble/
-├── bramble.cpp                 # Main application
-├── CMakeLists.txt             # Build configuration
+├── main.cpp                   # Unified entry point for all hardware variants
+├── CMakeLists.txt             # Build configuration with hardware specialization
 ├── CLAUDE.md                  # AI assistant instructions
 ├── PLAN.md                    # Development roadmap
 └── src/
@@ -60,13 +60,30 @@ bramble/
     │   ├── message.h/cpp     # Message protocol
     │   ├── reliable_messenger.h/cpp  # Reliable delivery
     │   ├── address_manager.h/cpp     # Network management
-    │   └── hub_router.h/cpp   # Message routing
+    │   ├── hub_router.h/cpp   # Message routing
+    │   └── network_stats.h/cpp       # Network statistics
+    ├── modes/                 # Hardware-specific application modes
+    │   ├── application_mode.h/cpp    # Base class for all modes
+    │   ├── demo_mode.h/cpp          # Development/testing mode
+    │   ├── hub_mode.h/cpp           # Generic hub functionality
+    │   ├── irrigation_mode.h/cpp    # Irrigation node specialization
+    │   ├── controller_mode.h/cpp    # Controller hub specialization
+    │   ├── sensor_mode.h/cpp        # Sensor node specialization
+    │   ├── production_mode.h/cpp    # Base production mode
+    │   └── generic_mode.h/cpp       # Generic node functionality
     ├── hal/                   # Hardware abstraction
     │   ├── flash.h/cpp       # QSPI flash storage
     │   ├── neopixel.h/cpp    # Status LED driver
+    │   ├── valve_controller.h/cpp    # Irrigation valve control
+    │   ├── hbridge.h/cpp     # H-bridge motor driver
+    │   ├── valve_indexer.h/cpp       # Individual valve control
+    │   ├── logger.h/cpp      # Logging system
+    │   ├── spi_device.h/cpp  # SPI communication helper
     │   └── ws2812.pio        # PIO program for WS2812
     ├── config/                # Configuration management
-    │   └── node_config.h/cpp # Persistent settings
+    │   ├── node_config.h/cpp # Node persistent settings
+    │   ├── hub_config.h/cpp  # Hub registry management
+    │   └── config_base.h/cpp # Base configuration class
     └── tests/                 # Testing framework
         ├── test_framework.h/cpp      # Test runner
         ├── mock_sx1276.h/cpp        # Mock hardware
@@ -98,12 +115,30 @@ Bramble uses a custom message protocol optimized for farm applications:
 - CMake 3.13+
 - ARM GCC toolchain
 
+### Hardware Variants
+Bramble supports specialized builds for different hardware configurations:
+
+- **IRRIGATION**: Valve control nodes with H-bridge and valve indexer
+- **CONTROLLER**: Hub nodes with full network management
+- **SENSOR**: Sensor-only nodes for monitoring
+- **GENERIC**: General-purpose nodes (default)
+
 ### Build Commands
 ```bash
-# Configure build
-cmake -B build
+# Build irrigation variant (default)
+cmake -B build -DHARDWARE_VARIANT=IRRIGATION
+cmake --build build
 
-# Build production version
+# Build controller variant (hub)  
+cmake -B build -DHARDWARE_VARIANT=CONTROLLER
+cmake --build build
+
+# Build sensor variant
+cmake -B build -DHARDWARE_VARIANT=SENSOR
+cmake --build build
+
+# Build with production mode (minimal output)
+cmake -B build -DHARDWARE_VARIANT=IRRIGATION -DDEMO_MODE=OFF
 cmake --build build
 
 # Build test version
@@ -114,70 +149,107 @@ cmake --build build
 rm -rf build && cmake -B build && cmake --build build
 ```
 
+### Generated Outputs
+Each build creates specialized executables:
+- `bramble_irrigation.uf2` - Irrigation nodes with valve control
+- `bramble_controller.uf2` - Controller hubs with full management
+- `bramble_sensor.uf2` - Sensor-only monitoring nodes
+- `bramble_generic.uf2` - General-purpose nodes
+
 ### Flashing
 1. Hold BOOTSEL button and connect Pico via USB
-2. Copy `build/bramble.uf2` to the mounted drive
+2. Copy the appropriate `.uf2` file to the mounted drive
 3. Pico will reboot and start running Bramble
 
 ## Configuration
 
-### Node vs Hub Mode
-Set in `bramble.cpp`:
-```cpp
-#define IS_HUB          true    // Hub mode
-#define IS_HUB          false   // Node mode (auto-registers with hub)
+### Hardware-Specific Features
+
+#### Irrigation Nodes (`HARDWARE_IRRIGATION`)
+- **Default Role**: Node (registers with hub)
+- **Features**: 2-valve control via H-bridge driver
+- **Pin Mapping**: 
+  - H-bridge: GPIO26-29 (motor control)
+  - Valves: GPIO24, GPIO25 (valve selection)
+- **LED**: Green heartbeat pattern
+
+#### Controller Hubs (`HARDWARE_CONTROLLER`) 
+- **Default Role**: Hub (manages network)
+- **Features**: Full network management and routing
+- **LED**: Blue breathing pattern
+
+#### Sensor Nodes (`HARDWARE_SENSOR`)
+- **Default Role**: Node (sensor data only)
+- **Features**: Optimized for sensor monitoring
+- **LED**: Green heartbeat pattern
+
+### Build-Time Configuration
+Configuration is set via CMake variables:
+
+```bash
+# Hardware variant selection
+-DHARDWARE_VARIANT=IRRIGATION|CONTROLLER|SENSOR|GENERIC
+
+# Mode selection  
+-DDEMO_MODE=ON|OFF    # Development vs production mode
+
+# Test build
+-DBUILD_TESTS=ON|OFF  # Include test framework
 ```
 
-**Node Address Assignment**:
-- **Hub**: Uses `ADDRESS_HUB` (0x0000) 
-- **Nodes**: Start with `ADDRESS_UNREGISTERED` (0xFFFF), then auto-register to get assigned addresses (0x0001, 0x0002, etc.)
-
-### Demo vs Production Mode
-```cpp
-#define DEMO_MODE       true    // Colorful LEDs, test messages
-#define DEMO_MODE       false   // Production sensor monitoring
-```
-
-### Network Settings
-```cpp
-#define SENSOR_INTERVAL_MS      30000   // Sensor reading interval
-#define HEARTBEAT_INTERVAL_MS   60000   // Heartbeat frequency
-#define MAIN_LOOP_DELAY_MS      100     // Processing delay
-```
+### Runtime Behavior
+- **Hub Detection**: Automatic based on hardware variant default
+- **Address Assignment**: Hub uses 0x0000, nodes auto-register for assigned addresses
+- **Network Discovery**: Automatic registration and heartbeat monitoring
 
 ## Usage Examples
 
-### Basic Node Setup
+### Irrigation Node Operation
 ```cpp
-// Initialize hardware
-SX1276 lora(SPI_PORT, PIN_CS, PIN_RST, PIN_DIO0);
-ReliableMessenger messenger(&lora, node_address);
+// Built automatically into irrigation variant
+IrrigationMode irrigation(messenger, lora, led, nullptr, nullptr, &network_stats);
 
-// Send sensor data
-uint8_t temp_data[] = {0x18, 0x5C};  // 24.5°C
-messenger.sendSensorData(HUB_ADDRESS, SENSOR_TEMPERATURE, 
-                        temp_data, sizeof(temp_data), RELIABLE);
-
-// Send heartbeat
-messenger.sendHeartbeat(HUB_ADDRESS, uptime_seconds, battery_level,
-                       signal_strength, active_sensors, error_flags);
+// Valve control via LoRa commands
+// Hub sends: ACTUATOR_VALVE, CMD_TURN_ON, valve_id=0
+// Node responds by opening valve 0 via H-bridge
 ```
 
-### Hub Operation
+### Controller Hub Setup
 ```cpp
-// Hub automatically handles:
+// Built automatically into controller variant  
+ControllerMode controller(messenger, lora, led, &address_manager, &hub_router, &network_stats);
+
+// Automatically handles:
 // - Node registration and address assignment
-// - Message routing between nodes
-// - Network monitoring and maintenance
-// - Offline node detection
+// - Message routing between irrigation nodes
+// - Network monitoring and valve status
+// - Irrigation scheduling and coordination
+```
+
+### Sensor Node Monitoring
+```cpp
+// Built automatically into sensor variant
+SensorMode sensor(messenger, lora, led, nullptr, nullptr, &network_stats);
+
+// Automatically sends sensor data:
+// - Temperature and humidity readings
+// - Battery levels and signal strength  
+// - Heartbeat status to hub
 ```
 
 ## LED Status Indicators
 
-- **Hub**: Blue breathing pattern
-- **Demo Node**: Rainbow color cycling
-- **Production Node**: Green heartbeat pulse
-- **Registration**: Flashing patterns during network join
+### By Hardware Variant
+- **Controller Hub**: Blue breathing pattern during normal operation
+- **Irrigation Node**: Green heartbeat pulse every 60 seconds
+- **Sensor Node**: Green heartbeat pulse during data transmission
+- **Generic Node**: Green heartbeat pulse
+
+### By Mode
+- **Demo Mode**: Rainbow color cycling and verbose output
+- **Production Mode**: Simple heartbeat patterns, minimal output
+- **Registration**: Role-based color during network join (blue=hub, green=node)
+- **Error State**: Red solid color indicates hardware or network failure
 
 ## Network Topology
 
@@ -202,27 +274,34 @@ messenger.sendHeartbeat(HUB_ADDRESS, uptime_seconds, battery_level,
 ## Development Status
 
 ### ✅ Completed Features
-- LoRa communication driver
+- LoRa communication driver (SX1276)
 - Message protocol and reliable delivery
 - Node registration and address management
 - Hub routing and network management
 - Heartbeat monitoring and discovery
-- Flash storage and configuration
+- Flash storage and configuration persistence
+- **Hardware specialization architecture**
+- **Irrigation valve control system**
+- **H-bridge driver for DC solenoids**
+- **Build system for multiple hardware variants**
 - Comprehensive testing framework
 
-### 🚧 Next Phase (Immediate)
+### 🚧 Next Phase (Immediate)  
+- **Controller mode implementation** (scheduling, coordination)
+- **Sensor mode implementation** (temperature, humidity, soil moisture)
 - Error handling improvements
 - Input validation and security
-- Runtime configuration system
 - SPI communication robustness
 - Interrupt-driven operations
 
 ### 🔮 Later Phase (Future)
 - Real sensor integration (DS18B20, SHT30, soil sensors)
-- Actuator control (relays, servo valves)
+- Advanced irrigation scheduling algorithms
 - Power management and sleep modes
+- Current monitoring for valve diagnostics
 - Encryption and authentication
 - Web interface and monitoring dashboard
+- Multi-hop mesh networking
 
 ## Testing
 

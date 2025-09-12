@@ -13,8 +13,7 @@ void ValveIndexer::initialize(const uint8_t* valve_pins, uint8_t valve_count) {
     valve_count_ = valve_count;
     memcpy(valve_pins_, valve_pins, valve_count * sizeof(uint8_t));
     
-    // Initialize critical section
-    critical_section_init(&mutex_);
+    // Thread safety not needed for single-threaded operation
     
     // Configure all valve pins as outputs, initially OFF
     for (uint8_t i = 0; i < valve_count_; i++) {
@@ -40,8 +39,6 @@ void ValveIndexer::selectValve(uint8_t valve_id) {
         return;
     }
     
-    critical_section_enter_blocking(&mutex_);
-    
     // First deselect any currently selected valve
     if (selected_valve_ != NO_VALVE_SELECTED) {
         gpio_put(valve_pins_[selected_valve_], 0);
@@ -52,8 +49,6 @@ void ValveIndexer::selectValve(uint8_t valve_id) {
     selected_valve_ = valve_id;
     
     printf("Valve %d selected\n", valve_id);
-    
-    critical_section_exit(&mutex_);
 }
 
 void ValveIndexer::deselectAll() {
@@ -61,16 +56,12 @@ void ValveIndexer::deselectAll() {
         return;
     }
     
-    critical_section_enter_blocking(&mutex_);
-    
     // Turn off all valve MOSFETs
     for (uint8_t i = 0; i < valve_count_; i++) {
         gpio_put(valve_pins_[i], 0);
     }
     
     selected_valve_ = NO_VALVE_SELECTED;
-    
-    critical_section_exit(&mutex_);
 }
 
 void ValveIndexer::configurePin(uint8_t pin) {

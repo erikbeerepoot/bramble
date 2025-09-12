@@ -66,18 +66,28 @@ enum NodeType {
     NODE_TYPE_SENSOR        = 0x01,  // Sensor-only node
     NODE_TYPE_ACTUATOR      = 0x02,  // Actuator-only node
     NODE_TYPE_HYBRID        = 0x03,  // Both sensor and actuator
-    NODE_TYPE_REPEATER      = 0x04   // Range extender (future)
+    NODE_TYPE_REPEATER      = 0x04,  // Range extender (future)
+    NODE_TYPE_CONTROLLER    = 0x05   // Controller/hub node
 };
 
 // Node capability flags
+// Sensor capabilities (bits 0-3)
 constexpr uint8_t CAP_TEMPERATURE = 0x01;      // Temperature sensor
 constexpr uint8_t CAP_HUMIDITY = 0x02;         // Humidity sensor
 constexpr uint8_t CAP_SOIL_MOISTURE = 0x04;    // Soil moisture sensor
 constexpr uint8_t CAP_BATTERY_MONITOR = 0x08;  // Battery level monitoring
+
+// Actuator capabilities (bits 4-6) 
 constexpr uint8_t CAP_VALVE_CONTROL = 0x10;    // Valve actuator
 constexpr uint8_t CAP_PUMP_CONTROL = 0x20;     // Pump actuator
 constexpr uint8_t CAP_FAN_CONTROL = 0x40;      // Fan actuator
+
+// System capabilities (bit 7 and extended)
 constexpr uint8_t CAP_SOLAR_POWERED = 0x80;    // Solar powered node
+
+// Extended capabilities (for controller nodes, use multiple flags)
+constexpr uint8_t CAP_CONTROLLER = CAP_VALVE_CONTROL | CAP_PUMP_CONTROL | CAP_FAN_CONTROL;  // Full actuator control
+constexpr uint8_t CAP_SCHEDULING = CAP_BATTERY_MONITOR;  // Scheduling requires timing/monitoring
 
 // Registration status codes
 enum RegistrationStatus {

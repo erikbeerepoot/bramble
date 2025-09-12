@@ -12,9 +12,6 @@ void ValveController::initialize() {
     
     printf("Initializing ValveController...\n");
     
-    // Initialize critical section
-    critical_section_init(&mutex_);
-    
     // Initialize H-bridge with new pin mapping
     // For FORWARD: HI_1 + LO_2 active (current flows 1->2)
     // For REVERSE: HI_2 + LO_1 active (current flows 2->1)
@@ -89,25 +86,17 @@ ValveState ValveController::getValveState(uint8_t valve_id) const {
         return ValveState::UNKNOWN;
     }
     
-    critical_section_enter_blocking(&mutex_);
-    ValveState state = valve_states_[valve_id];
-    critical_section_exit(&mutex_);
-    
-    return state;
+    return valve_states_[valve_id];
 }
 
 uint8_t ValveController::getActiveValveMask() const {
     uint8_t mask = 0;
-    
-    critical_section_enter_blocking(&mutex_);
     
     for (uint8_t i = 0; i < NUM_VALVES; i++) {
         if (valve_states_[i] == ValveState::OPEN) {
             mask |= (1 << i);
         }
     }
-    
-    critical_section_exit(&mutex_);
     
     return mask;
 }
@@ -120,14 +109,10 @@ void ValveController::setValveType(uint8_t valve_id, ValveType type) {
         return;
     }
     
-    critical_section_enter_blocking(&mutex_);
-    
     // For now, only DC latching is supported
     if (type != ValveType::DC_LATCHING) {
         printf("WARNING: Only DC_LATCHING valves supported currently\n");
     }
-    
-    critical_section_exit(&mutex_);
 }
 
 void ValveController::ensureInitialized() const {
@@ -137,8 +122,6 @@ void ValveController::ensureInitialized() const {
 }
 
 void ValveController::operateValve(uint8_t valve_id, bool open) {
-    critical_section_enter_blocking(&mutex_);
-    
     printf("Operating valve %d: %s\n", valve_id, open ? "OPEN" : "CLOSE");
     
     // Select the valve
@@ -158,6 +141,4 @@ void ValveController::operateValve(uint8_t valve_id, bool open) {
     
     // Deselect all valves for safety
     indexer_.deselectAll();
-    
-    critical_section_exit(&mutex_);
 }

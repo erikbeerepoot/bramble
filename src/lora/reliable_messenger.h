@@ -146,6 +146,12 @@ public:
     void updateNodeAddress(uint16_t new_addr);
     
     /**
+     * @brief Get current node address
+     * @return Current node address
+     */
+    uint16_t getNodeAddress() const { return node_addr_; }
+    
+    /**
      * @brief Set callback for actuator commands
      * @param callback Function to call when actuator command is received
      */
