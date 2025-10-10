@@ -56,11 +56,11 @@ void LED::off() {
 }
 
 void LED::setRed(bool on) {
-    // Common anode: LOW = ON, HIGH = OFF
-    HAL_GPIO_WritePin(GPIOA, LED_RED_PIN, on ? GPIO_PIN_RESET : GPIO_PIN_SET);
+    // Common cathode: HIGH = ON, LOW = OFF
+    HAL_GPIO_WritePin(GPIOA, LED_RED_PIN, on ? GPIO_PIN_SET : GPIO_PIN_RESET);
 }
 
 void LED::setGreen(bool on) {
-    // Common anode: LOW = ON, HIGH = OFF
-    HAL_GPIO_WritePin(GPIOA, LED_GREEN_PIN, on ? GPIO_PIN_RESET : GPIO_PIN_SET);
+    // Common cathode: HIGH = ON, LOW = OFF
+    HAL_GPIO_WritePin(GPIOA, LED_GREEN_PIN, on ? GPIO_PIN_SET : GPIO_PIN_RESET);
 }
