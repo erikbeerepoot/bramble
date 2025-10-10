@@ -1,0 +1,21 @@
+# STM32 Build outputs
+*.o
+*.elf
+*.bin
+*.hex
+*.map
+*.list
+*.su
+
+# STM32CubeIDE
+.settings/
+Debug/
+Release/
+
+# STM32CubeMX
+*.ioc.bak
+
+# IDE
+.cproject
+.project
+.mxproject
