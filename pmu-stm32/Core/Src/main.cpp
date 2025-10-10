@@ -23,6 +23,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "led.h"
+#include "dcdc.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -46,6 +47,7 @@ RTC_HandleTypeDef hrtc;
 
 /* USER CODE BEGIN PV */
 LED led;
+DCDC dcdc;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -54,7 +56,7 @@ static void MX_GPIO_Init(void);
 static void MX_LPUART1_UART_Init(void);
 static void MX_RTC_Init(void);
 /* USER CODE BEGIN PFP */
-
+static void flicker(LED& led, LED::Color color, uint32_t duration_ms);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -100,37 +102,25 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  // MX_LPUART1_UART_Init();
-  // MX_RTC_Init();
+  MX_LPUART1_UART_Init();
+  MX_RTC_Init();
+
   /* USER CODE BEGIN 2 */
   led.init();
+  led.off();
+
+  // Initialize and enable DC/DC converter
+  dcdc.init();
+  dcdc.enable();
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  flicker(led, LED::GREEN, 1000);
   while (1)
   {
-    /* USER CODE END WHILE */
-
-    /* USER CODE BEGIN 3 */
-    // Cycle through all colors
-    led.setColor(LED::RED);
-    HAL_Delay(500);
-
-    led.off();
-    HAL_Delay(100);
-
-    led.setColor(LED::GREEN);
-    HAL_Delay(500);
-
-    led.off();
-    HAL_Delay(100);
-
-    led.setColor(LED::ORANGE);
-    HAL_Delay(500);
-
-    led.off();
-    HAL_Delay(100);
+   
   }
   /* USER CODE END 3 */
 }
@@ -293,6 +283,19 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+// flicker the given led color a few times during boot
+
+void flicker(LED& led, LED::Color color, uint32_t duration_ms = 1000) {
+    // each flicker is 100ms on, 100ms off
+    const int flickers = duration_ms / 200;
+    for (int i = 0; i < flickers; i++) {
+        led.setColor(color);
+        HAL_Delay(100);
+        led.off();
+        HAL_Delay(100);
+    }
+    led.off();
+}
 
 /* USER CODE END 4 */
 
