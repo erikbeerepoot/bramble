@@ -57,6 +57,9 @@ static void MX_LPUART1_UART_Init(void);
 static void MX_RTC_Init(void);
 /* USER CODE BEGIN PFP */
 static void flicker(LED& led, LED::Color color, uint32_t duration_ms);
+static void configureRTCWakeup(uint32_t seconds);
+static void enterStopMode(void);
+static void wakeupFromStopMode(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -113,14 +116,36 @@ int main(void)
   dcdc.init();
   dcdc.enable();
 
+  // Boot indication - flicker green LED
+  flicker(led, LED::GREEN, 1000);
+
+  // Configure RTC to wake every 15 seconds
+  configureRTCWakeup(15);
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  flicker(led, LED::GREEN, 1000);
   while (1)
   {
-   
+    /* USER CODE END WHILE */
+
+    /* USER CODE BEGIN 3 */
+    // Quick LED pulse to show we're awake
+    led.setColor(LED::GREEN);
+    HAL_Delay(100);
+    led.off();
+
+    // TODO: Disable DC/DC converter here to power down RPi during sleep
+
+    // Enter low power STOP mode
+    // Will wake up on RTC interrupt after 15 seconds
+    enterStopMode();
+
+    // We're back! RTC woke us up
+    wakeupFromStopMode();
+
+    // TODO: Re-enable DC/DC converter here to power up RPi
   }
   /* USER CODE END 3 */
 }
@@ -240,14 +265,8 @@ static void MX_RTC_Init(void)
     Error_Handler();
   }
 
-  /** Enable the WakeUp
-  */
-  if (HAL_RTCEx_SetWakeUpTimer(&hrtc, 0, RTC_WAKEUPCLOCK_RTCCLK_DIV16) != HAL_OK)
-  {
-    Error_Handler();
-  }
   /* USER CODE BEGIN RTC_Init 2 */
-
+  // Wakeup timer will be configured later with interrupt enabled
   /* USER CODE END RTC_Init 2 */
 
 }
@@ -283,10 +302,11 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-// flicker the given led color a few times during boot
 
-void flicker(LED& led, LED::Color color, uint32_t duration_ms = 1000) {
-    // each flicker is 100ms on, 100ms off
+/**
+ * @brief Flicker LED during boot for visual feedback
+ */
+static void flicker(LED& led, LED::Color color, uint32_t duration_ms) {
     const int flickers = duration_ms / 200;
     for (int i = 0; i < flickers; i++) {
         led.setColor(color);
@@ -295,6 +315,68 @@ void flicker(LED& led, LED::Color color, uint32_t duration_ms = 1000) {
         HAL_Delay(100);
     }
     led.off();
+}
+
+/**
+ * @brief Configure RTC wakeup timer
+ * @param seconds Number of seconds between wakeups
+ */
+static void configureRTCWakeup(uint32_t seconds) {
+    // Disable wakeup timer first
+    HAL_RTCEx_DeactivateWakeUpTimer(&hrtc);
+
+    // Enable RTC interrupt in NVIC
+    HAL_NVIC_SetPriority(RTC_IRQn, 0, 0);
+    HAL_NVIC_EnableIRQ(RTC_IRQn);
+
+    // LSI is typically 37kHz, with prescaler /16 = ~2.3kHz
+    // To get 15 seconds: 15 * 2048 = 30720 (using RTCCLK_DIV16 gives ~2048 Hz)
+    // For more accuracy, we'll use calculated value based on 37kHz LSI
+    // With DIV16: 37000/16 = 2312.5 Hz, so for 15 sec: 15 * 2312.5 = 34687
+    uint32_t wakeupCounter = seconds * 2048; // Approximate for LSI/16
+
+    // Enable wakeup timer with interrupt
+    if (HAL_RTCEx_SetWakeUpTimer_IT(&hrtc, wakeupCounter, RTC_WAKEUPCLOCK_RTCCLK_DIV16) != HAL_OK) {
+        Error_Handler();
+    }
+
+    // Enable EXTI line 20 (RTC wakeup) for waking from STOP mode
+    __HAL_RTC_WAKEUPTIMER_EXTI_ENABLE_IT();
+    __HAL_RTC_WAKEUPTIMER_EXTI_ENABLE_RISING_EDGE();
+}
+
+/**
+ * @brief Enter STOP mode for low power sleep
+ */
+static void enterStopMode(void) {
+    // Suspend SysTick to prevent wakeup
+    HAL_SuspendTick();
+
+    // Enter STOP mode with low power regulator
+    // Wake on any interrupt (RTC wakeup in our case)
+    HAL_PWR_EnterSTOPMode(PWR_LOWPOWERREGULATOR_ON, PWR_STOPENTRY_WFI);
+}
+
+/**
+ * @brief Re-initialize system after waking from STOP mode
+ */
+static void wakeupFromStopMode(void) {
+    // After waking from STOP, system clock is MSI at reset speed
+    // Need to reconfigure to our desired clock
+    SystemClock_Config();
+
+    // Resume SysTick
+    HAL_ResumeTick();
+}
+
+/**
+ * @brief RTC wakeup timer callback
+ * This is called when the RTC wakeup interrupt fires
+ */
+void HAL_RTCEx_WakeUpTimerEventCallback(RTC_HandleTypeDef *hrtc)
+{
+    // Callback is called - actual handling done in main loop
+    // Just clear the interrupt flag (already done by HAL)
 }
 
 /* USER CODE END 4 */

@@ -57,6 +57,7 @@
 
 /* External variables --------------------------------------------------------*/
 extern UART_HandleTypeDef hlpuart1;
+extern RTC_HandleTypeDef hrtc;
 /* USER CODE BEGIN EV */
 
 /* USER CODE END EV */
@@ -156,5 +157,13 @@ void LPUART1_IRQHandler(void)
 }
 
 /* USER CODE BEGIN 1 */
+
+/**
+  * @brief This function handles RTC wakeup interrupt through EXTI line 20.
+  */
+void RTC_IRQHandler(void)
+{
+  HAL_RTCEx_WakeUpTimerIRQHandler(&hrtc);
+}
 
 /* USER CODE END 1 */
