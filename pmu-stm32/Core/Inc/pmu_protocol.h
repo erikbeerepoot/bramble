@@ -233,6 +233,8 @@ public:
     // Send schedule complete notification (RP2040 should be ready for power down)
     void sendScheduleComplete();
 
+    uint32_t getWakeInternal() const { return wakeInterval_; }
+
     // Get the next scheduled entry (for RTC wakeup checking)
     const ScheduleEntry* getNextScheduledEntry(uint8_t currentDay, uint8_t currentHour,
                                                uint8_t currentMinute) const;

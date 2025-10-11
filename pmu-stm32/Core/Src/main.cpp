@@ -137,7 +137,8 @@ int main(void)
   flicker(led, LED::GREEN, 1000);
 
   // Configure RTC to wake every 15 seconds
-  configureRTCWakeup(15);
+  configureRTCWakeup(protocol.getWakeInternal());
+  protocol.
 
   // Start UART receive interrupt
   HAL_UART_Receive_IT(&hlpuart1, &uartRxByte, 1);
