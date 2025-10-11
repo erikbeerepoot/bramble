@@ -106,6 +106,8 @@ else()
         src/hal/logger.cpp
         src/hal/spi_device.cpp
         src/hal/gpio_interrupt_manager.cpp
+        src/hal/pmu_protocol.cpp
+        src/hal/pmu_client.cpp
         src/config/config_base.cpp
         src/config/node_config.cpp
         src/config/hub_config.cpp
