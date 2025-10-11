@@ -443,8 +443,8 @@ void HAL_RTCEx_WakeUpTimerEventCallback(RTC_HandleTypeDef *hrtc)
         wateringStartTime = HAL_GetTick();
         wateringDuration = entry->duration;
 
-        // Send wake notification
-        protocol.sendWakeNotification(PMU::WakeReason::Scheduled);
+        // Send wake notification with schedule entry data
+        protocol.sendWakeNotificationWithSchedule(PMU::WakeReason::Scheduled, entry);
     } else {
         // Normal periodic wake
         protocol.sendWakeNotification(PMU::WakeReason::Periodic);
