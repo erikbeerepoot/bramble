@@ -24,6 +24,7 @@
 /* USER CODE BEGIN Includes */
 #include "led.h"
 #include "dcdc.h"
+#include "pmu_protocol.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -48,6 +49,22 @@ RTC_HandleTypeDef hrtc;
 /* USER CODE BEGIN PV */
 LED led;
 DCDC dcdc;
+
+// UART receive buffer
+static uint8_t uartRxByte;
+
+// Active watering session tracking
+static bool wateringActive = false;
+static uint32_t wateringStartTime = 0;
+static uint16_t wateringDuration = 0;
+
+// Protocol callbacks
+static void uartSendCallback(const uint8_t* data, uint8_t length);
+static void setWakeIntervalCallback(uint32_t seconds);
+static void keepAwakeCallback(uint16_t seconds);
+
+// Protocol instance
+static PMU::Protocol protocol(uartSendCallback, setWakeIntervalCallback, keepAwakeCallback);
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -122,6 +139,9 @@ int main(void)
   // Configure RTC to wake every 15 seconds
   configureRTCWakeup(15);
 
+  // Start UART receive interrupt
+  HAL_UART_Receive_IT(&hlpuart1, &uartRxByte, 1);
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -131,21 +151,48 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    // Quick LED pulse to show we're awake
-    led.setColor(LED::GREEN);
-    HAL_Delay(100);
-    led.off();
+    // Check if we're in an active watering session
+    if (wateringActive) {
+      // Calculate elapsed time in seconds
+      uint32_t elapsed = (HAL_GetTick() - wateringStartTime) / 1000;
 
-    // TODO: Disable DC/DC converter here to power down RPi during sleep
+      // Add 5 second grace period for RP2040 to complete watering
+      if (elapsed >= (wateringDuration + 5)) {
+        // Watering duration complete + grace period elapsed
+        // Send schedule complete notification
+        protocol.sendScheduleComplete();
 
-    // Enter low power STOP mode
-    // Will wake up on RTC interrupt after 15 seconds
-    enterStopMode();
+        // Small delay to ensure message is sent
+        HAL_Delay(5000);
 
-    // We're back! RTC woke us up
-    wakeupFromStopMode();
+        // Disable DC/DC to power down RP2040
+        dcdc.disable();
 
-    // TODO: Re-enable DC/DC converter here to power up RPi
+        // End watering session
+        wateringActive = false;
+        wateringStartTime = 0;
+        wateringDuration = 0;
+      } else {
+        // Still watering - stay awake, blink RED to show active watering
+        led.setColor(LED::RED);
+        HAL_Delay(100);
+        led.off();
+        HAL_Delay(900);  // Check every second
+      }
+    } else {
+      // Not watering - normal sleep/wake cycle
+      // Quick LED pulse to show we're awake
+      led.setColor(LED::GREEN);
+      HAL_Delay(100);
+      led.off();
+
+      // Enter low power STOP mode
+      // Will wake up on RTC interrupt
+      enterStopMode();
+
+      // We're back! RTC woke us up
+      wakeupFromStopMode();
+    }
   }
   /* USER CODE END 3 */
 }
@@ -216,8 +263,8 @@ static void MX_LPUART1_UART_Init(void)
 
   /* USER CODE END LPUART1_Init 1 */
   hlpuart1.Instance = LPUART1;
-  hlpuart1.Init.BaudRate = 209700;
-  hlpuart1.Init.WordLength = UART_WORDLENGTH_7B;
+  hlpuart1.Init.BaudRate = 9600;
+  hlpuart1.Init.WordLength = UART_WORDLENGTH_8B;
   hlpuart1.Init.StopBits = UART_STOPBITS_1;
   hlpuart1.Init.Parity = UART_PARITY_NONE;
   hlpuart1.Init.Mode = UART_MODE_TX_RX;
@@ -375,8 +422,75 @@ static void wakeupFromStopMode(void) {
  */
 void HAL_RTCEx_WakeUpTimerEventCallback(RTC_HandleTypeDef *hrtc)
 {
-    // Callback is called - actual handling done in main loop
-    // Just clear the interrupt flag (already done by HAL)
+    // Get current RTC time and date
+    RTC_TimeTypeDef time;
+    RTC_DateTypeDef date;
+    HAL_RTC_GetTime(hrtc, &time, RTC_FORMAT_BIN);
+    HAL_RTC_GetDate(hrtc, &date, RTC_FORMAT_BIN);
+
+    // Check if this is a scheduled event
+    const PMU::ScheduleEntry* entry = protocol.getNextScheduledEntry(
+        date.WeekDay, time.Hours, time.Minutes);
+
+    if (entry && entry->minutesUntil(date.WeekDay, time.Hours, time.Minutes) == 0) {
+        // This is a scheduled watering event
+        // Enable DC/DC to power up RP2040
+        dcdc.enable();
+
+        // Start watering session
+        wateringActive = true;
+        wateringStartTime = HAL_GetTick();
+        wateringDuration = entry->duration;
+
+        // Send wake notification
+        protocol.sendWakeNotification(PMU::WakeReason::Scheduled);
+    } else {
+        // Normal periodic wake
+        protocol.sendWakeNotification(PMU::WakeReason::Periodic);
+    }
+}
+
+/**
+ * @brief UART receive complete callback
+ * Called when a byte is received via UART
+ */
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+    if (huart->Instance == LPUART1) {
+        // Process received byte through protocol
+        protocol.processReceivedByte(uartRxByte);
+
+        // Re-enable interrupt for next byte
+        HAL_UART_Receive_IT(&hlpuart1, &uartRxByte, 1);
+    }
+}
+
+/**
+ * @brief UART send callback for protocol
+ */
+static void uartSendCallback(const uint8_t* data, uint8_t length)
+{
+    HAL_UART_Transmit(&hlpuart1, (uint8_t*)data, length, 1000);
+}
+
+/**
+ * @brief Set wake interval callback
+ */
+static void setWakeIntervalCallback(uint32_t seconds)
+{
+    // Reconfigure RTC wakeup timer
+    configureRTCWakeup(seconds);
+}
+
+/**
+ * @brief Keep awake callback
+ * @param seconds Number of seconds to stay awake
+ */
+static void keepAwakeCallback(uint16_t seconds)
+{
+    // TODO: Implement keep-awake timer
+    // For now, we could just delay, but better to use a timer
+    // This prevents entering sleep mode for the specified duration
 }
 
 /* USER CODE END 4 */

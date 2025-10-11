@@ -18,7 +18,15 @@ set(CMAKE_CXX_EXTENSIONS ON)
 
 # Define the build type
 if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE "Debug")
+    set(CMAKE_BUILD_TYPE "Release")
+endif()
+
+# Enable size optimization for release builds
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    set(CMAKE_CXX_FLAGS_RELEASE "-Os -DNDEBUG")
+    set(CMAKE_C_FLAGS_RELEASE "-Os -DNDEBUG")
+    # Enable Link Time Optimization
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
 endif()
 
 # Set the project name
@@ -50,6 +58,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
     Core/Src/led.cpp
     Core/Src/dcdc.cpp
+    Core/Src/pmu_protocol.cpp
 )
 
 # Add include paths
