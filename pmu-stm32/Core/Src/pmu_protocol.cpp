@@ -398,6 +398,15 @@ void Protocol::sendWakeNotification(WakeReason reason) {
     sendMessage();
 }
 
+void Protocol::sendWakeNotificationWithSchedule(WakeReason reason, const ScheduleEntry* entry) {
+    builder_.startMessage(static_cast<uint8_t>(Response::WakeReason));
+    builder_.addByte(static_cast<uint8_t>(reason));
+    if (entry) {
+        builder_.addScheduleEntry(*entry);
+    }
+    sendMessage();
+}
+
 void Protocol::sendScheduleComplete() {
     builder_.startMessage(static_cast<uint8_t>(Response::ScheduleComplete));
     sendMessage();

@@ -230,6 +230,9 @@ public:
     // Send wake notification to RP2040
     void sendWakeNotification(WakeReason reason);
 
+    // Send wake notification with schedule entry (for scheduled watering events)
+    void sendWakeNotificationWithSchedule(WakeReason reason, const ScheduleEntry* entry);
+
     // Send schedule complete notification (RP2040 should be ready for power down)
     void sendScheduleComplete();
 
