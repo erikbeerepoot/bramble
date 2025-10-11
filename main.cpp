@@ -13,6 +13,7 @@
 #include "hardware/spi.h"
 #include "hardware/timer.h"
 #include "hardware/clocks.h"
+#include "hardware/gpio.h"
 
 // HAL includes
 #include "hal/neopixel.h"
@@ -55,6 +56,10 @@ constexpr uint PIN_MOSI = 15;  // SPI1 TX
 constexpr uint PIN_RST  = 17;  // Reset pin
 constexpr uint PIN_DIO0 = 21;  // DIO0 interrupt pin
 constexpr uint PIN_NEOPIXEL = 4;
+
+// Controller input pins (Adafruit Feather RP2040)
+constexpr uint PIN_A0 = 26;  // A0 analog/digital input
+constexpr uint PIN_A1 = 27;  // A1 analog/digital input
 
 // Demo mode configuration is set by CMake
 

@@ -2,16 +2,10 @@
 #include <stdio.h>
 #include <string.h>
 #include "hardware/gpio.h"
+#include "../hal/gpio_interrupt_manager.h"
 
 // Global pointer for interrupt handler (single radio instance)
 static SX1276* g_sx1276_instance = nullptr;
-
-// GPIO interrupt handler
-static void sx1276_dio0_isr(uint gpio, uint32_t events) {
-    if (g_sx1276_instance && gpio == g_sx1276_instance->getDio0Pin() && (events & GPIO_IRQ_EDGE_RISE)) {
-        g_sx1276_instance->setInterruptPending();
-    }
-}
 
 SX1276::SX1276(spi_inst_t* spi_port, uint cs_pin, int rst_pin, int dio0_pin)
     : spi_(spi_port, cs_pin), rst_pin_(rst_pin), dio0_pin_(dio0_pin),
@@ -503,9 +497,17 @@ bool SX1276::enableInterruptMode(gpio_irq_callback_t callback) {
     
     // Set up global instance pointer for ISR
     g_sx1276_instance = this;
-    
-    // Enable GPIO interrupt on rising edge
-    gpio_set_irq_enabled_with_callback(dio0_pin_, GPIO_IRQ_EDGE_RISE, true, &sx1276_dio0_isr);
+
+    // Register interrupt handler with the global manager
+    GpioInterruptManager::getInstance().registerHandler(
+        dio0_pin_,
+        GPIO_IRQ_EDGE_RISE,
+        [this](uint gpio, uint32_t events) {
+            if (gpio == dio0_pin_ && (events & GPIO_IRQ_EDGE_RISE)) {
+                setInterruptPending();
+            }
+        }
+    );
     
     interrupt_enabled_ = true;
     interrupt_pending_ = false;
@@ -518,7 +520,7 @@ bool SX1276::enableInterruptMode(gpio_irq_callback_t callback) {
 
 void SX1276::disableInterruptMode() {
     if (dio0_pin_ >= 0 && interrupt_enabled_) {
-        gpio_set_irq_enabled(dio0_pin_, GPIO_IRQ_EDGE_RISE, false);
+        GpioInterruptManager::getInstance().unregisterHandler(dio0_pin_);
         interrupt_enabled_ = false;
         g_sx1276_instance = nullptr;
         logger_.info("Interrupt mode disabled");

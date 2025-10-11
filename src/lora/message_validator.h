@@ -2,6 +2,7 @@
 
 #include "message.h"
 #include <cstring>
+#include <cstdio>
 
 /**
  * @brief Consolidated message validation logic
@@ -39,13 +40,14 @@ public:
      * @brief Validate variable-length payload
      */
     static bool validateVariablePayload(const uint8_t* payload, size_t payload_length,
-                                       size_t header_size, size_t max_data_length) {
+                                       size_t header_size, size_t max_data_length,
+                                       size_t length_offset = 1) {
         if (payload_length < header_size) return false;
-        
-        // Extract data length from payload (assuming it's the second byte)
-        uint8_t data_length = payload[1];
+
+        // Extract data length from payload at specified offset
+        uint8_t data_length = payload[length_offset];
         if (data_length > max_data_length) return false;
-        
+
         return payload_length == header_size + data_length;
     }
     
@@ -66,10 +68,14 @@ public:
         // Validate payload based on message type
         switch (header->type) {
             case MSG_TYPE_SENSOR_DATA:
-                return validateVariablePayload(payload, payload_length, 2, MAX_SENSOR_DATA_LENGTH);
-                
+                // For sensor: sensor_type, data_length, data[]
+                // data_length is at offset 1
+                return validateVariablePayload(payload, payload_length, 2, MAX_SENSOR_DATA_LENGTH, 1);
+
             case MSG_TYPE_ACTUATOR_CMD:
-                return validateVariablePayload(payload, payload_length, 3, MAX_ACTUATOR_PARAMS);
+                // For actuator: actuator_type, command, param_length, params[]
+                // param_length is at offset 2
+                return validateVariablePayload(payload, payload_length, 3, MAX_ACTUATOR_PARAMS, 2);
                 
             case MSG_TYPE_HEARTBEAT:
                 return validateFixedPayload<HeartbeatPayload>(payload, payload_length);

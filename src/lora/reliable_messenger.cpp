@@ -17,17 +17,46 @@ ReliableMessenger::ReliableMessenger(SX1276* lora, uint16_t node_addr, NetworkSt
 }
 
 bool ReliableMessenger::sendActuatorCommand(uint16_t dst_addr, uint8_t actuator_type, uint8_t command,
-                                           const uint8_t* params, uint8_t param_length, 
+                                           const uint8_t* params, uint8_t param_length,
                                            DeliveryCriticality criticality) {
     uint8_t flags = MessageBuilder::criticalityToFlags(criticality);
     uint8_t seq_num = getNextSequenceNumber();
-    
+
+    logger_.info("sendActuatorCommand: src=0x%04X dst=0x%04X type=%d cmd=%d params_len=%d",
+                node_addr_, dst_addr, actuator_type, command, param_length);
+
     return sendWithBuilder([=](uint8_t* buffer) {
-        return MessageBuilder::createActuatorMessage(
+        size_t msg_size = MessageBuilder::createActuatorMessage(
             node_addr_, dst_addr, seq_num,
             actuator_type, command, params, param_length, flags,
             buffer
         );
+
+        // Debug: Log the created message in detail
+        if (msg_size > 0) {
+            const Message* msg = reinterpret_cast<const Message*>(buffer);
+            logger_.info("Created actuator msg: size=%zu", msg_size);
+            logger_.info("  Header: magic=0x%04X type=%d flags=0x%02X src=0x%04X dst=0x%04X seq=%d",
+                        msg->header.magic, msg->header.type, msg->header.flags,
+                        msg->header.src_addr, msg->header.dst_addr, msg->header.seq_num);
+            logger_.info("  Payload[0-7]: %02X %02X %02X %02X %02X %02X %02X %02X",
+                        msg->payload[0], msg->payload[1], msg->payload[2], msg->payload[3],
+                        msg->payload[4], msg->payload[5], msg->payload[6], msg->payload[7]);
+
+            // Verify actuator payload structure
+            const ActuatorPayload* actuator = reinterpret_cast<const ActuatorPayload*>(msg->payload);
+            logger_.info("  Actuator: type=%d cmd=%d param_len=%d param[0]=%d",
+                        actuator->actuator_type, actuator->command, actuator->param_length,
+                        actuator->param_length > 0 ? actuator->params[0] : -1);
+
+            // Check if size matches expected
+            size_t expected = MESSAGE_HEADER_SIZE + 3 + param_length; // header + actuator header + params
+            if (msg_size != expected) {
+                logger_.error("Size mismatch! Created=%zu, expected=%zu", msg_size, expected);
+            }
+        }
+
+        return msg_size;
     }, criticality, "actuator");
 }
 
@@ -143,11 +172,21 @@ bool ReliableMessenger::processIncomingMessage(const uint8_t* buffer, size_t len
         logger_.error("Invalid incoming message");
         return false;
     }
-    
+
     const Message* message = reinterpret_cast<const Message*>(buffer);
-    
-    logger_.info("Received %s message from 0x%04X", 
-                MessageHandler::getMessageTypeName(message->header.type), message->header.src_addr);
+
+    // Check if message is addressed to us or is a broadcast
+    if (message->header.dst_addr != node_addr_ &&
+        message->header.dst_addr != ADDRESS_BROADCAST) {
+        // Message not for us - ignore it
+        logger_.debug("Ignoring message for 0x%04X (our address: 0x%04X)",
+                     message->header.dst_addr, node_addr_);
+        return false;
+    }
+
+    logger_.info("Received %s message from 0x%04X to 0x%04X",
+                MessageHandler::getMessageTypeName(message->header.type),
+                message->header.src_addr, message->header.dst_addr);
     
     // Handle ACK messages
     if (message->header.type == MSG_TYPE_ACK) {
@@ -175,14 +214,22 @@ bool ReliableMessenger::processIncomingMessage(const uint8_t* buffer, size_t len
     if (message->header.type == MSG_TYPE_ACTUATOR_CMD) {
         const ActuatorPayload* actuator = reinterpret_cast<const ActuatorPayload*>(message->payload);
         if (actuator) {
-            logger_.info("Received actuator command: type=%d, cmd=%d", 
-                   actuator->actuator_type, actuator->command);
-            
+            logger_.info("Received actuator command: type=%d, cmd=%d, param_len=%d",
+                   actuator->actuator_type, actuator->command, actuator->param_length);
+
+            // Log first parameter if present
+            if (actuator->param_length > 0) {
+                logger_.info("  First param (valve_id): %d", actuator->params[0]);
+            }
+
             // Call the actuator callback if set
             if (actuator_callback_) {
+                logger_.info("Calling actuator callback");
                 actuator_callback_(actuator);
+            } else {
+                logger_.warn("No actuator callback set!");
             }
-            
+
             return true;
         }
     }
@@ -275,7 +322,15 @@ bool ReliableMessenger::wasAcknowledged(uint8_t seq_num) {
 
 bool ReliableMessenger::sendMessage(const uint8_t* buffer, size_t length) {
     if (!lora_ || !buffer || length == 0) return false;
-    
+
+    // Debug: Check for OFF commands
+    if (length >= 12) {
+        const Message* msg = reinterpret_cast<const Message*>(buffer);
+        if (msg->header.type == MSG_TYPE_ACTUATOR_CMD && msg->payload[1] == 0) {
+            logger_.info("Sending OFF cmd to radio: len=%zu, payload[1]=%d", length, msg->payload[1]);
+        }
+    }
+
     if (!lora_->send(buffer, length)) {
         return false;
     }

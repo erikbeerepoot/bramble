@@ -2,6 +2,7 @@
 
 #include "message.h"
 #include <cstring>
+#include <cstdio>
 #include <type_traits>
 
 /**
@@ -114,7 +115,7 @@ public:
             uint8_t command;
             uint8_t param_length;
         } header = { actuator_type, command, param_length };
-        
+
         return createVariableMessage(MSG_TYPE_ACTUATOR_CMD, flags, src_addr, dst_addr, seq_num,
                                    &header, sizeof(header), params, param_length, buffer);
     }

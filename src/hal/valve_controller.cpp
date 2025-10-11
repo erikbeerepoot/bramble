@@ -123,13 +123,17 @@ void ValveController::ensureInitialized() const {
 
 void ValveController::operateValve(uint8_t valve_id, bool open) {
     printf("Operating valve %d: %s\n", valve_id, open ? "OPEN" : "CLOSE");
-    
+
+    // First ensure ALL valves are deselected to prevent crosstalk
+    indexer_.deselectAll();
+    sleep_us(500);  // Give time for any gate charge to dissipate
+
     // Select the valve
     indexer_.selectValve(valve_id);
-    
-    // Small delay to ensure MOSFET is fully on
-    sleep_us(100);
-    
+
+    // Longer delay to ensure MOSFET is fully on and stable
+    sleep_us(1000);  // 1ms for gate to fully charge
+
     // Operate the valve through its driver
     if (open) {
         drivers_[valve_id]->open();
@@ -138,7 +142,10 @@ void ValveController::operateValve(uint8_t valve_id, bool open) {
         drivers_[valve_id]->close();
         valve_states_[valve_id] = ValveState::CLOSED;
     }
-    
+
+    // Small delay before deselecting to ensure operation completes
+    sleep_us(500);
+
     // Deselect all valves for safety
     indexer_.deselectAll();
 }

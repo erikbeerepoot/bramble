@@ -105,6 +105,7 @@ else()
         src/hal/flash.cpp
         src/hal/logger.cpp
         src/hal/spi_device.cpp
+        src/hal/gpio_interrupt_manager.cpp
         src/config/config_base.cpp
         src/config/node_config.cpp
         src/config/hub_config.cpp
@@ -135,6 +136,7 @@ else()
         add_executable(bramble_controller
             main.cpp
             src/modes/controller_mode.cpp
+            src/hal/controller_inputs.cpp
             ${COMMON_SOURCES}
         )
         target_compile_definitions(bramble_controller PRIVATE
@@ -172,7 +174,7 @@ else()
     endif()
     
     # Add demo mode option
-    option(DEMO_MODE "Build in demo mode with verbose output" ON)
+    option(DEMO_MODE "Build in demo mode with verbose output" OFF)
     if(DEMO_MODE)
         target_compile_definitions(${TARGET_NAME} PRIVATE DEMO_MODE=1)
         message(STATUS "Demo mode enabled")

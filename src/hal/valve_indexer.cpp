@@ -68,4 +68,7 @@ void ValveIndexer::configurePin(uint8_t pin) {
     gpio_init(pin);
     gpio_set_dir(pin, GPIO_OUT);
     gpio_put(pin, 0);  // Start in OFF state
+
+    // Enable internal pull-down to prevent floating when OFF
+    gpio_pull_down(pin);
 }
