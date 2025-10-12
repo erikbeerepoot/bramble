@@ -44,6 +44,7 @@ void IrrigationMode::onStart() {
         });
 
         // Set default wake interval to 5 minutes with result callback
+        pmu_logger.info("Sending setWakeInterval command to PMU...");
         protocol.setWakeInterval(300, [](bool success, PMU::ErrorCode error) {
             if (success) {
                 pmu_logger.info("Wake interval set successfully");
