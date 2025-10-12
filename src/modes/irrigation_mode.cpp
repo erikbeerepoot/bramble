@@ -43,17 +43,14 @@ void IrrigationMode::onStart() {
             this->handleScheduleComplete();
         });
 
-        protocol.onAck([]() {
-            pmu_logger.debug("Command acknowledged");
+        // Set default wake interval to 5 minutes with result callback
+        protocol.setWakeInterval(300, [](bool success, PMU::ErrorCode error) {
+            if (success) {
+                pmu_logger.info("Wake interval set successfully");
+            } else {
+                pmu_logger.error("Failed to set wake interval: error code %d", static_cast<int>(error));
+            }
         });
-
-        protocol.onNack([](PMU::ErrorCode error) {
-            pmu_logger.error("Command failed with error code: %d", static_cast<int>(error));
-        });
-
-        // Set default wake interval to 5 minutes
-        protocol.setWakeInterval(300);
-        pmu_logger.info("Set default wake interval to 5 minutes");
     } else {
         logger.warn("PMU client not available - running without power management");
     }

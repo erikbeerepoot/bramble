@@ -138,8 +138,7 @@ int main(void)
 
   // Configure RTC to wake every 15 seconds
   configureRTCWakeup(protocol.getWakeInternal());
-  protocol.
-
+  
   // Start UART receive interrupt
   HAL_UART_Receive_IT(&hlpuart1, &uartRxByte, 1);
 
@@ -147,18 +146,20 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  dcdc.enable();  // Ensure DC/DC is enabled    
   while (1)
   {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    
     // Check if we're in an active watering session
     if (wateringActive) {
       // Calculate elapsed time in seconds
       uint32_t elapsed = (HAL_GetTick() - wateringStartTime) / 1000;
 
       // Add 5 second grace period for RP2040 to complete watering
-      if (elapsed >= (wateringDuration + 5)) {
+      if (elapsed >= (static_cast<uint32_t>(wateringDuration) + 5U)) {
         // Watering duration complete + grace period elapsed
         // Send schedule complete notification
         protocol.sendScheduleComplete();

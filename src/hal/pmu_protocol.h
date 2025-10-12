@@ -164,8 +164,7 @@ private:
 using UartSendCallback = std::function<void(const uint8_t* data, uint8_t length)>;
 using WakeNotificationCallback = std::function<void(WakeReason reason, const ScheduleEntry* entry)>;
 using ScheduleCompleteCallback = std::function<void()>;
-using AckCallback = std::function<void()>;
-using NackCallback = std::function<void(ErrorCode error)>;
+using CommandResultCallback = std::function<void(bool success, ErrorCode error)>;
 using WakeIntervalCallback = std::function<void(uint32_t seconds)>;
 using ScheduleEntryCallback = std::function<void(const ScheduleEntry& entry)>;
 
@@ -177,19 +176,17 @@ public:
     // Process received byte from UART
     void processReceivedByte(uint8_t byte);
 
-    // Commands to send to STM32
-    bool setWakeInterval(uint32_t seconds);
-    bool getWakeInterval();
-    bool setSchedule(const ScheduleEntry& entry);
-    bool getSchedule(uint8_t index);
-    bool clearSchedule(uint8_t index);  // 0xFF to clear all
-    bool keepAwake(uint16_t seconds);
+    // Commands to send to STM32 (non-blocking, callback receives result)
+    void setWakeInterval(uint32_t seconds, CommandResultCallback callback = nullptr);
+    void getWakeInterval(CommandResultCallback callback = nullptr);
+    void setSchedule(const ScheduleEntry& entry, CommandResultCallback callback = nullptr);
+    void getSchedule(uint8_t index, CommandResultCallback callback = nullptr);
+    void clearSchedule(uint8_t index, CommandResultCallback callback = nullptr);  // 0xFF to clear all
+    void keepAwake(uint16_t seconds, CommandResultCallback callback = nullptr);
 
-    // Set callback handlers for responses
+    // Set callback handlers for unsolicited responses
     void onWakeNotification(WakeNotificationCallback callback);
     void onScheduleComplete(ScheduleCompleteCallback callback);
-    void onAck(AckCallback callback);
-    void onNack(NackCallback callback);
     void onWakeInterval(WakeIntervalCallback callback);
     void onScheduleEntry(ScheduleEntryCallback callback);
 
@@ -198,13 +195,14 @@ private:
     MessageBuilder builder_;
     UartSendCallback uartSend_;
 
-    // Response callbacks
+    // Response callbacks for unsolicited messages
     WakeNotificationCallback wakeNotificationCallback_;
     ScheduleCompleteCallback scheduleCompleteCallback_;
-    AckCallback ackCallback_;
-    NackCallback nackCallback_;
     WakeIntervalCallback wakeIntervalCallback_;
     ScheduleEntryCallback scheduleEntryCallback_;
+
+    // Pending command callback (for ACK/NACK responses)
+    CommandResultCallback pendingCommandCallback_;
 
     // Response handlers
     void handleAck();

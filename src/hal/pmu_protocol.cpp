@@ -182,10 +182,9 @@ Protocol::Protocol(UartSendCallback uartSend)
     : uartSend_(uartSend),
       wakeNotificationCallback_(nullptr),
       scheduleCompleteCallback_(nullptr),
-      ackCallback_(nullptr),
-      nackCallback_(nullptr),
       wakeIntervalCallback_(nullptr),
-      scheduleEntryCallback_(nullptr) {
+      scheduleEntryCallback_(nullptr),
+      pendingCommandCallback_(nullptr) {
 }
 
 void Protocol::processReceivedByte(uint8_t byte) {
@@ -225,48 +224,48 @@ void Protocol::processReceivedByte(uint8_t byte) {
 
 // Command senders
 
-bool Protocol::setWakeInterval(uint32_t seconds) {
+void Protocol::setWakeInterval(uint32_t seconds, CommandResultCallback callback) {
+    pendingCommandCallback_ = callback;
     builder_.startMessage(Command::SetWakeInterval);
     builder_.addUint32(seconds);
     sendMessage();
-    return true;
 }
 
-bool Protocol::getWakeInterval() {
+void Protocol::getWakeInterval(CommandResultCallback callback) {
+    pendingCommandCallback_ = callback;
     builder_.startMessage(Command::GetWakeInterval);
     sendMessage();
-    return true;
 }
 
-bool Protocol::setSchedule(const ScheduleEntry& entry) {
+void Protocol::setSchedule(const ScheduleEntry& entry, CommandResultCallback callback) {
+    pendingCommandCallback_ = callback;
     builder_.startMessage(Command::SetSchedule);
     builder_.addScheduleEntry(entry);
     sendMessage();
-    return true;
 }
 
-bool Protocol::getSchedule(uint8_t index) {
+void Protocol::getSchedule(uint8_t index, CommandResultCallback callback) {
+    pendingCommandCallback_ = callback;
     builder_.startMessage(Command::GetSchedule);
     builder_.addByte(index);
     sendMessage();
-    return true;
 }
 
-bool Protocol::clearSchedule(uint8_t index) {
+void Protocol::clearSchedule(uint8_t index, CommandResultCallback callback) {
+    pendingCommandCallback_ = callback;
     builder_.startMessage(Command::ClearSchedule);
     builder_.addByte(index);
     sendMessage();
-    return true;
 }
 
-bool Protocol::keepAwake(uint16_t seconds) {
+void Protocol::keepAwake(uint16_t seconds, CommandResultCallback callback) {
+    pendingCommandCallback_ = callback;
     builder_.startMessage(Command::KeepAwake);
     builder_.addUint16(seconds);
     sendMessage();
-    return true;
 }
 
-// Callback setters
+// Callback setters for unsolicited messages
 
 void Protocol::onWakeNotification(WakeNotificationCallback callback) {
     wakeNotificationCallback_ = callback;
@@ -274,14 +273,6 @@ void Protocol::onWakeNotification(WakeNotificationCallback callback) {
 
 void Protocol::onScheduleComplete(ScheduleCompleteCallback callback) {
     scheduleCompleteCallback_ = callback;
-}
-
-void Protocol::onAck(AckCallback callback) {
-    ackCallback_ = callback;
-}
-
-void Protocol::onNack(NackCallback callback) {
-    nackCallback_ = callback;
 }
 
 void Protocol::onWakeInterval(WakeIntervalCallback callback) {
@@ -295,15 +286,21 @@ void Protocol::onScheduleEntry(ScheduleEntryCallback callback) {
 // Response handlers
 
 void Protocol::handleAck() {
-    if (ackCallback_) {
-        ackCallback_();
+    if (pendingCommandCallback_) {
+        pendingCommandCallback_(true, ErrorCode::NoError);
+        pendingCommandCallback_ = nullptr;  // Clear after calling
     }
 }
 
 void Protocol::handleNack(const uint8_t* data, uint8_t length) {
-    if (length >= 1 && nackCallback_) {
-        ErrorCode error = static_cast<ErrorCode>(data[0]);
-        nackCallback_(error);
+    ErrorCode error = ErrorCode::NoError;
+    if (length >= 1) {
+        error = static_cast<ErrorCode>(data[0]);
+    }
+
+    if (pendingCommandCallback_) {
+        pendingCommandCallback_(false, error);
+        pendingCommandCallback_ = nullptr;  // Clear after calling
     }
 }
 
