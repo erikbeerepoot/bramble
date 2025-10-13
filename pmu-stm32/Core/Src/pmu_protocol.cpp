@@ -435,11 +435,14 @@ void Protocol::handleSetWakeInterval(const uint8_t* data, uint8_t length) {
     }
 
     wakeInterval_ = seconds;
+
+    // Send ACK before reconfiguring RTC to avoid timing issues
+    sendAck();
+
+    // Now reconfigure the RTC wakeup timer
     if (setWake_) {
         setWake_(seconds);
     }
-
-    sendAck();
 }
 
 void Protocol::handleGetWakeInterval() {

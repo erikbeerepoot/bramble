@@ -72,8 +72,8 @@ inline bool operator!(DayOfWeek a) {
 // Protocol constants
 constexpr uint8_t START_BYTE = 0xAA;
 constexpr uint8_t END_BYTE = 0x55;
-constexpr uint8_t MAX_SCHEDULE_ENTRIES = 8;
-constexpr uint8_t MAX_MESSAGE_SIZE = 64;
+constexpr uint8_t MAX_SCHEDULE_ENTRIES = 2;  // Reduced to 2 to fit in 2KB RAM
+constexpr uint8_t MAX_MESSAGE_SIZE = 32;     // Reduced from 64 to save RAM
 constexpr uint8_t SCHEDULE_ENTRY_SIZE = 7;
 
 // Schedule entry structure
@@ -236,7 +236,7 @@ public:
     // Send schedule complete notification (RP2040 should be ready for power down)
     void sendScheduleComplete();
 
-    uint32_t getWakeInternal() const { return wakeInterval_; }
+    uint32_t getWakeInterval() const { return wakeInterval_; }
 
     // Get the next scheduled entry (for RTC wakeup checking)
     const ScheduleEntry* getNextScheduledEntry(uint8_t currentDay, uint8_t currentHour,

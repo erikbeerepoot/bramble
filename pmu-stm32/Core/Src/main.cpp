@@ -58,6 +58,9 @@ static bool wateringActive = false;
 static uint32_t wateringStartTime = 0;
 static uint16_t wateringDuration = 0;
 
+// RTC wakeup flag - set by interrupt, handled in main loop
+static volatile bool rtcWakeupFlag = false;
+
 // Protocol callbacks
 static void uartSendCallback(const uint8_t* data, uint8_t length);
 static void setWakeIntervalCallback(uint32_t seconds);
@@ -77,6 +80,7 @@ static void flicker(LED& led, LED::Color color, uint32_t duration_ms);
 static void configureRTCWakeup(uint32_t seconds);
 static void enterStopMode(void);
 static void wakeupFromStopMode(void);
+static void handleRTCWakeup(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -137,7 +141,7 @@ int main(void)
   flicker(led, LED::GREEN, 1000);
 
   // Configure RTC to wake every 15 seconds
-  configureRTCWakeup(protocol.getWakeInternal());
+  configureRTCWakeup(protocol.getWakeInterval());
   
   // Start UART receive interrupt
   HAL_UART_Receive_IT(&hlpuart1, &uartRxByte, 1);
@@ -146,13 +150,20 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  dcdc.enable();  // Ensure DC/DC is enabled    
+  // dcdc.enable();  // Ensure DC/DC is enabled
+  
   while (1)
   {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    
+
+    // Check if RTC wakeup flag is set and handle it
+    if (rtcWakeupFlag) {
+      rtcWakeupFlag = false;
+      handleRTCWakeup();
+    }
+
     // Check if we're in an active watering session
     if (wateringActive) {
       // Calculate elapsed time in seconds
@@ -189,10 +200,10 @@ int main(void)
       led.off();
 
       // Enter low power STOP mode
-      // Will wake up on RTC interrupt
+      // Will wake up on RTC interrupt or LPUART data
       enterStopMode();
 
-      // We're back! RTC woke us up
+      // We're back! RTC or LPUART woke us up
       wakeupFromStopMode();
     }
   }
@@ -216,7 +227,9 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_LSI|RCC_OSCILLATORTYPE_MSI;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI|RCC_OSCILLATORTYPE_LSI|RCC_OSCILLATORTYPE_MSI;
+  RCC_OscInitStruct.HSIState = RCC_HSI_ON;  // Enable HSI for LPUART in STOP mode
+  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
   RCC_OscInitStruct.LSIState = RCC_LSI_ON;
   RCC_OscInitStruct.MSIState = RCC_MSI_ON;
   RCC_OscInitStruct.MSICalibrationValue = 0;
@@ -241,7 +254,7 @@ void SystemClock_Config(void)
     Error_Handler();
   }
   PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_LPUART1|RCC_PERIPHCLK_RTC;
-  PeriphClkInit.Lpuart1ClockSelection = RCC_LPUART1CLKSOURCE_PCLK1;
+  PeriphClkInit.Lpuart1ClockSelection = RCC_LPUART1CLKSOURCE_HSI;  // HSI for STOP mode support
   PeriphClkInit.RTCClockSelection = RCC_RTCCLKSOURCE_LSI;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
   {
@@ -398,11 +411,18 @@ static void configureRTCWakeup(uint32_t seconds) {
  * @brief Enter STOP mode for low power sleep
  */
 static void enterStopMode(void) {
+    // Enable LPUART wakeup from STOP mode (sets UESM bit in CR1)
+    HAL_UARTEx_EnableStopMode(&hlpuart1);
+
+    // Enable clock request in STOP mode (UCESM bit in CR3)
+    // This allows LPUART to request HSI clock when START bit is detected
+    SET_BIT(hlpuart1.Instance->CR3, USART_CR3_UCESM);
+
     // Suspend SysTick to prevent wakeup
     HAL_SuspendTick();
 
     // Enter STOP mode with low power regulator
-    // Wake on any interrupt (RTC wakeup in our case)
+    // Wake on any interrupt (RTC wakeup or LPUART in our case)
     HAL_PWR_EnterSTOPMode(PWR_LOWPOWERREGULATOR_ON, PWR_STOPENTRY_WFI);
 }
 
@@ -410,25 +430,30 @@ static void enterStopMode(void) {
  * @brief Re-initialize system after waking from STOP mode
  */
 static void wakeupFromStopMode(void) {
+    // Disable LPUART STOP mode after waking
+    HAL_UARTEx_DisableStopMode(&hlpuart1);
+
     // After waking from STOP, system clock is MSI at reset speed
     // Need to reconfigure to our desired clock
     SystemClock_Config();
 
     // Resume SysTick
     HAL_ResumeTick();
+
+    // Re-enable UART RX interrupt if it was stopped
+    HAL_UART_Receive_IT(&hlpuart1, &uartRxByte, 1);
 }
 
 /**
- * @brief RTC wakeup timer callback
- * This is called when the RTC wakeup interrupt fires
+ * @brief Handle RTC wakeup event (called from main loop, not interrupt)
+ * This does the actual work when RTC wakes up
  */
-void HAL_RTCEx_WakeUpTimerEventCallback(RTC_HandleTypeDef *hrtc)
-{
+static void handleRTCWakeup(void) {
     // Get current RTC time and date
     RTC_TimeTypeDef time;
     RTC_DateTypeDef date;
-    HAL_RTC_GetTime(hrtc, &time, RTC_FORMAT_BIN);
-    HAL_RTC_GetDate(hrtc, &date, RTC_FORMAT_BIN);
+    HAL_RTC_GetTime(&hrtc, &time, RTC_FORMAT_BIN);
+    HAL_RTC_GetDate(&hrtc, &date, RTC_FORMAT_BIN);
 
     // Check if this is a scheduled event
     const PMU::ScheduleEntry* entry = protocol.getNextScheduledEntry(
@@ -450,6 +475,17 @@ void HAL_RTCEx_WakeUpTimerEventCallback(RTC_HandleTypeDef *hrtc)
         // Normal periodic wake
         protocol.sendWakeNotification(PMU::WakeReason::Periodic);
     }
+}
+
+/**
+ * @brief RTC wakeup timer callback
+ * This is called when the RTC wakeup interrupt fires
+ * Keep this minimal to avoid stack overflow!
+ */
+void HAL_RTCEx_WakeUpTimerEventCallback(RTC_HandleTypeDef *hrtc)
+{
+    // Just set a flag - handle the actual work in main loop
+    rtcWakeupFlag = true;
 }
 
 /**
