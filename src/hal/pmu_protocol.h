@@ -13,7 +13,8 @@ enum class Command : uint8_t {
     SetSchedule = 0x12,
     GetSchedule = 0x13,
     ClearSchedule = 0x14,
-    KeepAwake = 0x15
+    KeepAwake = 0x15,
+    SetDateTime = 0x16  // Set RTC date/time (7 bytes: year, month, day, weekday, hour, minute, second)
 };
 
 // Response codes (STM32 → RP2040)
@@ -74,6 +75,22 @@ constexpr uint8_t START_BYTE = 0xAA;
 constexpr uint8_t END_BYTE = 0x55;
 constexpr uint8_t MAX_MESSAGE_SIZE = 64;
 constexpr uint8_t SCHEDULE_ENTRY_SIZE = 7;
+
+// Date/Time structure for setting RTC
+struct DateTime {
+    uint8_t year;      // Years since 2000 (0-99)
+    uint8_t month;     // 1-12
+    uint8_t day;       // 1-31
+    uint8_t weekday;   // 0=Sunday, 1=Monday, ..., 6=Saturday
+    uint8_t hour;      // 0-23
+    uint8_t minute;    // 0-59
+    uint8_t second;    // 0-59
+
+    DateTime() : year(0), month(1), day(1), weekday(0), hour(0), minute(0), second(0) {}
+
+    DateTime(uint8_t y, uint8_t mon, uint8_t d, uint8_t wd, uint8_t h, uint8_t min, uint8_t s)
+        : year(y), month(mon), day(d), weekday(wd), hour(h), minute(min), second(s) {}
+};
 
 // Schedule entry structure
 struct ScheduleEntry {
@@ -183,6 +200,7 @@ public:
     void getSchedule(uint8_t index, CommandResultCallback callback = nullptr);
     void clearSchedule(uint8_t index, CommandResultCallback callback = nullptr);  // 0xFF to clear all
     void keepAwake(uint16_t seconds, CommandResultCallback callback = nullptr);
+    void setDateTime(const DateTime& dateTime, CommandResultCallback callback = nullptr);
 
     // Set callback handlers for unsolicited responses
     void onWakeNotification(WakeNotificationCallback callback);

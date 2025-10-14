@@ -11,7 +11,9 @@ PmuClient::PmuClient(uart_inst_t* uart_inst, uint tx_pin, uint rx_pin, uint baud
       initialized_(false),
       protocol_([this](const uint8_t* data, uint8_t length) {
           this->uartSend(data, length);
-      }) {
+      }),
+      rxHead_(0),
+      rxTail_(0) {
 
     // Set static instance for IRQ handling
     instance_ = this;
@@ -62,14 +64,29 @@ void PmuClient::uartSend(const uint8_t* data, uint8_t length) {
     uart_write_blocking(uart_, data, length);
 }
 
+void PmuClient::process() {
+    // Process all bytes from the ring buffer
+    while (rxTail_ != rxHead_) {
+        uint8_t byte = rxBuffer_[rxTail_];
+        rxTail_ = (rxTail_ + 1) % RX_BUFFER_SIZE;
+        protocol_.processReceivedByte(byte);
+    }
+}
+
 void PmuClient::onUartRxIrq() {
     if (!instance_ || !instance_->uart_) {
         return;
     }
 
-    // Read all available bytes from FIFO
+    // Read all available bytes from FIFO and store in ring buffer
     while (uart_is_readable(instance_->uart_)) {
         uint8_t byte = uart_getc(instance_->uart_);
-        instance_->protocol_.processReceivedByte(byte);
+
+        size_t next_head = (instance_->rxHead_ + 1) % RX_BUFFER_SIZE;
+        if (next_head != instance_->rxTail_) {
+            instance_->rxBuffer_[instance_->rxHead_] = byte;
+            instance_->rxHead_ = next_head;
+        }
+        // If buffer full, drop the byte
     }
 }

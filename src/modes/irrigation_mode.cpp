@@ -3,7 +3,6 @@
 #include "../lora/reliable_messenger.h"
 #include "../led_patterns.h"
 #include "../hal/logger.h"
-#include <cstdio>
 
 constexpr uint16_t HUB_ADDRESS = ADDRESS_HUB;
 constexpr uint32_t HEARTBEAT_INTERVAL_MS = 60000;   // 60 seconds
@@ -43,13 +42,66 @@ void IrrigationMode::onStart() {
             this->handleScheduleComplete();
         });
 
-        // Set default wake interval to 5 minutes with result callback
-        pmu_logger.info("Sending setWakeInterval command to PMU...");
-        protocol.setWakeInterval(300, [](bool success, PMU::ErrorCode error) {
+        // First, set the RTC date/time so scheduling works correctly
+        // Example: January 15, 2025, 14:30:00 (Wednesday)
+        pmu_logger.info("Setting PMU RTC date/time...");
+        PMU::DateTime dateTime(25, 1, 15, 3, 14, 30, 0);  // 2025-01-15 14:30:00, Wednesday
+
+        protocol.setDateTime(dateTime, [this](bool success, PMU::ErrorCode error) {
             if (success) {
-                pmu_logger.info("Wake interval set successfully");
+                pmu_logger.info("RTC date/time set successfully: 2025-01-15 14:30:00");
+
+                // Now set wake interval to 30 seconds for testing
+                pmu_logger.info("Sending setWakeInterval command to PMU...");
+                auto& protocol = pmu_client_->getProtocol();
+                protocol.setWakeInterval(30, [this](bool success, PMU::ErrorCode error) {
+                    if (success) {
+                        pmu_logger.info("Wake interval set successfully to 30 seconds");
+
+                        // Now send a test schedule entry
+                        // Schedule watering for valve 0, at 14:31 (1 minute from now), 15 second duration
+                        pmu_logger.info("Sending test schedule entry...");
+
+                        PMU::ScheduleEntry test_entry;
+                        test_entry.hour = 14;  // 2:31 PM (1 minute from the time we just set)
+                        test_entry.minute = 31;
+                        test_entry.duration = 15;  // 15 seconds of watering
+                        test_entry.daysMask = PMU::DayOfWeek::EveryDay;
+                        test_entry.valveId = 0;  // Valve 0
+                        test_entry.enabled = true;
+
+                        auto& protocol = pmu_client_->getProtocol();
+                        protocol.setSchedule(test_entry, [this](bool success, PMU::ErrorCode error) {
+                            if (success) {
+                                pmu_logger.info("Test schedule entry added successfully!");
+                                pmu_logger.info("  Valve: 0");
+                                pmu_logger.info("  Time: 14:31");
+                                pmu_logger.info("  Duration: 15 seconds");
+                            } else {
+                                pmu_logger.error("Failed to add schedule: error code %d", static_cast<int>(error));
+                                // Decode error
+                                switch (error) {
+                                    case PMU::ErrorCode::InvalidParam:
+                                        pmu_logger.error("  Error: Invalid parameters");
+                                        break;
+                                    case PMU::ErrorCode::ScheduleFull:
+                                        pmu_logger.error("  Error: Schedule is full");
+                                        break;
+                                    case PMU::ErrorCode::Overlap:
+                                        pmu_logger.error("  Error: Schedule overlaps with existing entry");
+                                        break;
+                                    default:
+                                        pmu_logger.error("  Error: Unknown error");
+                                        break;
+                                }
+                            }
+                        });
+                    } else {
+                        pmu_logger.error("Failed to set wake interval: error code %d", static_cast<int>(error));
+                    }
+                });
             } else {
-                pmu_logger.error("Failed to set wake interval: error code %d", static_cast<int>(error));
+                pmu_logger.error("Failed to set RTC date/time: error code %d", static_cast<int>(error));
             }
         });
     } else {
@@ -89,33 +141,35 @@ void IrrigationMode::onStart() {
 void IrrigationMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry* entry) {
     switch (reason) {
         case PMU::WakeReason::Periodic:
-            pmu_logger.info("Periodic wake - sending heartbeat");
+            pmu_logger.info("Periodic wake - received heartbeat");
             // Normal periodic wake - the heartbeat task will handle this
             break;
 
         case PMU::WakeReason::Scheduled:
             if (entry) {
-                pmu_logger.info("Scheduled wake - watering valve %d for %d seconds",
-                               entry->valveId, entry->duration);
+                logger.info("Scheduled wake - valve %d for %d seconds",
+                           entry->valveId, entry->duration);
 
-                // Open the scheduled valve
                 if (entry->valveId < ValveController::NUM_VALVES) {
-                    logger.info("Opening valve %d for scheduled watering", entry->valveId);
                     valve_controller_.openValve(entry->valveId);
-
-                    // TODO: Implement duration-based automatic valve closure
-                    // For now, valve will stay open until PMU sends ScheduleComplete
                 } else {
                     logger.error("Invalid valve ID %d in schedule", entry->valveId);
                 }
             } else {
-                pmu_logger.warn("Scheduled wake but no schedule entry provided");
+                logger.warn("Scheduled wake but no schedule entry provided");
             }
             break;
 
         case PMU::WakeReason::External:
             pmu_logger.info("External wake trigger");
             break;
+    }
+}
+
+void IrrigationMode::onLoop() {
+    // Process any pending PMU messages (moved out of IRQ context)
+    if (pmu_available_ && pmu_client_) {
+        pmu_client_->process();
     }
 }
 

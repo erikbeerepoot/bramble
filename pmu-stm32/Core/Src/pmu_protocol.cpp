@@ -1,5 +1,9 @@
 #include "pmu_protocol.h"
+#include "main.h"  // For RTC_HandleTypeDef and HAL functions
 #include <cstring>
+
+// External reference to RTC handle from main.cpp
+extern RTC_HandleTypeDef hrtc;
 
 namespace PMU {
 
@@ -383,6 +387,9 @@ void Protocol::processReceivedByte(uint8_t byte) {
             case Command::KeepAwake:
                 handleKeepAwake(data, dataLen);
                 break;
+            case Command::SetDateTime:
+                handleSetDateTime(data, dataLen);
+                break;
             default:
                 sendNack(ErrorCode::InvalidParam);
                 break;
@@ -514,6 +521,51 @@ void Protocol::handleKeepAwake(const uint8_t* data, uint8_t length) {
 
     if (keepAwake_) {
         keepAwake_(seconds);
+    }
+
+    sendAck();
+}
+
+void Protocol::handleSetDateTime(const uint8_t* data, uint8_t length) {
+    // Expected: 7 bytes (year, month, day, weekday, hour, minute, second)
+    if (length != 7) {
+        sendNack(ErrorCode::InvalidParam);
+        return;
+    }
+
+    RTC_TimeTypeDef time = {0};
+    RTC_DateTypeDef date = {0};
+
+    // Parse date/time from message
+    // Year is offset from 2000
+    date.Year = data[0];
+    date.Month = data[1];
+    date.Date = data[2];
+    date.WeekDay = data[3];  // 0=Sunday, 1=Monday, etc.
+
+    time.Hours = data[4];
+    time.Minutes = data[5];
+    time.Seconds = data[6];
+    time.TimeFormat = RTC_HOURFORMAT_24;
+    time.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
+    time.StoreOperation = RTC_STOREOPERATION_RESET;
+
+    // Validate ranges
+    if (date.Month < 1 || date.Month > 12 ||
+        date.Date < 1 || date.Date > 31 ||
+        date.WeekDay > 6 ||
+        time.Hours > 23 ||
+        time.Minutes > 59 ||
+        time.Seconds > 59) {
+        sendNack(ErrorCode::InvalidParam);
+        return;
+    }
+
+    // Set RTC time and date (use global namespace for hrtc)
+    if (HAL_RTC_SetTime(&::hrtc, &time, RTC_FORMAT_BIN) != HAL_OK ||
+        HAL_RTC_SetDate(&::hrtc, &date, RTC_FORMAT_BIN) != HAL_OK) {
+        sendNack(ErrorCode::InvalidParam);
+        return;
     }
 
     sendAck();

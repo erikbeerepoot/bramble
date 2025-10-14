@@ -38,10 +38,13 @@ void ApplicationMode::run() {
     // Main loop
     while (true) {
         uint32_t current_time = to_ms_since_boot(get_absolute_time());
-        
+
+        // Call mode-specific loop hook
+        onLoop();
+
         // Update tasks (only if not using multicore)
         task_manager_.update(current_time);
-        
+
         // Check for interrupts first (more efficient than polling)
         if (lora_.isInterruptPending()) {
             lora_.handleInterrupt();

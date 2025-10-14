@@ -1,5 +1,6 @@
 #include "pmu_protocol.h"
 #include <cstring>
+#include <cstdio>
 
 namespace PMU {
 
@@ -188,7 +189,16 @@ Protocol::Protocol(UartSendCallback uartSend)
 }
 
 void Protocol::processReceivedByte(uint8_t byte) {
+    static bool processing = false;
+
     if (parser_.processByte(byte)) {
+        // Prevent re-entrant processing
+        if (processing) {
+            return;
+        }
+
+        processing = true;
+
         // Complete message received
         Response resp = parser_.getResponse();
         const uint8_t* data = parser_.getData();
@@ -219,6 +229,7 @@ void Protocol::processReceivedByte(uint8_t byte) {
         }
 
         parser_.reset();
+        processing = false;
     }
 }
 
@@ -265,6 +276,19 @@ void Protocol::keepAwake(uint16_t seconds, CommandResultCallback callback) {
     sendMessage();
 }
 
+void Protocol::setDateTime(const DateTime& dateTime, CommandResultCallback callback) {
+    pendingCommandCallback_ = callback;
+    builder_.startMessage(Command::SetDateTime);
+    builder_.addByte(dateTime.year);
+    builder_.addByte(dateTime.month);
+    builder_.addByte(dateTime.day);
+    builder_.addByte(dateTime.weekday);
+    builder_.addByte(dateTime.hour);
+    builder_.addByte(dateTime.minute);
+    builder_.addByte(dateTime.second);
+    sendMessage();
+}
+
 // Callback setters for unsolicited messages
 
 void Protocol::onWakeNotification(WakeNotificationCallback callback) {
@@ -287,8 +311,9 @@ void Protocol::onScheduleEntry(ScheduleEntryCallback callback) {
 
 void Protocol::handleAck() {
     if (pendingCommandCallback_) {
-        pendingCommandCallback_(true, ErrorCode::NoError);
-        pendingCommandCallback_ = nullptr;  // Clear after calling
+        auto callback = pendingCommandCallback_;
+        pendingCommandCallback_ = nullptr;  // Clear before calling to allow new commands
+        callback(true, ErrorCode::NoError);
     }
 }
 
@@ -299,8 +324,9 @@ void Protocol::handleNack(const uint8_t* data, uint8_t length) {
     }
 
     if (pendingCommandCallback_) {
-        pendingCommandCallback_(false, error);
-        pendingCommandCallback_ = nullptr;  // Clear after calling
+        auto callback = pendingCommandCallback_;
+        pendingCommandCallback_ = nullptr;  // Clear before calling to allow new commands
+        callback(false, error);
     }
 }
 
@@ -327,25 +353,28 @@ void Protocol::handleScheduleEntry(const uint8_t* data, uint8_t length) {
 }
 
 void Protocol::handleWakeNotification(const uint8_t* data, uint8_t length) {
-    if (wakeNotificationCallback_) {
-        if (length < 1) return;  // Need at least wake reason
+    if (!wakeNotificationCallback_) return;
+    if (length < 1) return;
 
-        WakeReason reason = static_cast<WakeReason>(data[0]);
+    WakeReason reason = static_cast<WakeReason>(data[0]);
+    printf("R=%d\n", static_cast<int>(reason));
 
-        // Parse schedule entry data (sent with scheduled wake events)
-        ScheduleEntry entry;
-        if (length >= 1 + SCHEDULE_ENTRY_SIZE) {
-            entry.hour = data[1];
-            entry.minute = data[2];
-            entry.duration = data[3] | (data[4] << 8);
-            entry.daysMask = static_cast<DayOfWeek>(data[5]);
-            entry.valveId = data[6];
-            entry.enabled = (data[7] != 0);
-            wakeNotificationCallback_(reason, &entry);
-        } else {
-            // Periodic or external wake (no schedule data)
-            wakeNotificationCallback_(reason, nullptr);
-        }
+    // Parse schedule entry data (sent with scheduled wake events)
+    static ScheduleEntry entry;
+    if (length >= 1 + SCHEDULE_ENTRY_SIZE) {
+        // Has schedule data - parse it
+        entry.hour = data[1];
+        entry.minute = data[2];
+        entry.duration = data[3] | (data[4] << 8);
+        entry.daysMask = static_cast<DayOfWeek>(data[5]);
+        entry.valveId = data[6];
+        entry.enabled = (data[7] != 0);
+        printf("V=%d\n", entry.valveId);
+        wakeNotificationCallback_(reason, &entry);
+        printf("CB done\n");
+    } else {
+        // Periodic or external wake (no schedule data)
+        wakeNotificationCallback_(reason, nullptr);
     }
 }
 

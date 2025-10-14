@@ -25,5 +25,6 @@ public:
 
 protected:
     void onStart() override;
+    void onLoop() override;
     void onActuatorCommand(const ActuatorPayload* payload) override;
 };

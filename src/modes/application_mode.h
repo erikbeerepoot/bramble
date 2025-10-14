@@ -70,7 +70,12 @@ protected:
      * @brief Called once when the mode starts
      */
     virtual void onStart() {}
-    
+
+    /**
+     * @brief Called on each iteration of the main loop
+     */
+    virtual void onLoop() {}
+
     /**
      * @brief Handle incoming actuator commands (optional override)
      * @param payload Actuator command payload

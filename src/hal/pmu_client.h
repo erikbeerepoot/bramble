@@ -33,6 +33,11 @@ public:
     bool init();
 
     /**
+     * @brief Process any pending received bytes (call from main loop)
+     */
+    void process();
+
+    /**
      * @brief Get the PMU protocol instance
      *
      * @return PMU::Protocol& Reference to the protocol handler
@@ -54,6 +59,12 @@ private:
     uint baudrate_;
     bool initialized_;
     PMU::Protocol protocol_;
+
+    // Ring buffer for IRQ -> main loop communication
+    static constexpr size_t RX_BUFFER_SIZE = 128;
+    volatile uint8_t rxBuffer_[RX_BUFFER_SIZE];
+    volatile size_t rxHead_;
+    volatile size_t rxTail_;
 
     // UART send function (captured by lambda in protocol)
     void uartSend(const uint8_t* data, uint8_t length);

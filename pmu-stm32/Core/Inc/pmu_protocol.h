@@ -13,7 +13,8 @@ enum class Command : uint8_t {
     SetSchedule = 0x12,
     GetSchedule = 0x13,
     ClearSchedule = 0x14,
-    KeepAwake = 0x15
+    KeepAwake = 0x15,
+    SetDateTime = 0x16  // Set RTC date/time (7 bytes: year, month, day, weekday, hour, minute, second)
 };
 
 // Response codes (STM32 → RP2040)
@@ -259,6 +260,7 @@ private:
     void handleGetSchedule(const uint8_t* data, uint8_t length);
     void handleClearSchedule(const uint8_t* data, uint8_t length);
     void handleKeepAwake(const uint8_t* data, uint8_t length);
+    void handleSetDateTime(const uint8_t* data, uint8_t length);
 
     // Response senders
     void sendAck();
