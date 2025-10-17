@@ -112,10 +112,10 @@ bool ReliableMessenger::sendRegistrationResponse(uint16_t dst_addr, uint64_t dev
                                                uint16_t assigned_addr, uint8_t status,
                                                uint8_t retry_interval, uint32_t network_time) {
     uint8_t seq_num = getNextSequenceNumber();
-    
-    logger_.info("Sending registration response to 0x%04X (assigned_addr=0x%04X, status=%d)", 
+
+    logger_.info("Sending registration response to 0x%04X (assigned_addr=0x%04X, status=%d)",
            dst_addr, assigned_addr, status);
-    
+
     return sendWithBuilder([=](uint8_t* buffer) {
         return MessageHandler::createRegistrationResponse(
             node_addr_, dst_addr, seq_num,
@@ -125,7 +125,28 @@ bool ReliableMessenger::sendRegistrationResponse(uint16_t dst_addr, uint64_t dev
     }, RELIABLE, "registration response");
 }
 
-bool ReliableMessenger::send(const uint8_t* buffer, size_t length, 
+bool ReliableMessenger::sendCheckUpdates(uint16_t dst_addr, uint8_t node_sequence) {
+    uint8_t seq_num = getNextSequenceNumber();
+
+    logger_.info("Sending CHECK_UPDATES to 0x%04X (node_seq=%d)", dst_addr, node_sequence);
+
+    return sendWithBuilder([=](uint8_t* buffer) {
+        Message* msg = reinterpret_cast<Message*>(buffer);
+        msg->header.magic = MESSAGE_MAGIC;
+        msg->header.type = MSG_TYPE_CHECK_UPDATES;
+        msg->header.src_addr = node_addr_;
+        msg->header.dst_addr = dst_addr;
+        msg->header.flags = MSG_FLAG_RELIABLE;
+        msg->header.seq_num = seq_num;
+
+        CheckUpdatesPayload* payload = reinterpret_cast<CheckUpdatesPayload*>(msg->payload);
+        payload->node_sequence = node_sequence;
+
+        return sizeof(MessageHeader) + sizeof(CheckUpdatesPayload);
+    }, RELIABLE, "check_updates");
+}
+
+bool ReliableMessenger::send(const uint8_t* buffer, size_t length,
                             DeliveryCriticality criticality) {
     if (!lora_ || !buffer || length == 0) return false;
     
@@ -237,12 +258,30 @@ bool ReliableMessenger::processIncomingMessage(const uint8_t* buffer, size_t len
     if (message->header.type == MSG_TYPE_SENSOR_DATA) {
         const SensorPayload* sensor = reinterpret_cast<const SensorPayload*>(message->payload);
         if (sensor) {
-            logger_.info("Received sensor data: type=%d, len=%d", 
+            logger_.info("Received sensor data: type=%d, len=%d",
                    sensor->sensor_type, sensor->data_length);
             return true;
         }
     }
-    
+
+    if (message->header.type == MSG_TYPE_UPDATE_AVAILABLE) {
+        const UpdateAvailablePayload* update_payload = reinterpret_cast<const UpdateAvailablePayload*>(message->payload);
+        if (update_payload) {
+            logger_.info("Received UPDATE_AVAILABLE: has_update=%d, type=%d, seq=%d",
+                   update_payload->has_update, update_payload->update_type, update_payload->sequence);
+
+            // Call the update callback if set
+            if (update_callback_) {
+                logger_.info("Calling update callback");
+                update_callback_(update_payload);
+            } else {
+                logger_.warn("No update callback set!");
+            }
+
+            return true;
+        }
+    }
+
     if (message->header.type == MSG_TYPE_REGISTRATION) {
         const RegistrationPayload* reg_payload = reinterpret_cast<const RegistrationPayload*>(message->payload);
         if (reg_payload) {

@@ -81,7 +81,13 @@ protected:
      * @param payload Actuator command payload
      */
     virtual void onActuatorCommand(const ActuatorPayload* payload) {}
-    
+
+    /**
+     * @brief Handle incoming update available messages (optional override)
+     * @param payload Update available payload
+     */
+    virtual void onUpdateAvailable(const UpdateAvailablePayload* payload) {}
+
     /**
      * @brief Check if we should use interrupt-based sleep
      * @return true to use sleep, false to continue immediately

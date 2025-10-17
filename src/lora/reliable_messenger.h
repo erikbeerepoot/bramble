@@ -31,7 +31,10 @@ class ReliableMessenger {
 public:
     // Callback type for actuator commands
     using ActuatorCallback = std::function<void(const ActuatorPayload*)>;
-    
+
+    // Callback type for update available messages
+    using UpdateCallback = std::function<void(const UpdateAvailablePayload*)>;
+
     ReliableMessenger(SX1276* lora, uint16_t node_addr, NetworkStats* stats = nullptr);
     
     /**
@@ -102,7 +105,15 @@ public:
     bool sendRegistrationResponse(uint16_t dst_addr, uint64_t device_id,
                                 uint16_t assigned_addr, uint8_t status,
                                 uint8_t retry_interval, uint32_t network_time);
-    
+
+    /**
+     * @brief Send CHECK_UPDATES message to hub
+     * @param dst_addr Destination address (usually hub)
+     * @param node_sequence Current sequence number known by node
+     * @return true if message sent successfully
+     */
+    bool sendCheckUpdates(uint16_t dst_addr, uint8_t node_sequence);
+
     /**
      * @brief Generic send method for any message type
      * @param buffer Pre-built message buffer
@@ -110,7 +121,7 @@ public:
      * @param criticality Delivery criticality
      * @return true if message sent/queued successfully
      */
-    bool send(const uint8_t* buffer, size_t length, 
+    bool send(const uint8_t* buffer, size_t length,
               DeliveryCriticality criticality = BEST_EFFORT);
     
     /**
@@ -157,6 +168,12 @@ public:
      */
     void setActuatorCallback(ActuatorCallback callback) { actuator_callback_ = callback; }
 
+    /**
+     * @brief Set callback for update available messages
+     * @param callback Function to call when UPDATE_AVAILABLE is received
+     */
+    void setUpdateCallback(UpdateCallback callback) { update_callback_ = callback; }
+
 private:
     SX1276* lora_;
     uint16_t node_addr_;
@@ -165,6 +182,7 @@ private:
     Logger logger_;
     NetworkStats* network_stats_;
     ActuatorCallback actuator_callback_;
+    UpdateCallback update_callback_;
     
     /**
      * @brief Send a message immediately

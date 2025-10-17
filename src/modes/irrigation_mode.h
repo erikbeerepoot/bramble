@@ -5,6 +5,24 @@
 #include "../hal/pmu_client.h"
 
 /**
+ * @brief Update pull state tracking
+ */
+struct UpdatePullState {
+    uint8_t current_sequence;        // Node's current sequence number
+    uint32_t last_keepawake_ms;      // Last keep-awake call time
+    bool processing;                 // Whether actively processing an update
+    uint32_t timeout_ms;             // Timeout for update processing (5 seconds)
+
+    UpdatePullState() : current_sequence(0), last_keepawake_ms(0),
+                       processing(false), timeout_ms(5000) {}
+
+    void reset() {
+        processing = false;
+        last_keepawake_ms = 0;
+    }
+};
+
+/**
  * @brief Irrigation node mode for valve control
  *
  * Irrigation node that handles valve commands from the hub and
@@ -15,10 +33,15 @@ private:
     ValveController valve_controller_;
     PmuClient* pmu_client_;
     bool pmu_available_;
+    UpdatePullState update_state_;
 
     // PMU callback handlers
     void handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry* entry);
     void handleScheduleComplete();
+
+    // Update handling
+    void sendCheckUpdates();
+    void onUpdateAvailable(const UpdateAvailablePayload* payload);
 
 public:
     using ApplicationMode::ApplicationMode;

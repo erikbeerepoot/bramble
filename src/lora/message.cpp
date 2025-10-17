@@ -6,15 +6,17 @@
 
 const char* MessageHandler::getMessageTypeName(uint8_t type) {
     switch (type) {
-        case MSG_TYPE_SENSOR_DATA:  return "SENSOR_DATA";
-        case MSG_TYPE_ACTUATOR_CMD: return "ACTUATOR_CMD";
-        case MSG_TYPE_ACK:          return "ACK";
-        case MSG_TYPE_HEARTBEAT:    return "HEARTBEAT";
-        case MSG_TYPE_REGISTRATION: return "REGISTRATION";
-        case MSG_TYPE_REG_RESPONSE: return "REG_RESPONSE";
-        case MSG_TYPE_CONFIG:       return "CONFIG";
-        case MSG_TYPE_ROUTE:        return "ROUTE";
-        default:                    return "UNKNOWN";
+        case MSG_TYPE_SENSOR_DATA:      return "SENSOR_DATA";
+        case MSG_TYPE_ACTUATOR_CMD:     return "ACTUATOR_CMD";
+        case MSG_TYPE_ACK:              return "ACK";
+        case MSG_TYPE_HEARTBEAT:        return "HEARTBEAT";
+        case MSG_TYPE_REGISTRATION:     return "REGISTRATION";
+        case MSG_TYPE_REG_RESPONSE:     return "REG_RESPONSE";
+        case MSG_TYPE_CONFIG:           return "CONFIG";
+        case MSG_TYPE_ROUTE:            return "ROUTE";
+        case MSG_TYPE_CHECK_UPDATES:    return "CHECK_UPDATES";
+        case MSG_TYPE_UPDATE_AVAILABLE: return "UPDATE_AVAILABLE";
+        default:                        return "UNKNOWN";
     }
 }
 

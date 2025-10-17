@@ -283,7 +283,262 @@ uint32_t HubRouter::removeExpiredMessages(uint32_t current_time) {
     if (removed_count > 0) {
         printf("Removed %lu expired messages from queue\n", removed_count);
     }
-    
+
     return removed_count;
+}
+
+// ===== Update Queue Management =====
+
+bool HubRouter::queueScheduleUpdate(uint16_t node_addr, uint8_t index,
+                                   const PMU::ScheduleEntry& entry) {
+    auto& state = node_updates_[node_addr];
+
+    // Check queue size limit
+    if (state.pending_updates.size() >= MAX_UPDATES_PER_NODE) {
+        printf("Update queue full for node 0x%04X\n", node_addr);
+        return false;
+    }
+
+    // Create update
+    PendingUpdate update;
+    update.type = UpdateType::SET_SCHEDULE;
+    update.queued_at_ms = TimeUtils::getCurrentTimeMs();
+    update.sequence = state.next_sequence++;
+
+    // Pack schedule data (8 bytes)
+    update.data[0] = index;
+    update.data[1] = entry.hour;
+    update.data[2] = entry.minute;
+    update.data[3] = entry.duration & 0xFF;
+    update.data[4] = (entry.duration >> 8) & 0xFF;
+    update.data[5] = static_cast<uint8_t>(entry.daysMask);
+    update.data[6] = entry.valveId;
+    update.data[7] = entry.enabled ? 1 : 0;
+    update.data_length = 8;
+
+    // Add to queue
+    state.pending_updates.push(update);
+
+    printf("Queued schedule update for node 0x%04X (seq=%d, pos=%zu)\n",
+           node_addr, update.sequence, state.pending_updates.size());
+
+    return true;
+}
+
+bool HubRouter::queueRemoveSchedule(uint16_t node_addr, uint8_t index) {
+    auto& state = node_updates_[node_addr];
+
+    if (state.pending_updates.size() >= MAX_UPDATES_PER_NODE) {
+        printf("Update queue full for node 0x%04X\n", node_addr);
+        return false;
+    }
+
+    PendingUpdate update;
+    update.type = UpdateType::REMOVE_SCHEDULE;
+    update.queued_at_ms = TimeUtils::getCurrentTimeMs();
+    update.sequence = state.next_sequence++;
+    update.data[0] = index;
+    update.data_length = 1;
+
+    state.pending_updates.push(update);
+
+    printf("Queued schedule removal for node 0x%04X (seq=%d, index=%d)\n",
+           node_addr, update.sequence, index);
+
+    return true;
+}
+
+bool HubRouter::queueDateTimeUpdate(uint16_t node_addr, const PMU::DateTime& datetime) {
+    auto& state = node_updates_[node_addr];
+
+    if (state.pending_updates.size() >= MAX_UPDATES_PER_NODE) {
+        printf("Update queue full for node 0x%04X\n", node_addr);
+        return false;
+    }
+
+    PendingUpdate update;
+    update.type = UpdateType::SET_DATETIME;
+    update.queued_at_ms = TimeUtils::getCurrentTimeMs();
+    update.sequence = state.next_sequence++;
+
+    // Pack datetime data (7 bytes)
+    update.data[0] = datetime.year;
+    update.data[1] = datetime.month;
+    update.data[2] = datetime.day;
+    update.data[3] = datetime.weekday;
+    update.data[4] = datetime.hour;
+    update.data[5] = datetime.minute;
+    update.data[6] = datetime.second;
+    update.data_length = 7;
+
+    state.pending_updates.push(update);
+
+    printf("Queued datetime update for node 0x%04X (seq=%d)\n",
+           node_addr, update.sequence);
+
+    return true;
+}
+
+bool HubRouter::queueWakeIntervalUpdate(uint16_t node_addr, uint16_t interval_seconds) {
+    auto& state = node_updates_[node_addr];
+
+    if (state.pending_updates.size() >= MAX_UPDATES_PER_NODE) {
+        printf("Update queue full for node 0x%04X\n", node_addr);
+        return false;
+    }
+
+    PendingUpdate update;
+    update.type = UpdateType::SET_WAKE_INTERVAL;
+    update.queued_at_ms = TimeUtils::getCurrentTimeMs();
+    update.sequence = state.next_sequence++;
+
+    // Pack interval data (2 bytes)
+    update.data[0] = interval_seconds & 0xFF;
+    update.data[1] = (interval_seconds >> 8) & 0xFF;
+    update.data_length = 2;
+
+    state.pending_updates.push(update);
+
+    printf("Queued wake interval update for node 0x%04X (seq=%d, interval=%d)\n",
+           node_addr, update.sequence, interval_seconds);
+
+    return true;
+}
+
+void HubRouter::handleCheckUpdates(uint16_t node_addr, uint8_t node_sequence) {
+    auto& state = node_updates_[node_addr];
+    state.last_check_time = TimeUtils::getCurrentTimeMs();
+
+    // Check if queue is empty
+    if (state.pending_updates.empty()) {
+        printf("Node 0x%04X: No updates available\n", node_addr);
+
+        // Send empty response (has_update=0)
+        uint8_t buffer[MESSAGE_MAX_SIZE];
+        Message* msg = reinterpret_cast<Message*>(buffer);
+
+        // Create header
+        msg->header.magic = MESSAGE_MAGIC;
+        msg->header.type = MSG_TYPE_UPDATE_AVAILABLE;
+        msg->header.flags = MSG_FLAG_RELIABLE;
+        msg->header.src_addr = ADDRESS_HUB;
+        msg->header.dst_addr = node_addr;
+        msg->header.seq_num = 0;  // Messenger will set proper sequence number
+
+        // Set payload
+        UpdateAvailablePayload* payload = reinterpret_cast<UpdateAvailablePayload*>(msg->payload);
+        payload->has_update = 0;
+        payload->update_type = 0;
+        payload->sequence = 0;
+        memset(payload->payload_data, 0, sizeof(payload->payload_data));
+
+        size_t length = MESSAGE_HEADER_SIZE + sizeof(UpdateAvailablePayload);
+        messenger_.send(buffer, length, RELIABLE);
+        return;
+    }
+
+    // Get next update (peek, don't remove until ACK)
+    const PendingUpdate& update = state.pending_updates.front();
+
+    printf("Node 0x%04X: Sending update seq=%d type=%d\n",
+           node_addr, update.sequence, static_cast<int>(update.type));
+
+    // Send update
+    uint8_t buffer[MESSAGE_MAX_SIZE];
+    Message* msg = reinterpret_cast<Message*>(buffer);
+
+    // Create header
+    msg->header.magic = MESSAGE_MAGIC;
+    msg->header.type = MSG_TYPE_UPDATE_AVAILABLE;
+    msg->header.flags = MSG_FLAG_RELIABLE;
+    msg->header.src_addr = ADDRESS_HUB;
+    msg->header.dst_addr = node_addr;
+    msg->header.seq_num = 0;  // Messenger will set proper sequence number
+
+    // Set payload
+    UpdateAvailablePayload* payload = reinterpret_cast<UpdateAvailablePayload*>(msg->payload);
+    payload->has_update = 1;
+    payload->update_type = static_cast<uint8_t>(update.type);
+    payload->sequence = update.sequence;
+    memcpy(payload->payload_data, update.data, update.data_length);
+    // Zero out remaining bytes
+    if (update.data_length < sizeof(payload->payload_data)) {
+        memset(payload->payload_data + update.data_length, 0,
+               sizeof(payload->payload_data) - update.data_length);
+    }
+
+    size_t length = MESSAGE_HEADER_SIZE + sizeof(UpdateAvailablePayload);
+    messenger_.send(buffer, length, RELIABLE);
+}
+
+void HubRouter::handleUpdateAck(uint16_t node_addr, uint8_t sequence,
+                               bool success, uint8_t error_code) {
+    auto it = node_updates_.find(node_addr);
+    if (it == node_updates_.end() || it->second.pending_updates.empty()) {
+        printf("Node 0x%04X: ACK for unknown update seq=%d\n", node_addr, sequence);
+        return;
+    }
+
+    auto& state = it->second;
+    const PendingUpdate& update = state.pending_updates.front();
+
+    // Verify sequence matches
+    if (update.sequence != sequence) {
+        printf("Node 0x%04X: ACK sequence mismatch (expected %d, got %d)\n",
+               node_addr, update.sequence, sequence);
+        return;
+    }
+
+    if (success) {
+        printf("Node 0x%04X: Update seq=%d applied successfully\n",
+               node_addr, sequence);
+
+        // Remove from queue
+        state.pending_updates.pop();
+    } else {
+        printf("Node 0x%04X: Update seq=%d failed (error=%d)\n",
+               node_addr, sequence, error_code);
+
+        // TODO: Retry logic or remove and report failure
+        state.pending_updates.pop();
+    }
+}
+
+size_t HubRouter::getPendingUpdateCount(uint16_t node_addr) const {
+    auto it = node_updates_.find(node_addr);
+    return (it != node_updates_.end()) ? it->second.pending_updates.size() : 0;
+}
+
+void HubRouter::clearPendingUpdates(uint16_t node_addr) {
+    auto it = node_updates_.find(node_addr);
+    if (it != node_updates_.end()) {
+        size_t count = it->second.pending_updates.size();
+        while (!it->second.pending_updates.empty()) {
+            it->second.pending_updates.pop();
+        }
+        printf("Cleared %zu pending updates for node 0x%04X\n", count, node_addr);
+    }
+}
+
+void HubRouter::printQueueStats() const {
+    printf("\n=== Update Queue Stats ===\n");
+
+    size_t total_updates = 0;
+    for (const auto& entry : node_updates_) {
+        total_updates += entry.second.pending_updates.size();
+    }
+
+    printf("Total nodes with updates: %zu\n", node_updates_.size());
+    printf("Total pending updates: %zu\n", total_updates);
+
+    for (const auto& entry : node_updates_) {
+        if (!entry.second.pending_updates.empty()) {
+            printf("  Node 0x%04X: %zu updates (next_seq=%d)\n",
+                   entry.first, entry.second.pending_updates.size(),
+                   entry.second.next_sequence);
+        }
+    }
+
+    printf("=========================\n");
 }
 

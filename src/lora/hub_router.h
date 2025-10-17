@@ -3,6 +3,7 @@
 #include "address_manager.h"
 #include "reliable_messenger.h"
 #include "message.h"
+#include "../hal/pmu_protocol.h"
 #include <queue>
 #include <map>
 
@@ -32,6 +33,26 @@ struct QueuedMessage {
     uint32_t queued_time;                // When message was queued
     uint8_t retry_count;                 // Number of forward attempts
     bool requires_ack;                   // Whether message needs ACK
+};
+
+/**
+ * @brief Pending update for a node (schedule, datetime, config)
+ */
+struct PendingUpdate {
+    UpdateType type;                     // Type of update
+    uint32_t queued_at_ms;              // When update was queued
+    uint8_t sequence;                    // Hub-assigned sequence number
+    uint8_t data[32];                    // Update payload (type-specific)
+    uint8_t data_length;                 // Length of data
+};
+
+/**
+ * @brief Per-node update state
+ */
+struct NodeUpdateState {
+    std::queue<PendingUpdate> pending_updates;
+    uint8_t next_sequence;               // Next sequence to assign
+    uint32_t last_check_time;            // When node last checked
 };
 
 /**
@@ -103,14 +124,86 @@ public:
      * @return Number of routes cleared
      */
     uint32_t clearOldRoutes(uint32_t current_time, uint32_t max_age_ms = 3600000); // 1 hour default
-    
+
+    // ===== Update Queue Management =====
+
+    /**
+     * @brief Queue a schedule update for a node
+     * @param node_addr Node address
+     * @param index Schedule index (0-7)
+     * @param entry Schedule entry data
+     * @return true if queued successfully
+     */
+    bool queueScheduleUpdate(uint16_t node_addr, uint8_t index, const PMU::ScheduleEntry& entry);
+
+    /**
+     * @brief Queue a schedule removal for a node
+     * @param node_addr Node address
+     * @param index Schedule index (0-7)
+     * @return true if queued successfully
+     */
+    bool queueRemoveSchedule(uint16_t node_addr, uint8_t index);
+
+    /**
+     * @brief Queue a datetime update for a node
+     * @param node_addr Node address
+     * @param datetime DateTime data
+     * @return true if queued successfully
+     */
+    bool queueDateTimeUpdate(uint16_t node_addr, const PMU::DateTime& datetime);
+
+    /**
+     * @brief Queue a wake interval update for a node
+     * @param node_addr Node address
+     * @param interval_seconds Wake interval in seconds
+     * @return true if queued successfully
+     */
+    bool queueWakeIntervalUpdate(uint16_t node_addr, uint16_t interval_seconds);
+
+    /**
+     * @brief Handle CHECK_UPDATES message from node
+     * @param node_addr Node address
+     * @param node_sequence Node's current sequence number
+     */
+    void handleCheckUpdates(uint16_t node_addr, uint8_t node_sequence);
+
+    /**
+     * @brief Handle UPDATE_ACK from node
+     * @param node_addr Node address
+     * @param sequence Sequence number being acknowledged
+     * @param success True if update was applied successfully
+     * @param error_code Error code if failed (PMU::ErrorCode)
+     */
+    void handleUpdateAck(uint16_t node_addr, uint8_t sequence, bool success, uint8_t error_code);
+
+    /**
+     * @brief Get number of pending updates for a node
+     * @param node_addr Node address
+     * @return Number of pending updates
+     */
+    size_t getPendingUpdateCount(uint16_t node_addr) const;
+
+    /**
+     * @brief Clear all pending updates for a node
+     * @param node_addr Node address
+     */
+    void clearPendingUpdates(uint16_t node_addr);
+
+    /**
+     * @brief Print queue statistics for debugging
+     */
+    void printQueueStats() const;
+
 private:
     AddressManager& address_manager_;    // Reference to address manager
     ReliableMessenger& messenger_;       // Reference to reliable messenger
     
     std::map<uint16_t, RouteEntry> routing_table_;      // Destination -> Route mapping
     std::queue<QueuedMessage> message_queue_;           // Messages waiting for delivery
-    
+
+    // Update queue (per-node)
+    std::map<uint16_t, NodeUpdateState> node_updates_;  // Node address -> update state
+
     // Statistics
     uint32_t total_messages_routed_;     // Total messages successfully routed
     uint32_t total_messages_queued_;     // Total messages currently queued
@@ -120,6 +213,10 @@ private:
     static constexpr uint32_t MAX_QUEUE_SIZE = 50;          // Maximum queued messages
     static constexpr uint32_t MESSAGE_TIMEOUT_MS = 300000;  // 5 minutes message timeout
     static constexpr uint32_t MAX_RETRY_COUNT = 3;          // Maximum forward attempts
+
+    // Update queue configuration
+    static constexpr size_t MAX_UPDATES_PER_NODE = 10;      // Maximum pending updates per node
+    static constexpr uint32_t UPDATE_EXPIRE_MS = 3600000;   // 1 hour update expiration
     
     /**
      * @brief Check if destination is reachable

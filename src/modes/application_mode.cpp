@@ -19,7 +19,12 @@ void ApplicationMode::run() {
     messenger_.setActuatorCallback([this](const ActuatorPayload* payload) {
         onActuatorCommand(payload);
     });
-    
+
+    // Set up update available callback
+    messenger_.setUpdateCallback([this](const UpdateAvailablePayload* payload) {
+        onUpdateAvailable(payload);
+    });
+
     // Call startup hook
     onStart();
     

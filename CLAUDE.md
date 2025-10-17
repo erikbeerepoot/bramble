@@ -20,6 +20,7 @@ This is a Raspberry Pi Pico project using the Pico SDK. This project will use a 
 # Configure build (run from project root)
 cmake -B build
 
+* Track work with Beads instead of Markdown. Run \'bd quickstart\' to see how.
 # Build the project
 cmake --build build
 

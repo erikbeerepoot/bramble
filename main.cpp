@@ -446,16 +446,27 @@ void processIncomingMessage(uint8_t* rx_buffer, int rx_len, ReliableMessenger& m
         }
     }
     
-    // Handle heartbeat messages with status logging  
+    // Handle heartbeat messages with status logging
     if (header->type == MSG_TYPE_HEARTBEAT) {
-        const HeartbeatPayload* heartbeat = 
+        const HeartbeatPayload* heartbeat =
             reinterpret_cast<const HeartbeatPayload*>(rx_buffer + sizeof(MessageHeader));
-        
+
         printf("Heartbeat from 0x%04X: uptime=%lus, battery=%u%%, signal=%u, sensors=0x%02X\n",
                source_address, heartbeat->uptime_seconds, heartbeat->battery_level,
                heartbeat->signal_strength, heartbeat->active_sensors);
     }
-    
+
+    // Handle CHECK_UPDATES from nodes
+    if (header->type == MSG_TYPE_CHECK_UPDATES) {
+        const Message* msg = reinterpret_cast<const Message*>(rx_buffer);
+        const CheckUpdatesPayload* payload = reinterpret_cast<const CheckUpdatesPayload*>(msg->payload);
+
+        printf("CHECK_UPDATES from 0x%04X (node_seq=%d)\n",
+               source_address, payload->node_sequence);
+
+        hub_router->handleCheckUpdates(source_address, payload->node_sequence);
+    }
+
     // Try to route the message if it's not for the hub
     hub_router->processMessage(rx_buffer, rx_len, source_address);
 }

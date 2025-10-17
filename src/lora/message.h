@@ -35,7 +35,9 @@ enum MessageType {
     MSG_TYPE_REGISTRATION   = 0x05,  // Node registration request
     MSG_TYPE_REG_RESPONSE   = 0x06,  // Registration response with address assignment
     MSG_TYPE_CONFIG         = 0x07,  // Configuration updates
-    MSG_TYPE_ROUTE          = 0x08   // Message routing (future use)
+    MSG_TYPE_ROUTE          = 0x08,  // Message routing (future use)
+    MSG_TYPE_CHECK_UPDATES  = 0x09,  // Node → Hub: Check for pending updates
+    MSG_TYPE_UPDATE_AVAILABLE = 0x0A // Hub → Node: Update response (ACK'd with MSG_TYPE_ACK)
 };
 
 // Sensor data subtypes
@@ -104,6 +106,14 @@ enum DeliveryCriticality {
     BEST_EFFORT = 0,        // Fire and forget (default)
     RELIABLE = 1,           // ACK required, limited retries
     CRITICAL = 2            // ACK required, persistent retry
+};
+
+// Update types for MSG_TYPE_UPDATE_AVAILABLE
+enum class UpdateType : uint8_t {
+    SET_SCHEDULE        = 0x01,  // Add/modify schedule entry
+    REMOVE_SCHEDULE     = 0x02,  // Remove schedule entry
+    SET_DATETIME        = 0x03,  // Sync RTC date/time
+    SET_WAKE_INTERVAL   = 0x04   // Change periodic wake interval
 };
 
 /**
@@ -176,6 +186,23 @@ struct __attribute__((packed)) RegistrationResponsePayload {
 struct __attribute__((packed)) AckPayload {
     uint8_t  ack_seq_num;   // Sequence number being acknowledged
     uint8_t  status;        // ACK status (0=success, non-zero=error)
+};
+
+/**
+ * @brief Check updates payload (Node → Hub)
+ */
+struct __attribute__((packed)) CheckUpdatesPayload {
+    uint8_t  node_sequence;  // Node's current update sequence number
+};
+
+/**
+ * @brief Update available payload (Hub → Node)
+ */
+struct __attribute__((packed)) UpdateAvailablePayload {
+    uint8_t  has_update;         // 0=no updates, 1=update follows
+    uint8_t  update_type;        // UpdateType enum
+    uint8_t  sequence;           // Hub's sequence for this update
+    uint8_t  payload_data[24];   // Type-specific data
 };
 
 /**
