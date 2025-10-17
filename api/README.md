@@ -11,15 +11,39 @@ REST API for managing irrigation schedules over LoRa. Runs on Raspberry Pi Zero 
 
 ## Installation
 
-### 1. Install uv
+### Option 1: Docker (Recommended)
 
+**Development mode with hot reload:**
+```bash
+cd bramble/api
+
+# Build and run with hot reload
+docker-compose up
+
+# API runs on http://localhost:5000
+# Code changes trigger automatic reload
+```
+
+**Production mode:**
+```bash
+# Edit docker-compose.yml: change target to 'production'
+docker-compose up -d
+```
+
+**Requirements:**
+- Docker and Docker Compose installed
+- User in `dialout` group for serial access: `sudo usermod -aG dialout $USER`
+- Serial device available at `/dev/ttyACM0` (or edit in docker-compose.yml)
+
+### Option 2: Native (Direct on Raspberry Pi)
+
+**1. Install uv:**
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 source $HOME/.cargo/env
 ```
 
-### 2. Clone and setup
-
+**2. Clone and setup:**
 ```bash
 cd /home/pi
 git clone <bramble-repo> bramble
@@ -27,15 +51,13 @@ cd bramble/api
 uv sync
 ```
 
-### 3. Configure NTP time synchronization
-
+**3. Configure NTP:**
 ```bash
 sudo timedatectl set-ntp true
 timedatectl status  # Verify NTP is active
 ```
 
-### 4. Run the API
-
+**4. Run the API:**
 ```bash
 # Test run
 uv run python app.py

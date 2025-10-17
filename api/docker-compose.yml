@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development  # Change to 'production' for production mode
+    container_name: bramble-api
+    ports:
+      - "5000:5000"
+    devices:
+      - "/dev/ttyACM0:/dev/ttyACM0"  # Map serial device into container
+    volumes:
+      - .:/app  # Mount source code for hot reload in development
+    environment:
+      - DEBUG=True
+      - SERIAL_PORT=/dev/ttyACM0
+      - SERIAL_BAUD=115200
+      - HOST=0.0.0.0
+      - PORT=5000
+    restart: unless-stopped
+    privileged: false  # Don't need full privileged mode
+    # Add user to dialout group for serial access
+    # On host: sudo usermod -aG dialout $USER
+    group_add:
+      - dialout
