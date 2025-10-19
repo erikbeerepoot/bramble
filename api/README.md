@@ -59,7 +59,20 @@ docker-compose up
 docker-compose up -d
 ```
 
-**Note:** Serial device must be available at `/dev/ttyACM0` (or edit in docker-compose.yml)
+**Note:**
+- Serial device must be available at `/dev/ttyACM0` or `/dev/ttyAMA0` (edit in docker-compose.yml if different)
+- **If using `/dev/ttyAMA0` (hardware UART)**: Disable serial console and Bluetooth:
+  ```bash
+  # Edit boot config
+  sudo nvim /boot/firmware/config.txt
+
+  # Add these lines at the end:
+  enable_uart=1
+  dtoverlay=disable-bt
+
+  # Save and reboot
+  sudo reboot
+  ```
 
 ### Option 2: Native (Direct on Raspberry Pi)
 
