@@ -90,8 +90,8 @@ if(BUILD_TESTS)
 else()
     # Hardware variant selection
     set(HARDWARE_VARIANT "IRRIGATION" CACHE STRING "Hardware variant type")
-    set_property(CACHE HARDWARE_VARIANT PROPERTY STRINGS 
-        GENERIC CONTROLLER IRRIGATION SENSOR)
+    set_property(CACHE HARDWARE_VARIANT PROPERTY STRINGS
+        GENERIC HUB CONTROLLER IRRIGATION SENSOR)
     
     # Common source files for all variants
     set(COMMON_SOURCES
@@ -147,7 +147,20 @@ else()
         )
         set(TARGET_NAME bramble_controller)
         message(STATUS "Building CONTROLLER variant")
-        
+
+    elseif(HARDWARE_VARIANT STREQUAL "HUB")
+        add_executable(bramble_hub
+            main.cpp
+            src/modes/hub_mode.cpp
+            ${COMMON_SOURCES}
+        )
+        target_compile_definitions(bramble_hub PRIVATE
+            HARDWARE_GENERIC=1  # Use generic hardware base
+            DEFAULT_IS_HUB=1    # Always run as hub
+        )
+        set(TARGET_NAME bramble_hub)
+        message(STATUS "Building HUB variant (pure hub mode)")
+
     elseif(HARDWARE_VARIANT STREQUAL "SENSOR")
         add_executable(bramble_sensor
             main.cpp

@@ -40,6 +40,9 @@ void HubMode::onStart() {
     uart_set_format(API_UART_ID, 8, 1, UART_PARITY_NONE);
     uart_set_fifo_enabled(API_UART_ID, true);
 
+    printf("API UART initialized successfully\n");
+    uart_puts(API_UART_ID, "HUB_READY\n");  // Send ready signal to RasPi
+
     // Hub always uses blue breathing pattern
     led_pattern_ = std::make_unique<BreathingPattern>(led_, 0, 0, 255);
     
