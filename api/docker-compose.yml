@@ -10,12 +10,12 @@ services:
     ports:
       - "5000:5000"
     devices:
-      - "/dev/ttyACM0:/dev/ttyACM0"  # Map serial device into container
+      - "/dev/ttyAMA0:/dev/ttyAMA0"  # Map serial device into container
     volumes:
       - .:/app  # Mount source code for hot reload in development
     environment:
       - DEBUG=True
-      - SERIAL_PORT=/dev/ttyACM0
+      - SERIAL_PORT=/dev/ttyAMA0
       - SERIAL_BAUD=115200
       - HOST=0.0.0.0
       - PORT=5000

@@ -10,7 +10,7 @@ class Config:
     PORT = int(os.getenv('PORT', '5000'))
 
     # Serial settings
-    SERIAL_PORT = os.getenv('SERIAL_PORT', '/dev/ttyACM0')
+    SERIAL_PORT = os.getenv('SERIAL_PORT', '/dev/ttyAMA0')
     SERIAL_BAUD = int(os.getenv('SERIAL_BAUD', '115200'))
     SERIAL_TIMEOUT = float(os.getenv('SERIAL_TIMEOUT', '1.0'))
 
