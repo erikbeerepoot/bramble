@@ -11,9 +11,10 @@
 #include "hardware/uart.h"
 
 // UART configuration for Raspberry Pi communication
+// Uses UART1 on Feather RP2040 RFM9x module header (D24/D25)
 #define API_UART_ID uart1
-#define API_UART_TX_PIN 4
-#define API_UART_RX_PIN 5
+#define API_UART_TX_PIN 24  // D24 - TX1 on RFM module header
+#define API_UART_RX_PIN 25  // D25 - RX1 on RFM module header
 #define API_UART_BAUD 115200
 
 constexpr uint32_t STATS_INTERVAL_MS = 30000;      // 30 seconds

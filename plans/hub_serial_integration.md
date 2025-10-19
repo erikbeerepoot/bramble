@@ -13,12 +13,12 @@ After analyzing options for queue location (hub vs RasPi), we've chosen to imple
 ## Architecture Overview
 
 ```
-┌──────────────┐ USB Serial  ┌─────────────────┐ LoRa    ┌──────────────┐
-│ Raspberry Pi │◄───────────►│   RP2040 Hub    │◄───────►│  Irrigation  │
-│  REST API    │             │  - Queue (RAM)  │         │     Node     │
-│  (Python)    │             │  - LoRa Radio   │         │              │
+┌──────────────┐ UART1       ┌─────────────────┐ LoRa    ┌──────────────┐
+│ Raspberry Pi │ (D24/D25)   │   RP2040 Hub    │◄───────►│  Irrigation  │
+│  REST API    │◄───────────►│  - Queue (RAM)  │         │     Node     │
+│  (Python)    │ 115200 baud │  - LoRa Radio   │         │              │
 └──────────────┘             └─────────────────┘         └───────┬──────┘
-                                                                  │ UART
+                                                                  │ UART0
                                                               ┌───▼────┐
                                                               │  PMU   │
                                                               │ (STM32)│
