@@ -24,7 +24,7 @@ public:
      */
     static bool validateHeader(const MessageHeader* header) {
         if (!header || header->magic != MESSAGE_MAGIC) return false;
-        if (header->type < MSG_TYPE_SENSOR_DATA || header->type > MSG_TYPE_ROUTE) return false;
+        if (header->type < MSG_TYPE_SENSOR_DATA || header->type > MSG_TYPE_UPDATE_AVAILABLE) return false;
         return isValidAddress(header->src_addr) && isValidAddress(header->dst_addr);
     }
     
@@ -90,10 +90,16 @@ public:
                 
             case MSG_TYPE_ACK:
                 return validateFixedPayload<AckPayload>(payload, payload_length);
-                
+
             case MSG_TYPE_ROUTE:
                 return payload_length <= MESSAGE_MAX_PAYLOAD;
-                
+
+            case MSG_TYPE_CHECK_UPDATES:
+                return validateFixedPayload<CheckUpdatesPayload>(payload, payload_length);
+
+            case MSG_TYPE_UPDATE_AVAILABLE:
+                return validateFixedPayload<UpdateAvailablePayload>(payload, payload_length);
+
             default:
                 return false;
         }
