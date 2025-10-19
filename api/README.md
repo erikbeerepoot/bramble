@@ -13,6 +13,35 @@ REST API for managing irrigation schedules over LoRa. Runs on Raspberry Pi Zero 
 
 ### Option 1: Docker (Recommended)
 
+**Prerequisites - Install Docker on Raspberry Pi/Debian:**
+
+```bash
+# Add Docker's official GPG key
+sudo apt-get update
+sudo apt-get install ca-certificates curl
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+
+# Add the repository to Apt sources
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian \
+  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt-get update
+
+# Install Docker packages
+sudo apt-get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+# Add user to docker group (avoid sudo)
+sudo usermod -aG docker $USER
+
+# Add user to dialout group for serial access
+sudo usermod -aG dialout $USER
+
+# Log out and back in for group changes to take effect
+```
+
 **Development mode with hot reload:**
 ```bash
 cd bramble/api
@@ -30,10 +59,7 @@ docker-compose up
 docker-compose up -d
 ```
 
-**Requirements:**
-- Docker and Docker Compose installed
-- User in `dialout` group for serial access: `sudo usermod -aG dialout $USER`
-- Serial device available at `/dev/ttyACM0` (or edit in docker-compose.yml)
+**Note:** Serial device must be available at `/dev/ttyACM0` (or edit in docker-compose.yml)
 
 ### Option 2: Native (Direct on Raspberry Pi)
 
