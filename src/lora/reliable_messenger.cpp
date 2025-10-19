@@ -136,14 +136,14 @@ bool ReliableMessenger::sendCheckUpdates(uint16_t dst_addr, uint8_t node_sequenc
         msg->header.type = MSG_TYPE_CHECK_UPDATES;
         msg->header.src_addr = node_addr_;
         msg->header.dst_addr = dst_addr;
-        msg->header.flags = MSG_FLAG_RELIABLE;
+        msg->header.flags = 0;  // No ACK needed - UPDATE_AVAILABLE is the response
         msg->header.seq_num = seq_num;
 
         CheckUpdatesPayload* payload = reinterpret_cast<CheckUpdatesPayload*>(msg->payload);
         payload->node_sequence = node_sequence;
 
         return sizeof(MessageHeader) + sizeof(CheckUpdatesPayload);
-    }, RELIABLE, "check_updates");
+    }, BEST_EFFORT, "check_updates");
 }
 
 bool ReliableMessenger::send(const uint8_t* buffer, size_t length,
