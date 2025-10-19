@@ -148,6 +148,8 @@ void HubMode::handleSerialCommand(const char* cmd) {
         handleRemoveSchedule(cmd + 16);
     } else if (strncmp(cmd, "SET_WAKE_INTERVAL ", 18) == 0) {
         handleSetWakeInterval(cmd + 18);
+    } else if (strncmp(cmd, "SET_DATETIME ", 13) == 0) {
+        handleSetDateTime(cmd + 13);
     } else if (strncmp(cmd, "DATETIME ", 9) == 0) {
         handleDateTimeResponse(cmd + 9);
     } else {
@@ -278,6 +280,32 @@ void HubMode::handleSetWakeInterval(const char* args) {
         size_t position = hub_router_->getPendingUpdateCount(node_addr);
         char response[128];
         snprintf(response, sizeof(response), "QUEUED SET_WAKE_INTERVAL %u %zu\n",
+                node_addr, position);
+        uart_puts(API_UART_ID, response);
+    } else {
+        uart_puts(API_UART_ID, "ERROR Failed to queue update\n");
+    }
+}
+
+void HubMode::handleSetDateTime(const char* args) {
+    // Parse: <addr> <year> <month> <day> <weekday> <hour> <minute> <second>
+    uint16_t node_addr;
+    int year, month, day, weekday, hour, minute, second;
+
+    if (sscanf(args, "%hu %d %d %d %d %d %d %d",
+               &node_addr, &year, &month, &day, &weekday, &hour, &minute, &second) != 8) {
+        uart_puts(API_UART_ID, "ERROR Invalid SET_DATETIME syntax\n");
+        return;
+    }
+
+    // Create datetime structure
+    PMU::DateTime datetime(year, month, day, weekday, hour, minute, second);
+
+    // Queue update
+    if (hub_router_->queueDateTimeUpdate(node_addr, datetime)) {
+        size_t position = hub_router_->getPendingUpdateCount(node_addr);
+        char response[128];
+        snprintf(response, sizeof(response), "QUEUED SET_DATETIME %u %zu\n",
                 node_addr, position);
         uart_puts(API_UART_ID, response);
     } else {

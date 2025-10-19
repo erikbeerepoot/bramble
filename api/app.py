@@ -352,6 +352,92 @@ def set_wake_interval(addr: int):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/nodes/<int:addr>/datetime', methods=['POST'])
+def set_datetime(addr: int):
+    """Set date/time for a node's RTC.
+
+    Args:
+        addr: Node address
+
+    Request body:
+        {
+            "year": 25,      # 2025 = 25
+            "month": 10,     # 1-12
+            "day": 19,       # 1-31
+            "weekday": 7,    # 1-7 (1=Monday, 7=Sunday)
+            "hour": 9,       # 0-23
+            "minute": 4,     # 0-59
+            "second": 0      # 0-59
+        }
+
+    Returns:
+        JSON response with queue position
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Request body must be JSON'}), 400
+
+        # Extract and validate datetime fields
+        try:
+            year = int(data['year'])
+            month = int(data['month'])
+            day = int(data['day'])
+            weekday = int(data['weekday'])
+            hour = int(data['hour'])
+            minute = int(data['minute'])
+            second = int(data['second'])
+        except (KeyError, ValueError) as e:
+            return jsonify({'error': f'Invalid datetime field: {e}'}), 400
+
+        # Validate ranges
+        if not (0 <= year <= 99):
+            return jsonify({'error': 'year must be 0-99 (e.g., 25 for 2025)'}), 400
+        if not (1 <= month <= 12):
+            return jsonify({'error': 'month must be 1-12'}), 400
+        if not (1 <= day <= 31):
+            return jsonify({'error': 'day must be 1-31'}), 400
+        if not (1 <= weekday <= 7):
+            return jsonify({'error': 'weekday must be 1-7 (1=Monday, 7=Sunday)'}), 400
+        if not (0 <= hour <= 23):
+            return jsonify({'error': 'hour must be 0-23'}), 400
+        if not (0 <= minute <= 59):
+            return jsonify({'error': 'minute must be 0-59'}), 400
+        if not (0 <= second <= 59):
+            return jsonify({'error': 'second must be 0-59'}), 400
+
+        # Send to hub: SET_DATETIME <addr> <year> <month> <day> <weekday> <hour> <minute> <second>
+        serial = get_serial()
+        cmd = f'SET_DATETIME {addr} {year} {month} {day} {weekday} {hour} {minute} {second}'
+        responses = serial.send_command(cmd)
+
+        # Parse response: QUEUED SET_DATETIME <addr> <position>
+        if responses and responses[0].startswith('QUEUED'):
+            parts = responses[0].split()
+            return jsonify({
+                'status': 'queued',
+                'node_address': addr,
+                'datetime': {
+                    'year': year,
+                    'month': month,
+                    'day': day,
+                    'weekday': weekday,
+                    'hour': hour,
+                    'minute': minute,
+                    'second': second
+                },
+                'position': int(parts[3]) if len(parts) > 3 else None
+            })
+
+        return jsonify({'error': 'Unexpected response from hub'}), 500
+
+    except TimeoutError:
+        return jsonify({'error': 'Hub did not respond'}), 504
+    except Exception as e:
+        logger.error(f"Error setting datetime for node {addr}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @app.errorhandler(404)
 def not_found(error):
     """Handle 404 errors."""

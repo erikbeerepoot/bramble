@@ -18,6 +18,7 @@ private:
     void handleSetSchedule(const char* args);
     void handleRemoveSchedule(const char* args);
     void handleSetWakeInterval(const char* args);
+    void handleSetDateTime(const char* args);
     void handleDateTimeResponse(const char* args);
     bool parseScheduleArgs(const char* args, uint16_t& node_addr, uint8_t& index,
                           uint8_t& hour, uint8_t& minute, uint16_t& duration,
