@@ -164,6 +164,24 @@ void HubMode::handleSerialCommand(const char* cmd) {
         return;
     }
 
+    // Skip leading non-printable characters (e.g., 0xFF garbage from UART)
+    while (*cmd != '\0' && ((unsigned char)*cmd < 0x20 || (unsigned char)*cmd >= 0x7F)) {
+        cmd++;
+    }
+
+    // Check again after skipping garbage
+    if (cmd[0] == '\0') {
+        return;
+    }
+
+    // Debug: Log all received serial commands with hex dump
+    printf("Hub RX: %s (len=%d)\n", cmd, strlen(cmd));
+    printf("  First 10 bytes (hex): ");
+    for (int i = 0; i < 10 && cmd[i] != '\0'; i++) {
+        printf("%02X ", (unsigned char)cmd[i]);
+    }
+    printf("\n");
+
     // Parse command
     if (strcmp(cmd, "LIST_NODES") == 0) {
         handleListNodes();
@@ -180,8 +198,10 @@ void HubMode::handleSerialCommand(const char* cmd) {
     } else if (strcmp(cmd, "GET_DATETIME") == 0) {
         handleGetDateTime();
     } else if (strncmp(cmd, "DATETIME ", 9) == 0) {
+        printf("Calling handleDateTimeResponse with: %s\n", cmd + 9);
         handleDateTimeResponse(cmd + 9);
     } else {
+        printf("Unknown command: %s\n", cmd);
         uart_puts(API_UART_ID, "ERROR Unknown command\n");
     }
 }
