@@ -41,7 +41,7 @@ private:
 
     // Update handling
     void sendCheckUpdates();
-    void onUpdateAvailable(const UpdateAvailablePayload* payload);
+    void onUpdateAvailable(const UpdateAvailablePayload* payload) override;
 
 public:
     using ApplicationMode::ApplicationMode;
@@ -50,4 +50,5 @@ protected:
     void onStart() override;
     void onLoop() override;
     void onActuatorCommand(const ActuatorPayload* payload) override;
+    void onHeartbeatResponse(const HeartbeatResponsePayload* payload) override;
 };

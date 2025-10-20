@@ -105,9 +105,10 @@ class SerialInterface:
         """Respond to hub's GET_DATETIME query with current system time."""
         now = datetime.now()
         weekday = now.weekday()  # 0=Monday in Python
-        # Convert to hub format: 0=Sunday
+        # Convert to hub format: 0=Sunday, 1=Monday, ..., 6=Saturday
         hub_weekday = (weekday + 1) % 7
 
+        # Format: DATETIME YYYY-MM-DD HH:MM:SS DOW (ISO 8601 + day of week)
         response = f"DATETIME {now.strftime('%Y-%m-%d %H:%M:%S')} {hub_weekday}\n"
 
         try:

@@ -35,6 +35,9 @@ public:
     // Callback type for update available messages
     using UpdateCallback = std::function<void(const UpdateAvailablePayload*)>;
 
+    // Callback type for heartbeat response messages
+    using HeartbeatResponseCallback = std::function<void(const HeartbeatResponsePayload*)>;
+
     ReliableMessenger(SX1276* lora, uint16_t node_addr, NetworkStats* stats = nullptr);
     
     /**
@@ -189,6 +192,12 @@ public:
      */
     void setUpdateCallback(UpdateCallback callback) { update_callback_ = callback; }
 
+    /**
+     * @brief Set callback for heartbeat response messages
+     * @param callback Function to call when HEARTBEAT_RESPONSE is received
+     */
+    void setHeartbeatResponseCallback(HeartbeatResponseCallback callback) { heartbeat_response_callback_ = callback; }
+
 private:
     SX1276* lora_;
     uint16_t node_addr_;
@@ -198,6 +207,7 @@ private:
     NetworkStats* network_stats_;
     ActuatorCallback actuator_callback_;
     UpdateCallback update_callback_;
+    HeartbeatResponseCallback heartbeat_response_callback_;
     
     /**
      * @brief Send a message immediately

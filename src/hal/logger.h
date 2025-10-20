@@ -2,6 +2,8 @@
 #include <cstdio>
 #include <cstdarg>
 #include "pico/stdio_usb.h"
+#include "pico/stdlib.h"
+#include "hardware/rtc.h"
 
 /**
  * @brief Logging levels for debug output control
@@ -32,8 +34,20 @@ private:
         if (check_usb_ && !stdio_usb_connected()) {
             return;
         }
-        
+
         if (static_cast<uint8_t>(global_level_) >= static_cast<uint8_t>(Level)) {
+            // Print timestamp prefix
+            datetime_t dt;
+            if (rtc_running() && rtc_get_datetime(&dt)) {
+                // RTC is running - use datetime format
+                printf("[%04d-%02d-%02d %02d:%02d:%02d] ",
+                       dt.year, dt.month, dt.day, dt.hour, dt.min, dt.sec);
+            } else {
+                // RTC not running - use milliseconds since boot
+                uint32_t ms = to_ms_since_boot(get_absolute_time());
+                printf("[+%lums] ", ms);
+            }
+
             printf("%s [%s]: ", prefix, module_name_);
             vprintf(fmt, args);
             printf("\n");

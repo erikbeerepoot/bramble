@@ -376,10 +376,10 @@ void HubMode::handleSetDateTime(const char* args) {
 }
 
 void HubMode::handleDateTimeResponse(const char* args) {
-    // Parse: DATETIME YYYY MM DD DOW HH MM SS
-    int year, month, day, weekday, hour, minute, second;
-    if (sscanf(args, "%d %d %d %d %d %d %d",
-               &year, &month, &day, &weekday, &hour, &minute, &second) != 7) {
+    // Parse: DATETIME YYYY-MM-DD HH:MM:SS DOW (ISO 8601 + day of week)
+    int year, month, day, hour, minute, second, weekday;
+    if (sscanf(args, "%d-%d-%d %d:%d:%d %d",
+               &year, &month, &day, &hour, &minute, &second, &weekday) != 7) {
         printf("ERROR: Invalid DATETIME response format: %s\n", args);
         return;
     }

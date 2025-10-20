@@ -5,6 +5,7 @@
 #include "hal/neopixel.h"
 #include "led_patterns.h"
 #include "periodic_task_manager.h"
+#include "hardware/rtc.h"
 
 // Forward declarations
 class ReliableMessenger;
@@ -87,6 +88,13 @@ protected:
      * @param payload Update available payload
      */
     virtual void onUpdateAvailable(const UpdateAvailablePayload* payload) {}
+
+    /**
+     * @brief Handle incoming heartbeat response messages (optional override)
+     * Default implementation updates RP2040 RTC
+     * @param payload Heartbeat response payload with datetime
+     */
+    virtual void onHeartbeatResponse(const HeartbeatResponsePayload* payload);
 
     /**
      * @brief Check if we should use interrupt-based sleep

@@ -171,6 +171,38 @@ void IrrigationMode::onActuatorCommand(const ActuatorPayload* payload) {
     }
 }
 
+void IrrigationMode::onHeartbeatResponse(const HeartbeatResponsePayload* payload) {
+    // Call base class implementation to update RP2040 RTC
+    ApplicationMode::onHeartbeatResponse(payload);
+
+    // Also sync time to PMU if available
+    if (pmu_available_ && pmu_client_ && payload) {
+        // Convert HeartbeatResponsePayload to PMU::DateTime
+        PMU::DateTime datetime(
+            payload->year % 100,  // PMU uses 2-digit year (e.g., 25 for 2025)
+            payload->month,
+            payload->day,
+            payload->dotw,
+            payload->hour,
+            payload->min,
+            payload->sec
+        );
+
+        pmu_logger.info("Syncing time to PMU: 20%02d-%02d-%02d %02d:%02d:%02d",
+                       datetime.year, datetime.month, datetime.day,
+                       datetime.hour, datetime.minute, datetime.second);
+
+        // Send datetime to PMU - PMU decides if update is needed based on drift
+        pmu_client_->getProtocol().setDateTime(datetime, [](bool success, PMU::ErrorCode error) {
+            if (success) {
+                pmu_logger.info("PMU time sync successful");
+            } else {
+                pmu_logger.error("PMU time sync failed: error %d", static_cast<int>(error));
+            }
+        });
+    }
+}
+
 void IrrigationMode::sendCheckUpdates() {
     logger.info("Sending CHECK_UPDATES (seq=%d)", update_state_.current_sequence);
 

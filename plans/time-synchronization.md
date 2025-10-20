@@ -46,7 +46,7 @@ PMU STM32 RTC (irrigation nodes only)
 #### Hub Time Sync
 ```
 1. Hub boots → Serial: GET_DATETIME
-2. RasPi → Hub: DATETIME 2025 10 19 6 14 30 0
+2. RasPi → Hub: DATETIME 2025-10-19 14:30:00 6 (ISO 8601 + day of week)
 3. Hub: rtc_set_datetime()
 4. [Every hour: repeat sync for drift correction]
 ```
@@ -114,8 +114,8 @@ PMU STM32 RTC (irrigation nodes only)
 1. Add GET_DATETIME command handler in hub_mode.cpp
 2. Add Python serial response handler
 3. Hub sends: `GET_DATETIME\n`
-4. RasPi responds: `DATETIME YYYY MM DD DOW HH MM SS\n`
-5. Add response completion detection for GET_DATETIME in serial_interface.py
+4. RasPi responds: `DATETIME YYYY-MM-DD HH:MM:SS DOW\n` (ISO 8601)
+5. Update hub to parse ISO 8601 format with sscanf
 
 ### Phase 4: Node Time Handling
 
@@ -192,21 +192,16 @@ typedef struct {
 ### New Command: GET_DATETIME
 **Direction**: Hub → RasPi
 **Format**: `GET_DATETIME\n`
-**Response**: `DATETIME YYYY MM DD DOW HH MM SS\n`
+**Response**: `DATETIME YYYY-MM-DD HH:MM:SS DOW\n` (ISO 8601 + day of week)
 **Example**:
 ```
 Hub sends: GET_DATETIME
-RasPi responds: DATETIME 2025 10 19 6 14 30 0
+RasPi responds: DATETIME 2025-10-19 14:30:00 6
 ```
 
 **Field meanings**:
-- YYYY: Full year (2025)
-- MM: Month (1-12)
-- DD: Day (1-31)
-- DOW: Day of week (0=Sunday, 6=Saturday)
-- HH: Hour (0-23)
-- MM: Minute (0-59)
-- SS: Second (0-59)
+- YYYY-MM-DD HH:MM:SS: ISO 8601 datetime format
+- DOW: Day of week (0=Sunday, 1=Monday, ..., 6=Saturday)
 
 ## Benefits
 

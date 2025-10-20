@@ -15,6 +15,10 @@ extern void processIncomingMessage(uint8_t* rx_buffer, int rx_len, ReliableMesse
 extern void sleepUntilInterrupt();
 
 void ApplicationMode::run() {
+    // Initialize RTC for all nodes
+    rtc_init();
+    printf("RTC initialized\n");
+
     // Set up actuator command callback
     messenger_.setActuatorCallback([this](const ActuatorPayload* payload) {
         onActuatorCommand(payload);
@@ -23,6 +27,11 @@ void ApplicationMode::run() {
     // Set up update available callback
     messenger_.setUpdateCallback([this](const UpdateAvailablePayload* payload) {
         onUpdateAvailable(payload);
+    });
+
+    // Set up heartbeat response callback
+    messenger_.setHeartbeatResponseCallback([this](const HeartbeatResponsePayload* payload) {
+        onHeartbeatResponse(payload);
     });
 
     // Call startup hook
@@ -84,6 +93,28 @@ void ApplicationMode::run() {
 
 void ApplicationMode::processIncomingMessage(uint8_t* rx_buffer, int rx_len, uint32_t current_time) {
     // Use the common message processing function
-    ::processIncomingMessage(rx_buffer, rx_len, messenger_, address_manager_, 
+    ::processIncomingMessage(rx_buffer, rx_len, messenger_, address_manager_,
                            hub_router_, current_time, network_stats_, &lora_);
+}
+
+void ApplicationMode::onHeartbeatResponse(const HeartbeatResponsePayload* payload) {
+    if (!payload) return;
+
+    // Convert HeartbeatResponsePayload to datetime_t
+    datetime_t dt;
+    dt.year = payload->year;
+    dt.month = payload->month;
+    dt.day = payload->day;
+    dt.dotw = payload->dotw;
+    dt.hour = payload->hour;
+    dt.min = payload->min;
+    dt.sec = payload->sec;
+
+    // Set RP2040 RTC
+    if (rtc_set_datetime(&dt)) {
+        printf("RTC synchronized: %04d-%02d-%02d %02d:%02d:%02d (dow=%d)\n",
+               dt.year, dt.month, dt.day, dt.hour, dt.min, dt.sec, dt.dotw);
+    } else {
+        printf("ERROR: Failed to set RTC\n");
+    }
 }

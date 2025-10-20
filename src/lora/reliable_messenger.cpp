@@ -295,6 +295,26 @@ bool ReliableMessenger::processIncomingMessage(const uint8_t* buffer, size_t len
         }
     }
 
+    if (message->header.type == MSG_TYPE_HEARTBEAT_RESPONSE) {
+        const HeartbeatResponsePayload* heartbeat_response = reinterpret_cast<const HeartbeatResponsePayload*>(message->payload);
+        if (heartbeat_response) {
+            logger_.info("Received HEARTBEAT_RESPONSE: %04d-%02d-%02d %02d:%02d:%02d (dow=%d)",
+                   heartbeat_response->year, heartbeat_response->month, heartbeat_response->day,
+                   heartbeat_response->hour, heartbeat_response->min, heartbeat_response->sec,
+                   heartbeat_response->dotw);
+
+            // Call the heartbeat response callback if set
+            if (heartbeat_response_callback_) {
+                logger_.info("Calling heartbeat response callback");
+                heartbeat_response_callback_(heartbeat_response);
+            } else {
+                logger_.warn("No heartbeat response callback set!");
+            }
+
+            return true;
+        }
+    }
+
     if (message->header.type == MSG_TYPE_REGISTRATION) {
         const RegistrationPayload* reg_payload = reinterpret_cast<const RegistrationPayload*>(message->payload);
         if (reg_payload) {
