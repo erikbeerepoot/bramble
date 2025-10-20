@@ -184,6 +184,15 @@ public:
     size_t getPendingUpdateCount(uint16_t node_addr) const;
 
     /**
+     * @brief Get pending update at specified index
+     * @param node_addr Node address
+     * @param index Index in queue (0 = front)
+     * @param out_update Output parameter for update
+     * @return true if update exists at index
+     */
+    bool getPendingUpdate(uint16_t node_addr, size_t index, PendingUpdate& out_update) const;
+
+    /**
      * @brief Clear all pending updates for a node
      * @param node_addr Node address
      */

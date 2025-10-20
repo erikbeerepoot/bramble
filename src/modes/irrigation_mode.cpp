@@ -217,6 +217,14 @@ void IrrigationMode::onUpdateAvailable(const UpdateAvailablePayload* payload) {
 
     logger.info("Received update: type=%d, seq=%d", payload->update_type, hub_sequence);
 
+    // Check if we've already processed this update (messages crossing in flight)
+    if (hub_sequence <= update_state_.current_sequence) {
+        logger.info("  Already processed seq=%d (current=%d), sending CHECK_UPDATES",
+                   hub_sequence, update_state_.current_sequence);
+        sendCheckUpdates();
+        return;
+    }
+
     // Get PMU protocol for applying updates
     auto& protocol = pmu_client_->getProtocol();
 

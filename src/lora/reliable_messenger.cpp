@@ -78,11 +78,11 @@ bool ReliableMessenger::sendSensorData(uint16_t dst_addr, uint8_t sensor_type,
     }, criticality, "sensor");
 }
 
-bool ReliableMessenger::sendHeartbeat(uint16_t dst_addr, uint32_t uptime_seconds, 
+bool ReliableMessenger::sendHeartbeat(uint16_t dst_addr, uint32_t uptime_seconds,
                                      uint8_t battery_level, uint8_t signal_strength,
                                      uint8_t active_sensors, uint8_t error_flags) {
     uint8_t seq_num = getNextSequenceNumber();
-    
+
     return sendWithBuilder([=](uint8_t* buffer) {
         return MessageHandler::createHeartbeatMessage(
             node_addr_, dst_addr, seq_num,
@@ -90,6 +90,19 @@ bool ReliableMessenger::sendHeartbeat(uint16_t dst_addr, uint32_t uptime_seconds
             buffer
         );
     }, BEST_EFFORT, "heartbeat");
+}
+
+bool ReliableMessenger::sendHeartbeatResponse(uint16_t dst_addr, int16_t year, int8_t month, int8_t day,
+                                              int8_t dotw, int8_t hour, int8_t min, int8_t sec) {
+    uint8_t seq_num = getNextSequenceNumber();
+
+    return sendWithBuilder([=](uint8_t* buffer) {
+        return MessageHandler::createHeartbeatResponseMessage(
+            node_addr_, dst_addr, seq_num,
+            year, month, day, dotw, hour, min, sec,
+            buffer
+        );
+    }, RELIABLE, "heartbeat_response");
 }
 
 bool ReliableMessenger::sendRegistrationRequest(uint16_t dst_addr, uint64_t device_id,

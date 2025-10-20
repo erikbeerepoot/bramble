@@ -30,7 +30,7 @@ void HubMode::onStart() {
 
     // Initialize serial input buffer
     serial_input_pos_ = 0;
-    last_datetime_query_ms_ = 0;
+    last_datetime_sync_ms_ = 0;
     memset(serial_input_buffer_, 0, sizeof(serial_input_buffer_));
 
     // Initialize UART for Raspberry Pi communication
@@ -42,6 +42,13 @@ void HubMode::onStart() {
 
     printf("API UART initialized successfully\n");
     uart_puts(API_UART_ID, "HUB_READY\n");  // Send ready signal to RasPi
+
+    // Initialize RTC
+    rtc_init();
+    printf("RTC initialized\n");
+
+    // Request initial time from RasPi
+    syncTimeFromRaspberryPi();
 
     // Hub always uses blue breathing pattern
     led_pattern_ = std::make_unique<BreathingPattern>(led_, 0, 0, 255);
@@ -97,6 +104,16 @@ void HubMode::onStart() {
         MAINTENANCE_INTERVAL_MS,
         "Hub Maintenance"
     );
+
+    // Add hourly time sync task
+    task_manager_.addTask(
+        [this](uint32_t current_time) {
+            (void)current_time;  // Unused
+            syncTimeFromRaspberryPi();
+        },
+        DATETIME_QUERY_INTERVAL_MS,
+        "Time Sync"
+    );
 }
 
 void HubMode::onLoop() {
@@ -107,6 +124,16 @@ void HubMode::onLoop() {
 void HubMode::processIncomingMessage(uint8_t* rx_buffer, int rx_len, uint32_t current_time) {
     printf("Hub received message (len=%d, RSSI=%d dBm)\n",
            rx_len, lora_.getRssi());
+
+    // Handle heartbeat messages and send time response
+    if (rx_len >= sizeof(MessageHeader)) {
+        const MessageHeader* header = reinterpret_cast<const MessageHeader*>(rx_buffer);
+        if (header->type == MSG_TYPE_HEARTBEAT) {
+            const HeartbeatPayload* heartbeat =
+                reinterpret_cast<const HeartbeatPayload*>(rx_buffer + sizeof(MessageHeader));
+            handleHeartbeat(header->src_addr, heartbeat);
+        }
+    }
 
     // Call base class implementation which handles common processing
     ApplicationMode::processIncomingMessage(rx_buffer, rx_len, current_time);
@@ -150,6 +177,8 @@ void HubMode::handleSerialCommand(const char* cmd) {
         handleSetWakeInterval(cmd + 18);
     } else if (strncmp(cmd, "SET_DATETIME ", 13) == 0) {
         handleSetDateTime(cmd + 13);
+    } else if (strcmp(cmd, "GET_DATETIME") == 0) {
+        handleGetDateTime();
     } else if (strncmp(cmd, "DATETIME ", 9) == 0) {
         handleDateTimeResponse(cmd + 9);
     } else {
@@ -209,7 +238,40 @@ void HubMode::handleGetQueue(const char* args) {
     snprintf(response, sizeof(response), "QUEUE %u %zu\n", node_addr, count);
     uart_puts(API_UART_ID, response);
 
-    // TODO: Implement queue iteration to print individual updates
+    // Send individual update entries
+    uint32_t current_time = to_ms_since_boot(get_absolute_time());
+    for (size_t i = 0; i < count; i++) {
+        PendingUpdate update;
+        if (hub_router_->getPendingUpdate(node_addr, i, update)) {
+            // Calculate age in seconds
+            uint32_t age_sec = (current_time - update.queued_at_ms) / 1000;
+
+            // Map UpdateType enum to string
+            const char* type_str;
+            switch (update.type) {
+                case UpdateType::SET_SCHEDULE:
+                    type_str = "SET_SCHEDULE";
+                    break;
+                case UpdateType::REMOVE_SCHEDULE:
+                    type_str = "REMOVE_SCHEDULE";
+                    break;
+                case UpdateType::SET_DATETIME:
+                    type_str = "SET_DATETIME";
+                    break;
+                case UpdateType::SET_WAKE_INTERVAL:
+                    type_str = "SET_WAKE_INTERVAL";
+                    break;
+                default:
+                    type_str = "UNKNOWN";
+                    break;
+            }
+
+            // Format: UPDATE <seq> <type> <age_sec>
+            snprintf(response, sizeof(response), "UPDATE %u %s %lu\n",
+                     update.sequence, type_str, age_sec);
+            uart_puts(API_UART_ID, response);
+        }
+    }
 }
 
 void HubMode::handleSetSchedule(const char* args) {
@@ -314,21 +376,30 @@ void HubMode::handleSetDateTime(const char* args) {
 }
 
 void HubMode::handleDateTimeResponse(const char* args) {
-    // Parse: YYYY-MM-DD HH:MM:SS <weekday>
-    int year, month, day, hour, minute, second, weekday;
-    if (sscanf(args, "%d-%d-%d %d:%d:%d %d",
-               &year, &month, &day, &hour, &minute, &second, &weekday) != 7) {
-        uart_puts(API_UART_ID, "ERROR Invalid DATETIME response format\n");
+    // Parse: DATETIME YYYY MM DD DOW HH MM SS
+    int year, month, day, weekday, hour, minute, second;
+    if (sscanf(args, "%d %d %d %d %d %d %d",
+               &year, &month, &day, &weekday, &hour, &minute, &second) != 7) {
+        printf("ERROR: Invalid DATETIME response format: %s\n", args);
         return;
     }
 
-    char response[128];
-    snprintf(response, sizeof(response),
-            "Received datetime: %04d-%02d-%02d %02d:%02d:%02d (day %d)\n",
-            year, month, day, hour, minute, second, weekday);
-    uart_puts(API_UART_ID, response);
+    // Set RTC
+    datetime_t dt;
+    dt.year = year;
+    dt.month = month;
+    dt.day = day;
+    dt.dotw = weekday;
+    dt.hour = hour;
+    dt.min = minute;
+    dt.sec = second;
 
-    // TODO: Store for scheduling nodes
+    if (rtc_set_datetime(&dt)) {
+        printf("RTC set to: %04d-%02d-%02d %02d:%02d:%02d (dow=%d)\n",
+               year, month, day, hour, minute, second, weekday);
+    } else {
+        printf("ERROR: Failed to set RTC\n");
+    }
 }
 
 bool HubMode::parseScheduleArgs(const char* args, uint16_t& node_addr,
@@ -353,4 +424,33 @@ bool HubMode::parseScheduleArgs(const char* args, uint16_t& node_addr,
     valve = v;
 
     return true;
+}
+
+void HubMode::syncTimeFromRaspberryPi() {
+    // Send request for datetime
+    uart_puts(API_UART_ID, "GET_DATETIME\n");
+    last_datetime_sync_ms_ = to_ms_since_boot(get_absolute_time());
+    printf("Requesting datetime from RasPi\n");
+}
+
+void HubMode::handleGetDateTime() {
+    // Parse response: DATETIME YYYY MM DD DOW HH MM SS
+    // This will be called when RasPi responds with datetime
+    // The response is handled in handleSerialCommand via handleDateTimeResponse
+}
+
+void HubMode::handleHeartbeat(uint16_t source_addr, const HeartbeatPayload* payload) {
+    // Get current datetime from RTC
+    datetime_t dt;
+    if (!rtc_get_datetime(&dt)) {
+        printf("Warning: RTC not running, cannot send time to node 0x%04X\n", source_addr);
+        return;
+    }
+
+    // Send heartbeat response with current time
+    messenger_.sendHeartbeatResponse(source_addr, dt.year, dt.month, dt.day,
+                                     dt.dotw, dt.hour, dt.min, dt.sec);
+
+    printf("Sent time to node 0x%04X: %04d-%02d-%02d %02d:%02d:%02d\n",
+           source_addr, dt.year, dt.month, dt.day, dt.hour, dt.min, dt.sec);
 }

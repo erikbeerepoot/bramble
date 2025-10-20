@@ -37,7 +37,8 @@ enum MessageType {
     MSG_TYPE_CONFIG         = 0x07,  // Configuration updates
     MSG_TYPE_ROUTE          = 0x08,  // Message routing (future use)
     MSG_TYPE_CHECK_UPDATES  = 0x09,  // Node → Hub: Check for pending updates
-    MSG_TYPE_UPDATE_AVAILABLE = 0x0A // Hub → Node: Update response (ACK'd with MSG_TYPE_ACK)
+    MSG_TYPE_UPDATE_AVAILABLE = 0x0A, // Hub → Node: Update response (ACK'd with MSG_TYPE_ACK)
+    MSG_TYPE_HEARTBEAT_RESPONSE = 0x0B // Hub → Node: Heartbeat response with current time
 };
 
 // Sensor data subtypes
@@ -159,6 +160,19 @@ struct __attribute__((packed)) HeartbeatPayload {
 };
 
 /**
+ * @brief Heartbeat response payload (hub sends current datetime to node)
+ */
+struct __attribute__((packed)) HeartbeatResponsePayload {
+    int16_t year;      // 0..4095 (e.g., 2025)
+    int8_t  month;     // 1..12 (1=January)
+    int8_t  day;       // 1..28,29,30,31
+    int8_t  dotw;      // 0..6 (0=Sunday, 1=Monday, ..., 6=Saturday)
+    int8_t  hour;      // 0..23
+    int8_t  min;       // 0..59
+    int8_t  sec;       // 0..59
+};
+
+/**
  * @brief Registration request payload
  */
 struct __attribute__((packed)) RegistrationPayload {
@@ -274,7 +288,27 @@ public:
                                         uint8_t battery_level, uint8_t signal_quality,
                                         uint32_t uptime_seconds, uint8_t status_flags,
                                         uint8_t* buffer);
-    
+
+    /**
+     * @brief Create a heartbeat response message with current datetime
+     * @param src_addr Source address (hub)
+     * @param dst_addr Destination address (node)
+     * @param seq_num Sequence number
+     * @param year Current year (0-4095)
+     * @param month Current month (1-12)
+     * @param day Current day (1-31)
+     * @param dotw Current day of week (0-6, 0=Sunday)
+     * @param hour Current hour (0-23)
+     * @param min Current minute (0-59)
+     * @param sec Current second (0-59)
+     * @param buffer Output buffer (must be at least MESSAGE_MAX_SIZE bytes)
+     * @return Length of created message, 0 on error
+     */
+    static size_t createHeartbeatResponseMessage(uint16_t src_addr, uint16_t dst_addr, uint8_t seq_num,
+                                                 int16_t year, int8_t month, int8_t day, int8_t dotw,
+                                                 int8_t hour, int8_t min, int8_t sec,
+                                                 uint8_t* buffer);
+
     /**
      * @brief Create a registration request message
      * @param src_addr Source address (ADDRESS_UNREGISTERED for new nodes)
@@ -370,7 +404,14 @@ public:
      * @return Pointer to heartbeat payload, NULL if not a heartbeat message
      */
     static const HeartbeatPayload* getHeartbeatPayload(const Message* message);
-    
+
+    /**
+     * @brief Get heartbeat response payload from message
+     * @param message Message to extract from
+     * @return Pointer to heartbeat response payload, NULL if not a heartbeat response message
+     */
+    static const HeartbeatResponsePayload* getHeartbeatResponsePayload(const Message* message);
+
     /**
      * @brief Get registration request payload from message
      * @param message Message to extract from

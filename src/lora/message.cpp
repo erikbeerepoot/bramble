@@ -57,9 +57,27 @@ size_t MessageHandler::createHeartbeatMessage(uint16_t src_addr, uint16_t dst_ad
         .active_sensors = 0,  // Default to no sensors active
         .error_flags = status_flags
     };
-    
+
     return MessageBuilder::createMessage<HeartbeatPayload>(
         MSG_TYPE_HEARTBEAT, 0, src_addr, dst_addr, seq_num, payload, buffer);
+}
+
+size_t MessageHandler::createHeartbeatResponseMessage(uint16_t src_addr, uint16_t dst_addr, uint8_t seq_num,
+                                                      int16_t year, int8_t month, int8_t day, int8_t dotw,
+                                                      int8_t hour, int8_t min, int8_t sec,
+                                                      uint8_t* buffer) {
+    HeartbeatResponsePayload payload = {
+        .year = year,
+        .month = month,
+        .day = day,
+        .dotw = dotw,
+        .hour = hour,
+        .min = min,
+        .sec = sec
+    };
+
+    return MessageBuilder::createMessage<HeartbeatResponsePayload>(
+        MSG_TYPE_HEARTBEAT_RESPONSE, MSG_FLAG_RELIABLE, src_addr, dst_addr, seq_num, payload, buffer);
 }
 
 size_t MessageHandler::createRegistrationMessage(uint16_t src_addr, uint16_t dst_addr, uint8_t seq_num,
@@ -323,6 +341,13 @@ const HeartbeatPayload* MessageHandler::getHeartbeatPayload(const Message* messa
         return nullptr;
     }
     return (const HeartbeatPayload*)message->payload;
+}
+
+const HeartbeatResponsePayload* MessageHandler::getHeartbeatResponsePayload(const Message* message) {
+    if (!message || message->header.type != MSG_TYPE_HEARTBEAT_RESPONSE) {
+        return nullptr;
+    }
+    return (const HeartbeatResponsePayload*)message->payload;
 }
 
 const RegistrationPayload* MessageHandler::getRegistrationPayload(const Message* message) {

@@ -409,7 +409,20 @@ void HubRouter::handleCheckUpdates(uint16_t node_addr, uint8_t node_sequence) {
     auto& state = node_updates_[node_addr];
     state.last_check_time = TimeUtils::getCurrentTimeMs();
 
-    // Check if queue is empty
+    // Remove updates that the node has already processed
+    // Node sequence indicates the last update the node successfully applied
+    while (!state.pending_updates.empty()) {
+        const PendingUpdate& front = state.pending_updates.front();
+        if (front.sequence <= node_sequence) {
+            printf("Node 0x%04X: Already processed seq=%d, removing from queue\n",
+                   node_addr, front.sequence);
+            state.pending_updates.pop();
+        } else {
+            break;  // Found an update the node hasn't seen yet
+        }
+    }
+
+    // Check if queue is empty after cleanup
     if (state.pending_updates.empty()) {
         printf("Node 0x%04X: No updates available\n", node_addr);
 
@@ -437,11 +450,11 @@ void HubRouter::handleCheckUpdates(uint16_t node_addr, uint8_t node_sequence) {
         return;
     }
 
-    // Get next update (peek, don't remove until ACK)
+    // Get next update (peek, don't remove - will be removed on next CHECK_UPDATES)
     const PendingUpdate& update = state.pending_updates.front();
 
-    printf("Node 0x%04X: Sending update seq=%d type=%d\n",
-           node_addr, update.sequence, static_cast<int>(update.type));
+    printf("Node 0x%04X: Sending update seq=%d type=%d (node at seq=%d)\n",
+           node_addr, update.sequence, static_cast<int>(update.type), node_sequence);
 
     // Send update
     uint8_t buffer[MESSAGE_MAX_SIZE];
@@ -507,6 +520,28 @@ void HubRouter::handleUpdateAck(uint16_t node_addr, uint8_t sequence,
 size_t HubRouter::getPendingUpdateCount(uint16_t node_addr) const {
     auto it = node_updates_.find(node_addr);
     return (it != node_updates_.end()) ? it->second.pending_updates.size() : 0;
+}
+
+bool HubRouter::getPendingUpdate(uint16_t node_addr, size_t index, PendingUpdate& out_update) const {
+    auto it = node_updates_.find(node_addr);
+    if (it == node_updates_.end()) {
+        return false;
+    }
+
+    // std::queue doesn't support indexing, so we need to make a copy and iterate
+    auto queue_copy = it->second.pending_updates;
+
+    // Skip to the requested index
+    for (size_t i = 0; i < index && !queue_copy.empty(); i++) {
+        queue_copy.pop();
+    }
+
+    if (queue_copy.empty()) {
+        return false;
+    }
+
+    out_update = queue_copy.front();
+    return true;
 }
 
 void HubRouter::clearPendingUpdates(uint16_t node_addr) {

@@ -215,14 +215,16 @@ if(NOT BUILD_TESTS)
         ${CMAKE_CURRENT_LIST_DIR}/src
     )
     
-    target_link_libraries(${TARGET_NAME} 
+    target_link_libraries(${TARGET_NAME}
         hardware_spi
         hardware_timer
         hardware_clocks
         hardware_pio
         hardware_flash
         hardware_sync
+        hardware_rtc
         pico_multicore
+        pico_util
     )
     
     # Add pico-extras libraries if available

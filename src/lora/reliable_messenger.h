@@ -74,10 +74,25 @@ public:
      * @param error_flags Error status flags
      * @return true if heartbeat sent successfully
      */
-    bool sendHeartbeat(uint16_t dst_addr, uint32_t uptime_seconds, 
+    bool sendHeartbeat(uint16_t dst_addr, uint32_t uptime_seconds,
                       uint8_t battery_level, uint8_t signal_strength,
                       uint8_t active_sensors, uint8_t error_flags);
-    
+
+    /**
+     * @brief Send heartbeat response with current datetime (hub to node)
+     * @param dst_addr Destination address (node)
+     * @param year Current year (0-4095)
+     * @param month Current month (1-12)
+     * @param day Current day (1-31)
+     * @param dotw Day of week (0-6, 0=Sunday)
+     * @param hour Current hour (0-23)
+     * @param min Current minute (0-59)
+     * @param sec Current second (0-59)
+     * @return true if heartbeat response sent successfully
+     */
+    bool sendHeartbeatResponse(uint16_t dst_addr, int16_t year, int8_t month, int8_t day,
+                              int8_t dotw, int8_t hour, int8_t min, int8_t sec);
+
     /**
      * @brief Send registration request to hub
      * @param dst_addr Destination address (usually hub)

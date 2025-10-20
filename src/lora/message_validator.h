@@ -24,7 +24,7 @@ public:
      */
     static bool validateHeader(const MessageHeader* header) {
         if (!header || header->magic != MESSAGE_MAGIC) return false;
-        if (header->type < MSG_TYPE_SENSOR_DATA || header->type > MSG_TYPE_UPDATE_AVAILABLE) return false;
+        if (header->type < MSG_TYPE_SENSOR_DATA || header->type > MSG_TYPE_HEARTBEAT_RESPONSE) return false;
         return isValidAddress(header->src_addr) && isValidAddress(header->dst_addr);
     }
     
@@ -99,6 +99,9 @@ public:
 
             case MSG_TYPE_UPDATE_AVAILABLE:
                 return validateFixedPayload<UpdateAvailablePayload>(payload, payload_length);
+
+            case MSG_TYPE_HEARTBEAT_RESPONSE:
+                return validateFixedPayload<HeartbeatResponsePayload>(payload, payload_length);
 
             default:
                 return false;

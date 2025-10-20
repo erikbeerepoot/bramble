@@ -196,7 +196,7 @@ class SerialInterface:
         if command.startswith('SET_SCHEDULE') or command.startswith('REMOVE_SCHEDULE'):
             return last_line.startswith('QUEUED')
 
-        if command.startswith('SET_WAKE_INTERVAL'):
+        if command.startswith('SET_WAKE_INTERVAL') or command.startswith('SET_DATETIME'):
             return last_line.startswith('QUEUED')
 
         # Multi-line responses - check for summary line
