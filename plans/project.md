@@ -79,10 +79,10 @@ Payload: Variable length based on message type
    - Actuator command handling
 
 ### Phase 2: Advanced Features
-1. **Message Routing** (hub forwards node-to-node)
-2. **Network Discovery** (automatic topology detection)
-3. **Time Synchronization** (for coordinated actions)
-4. **Firmware Updates** (over-the-air capability)
+1. **Message Routing** (hub forwards node-to-node) - IN PROGRESS
+2. **Network Discovery** (automatic topology detection) - IN PROGRESS
+3. **Time Synchronization** (for coordinated actions) - ✅ **COMPLETED** (see plans/time-synchronization.md)
+4. **Firmware Updates** (over-the-air capability) - PLANNED
 
 ## File Structure
 ```
@@ -141,6 +141,11 @@ bramble/
 - **ReliableMessenger with ACK/retry mechanism** - Criticality-based delivery
 - **Integration test framework** - MockSX1276 for controlled testing
 - **Production/demo mode separation** - Clean architecture
+- **Time Synchronization System** - Full NTP→RasPi→Hub→Nodes→PMU sync chain
+  - ISO 8601 datetime format throughout
+  - Automatic heartbeat-based sync (60s intervals)
+  - Timestamped logging on all devices
+  - Battery-backed PMU RTC for irrigation scheduling
 
 ## Current Priority: Auto Address Assignment 🎯
 ### Phase: Network Registration System
