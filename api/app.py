@@ -458,9 +458,14 @@ def main():
         logger.info(f"Serial port: {Config.SERIAL_PORT} @ {Config.SERIAL_BAUD} baud")
 
         # Initialize serial interface on startup (don't wait for first API call)
-        logger.info("Connecting to hub via serial...")
-        serial = get_serial()
-        logger.info("Serial connection established - ready to respond to GET_DATETIME queries")
+        # Note: In debug mode, Flask restarts the app, so this runs twice
+        # Use werkzeug.serving.is_running_from_reloader to detect reloader
+        import os
+        if not Config.DEBUG or os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
+            # Only connect in production or in the reloader subprocess
+            logger.info("Connecting to hub via serial...")
+            serial = get_serial()
+            logger.info("Serial connection established - ready to respond to GET_DATETIME queries")
 
         app.run(
             host=Config.HOST,
