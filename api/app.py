@@ -457,6 +457,11 @@ def main():
         logger.info(f"Starting Bramble API on {Config.HOST}:{Config.PORT}")
         logger.info(f"Serial port: {Config.SERIAL_PORT} @ {Config.SERIAL_BAUD} baud")
 
+        # Initialize serial interface on startup (don't wait for first API call)
+        logger.info("Connecting to hub via serial...")
+        serial = get_serial()
+        logger.info("Serial connection established - ready to respond to GET_DATETIME queries")
+
         app.run(
             host=Config.HOST,
             port=Config.PORT,
