@@ -54,11 +54,14 @@ bool SX1276::begin() {
     
     // Configure LoRa parameters
     configureLoRa();
-    
+
     // Set to standby mode
     setMode(SX1276_MODE_LONG_RANGE_MODE | SX1276_MODE_STDBY);
     sleep_ms(10);
-    
+
+    // Clear any stale interrupt flags from power-on or previous boot
+    writeRegister(SX1276_REG_IRQ_FLAGS, 0xFF);
+
     printf("SX1276: Initialized successfully\n");
     return true;
 }
@@ -169,10 +172,13 @@ bool SX1276::send(const uint8_t* data, size_t length) {
     if (length > 255) {
         return false;
     }
-    
+
+    // Clear TX complete flag (prevents false positive from previous transmission)
+    tx_complete_ = false;
+
     // Put in standby mode
     setMode(SX1276_MODE_LONG_RANGE_MODE | SX1276_MODE_STDBY);
-    
+
     // Clear IRQ flags
     writeRegister(SX1276_REG_IRQ_FLAGS, 0xFF);
     
