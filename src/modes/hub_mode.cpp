@@ -125,13 +125,31 @@ void HubMode::processIncomingMessage(uint8_t* rx_buffer, int rx_len, uint32_t cu
     printf("Hub received message (len=%d, RSSI=%d dBm)\n",
            rx_len, lora_.getRssi());
 
-    // Handle heartbeat messages and send time response
+    // Handle special message types
     if (rx_len >= sizeof(MessageHeader)) {
         const MessageHeader* header = reinterpret_cast<const MessageHeader*>(rx_buffer);
+
         if (header->type == MSG_TYPE_HEARTBEAT) {
             const HeartbeatPayload* heartbeat =
                 reinterpret_cast<const HeartbeatPayload*>(rx_buffer + sizeof(MessageHeader));
             handleHeartbeat(header->src_addr, heartbeat);
+            // Fall through to base class for common processing
+        }
+        else if (header->type == MSG_TYPE_CHECK_UPDATES) {
+            const CheckUpdatesPayload* check =
+                reinterpret_cast<const CheckUpdatesPayload*>(rx_buffer + sizeof(MessageHeader));
+
+            // IMPORTANT: Must call messenger to handle ACK before hub_router
+            // The messenger will send ACK for this RELIABLE message
+            messenger_.processIncomingMessage(rx_buffer, rx_len);
+
+            // Now handle the CHECK_UPDATES in hub_router
+            // This sends UPDATE_AVAILABLE response
+            hub_router_->handleCheckUpdates(header->src_addr, check->node_sequence);
+
+            // Don't call base class - would cause double handling of CHECK_UPDATES
+            // (base class calls global processIncomingMessage which also calls hub_router)
+            return;
         }
     }
 
@@ -203,6 +221,7 @@ void HubMode::handleListNodes() {
     // Send header
     char response[128];
     snprintf(response, sizeof(response), "NODE_LIST %lu\n", count);
+    printf("Hub TX: %s", response);  // Debug: confirm we're sending
     uart_puts(API_UART_ID, response);
 
     // Iterate all registered nodes
