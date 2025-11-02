@@ -268,9 +268,9 @@ bool initializeHardware(SX1276& lora, NeoPixel& led) {
     
     // Configure LoRa parameters
     lora.setFrequency(915000000);  // 915 MHz for US
-    lora.setTxPower(17);  // 17 dBm
+    lora.setTxPower(20);  // 17 dBm
     lora.setBandwidth(125000);  // 125 kHz
-    lora.setSpreadingFactor(7);
+    lora.setSpreadingFactor(9);
     lora.setCodingRate(5);
     lora.setPreambleLength(8);
     lora.setCrc(true);  // Enable CRC
@@ -327,28 +327,33 @@ bool attemptRegistration(ReliableMessenger& messenger, SX1276& lora,
         device_name = "Controller";
     #endif
     
-    // Send registration request
-    if (!messenger.sendRegistrationRequest(ADDRESS_HUB, device_id, node_type,
-                                         capabilities, 0x0100, device_name)) {
+    // Send registration request and store sequence number
+    uint8_t registration_seq = messenger.sendRegistrationRequest(ADDRESS_HUB, device_id, node_type,
+                                                                 capabilities, 0x0100, device_name);
+    if (registration_seq == 0) {
         printf("Failed to send registration request\n");
         return false;
     }
-    
+
     // Wait for response
     uint32_t start_time = to_ms_since_boot(get_absolute_time());
     uint32_t timeout_ms = 5000;  // 5 second timeout
-    
+
     while (to_ms_since_boot(get_absolute_time()) - start_time < timeout_ms) {
+        // CRITICAL: Process message queue to actually send the registration request
+        // Without this, the message stays queued and never transmits!
+        messenger.update();
+
         // Check for interrupt
         if (lora.isInterruptPending()) {
             lora.handleInterrupt();
         }
-        
+
         // Check for message
         if (lora.isMessageReady()) {
             uint8_t buffer[256];
             int len = lora.receive(buffer, sizeof(buffer));
-            
+
             if (len > 0) {
                 // Let messenger process it (will handle registration response)
                 if (messenger.processIncomingMessage(buffer, len)) {
@@ -356,22 +361,26 @@ bool attemptRegistration(ReliableMessenger& messenger, SX1276& lora,
                     uint16_t new_addr = messenger.getNodeAddress();
                     if (new_addr != ADDRESS_UNREGISTERED) {
                         printf("Got address assignment: 0x%04X\n", new_addr);
-                        
+
+                        // CRITICAL: Cancel the pending registration message to prevent retries
+                        // The registration succeeded, so we don't want it retrying in application mode
+                        messenger.cancelPendingMessage(registration_seq);
+
                         // Save to flash
                         NodeConfiguration config;
                         config.assigned_address = new_addr;
                         config.device_id = device_id;
-                        
+
                         if (config_manager.saveConfiguration(config)) {
                             printf("Configuration saved to flash\n");
                         }
-                        
+
                         return true;
                     }
                 }
             }
         }
-        
+
         sleep_ms(10);
     }
     
