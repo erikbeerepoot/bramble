@@ -360,8 +360,8 @@ void IrrigationMode::onUpdateAvailable(const UpdateAvailablePayload* payload) {
         }
 
         case UpdateType::SET_WAKE_INTERVAL: {
-            // Parse interval (2 bytes)
-            uint16_t interval_seconds = (payload->payload_data[0] << 8) | payload->payload_data[1];
+            // Parse interval (2 bytes, little-endian to match hub packing)
+            uint16_t interval_seconds = payload->payload_data[0] | (payload->payload_data[1] << 8);
             logger.info("  SET_WAKE_INTERVAL: %d seconds", interval_seconds);
 
             protocol.setWakeInterval(interval_seconds, [this, hub_sequence](bool success, PMU::ErrorCode error) {
