@@ -25,7 +25,7 @@ public:
                 return { 0, 0, 0, false, false };  // No retries
                 
             case RELIABLE:
-                return { 1000, 5000, 3, true, false };  // 3 attempts with backoff
+                return { 2000, 10000, 3, true, false };  // 3 attempts with backoff (2s, 4s, 8s)
                 
             case CRITICAL:
                 return { 2000, 30000, 10, true, true };  // Many attempts, then infinite

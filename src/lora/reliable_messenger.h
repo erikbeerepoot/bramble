@@ -10,6 +10,18 @@
 #include <map>
 #include <memory>
 #include <functional>
+#include <queue>
+
+/**
+ * @brief Outgoing message waiting to be transmitted
+ */
+struct OutgoingMessage {
+    std::unique_ptr<uint8_t[]> buffer;
+    size_t length;
+    DeliveryCriticality criticality;
+    uint8_t seq_num;
+    uint8_t attempts;  // Number of previous transmission attempts
+};
 
 /**
  * @brief Pending message for retry tracking
@@ -104,9 +116,9 @@ public:
      * @param capabilities Bitmask of node capabilities
      * @param firmware_ver Firmware version
      * @param device_name Human-readable device name
-     * @return true if registration request sent successfully
+     * @return Sequence number of sent message (0 on failure)
      */
-    bool sendRegistrationRequest(uint16_t dst_addr, uint64_t device_id,
+    uint8_t sendRegistrationRequest(uint16_t dst_addr, uint64_t device_id,
                                uint8_t node_type, uint8_t capabilities,
                                uint16_t firmware_ver, const char* device_name);
     
@@ -128,9 +140,9 @@ public:
      * @brief Send CHECK_UPDATES message to hub
      * @param dst_addr Destination address (usually hub)
      * @param node_sequence Current sequence number known by node
-     * @return true if message sent successfully
+     * @return Sequence number of sent message (0 on failure)
      */
-    bool sendCheckUpdates(uint16_t dst_addr, uint8_t node_sequence);
+    uint8_t sendCheckUpdates(uint16_t dst_addr, uint8_t node_sequence);
 
     /**
      * @brief Generic send method for any message type
@@ -198,11 +210,20 @@ public:
      */
     void setHeartbeatResponseCallback(HeartbeatResponseCallback callback) { heartbeat_response_callback_ = callback; }
 
+    /**
+     * @brief Cancel a pending message by sequence number
+     * @param seq_num Sequence number of message to cancel
+     * @return true if message was found and cancelled
+     */
+    bool cancelPendingMessage(uint8_t seq_num);
+
 private:
     SX1276* lora_;
     uint16_t node_addr_;
     uint8_t next_seq_num_;
     std::map<uint8_t, PendingMessage> pending_messages_;
+    std::queue<OutgoingMessage> message_queue_;
+    bool is_transmitting_;
     Logger logger_;
     NetworkStats* network_stats_;
     ActuatorCallback actuator_callback_;

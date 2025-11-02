@@ -5,8 +5,8 @@
 #include <string.h>
 
 ReliableMessenger::ReliableMessenger(SX1276* lora, uint16_t node_addr, NetworkStats* stats)
-    : lora_(lora), node_addr_(node_addr), logger_("ReliableMessenger"), network_stats_(stats) {
-    
+    : lora_(lora), node_addr_(node_addr), logger_("ReliableMessenger"), network_stats_(stats), is_transmitting_(false) {
+
     // Use different sequence number ranges to prevent collisions
     // Hub uses 1-127, nodes (including unregistered) use 128-255
     if (node_addr == ADDRESS_HUB) {
@@ -105,20 +105,22 @@ bool ReliableMessenger::sendHeartbeatResponse(uint16_t dst_addr, int16_t year, i
     }, RELIABLE, "heartbeat_response");
 }
 
-bool ReliableMessenger::sendRegistrationRequest(uint16_t dst_addr, uint64_t device_id,
+uint8_t ReliableMessenger::sendRegistrationRequest(uint16_t dst_addr, uint64_t device_id,
                                               uint8_t node_type, uint8_t capabilities,
                                               uint16_t firmware_ver, const char* device_name) {
     uint8_t seq_num = getNextSequenceNumber();
-    
+
     logger_.info("Sending registration request to hub (device_id=0x%016llX)", device_id);
-    
-    return sendWithBuilder([=](uint8_t* buffer) {
+
+    bool success = sendWithBuilder([=](uint8_t* buffer) {
         return MessageHandler::createRegistrationMessage(
             node_addr_, dst_addr, seq_num,
             device_id, node_type, capabilities, firmware_ver, device_name,
             buffer
         );
     }, RELIABLE, "registration");
+
+    return success ? seq_num : 0;
 }
 
 bool ReliableMessenger::sendRegistrationResponse(uint16_t dst_addr, uint64_t device_id,
@@ -138,66 +140,62 @@ bool ReliableMessenger::sendRegistrationResponse(uint16_t dst_addr, uint64_t dev
     }, RELIABLE, "registration response");
 }
 
-bool ReliableMessenger::sendCheckUpdates(uint16_t dst_addr, uint8_t node_sequence) {
+uint8_t ReliableMessenger::sendCheckUpdates(uint16_t dst_addr, uint8_t node_sequence) {
     uint8_t seq_num = getNextSequenceNumber();
 
     logger_.info("Sending CHECK_UPDATES to 0x%04X (node_seq=%d)", dst_addr, node_sequence);
 
-    return sendWithBuilder([=](uint8_t* buffer) {
+    bool success = sendWithBuilder([=](uint8_t* buffer) {
         Message* msg = reinterpret_cast<Message*>(buffer);
         msg->header.magic = MESSAGE_MAGIC;
         msg->header.type = MSG_TYPE_CHECK_UPDATES;
         msg->header.src_addr = node_addr_;
         msg->header.dst_addr = dst_addr;
-        msg->header.flags = 0;  // No ACK needed - UPDATE_AVAILABLE is the response
+        msg->header.flags = MSG_FLAG_RELIABLE;  // Require ACK to ensure delivery
         msg->header.seq_num = seq_num;
 
         CheckUpdatesPayload* payload = reinterpret_cast<CheckUpdatesPayload*>(msg->payload);
         payload->node_sequence = node_sequence;
 
         return sizeof(MessageHeader) + sizeof(CheckUpdatesPayload);
-    }, BEST_EFFORT, "check_updates");
+    }, RELIABLE, "check_updates");
+
+    return success ? seq_num : 0;
 }
 
 bool ReliableMessenger::send(const uint8_t* buffer, size_t length,
                             DeliveryCriticality criticality) {
     if (!lora_ || !buffer || length == 0) return false;
-    
-    // Send immediately
-    if (!sendMessage(buffer, length)) {
-        logger_.error("Failed to send message");
-        return false;
-    }
-    
-    // For BEST_EFFORT, we're done - fire and forget
-    if (criticality == BEST_EFFORT) {
-        logger_.info("Sent message (%s)", RetryPolicy::getPolicyName(criticality));
-        return true;
-    }
-    
-    // For RELIABLE and CRITICAL, add to pending messages for ACK tracking
+
+    // Validate message first
     if (!MessageValidator::validateMessage(buffer, length)) {
-        logger_.error("Invalid message for tracking");
+        logger_.error("Invalid message for queuing");
         return false;
     }
-    
-    const Message* msg = reinterpret_cast<const Message*>(buffer);
-    
-    PendingMessage pending;
-    pending.buffer = std::make_unique<uint8_t[]>(length);
-    memcpy(pending.buffer.get(), buffer, length);
-    pending.length = length;
-    pending.dst_addr = msg->header.dst_addr;
-    pending.send_time = TimeUtils::getCurrentTimeMs();
-    pending.attempts = 0;
-    pending.criticality = criticality;
-    pending.retry_config = RetryPolicy::getConfig(criticality);
-    
-    pending_messages_[msg->header.seq_num] = std::move(pending);
-    
-    logger_.info("Sent %s message (seq=%d) to 0x%04X, awaiting ACK", 
-                RetryPolicy::getPolicyName(criticality), msg->header.seq_num, msg->header.dst_addr);
-    
+
+    // Create outgoing message
+    OutgoingMessage outgoing;
+    outgoing.buffer = std::make_unique<uint8_t[]>(length);
+    memcpy(outgoing.buffer.get(), buffer, length);
+    outgoing.length = length;
+    outgoing.criticality = criticality;
+    outgoing.attempts = 0;  // First transmission
+
+    // Fix sequence number if it's 0 (some callers set it to 0 expecting us to fill it in)
+    Message* msg = reinterpret_cast<Message*>(outgoing.buffer.get());
+    if (msg->header.seq_num == 0) {
+        msg->header.seq_num = getNextSequenceNumber();
+        logger_.debug("Assigned seq_num=%d to message", msg->header.seq_num);
+    }
+    outgoing.seq_num = msg->header.seq_num;
+
+    // Add to queue
+    message_queue_.push(std::move(outgoing));
+
+    logger_.debug("Queued %s message (seq=%d) to 0x%04X (queue depth: %zu)",
+                RetryPolicy::getPolicyName(criticality), msg->header.seq_num,
+                msg->header.dst_addr, message_queue_.size());
+
     return true;
 }
 
@@ -348,28 +346,80 @@ bool ReliableMessenger::processIncomingMessage(const uint8_t* buffer, size_t len
 
 void ReliableMessenger::update() {
     uint32_t current_time = TimeUtils::getCurrentTimeMs();
-    
+
+    // Process message queue if not currently transmitting
+    if (!is_transmitting_ && !message_queue_.empty()) {
+        // Get next message from queue
+        OutgoingMessage outgoing = std::move(message_queue_.front());
+        message_queue_.pop();
+
+        const Message* msg = reinterpret_cast<const Message*>(outgoing.buffer.get());
+
+        // Send the message
+        is_transmitting_ = true;
+        if (sendMessage(outgoing.buffer.get(), outgoing.length)) {
+            logger_.info("Sent %s message (seq=%d) to 0x%04X from queue (attempt %d)",
+                        RetryPolicy::getPolicyName(outgoing.criticality),
+                        outgoing.seq_num, msg->header.dst_addr, outgoing.attempts);
+
+            // For RELIABLE and CRITICAL, add to pending messages for ACK tracking
+            if (outgoing.criticality != BEST_EFFORT) {
+                PendingMessage pending;
+                pending.buffer = std::move(outgoing.buffer);
+                pending.length = outgoing.length;
+                pending.dst_addr = msg->header.dst_addr;
+                pending.send_time = current_time;
+                pending.attempts = outgoing.attempts;  // Preserve attempt count
+                pending.criticality = outgoing.criticality;
+                pending.retry_config = RetryPolicy::getConfig(outgoing.criticality);
+
+                pending_messages_[outgoing.seq_num] = std::move(pending);
+
+                logger_.info("Awaiting ACK for seq=%d", outgoing.seq_num);
+            }
+        } else {
+            logger_.error("Failed to send queued message seq=%d", outgoing.seq_num);
+        }
+        is_transmitting_ = false;
+
+        // Small delay to allow radio to switch from TX to RX and remote node to process
+        // This prevents back-to-back transmissions from overwhelming the radio
+        if (!message_queue_.empty()) {
+            sleep_ms(10);
+        }
+    }
+
     // Check for messages that need retry
     auto it = pending_messages_.begin();
     while (it != pending_messages_.end()) {
         auto& [seq_num, pending] = *it;
-        
+
         // Calculate time for next retry
         uint32_t retry_delay = RetryPolicy::calculateDelay(pending.retry_config, pending.attempts);
         uint32_t next_retry_time = pending.send_time + retry_delay;
-        
+
         if (current_time >= next_retry_time) {
             if (RetryPolicy::shouldRetry(pending.retry_config, pending.attempts + 1)) {
-                // Retry the message
-                pending.attempts++;
-                pending.send_time = current_time;
-                
-                logger_.info("Retry %d for seq=%d (%s)", pending.attempts, seq_num,
+                // Increment attempts before re-queueing
+                uint8_t next_attempt = pending.attempts + 1;
+
+                logger_.info("Retry %d for seq=%d (%s)", next_attempt, seq_num,
                             RetryPolicy::getPolicyName(pending.criticality));
-                
-                if (!sendMessage(pending.buffer.get(), pending.length)) {
-                    logger_.error("Failed to resend message seq=%d", seq_num);
-                }
+
+                // Create a copy and re-queue it, preserving the attempt count
+                OutgoingMessage retry_msg;
+                retry_msg.buffer = std::make_unique<uint8_t[]>(pending.length);
+                memcpy(retry_msg.buffer.get(), pending.buffer.get(), pending.length);
+                retry_msg.length = pending.length;
+                retry_msg.criticality = pending.criticality;
+                retry_msg.seq_num = seq_num;
+                retry_msg.attempts = next_attempt;  // Set the incremented attempt count
+
+                message_queue_.push(std::move(retry_msg));
+
+                // Remove from pending - will be re-added with updated attempts when sent from queue
+                it = pending_messages_.erase(it);
+                continue;
             } else {
                 // Give up
                 logger_.error("Message seq=%d failed after %d attempts", seq_num, pending.attempts);
@@ -459,15 +509,19 @@ void ReliableMessenger::handleAck(const AckPayload* ack_payload) {
 
 void ReliableMessenger::sendAck(uint16_t src_addr, uint8_t seq_num, uint8_t status) {
     uint8_t my_seq = getNextSequenceNumber();
-    
+
     uint8_t buffer[MESSAGE_MAX_SIZE];
     AckPayload ack = { seq_num, status };
-    size_t length = MessageBuilder::createMessage(MSG_TYPE_ACK, 0, node_addr_, src_addr, 
+    size_t length = MessageBuilder::createMessage(MSG_TYPE_ACK, 0, node_addr_, src_addr,
                                                  my_seq, ack, buffer);
-    
+
     if (length > 0) {
         sendMessage(buffer, length);
         logger_.info("Sent ACK for seq=%d to 0x%04X", seq_num, src_addr);
+
+        // Small delay after ACK to ensure it's fully transmitted before next message
+        // This prevents ACKs from being corrupted by back-to-back transmissions
+        sleep_ms(20);
     } else {
         logger_.error("Failed to create ACK message");
     }
@@ -493,7 +547,17 @@ uint8_t ReliableMessenger::getNextSequenceNumber() {
 void ReliableMessenger::updateNodeAddress(uint16_t new_addr) {
     logger_.info("Updating node address from 0x%04X to 0x%04X", node_addr_, new_addr);
     node_addr_ = new_addr;
-    
+
     // Note: We keep the same sequence number range (128-255) for all non-hub nodes
     // This ensures continuity even after address assignment
+}
+
+bool ReliableMessenger::cancelPendingMessage(uint8_t seq_num) {
+    auto it = pending_messages_.find(seq_num);
+    if (it != pending_messages_.end()) {
+        logger_.info("Cancelling pending message seq=%d", seq_num);
+        pending_messages_.erase(it);
+        return true;
+    }
+    return false;
 }
