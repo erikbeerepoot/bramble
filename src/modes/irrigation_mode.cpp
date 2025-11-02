@@ -58,6 +58,12 @@ void IrrigationMode::onStart() {
     // Green heartbeat pattern for irrigation nodes
     led_pattern_ = std::make_unique<HeartbeatPattern>(led_, 0, 255, 0);
 
+    // TODO: Re-enable CHECK_UPDATES after registration is working reliably
+    // Currently disabled to focus on fixing registration message delivery
+    // sleep_ms(500);
+    // logger.info("Sending initial CHECK_UPDATES to hub");
+    // sendCheckUpdates();
+
     // Add heartbeat task
     task_manager_.addTask(
         [this](uint32_t time) {
@@ -206,10 +212,13 @@ void IrrigationMode::onHeartbeatResponse(const HeartbeatResponsePayload* payload
 void IrrigationMode::sendCheckUpdates() {
     logger.info("Sending CHECK_UPDATES (seq=%d)", update_state_.current_sequence);
 
-    // Send using messenger helper
-    bool sent = messenger_.sendCheckUpdates(HUB_ADDRESS, update_state_.current_sequence);
+    // Send using messenger helper and store sequence number
+    uint8_t seq_num = messenger_.sendCheckUpdates(HUB_ADDRESS, update_state_.current_sequence);
 
-    if (sent) {
+    if (seq_num != 0) {
+        // Store the sequence number so we can cancel it when we receive UPDATE_AVAILABLE
+        update_state_.pending_check_seq = seq_num;
+
         // Mark that we're processing updates and need to stay awake
         update_state_.processing = true;
         update_state_.last_keepawake_ms = to_ms_since_boot(get_absolute_time());
@@ -228,6 +237,13 @@ void IrrigationMode::onUpdateAvailable(const UpdateAvailablePayload* payload) {
         logger.error("NULL update payload");
         update_state_.reset();
         return;
+    }
+
+    // CRITICAL: Cancel the pending CHECK_UPDATES message
+    // UPDATE_AVAILABLE is the response to CHECK_UPDATES, so we don't need to wait for an ACK
+    if (update_state_.pending_check_seq != 0) {
+        messenger_.cancelPendingMessage(update_state_.pending_check_seq);
+        update_state_.pending_check_seq = 0;
     }
 
     // Keep awake while processing
@@ -264,14 +280,14 @@ void IrrigationMode::onUpdateAvailable(const UpdateAvailablePayload* payload) {
         case UpdateType::SET_SCHEDULE: {
             // Parse schedule data (8 bytes)
             const uint8_t* data = payload->payload_data;
+            uint8_t index = data[0];
             PMU::ScheduleEntry entry;
-            entry.hour = data[0];
-            entry.minute = data[1];
-            entry.duration = (data[2] << 8) | data[3];  // uint16_t duration
-            entry.daysMask = static_cast<PMU::DayOfWeek>(data[4]);
-            entry.valveId = data[5];
-            entry.enabled = (data[6] != 0);
-            uint8_t index = data[7];
+            entry.hour = data[1];
+            entry.minute = data[2];
+            entry.duration = data[3] | (data[4] << 8);  // Little-endian uint16_t
+            entry.daysMask = static_cast<PMU::DayOfWeek>(data[5]);
+            entry.valveId = data[6];
+            entry.enabled = (data[7] != 0);
 
             logger.info("  SET_SCHEDULE[%d]: %02d:%02d, valve=%d, duration=%ds, days=0x%02X",
                        index, entry.hour, entry.minute, entry.valveId, entry.duration, static_cast<uint8_t>(entry.daysMask));

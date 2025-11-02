@@ -12,13 +12,15 @@ struct UpdatePullState {
     uint32_t last_keepawake_ms;      // Last keep-awake call time
     bool processing;                 // Whether actively processing an update
     uint32_t timeout_ms;             // Timeout for update processing (5 seconds)
+    uint8_t pending_check_seq;       // Sequence number of pending CHECK_UPDATES message
 
     UpdatePullState() : current_sequence(0), last_keepawake_ms(0),
-                       processing(false), timeout_ms(5000) {}
+                       processing(false), timeout_ms(5000), pending_check_seq(0) {}
 
     void reset() {
         processing = false;
         last_keepawake_ms = 0;
+        pending_check_seq = 0;
     }
 };
 
