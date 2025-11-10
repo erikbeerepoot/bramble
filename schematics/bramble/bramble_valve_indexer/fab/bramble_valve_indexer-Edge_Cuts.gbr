@@ -1,0 +1,23 @@
+%TF.GenerationSoftware,KiCad,Pcbnew,9.0.6*%
+%TF.CreationDate,2025-11-07T06:51:29-08:00*%
+%TF.ProjectId,bramble_valve_indexer,6272616d-626c-4655-9f76-616c76655f69,rev?*%
+%TF.SameCoordinates,Original*%
+%TF.FileFunction,Profile,NP*%
+%FSLAX46Y46*%
+G04 Gerber Fmt 4.6, Leading zero omitted, Abs format (unit mm)*
+G04 Created by KiCad (PCBNEW 9.0.6) date 2025-11-07 06:51:29*
+%MOMM*%
+%LPD*%
+G01*
+G04 APERTURE LIST*
+%TA.AperFunction,Profile*%
+%ADD10C,0.050000*%
+%TD*%
+G04 APERTURE END LIST*
+D10*
+X12750000Y-13250000D02*
+X50000000Y-13250000D01*
+X50000000Y-55500000D01*
+X12750000Y-55500000D01*
+X12750000Y-13250000D01*
+M02*

@@ -1,0 +1,5 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "2025-10-28_13-30-32")(type "KiCad")(uri "/Users/erikbeerepoot/Downloads/ul_MT25QL01GBBB8ESF-0SIT/KiCADv6/2025-10-28_13-30-32.kicad_sym")(options "")(descr ""))
+  (lib (name "2025-11-01_13-33-45")(type "KiCad")(uri "/Users/erikbeerepoot/Downloads/KiCADv6/2025-11-01_13-33-45.kicad_sym")(options "")(descr ""))
+)

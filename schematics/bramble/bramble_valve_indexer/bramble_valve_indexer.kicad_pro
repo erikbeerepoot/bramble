@@ -52,7 +52,12 @@
         }
       },
       "diff_pair_dimensions": [],
-      "drc_exclusions": [],
+      "drc_exclusions": [
+        [
+          "nonmirrored_text_on_back_layer|15500000|48000000|cdb9cf2a-61e2-4742-8f48-f34d4d567daa|00000000-0000-0000-0000-000000000000",
+          ""
+        ]
+      ],
       "meta": {
         "version": 2
       },
@@ -430,7 +435,7 @@
       "no_connect_dangling": "warning",
       "pin_not_connected": "error",
       "pin_not_driven": "error",
-      "pin_to_pin": "error",
+      "pin_to_pin": "warning",
       "power_pin_not_driven": "error",
       "same_local_global_label": "warning",
       "similar_label_and_power": "warning",
@@ -451,7 +456,7 @@
     "pinned_symbol_libs": []
   },
   "meta": {
-    "filename": "bramble.kicad_pro",
+    "filename": "bramble_valve_indexer.kicad_pro",
     "version": 3
   },
   "net_settings": {
@@ -473,6 +478,22 @@
         "via_diameter": 0.6,
         "via_drill": 0.3,
         "wire_width": 6
+      },
+      {
+        "diff_pair_width": 0.381,
+        "name": "+9V",
+        "pcb_color": "rgba(0, 0, 0, 0.000)",
+        "priority": 0,
+        "schematic_color": "rgba(0, 0, 0, 0.000)",
+        "track_width": 0.381
+      },
+      {
+        "diff_pair_width": 0.381,
+        "name": "MOTOR",
+        "pcb_color": "rgba(0, 0, 0, 0.000)",
+        "priority": 1,
+        "schematic_color": "rgba(0, 0, 0, 0.000)",
+        "track_width": 0.381
       }
     ],
     "meta": {
@@ -480,14 +501,31 @@
     },
     "net_colors": null,
     "netclass_assignments": null,
-    "netclass_patterns": []
+    "netclass_patterns": [
+      {
+        "netclass": "MOTOR",
+        "pattern": "*M+"
+      },
+      {
+        "netclass": "+9V",
+        "pattern": "+9V"
+      },
+      {
+        "netclass": "Default",
+        "pattern": ""
+      },
+      {
+        "netclass": "MOTOR",
+        "pattern": "*M-"
+      }
+    ]
   },
   "pcbnew": {
     "last_paths": {
       "gencad": "",
       "idf": "",
       "netlist": "",
-      "plot": "",
+      "plot": "fab/",
       "pos_files": "",
       "specctra_dsn": "",
       "step": "",
@@ -611,16 +649,8 @@
   },
   "sheets": [
     [
-      "e35d7dcf-51bd-456f-89cf-e52d660079b4",
+      "96a444fc-7fb7-4759-897b-3c1d07e41d95",
       "Root"
-    ],
-    [
-      "df1d8afa-9717-44ff-901e-40cae4aada91",
-      "pmu"
-    ],
-    [
-      "74ee86d6-15f8-4467-9b29-c5ab14125d21",
-      "rp2040"
     ]
   ],
   "text_variables": {}

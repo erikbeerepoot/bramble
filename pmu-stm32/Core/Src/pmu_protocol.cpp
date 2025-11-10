@@ -52,6 +52,30 @@ uint32_t ScheduleEntry::minutesUntil(uint8_t currentDay, uint8_t currentHour,
     return 0xFFFFFFFF;  // Time has passed today
 }
 
+bool ScheduleEntry::isWithinWindow(uint8_t currentDay, uint8_t currentHour,
+                                   uint8_t currentMinute, uint32_t windowMinutes) const {
+    if (!enabled) return false;
+    if (!matchesDay(currentDay)) return false;
+
+    uint32_t currentMinutes = currentHour * 60 + currentMinute;
+    uint32_t scheduleMinutes = hour * 60 + minute;
+
+    // Check if we're at or past the scheduled time, but within the window
+    if (currentMinutes >= scheduleMinutes) {
+        uint32_t minutesPast = currentMinutes - scheduleMinutes;
+        return minutesPast <= windowMinutes;
+    }
+
+    // Also check if we're slightly before (within the window)
+    // This handles the case where we wake slightly early
+    if (scheduleMinutes > currentMinutes) {
+        uint32_t minutesUntil = scheduleMinutes - currentMinutes;
+        return minutesUntil <= windowMinutes;
+    }
+
+    return false;
+}
+
 bool ScheduleEntry::matchesDay(uint8_t dayOfWeek) const {
     if (dayOfWeek > 6) return false;  // Invalid day
     uint8_t dayBit = 1 << dayOfWeek;

@@ -140,7 +140,7 @@ int main(void)
   // Boot indication - flicker green LED
   flicker(led, LED::GREEN, 1000);
 
-  // Configure RTC to wake every 15 seconds
+  // Configure RTC wakeup timer with default wake interval (300 seconds)
   configureRTCWakeup(protocol.getWakeInterval());
   
   // Start UART receive interrupt
@@ -391,20 +391,29 @@ static void configureRTCWakeup(uint32_t seconds) {
     HAL_NVIC_SetPriority(RTC_IRQn, 0, 0);
     HAL_NVIC_EnableIRQ(RTC_IRQn);
 
-    // LSI is typically 37kHz, with prescaler /16 = ~2.3kHz
-    // To get 15 seconds: 15 * 2048 = 30720 (using RTCCLK_DIV16 gives ~2048 Hz)
-    // For more accuracy, we'll use calculated value based on 37kHz LSI
-    // With DIV16: 37000/16 = 2312.5 Hz, so for 15 sec: 15 * 2312.5 = 34687
-    uint32_t wakeupCounter = seconds * 2048; // Approximate for LSI/16
-
-    // Enable wakeup timer with interrupt
-    if (HAL_RTCEx_SetWakeUpTimer_IT(&hrtc, wakeupCounter, RTC_WAKEUPCLOCK_RTCCLK_DIV16) != HAL_OK) {
-        Error_Handler();
-    }
-
     // Enable EXTI line 20 (RTC wakeup) for waking from STOP mode
     __HAL_RTC_WAKEUPTIMER_EXTI_ENABLE_IT();
     __HAL_RTC_WAKEUPTIMER_EXTI_ENABLE_RISING_EDGE();
+
+    // Use ck_spre (1 Hz clock) for wakeup timer
+    // This allows up to 65535 seconds (~18 hours) with 16-bit counter
+    // For seconds < 65536: counter = seconds - 1 (because counter counts from N to 0)
+    uint32_t wakeupCounter;
+
+    if (seconds > 65535) {
+        // Clamp to maximum
+        wakeupCounter = 65535;
+    } else if (seconds > 0) {
+        wakeupCounter = seconds;
+    } else {
+        // Minimum 1 second
+        wakeupCounter = 1;
+    }
+
+    // Enable wakeup timer with interrupt using 1 Hz clock
+    if (HAL_RTCEx_SetWakeUpTimer_IT(&hrtc, wakeupCounter, RTC_WAKEUPCLOCK_CK_SPRE_16BITS) != HAL_OK) {
+        Error_Handler();
+    }
 }
 
 /**
@@ -459,10 +468,17 @@ static void handleRTCWakeup(void) {
     const PMU::ScheduleEntry* entry = protocol.getNextScheduledEntry(
         date.WeekDay, time.Hours, time.Minutes);
 
-    if (entry && entry->minutesUntil(date.WeekDay, time.Hours, time.Minutes) == 0) {
-        // This is a scheduled watering event
+    // Check if we're within the wake interval window of a scheduled event
+    // This handles the case where RTC doesn't wake exactly at the scheduled time
+    uint32_t wakeIntervalMinutes = protocol.getWakeInterval() / 60;
+
+    if (entry && entry->isWithinWindow(date.WeekDay, time.Hours, time.Minutes, wakeIntervalMinutes)) {
+        // This is a scheduled watering event (or we're within the wake window of one)
         // Enable DC/DC to power up RP2040
         dcdc.enable();
+
+        // Small delay to allow RP2040 to power up and boot
+        HAL_Delay(100);
 
         // Start watering session
         wateringActive = true;
@@ -472,7 +488,13 @@ static void handleRTCWakeup(void) {
         // Send wake notification with schedule entry data
         protocol.sendWakeNotificationWithSchedule(PMU::WakeReason::Scheduled, entry);
     } else {
-        // Normal periodic wake
+        // Normal periodic wake - enable DC/DC to power up RP2040
+        dcdc.enable();
+
+        // Small delay to allow RP2040 to power up and boot
+        HAL_Delay(100);
+
+        // Send periodic wake notification
         protocol.sendWakeNotification(PMU::WakeReason::Periodic);
     }
 }
@@ -516,7 +538,8 @@ static void uartSendCallback(const uint8_t* data, uint8_t length)
  */
 static void setWakeIntervalCallback(uint32_t seconds)
 {
-    // Reconfigure RTC wakeup timer
+    // Reconfigure RTC wakeup timer with new interval
+    // (configureRTCWakeup handles deactivation internally)
     configureRTCWakeup(seconds);
 }
 

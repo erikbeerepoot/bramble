@@ -99,6 +99,11 @@ public:
     // Returns 0xFFFFFFFF if entry doesn't match the given day
     uint32_t minutesUntil(uint8_t currentDay, uint8_t currentHour, uint8_t currentMinute) const;
 
+    // Check if current time is within this schedule entry's time window
+    // windowMinutes: how many minutes past the scheduled time to still consider "active"
+    bool isWithinWindow(uint8_t currentDay, uint8_t currentHour, uint8_t currentMinute,
+                        uint32_t windowMinutes) const;
+
     // Check if entry matches a specific day
     bool matchesDay(uint8_t dayOfWeek) const;
 

@@ -1,0 +1,13 @@
+Warning: Width correction constrained.  The width correction value must be in the range of [0.000001 mm; -0.000002 mm] for the current design rules.
+Plotted to '/Users/erikbeerepoot/Code/bramble/schematics/bramble/bramble_valve_indexer/bramble_valve_indexer-F_Cu.gbr'.
+Plotted to '/Users/erikbeerepoot/Code/bramble/schematics/bramble/bramble_valve_indexer/bramble_valve_indexer-B_Cu.gbr'.
+Plotted to '/Users/erikbeerepoot/Code/bramble/schematics/bramble/bramble_valve_indexer/bramble_valve_indexer-F_Paste.gbr'.
+Plotted to '/Users/erikbeerepoot/Code/bramble/schematics/bramble/bramble_valve_indexer/bramble_valve_indexer-B_Paste.gbr'.
+Plotted to '/Users/erikbeerepoot/Code/bramble/schematics/bramble/bramble_valve_indexer/bramble_valve_indexer-F_Silkscreen.gbr'.
+Plotted to '/Users/erikbeerepoot/Code/bramble/schematics/bramble/bramble_valve_indexer/bramble_valve_indexer-B_Silkscreen.gbr'.
+Plotted to '/Users/erikbeerepoot/Code/bramble/schematics/bramble/bramble_valve_indexer/bramble_valve_indexer-F_Mask.gbr'.
+Plotted to '/Users/erikbeerepoot/Code/bramble/schematics/bramble/bramble_valve_indexer/bramble_valve_indexer-B_Mask.gbr'.
+Plotted to '/Users/erikbeerepoot/Code/bramble/schematics/bramble/bramble_valve_indexer/bramble_valve_indexer-Edge_Cuts.gbr'.
+Created Gerber job file '/Users/erikbeerepoot/Code/bramble/schematics/bramble/bramble_valve_indexer/bramble_valve_indexer-job.gbrjob'.
+Info: Done.
+Info: Done.
