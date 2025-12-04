@@ -139,7 +139,7 @@
         "min_track_width": 0.0,
         "min_via_annular_width": 0.1,
         "min_via_diameter": 0.5,
-        "solder_mask_to_copper_clearance": 0.005,
+        "solder_mask_to_copper_clearance": 0.0,
         "use_height_for_length_calcs": true
       },
       "teardrop_options": [
@@ -188,11 +188,7 @@
       ],
       "track_widths": [
         0.0,
-        0.0,
-        0.2,
-        0.5,
-        0.8,
-        1.5
+        0.2
       ],
       "tuning_pattern_settings": {
         "diff_pair_defaults": {
@@ -224,10 +220,6 @@
         {
           "diameter": 0.0,
           "drill": 0.0
-        },
-        {
-          "diameter": 0.4,
-          "drill": 0.4
         }
       ],
       "zones_allow_external_fillets": false
@@ -735,10 +727,6 @@
     [
       "df1d8afa-9717-44ff-901e-40cae4aada91",
       "pmu"
-    ],
-    [
-      "76d8edf4-bbfb-408f-ab0d-6d789e9d6859",
-      "Fan Controller"
     ],
     [
       "74ee86d6-15f8-4467-9b29-c5ab14125d21",

@@ -51,14 +51,13 @@
           "min_clearance": 0.5
         }
       },
-      "diff_pair_dimensions": [
-        {
-          "gap": 0.0,
-          "via_gap": 0.0,
-          "width": 0.0
-        }
+      "diff_pair_dimensions": [],
+      "drc_exclusions": [
+        [
+          "nonmirrored_text_on_back_layer|15500000|48000000|cdb9cf2a-61e2-4742-8f48-f34d4d567daa|00000000-0000-0000-0000-000000000000",
+          ""
+        ]
       ],
-      "drc_exclusions": [],
       "meta": {
         "version": 2
       },
@@ -139,7 +138,7 @@
         "min_track_width": 0.0,
         "min_via_annular_width": 0.1,
         "min_via_diameter": 0.5,
-        "solder_mask_to_copper_clearance": 0.005,
+        "solder_mask_to_copper_clearance": 0.0,
         "use_height_for_length_calcs": true
       },
       "teardrop_options": [
@@ -186,14 +185,7 @@
           "td_width_to_size_filter_ratio": 0.9
         }
       ],
-      "track_widths": [
-        0.0,
-        0.0,
-        0.2,
-        0.5,
-        0.8,
-        1.5
-      ],
+      "track_widths": [],
       "tuning_pattern_settings": {
         "diff_pair_defaults": {
           "corner_radius_percentage": 80,
@@ -220,16 +212,7 @@
           "spacing": 0.6
         }
       },
-      "via_dimensions": [
-        {
-          "diameter": 0.0,
-          "drill": 0.0
-        },
-        {
-          "diameter": 0.4,
-          "drill": 0.4
-        }
-      ],
+      "via_dimensions": [],
       "zones_allow_external_fillets": false
     },
     "ipc2581": {
@@ -240,68 +223,7 @@
       "mpn": ""
     },
     "layer_pairs": [],
-    "layer_presets": [
-      {
-        "activeLayer": -2,
-        "flipBoard": true,
-        "layers": [
-          2,
-          25
-        ],
-        "name": "back (clean0",
-        "renderLayers": [
-          "vias",
-          "footprint_text",
-          "footprint_anchors",
-          "ratsnest",
-          "grid",
-          "footprints_front",
-          "footprints_back",
-          "footprint_values",
-          "footprint_references",
-          "tracks",
-          "drc_errors",
-          "drawing_sheet",
-          "bitmaps",
-          "pads",
-          "zones",
-          "drc_warnings",
-          "locked_item_shadows",
-          "conflict_shadows",
-          "shapes"
-        ]
-      },
-      {
-        "activeLayer": -2,
-        "flipBoard": false,
-        "layers": [
-          0,
-          25
-        ],
-        "name": "front (clean)",
-        "renderLayers": [
-          "vias",
-          "footprint_text",
-          "footprint_anchors",
-          "ratsnest",
-          "grid",
-          "footprints_front",
-          "footprints_back",
-          "footprint_values",
-          "footprint_references",
-          "tracks",
-          "drc_errors",
-          "drawing_sheet",
-          "bitmaps",
-          "pads",
-          "zones",
-          "drc_warnings",
-          "locked_item_shadows",
-          "conflict_shadows",
-          "shapes"
-        ]
-      }
-    ],
+    "layer_presets": [],
     "viewports": []
   },
   "boards": [],
@@ -513,7 +435,7 @@
       "no_connect_dangling": "warning",
       "pin_not_connected": "error",
       "pin_not_driven": "error",
-      "pin_to_pin": "error",
+      "pin_to_pin": "warning",
       "power_pin_not_driven": "error",
       "same_local_global_label": "warning",
       "similar_label_and_power": "warning",
@@ -534,7 +456,7 @@
     "pinned_symbol_libs": []
   },
   "meta": {
-    "filename": "bramble.kicad_pro",
+    "filename": "bramble_valve_indexer.kicad_pro",
     "version": 3
   },
   "net_settings": {
@@ -558,26 +480,20 @@
         "wire_width": 6
       },
       {
-        "clearance": 0.2,
-        "name": "9v",
+        "diff_pair_width": 0.381,
+        "name": "+9V",
         "pcb_color": "rgba(0, 0, 0, 0.000)",
         "priority": 0,
         "schematic_color": "rgba(0, 0, 0, 0.000)",
-        "track_width": 0.8
+        "track_width": 0.381
       },
       {
-        "name": "gnd",
-        "pcb_color": "rgba(0, 0, 0, 0.000)",
-        "priority": 2,
-        "schematic_color": "rgba(0, 0, 0, 0.000)",
-        "track_width": 0.4
-      },
-      {
-        "name": "gnd_pwr",
+        "diff_pair_width": 0.381,
+        "name": "MOTOR",
         "pcb_color": "rgba(0, 0, 0, 0.000)",
         "priority": 1,
         "schematic_color": "rgba(0, 0, 0, 0.000)",
-        "track_width": 0.9
+        "track_width": 0.381
       }
     ],
     "meta": {
@@ -587,16 +503,20 @@
     "netclass_assignments": null,
     "netclass_patterns": [
       {
-        "netclass": "9v",
+        "netclass": "MOTOR",
+        "pattern": "*M+"
+      },
+      {
+        "netclass": "+9V",
         "pattern": "+9V"
       },
       {
-        "netclass": "gnd",
-        "pattern": "GND"
+        "netclass": "Default",
+        "pattern": ""
       },
       {
-        "netclass": "gnd_pwr",
-        "pattern": "GNDPWR"
+        "netclass": "MOTOR",
+        "pattern": "*M-"
       }
     ]
   },
@@ -605,7 +525,7 @@
       "gencad": "",
       "idf": "",
       "netlist": "",
-      "plot": "",
+      "plot": "fab/",
       "pos_files": "",
       "specctra_dsn": "",
       "step": "",
@@ -729,20 +649,8 @@
   },
   "sheets": [
     [
-      "e35d7dcf-51bd-456f-89cf-e52d660079b4",
+      "96a444fc-7fb7-4759-897b-3c1d07e41d95",
       "Root"
-    ],
-    [
-      "df1d8afa-9717-44ff-901e-40cae4aada91",
-      "pmu"
-    ],
-    [
-      "76d8edf4-bbfb-408f-ab0d-6d789e9d6859",
-      "Fan Controller"
-    ],
-    [
-      "74ee86d6-15f8-4467-9b29-c5ab14125d21",
-      "rp2040"
     ]
   ],
   "text_variables": {}
