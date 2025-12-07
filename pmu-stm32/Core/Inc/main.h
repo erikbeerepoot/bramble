@@ -63,8 +63,8 @@ void Error_Handler(void);
 
 // Pin definitions for Bramble PMU
 #define DCDC_EN_PIN         GPIO_PIN_1  // PA1, pin 7 - DC/DC converter enable
-#define LED_RED_PIN         GPIO_PIN_5  // PA4, pin 10 - Red LED 
-#define LED_GREEN_PIN       GPIO_PIN_4  // PA5, pin 11 - Green LED 
+#define LED_RED_PIN         GPIO_PIN_4  // PA4, pin 10 - Red LED
+#define LED_GREEN_PIN       GPIO_PIN_5  // PA5, pin 11 - Green LED 
 
 /* USER CODE END Private defines */
 

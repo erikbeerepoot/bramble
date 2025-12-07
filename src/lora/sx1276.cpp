@@ -32,15 +32,29 @@ SX1276::SX1276(spi_inst_t* spi_port, uint cs_pin, int rst_pin, int dio0_pin)
 }
 
 bool SX1276::begin() {
+    logger_.info("begin() - Starting initialization, RST pin: %d, DIO0 pin: %d",
+                 rst_pin_, dio0_pin_);
+
     // Reset module if reset pin connected
     if (rst_pin_ >= 0) {
+        logger_.info("Resetting module (RST pin %d)...", rst_pin_);
         reset();
         sleep_ms(10);
+        logger_.info("Reset complete");
     }
-    
+
     // Check if module is responding
-    if (!isConnected()) {
-        printf("SX1276: Failed to detect module\n");
+    logger_.info("Checking if module is connected...");
+    uint8_t version = readRegister(SX1276_REG_VERSION);
+    logger_.info("VERSION register (0x42) = 0x%02X (expected 0x12 for SX1276/RFM95W)", version);
+
+    if (version != 0x12) {
+        logger_.error("Failed to detect module! VERSION=0x%02X", version);
+        // Read a few more registers for debugging
+        uint8_t opmode = readRegister(SX1276_REG_OP_MODE);
+        uint8_t paconfig = readRegister(SX1276_REG_PA_CONFIG);
+        logger_.error("  OP_MODE=0x%02X, PA_CONFIG=0x%02X", opmode, paconfig);
+        logger_.error("  If all 0x00 or 0xFF: check SPI wiring/power");
         return false;
     }
     

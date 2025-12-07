@@ -133,8 +133,9 @@ int main(void)
   led.init();
   led.off();
 
-  // Initialize and enable DC/DC converter
+  // Initialize DC/DC converter (disabled - only enabled when RP2040 needs power)
   dcdc.init();
+  // dcdc.disable();
   dcdc.enable();
 
   // Boot indication - flicker green LED
@@ -150,8 +151,7 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  // dcdc.enable();  // Ensure DC/DC is enabled
-  
+
   while (1)
   {
     /* USER CODE END WHILE */
@@ -316,8 +316,10 @@ static void MX_RTC_Init(void)
   */
   hrtc.Instance = RTC;
   hrtc.Init.HourFormat = RTC_HOURFORMAT_24;
-  hrtc.Init.AsynchPrediv = 127;
-  hrtc.Init.SynchPrediv = 255;
+  // LSI is ~37kHz, so we need prescalers that divide to 1 Hz for ck_spre
+  // 37000 Hz / (125 × 296) = 37000 / 37000 = 1 Hz
+  hrtc.Init.AsynchPrediv = 124;  // AsynchPrediv + 1 = 125
+  hrtc.Init.SynchPrediv = 295;   // SynchPrediv + 1 = 296
   hrtc.Init.OutPut = RTC_OUTPUT_DISABLE;
   hrtc.Init.OutPutRemap = RTC_OUTPUT_REMAP_NONE;
   hrtc.Init.OutPutPolarity = RTC_OUTPUT_POLARITY_HIGH;
@@ -387,6 +389,23 @@ static void configureRTCWakeup(uint32_t seconds) {
     // Disable wakeup timer first
     HAL_RTCEx_DeactivateWakeUpTimer(&hrtc);
 
+    // Wait for WUTWF flag to be set (wakeup timer configuration allowed)
+    // This is critical - without it, the SetWakeUpTimer call will hang
+    uint32_t timeout = 1000;
+    while (!__HAL_RTC_WAKEUPTIMER_GET_FLAG(&hrtc, RTC_FLAG_WUTWF) && timeout > 0) {
+        timeout--;
+        HAL_Delay(1);
+    }
+
+    if (timeout == 0) {
+        // WUTWF flag never set - RTC is not ready for configuration
+        // Flash LED to indicate error but don't halt
+        led.setColor(LED::RED);
+        HAL_Delay(2000);
+        led.off();
+        return;
+    }
+
     // Enable RTC interrupt in NVIC
     HAL_NVIC_SetPriority(RTC_IRQn, 0, 0);
     HAL_NVIC_EnableIRQ(RTC_IRQn);
@@ -397,22 +416,25 @@ static void configureRTCWakeup(uint32_t seconds) {
 
     // Use ck_spre (1 Hz clock) for wakeup timer
     // This allows up to 65535 seconds (~18 hours) with 16-bit counter
-    // For seconds < 65536: counter = seconds - 1 (because counter counts from N to 0)
+    // The counter value is N-1 because it counts from N-1 down to 0
     uint32_t wakeupCounter;
 
-    if (seconds > 65535) {
-        // Clamp to maximum
+    if (seconds > 65536) {
+        // Clamp to maximum (counter goes 0-65535, which is 65536 values)
         wakeupCounter = 65535;
     } else if (seconds > 0) {
-        wakeupCounter = seconds;
+        wakeupCounter = seconds - 1;
     } else {
-        // Minimum 1 second
-        wakeupCounter = 1;
+        // Minimum 1 second (counter = 0 means 1 tick)
+        wakeupCounter = 0;
     }
 
     // Enable wakeup timer with interrupt using 1 Hz clock
     if (HAL_RTCEx_SetWakeUpTimer_IT(&hrtc, wakeupCounter, RTC_WAKEUPCLOCK_CK_SPRE_16BITS) != HAL_OK) {
-        Error_Handler();
+        // Flash LED to indicate error but don't halt
+        led.setColor(LED::RED);
+        HAL_Delay(2000);
+        led.off();
     }
 }
 
@@ -492,10 +514,16 @@ static void handleRTCWakeup(void) {
         dcdc.enable();
 
         // Small delay to allow RP2040 to power up and boot
-        HAL_Delay(100);
+        HAL_Delay(5000);
 
         // Send periodic wake notification
         protocol.sendWakeNotification(PMU::WakeReason::Periodic);
+
+        // Small delay to ensure message is sent
+        HAL_Delay(5000);
+
+        // Power down RP2040 - periodic wake is complete
+        // dcdc.disable();
     }
 }
 

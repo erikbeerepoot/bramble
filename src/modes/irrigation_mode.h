@@ -36,10 +36,14 @@ private:
     PmuClient* pmu_client_;
     bool pmu_available_;
     UpdatePullState update_state_;
+    bool needs_registration_;  // True if we need to register with hub
 
     // PMU callback handlers
     void handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry* entry);
     void handleScheduleComplete();
+
+    // Registration handling
+    void attemptDeferredRegistration();
 
     // Update handling
     void sendCheckUpdates();

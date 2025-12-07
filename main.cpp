@@ -14,11 +14,13 @@
 #include "hardware/timer.h"
 #include "hardware/clocks.h"
 #include "hardware/gpio.h"
+#include "hardware/structs/iobank0.h"
 
 // HAL includes
 #include "hal/neopixel.h"
 #include "hal/logger.h"
 #include "hal/flash.h"
+#include "hal/external_flash.h"
 
 // LoRa includes
 #include "lora/sx1276.h"
@@ -47,14 +49,14 @@
     #include "modes/generic_mode.h"
 #endif
 
-// Hardware configuration - Adafruit Feather RP2040 LoRa
+// Hardware configuration - Bramble board v1
 static auto SPI_PORT = spi1;  // SPI1 for LoRa module
-constexpr uint PIN_MISO = 8;   // SPI1 RX
-constexpr uint PIN_CS   = 16;  // GPIO as chip select
+constexpr uint PIN_MISO = 12;  // SPI1 RX (directly to RFM95W, bodge wire from VALVE_4)
 constexpr uint PIN_SCK  = 14;  // SPI1 SCK
 constexpr uint PIN_MOSI = 15;  // SPI1 TX
-constexpr uint PIN_RST  = 17;  // Reset pin
-constexpr uint PIN_DIO0 = 21;  // DIO0 interrupt pin
+constexpr uint PIN_CS   = 16;  // GPIO as chip select
+constexpr uint PIN_RST  = 17;  // Reset pin (directly to RFM95W)
+constexpr uint PIN_DIO0 = 21;  // DIO0 interrupt pin (RFM_IO0)
 constexpr uint PIN_NEOPIXEL = 4;
 
 // Controller input pins (Adafruit Feather RP2040)
@@ -62,6 +64,7 @@ constexpr uint PIN_A0 = 26;  // A0 analog/digital input
 constexpr uint PIN_A1 = 27;  // A1 analog/digital input
 
 // Demo mode configuration is set by CMake
+// Debug UART: printf goes to GPIO12 (VALVE_3) via CMakeLists.txt config
 
 // Forward declarations
 bool initializeHardware(SX1276& lora, NeoPixel& led);
@@ -77,10 +80,59 @@ void sleepUntilInterrupt();
  * compile-time configuration and role.
  */
 int main() {
+    // Initialize stdio (UART on GPIO12 configured via CMakeLists.txt)
     stdio_init_all();
-    sleep_ms(2000);  // Give USB time to enumerate
-    
+
     printf("\n==== Bramble Network Device ====\n");
+
+    // Test external flash
+    // Results stored in volatile vars for debugger inspection
+    printf("\n--- External Flash Test ---\n");
+    ExternalFlash ext_flash;
+
+    volatile bool flash_ok = false;
+    volatile uint8_t flash_mfr = 0;
+    volatile uint8_t flash_type = 0;
+    volatile uint8_t flash_cap = 0;
+    volatile uint8_t flash_data[16] = {0};
+
+    if (ext_flash.init()) {
+        uint8_t mfr, mem_type, capacity;
+        if (ext_flash.readId(mfr, mem_type, capacity) == ExternalFlashResult::Success) {
+            flash_mfr = mfr;
+            flash_type = mem_type;
+            flash_cap = capacity;
+
+            printf("Flash ID: Mfr=0x%02X Type=0x%02X Cap=0x%02X\n", mfr, mem_type, capacity);
+
+            // Check if it's a Micron flash (0x20)
+            if (mfr == 0x20) {
+                flash_ok = true;
+            }
+
+            // Try reading first 16 bytes
+            uint8_t buffer[16];
+            if (ext_flash.read(0, buffer, sizeof(buffer)) == ExternalFlashResult::Success) {
+                for (int i = 0; i < 16; i++) {
+                    flash_data[i] = buffer[i];
+                }
+                printf("First 16 bytes: ");
+                for (int i = 0; i < 16; i++) {
+                    printf("%02X ", buffer[i]);
+                }
+                printf("\n");
+            }
+        }
+    } else {
+        printf("External flash init FAILED\n");
+    }
+
+    // SET BREAKPOINT HERE to inspect results:
+    // flash_ok, flash_mfr, flash_type, flash_cap, flash_data
+    volatile int flash_test_done = 1;  // Breakpoint marker
+    (void)flash_test_done;  // Prevent unused warning
+
+    printf("--- End Flash Test ---\n\n");
     
     // Determine role from build configuration
     #if defined(DEFAULT_IS_HUB) && DEFAULT_IS_HUB
@@ -120,7 +172,7 @@ int main() {
     if (!initializeHardware(lora, led)) {
         led.setPixel(0, 255, 0, 0);  // Red for error
         led.show();
-        panic("Hardware initialization failed!");
+        // panic("Hardware initialization failed!");
     }
     
     // Initialize network statistics
@@ -182,16 +234,22 @@ int main() {
         
         // Create messenger with current address
         ReliableMessenger messenger(&lora, current_address, &network_stats);
-        
+
         // Get device ID for registration
         uint64_t device_id = getDeviceId();
-        
-        // Attempt registration (updates messenger address if successful)
-        if (attemptRegistration(messenger, lora, config_manager, device_id)) {
-            printf("Registration successful!\n");
+
+        // Skip registration if we have a saved address
+        // IrrigationMode will handle deferred registration based on PMU wake reason
+        if (current_address == ADDRESS_UNREGISTERED) {
+            printf("No saved address - attempting registration...\n");
+            if (attemptRegistration(messenger, lora, config_manager, device_id)) {
+                printf("Registration successful!\n");
+            } else {
+                printf("Registration failed - will retry after PMU init\n");
+            }
         } else {
-            printf("Registration failed - continuing with address 0x%04X\n", 
-                   messenger.getNodeAddress());
+            printf("Using saved address 0x%04X - skipping boot registration\n", current_address);
+            printf("(Will re-register if PMU reports External wake)\n");
         }
         
         // Create appropriate node mode
