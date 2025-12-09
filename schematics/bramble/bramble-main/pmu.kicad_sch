@@ -4297,7 +4297,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "023e86a2-512c-486c-bb97-bce3e5559dc4")
-		(property "Reference" "C23"
+		(property "Reference" "C5"
 			(at 161.29 123.1901 0)
 			(effects
 				(font
@@ -4351,7 +4351,7 @@
 		(instances
 			(project "bramble"
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/df1d8afa-9717-44ff-901e-40cae4aada91"
-					(reference "C23")
+					(reference "C5")
 					(unit 1)
 				)
 			)
@@ -4443,7 +4443,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "04c5889c-2afa-42f5-a4db-e7368badd46f")
-		(property "Reference" "#U$07"
+		(property "Reference" "#U$012"
 			(at 92.71 90.17 0)
 			(effects
 				(font
@@ -4494,7 +4494,7 @@
 		(instances
 			(project "bramble"
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/df1d8afa-9717-44ff-901e-40cae4aada91"
-					(reference "#U$07")
+					(reference "#U$012")
 					(unit 1)
 				)
 			)
@@ -4509,7 +4509,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "0a09dae2-ace7-4890-8ef5-32b36b9a2cbe")
-		(property "Reference" "#U$039"
+		(property "Reference" "#U$017"
 			(at 222.25 68.58 0)
 			(effects
 				(font
@@ -4560,7 +4560,7 @@
 		(instances
 			(project "bramble"
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/df1d8afa-9717-44ff-901e-40cae4aada91"
-					(reference "#U$039")
+					(reference "#U$017")
 					(unit 1)
 				)
 			)
@@ -4576,7 +4576,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "0b4722b6-d671-4d23-b86f-c288d6e6bb80")
-		(property "Reference" "C4"
+		(property "Reference" "C2"
 			(at 62.23 161.2899 0)
 			(effects
 				(font
@@ -4630,7 +4630,7 @@
 		(instances
 			(project "bramble"
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/df1d8afa-9717-44ff-901e-40cae4aada91"
-					(reference "C4")
+					(reference "C2")
 					(unit 1)
 				)
 			)
@@ -4714,7 +4714,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "0e5209a5-d87d-42ed-b6ca-f915316e9bbf")
-		(property "Reference" "#PWR018"
+		(property "Reference" "#PWR011"
 			(at 125.095 158.115 0)
 			(effects
 				(font
@@ -4764,7 +4764,7 @@
 		(instances
 			(project ""
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/df1d8afa-9717-44ff-901e-40cae4aada91"
-					(reference "#PWR018")
+					(reference "#PWR011")
 					(unit 1)
 				)
 			)
@@ -4780,7 +4780,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "19cb0b53-7913-4a5e-b364-9ec6e8980827")
-		(property "Reference" "#PWR05"
+		(property "Reference" "#PWR010"
 			(at 123.19 172.72 0)
 			(effects
 				(font
@@ -4830,7 +4830,7 @@
 		(instances
 			(project ""
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/df1d8afa-9717-44ff-901e-40cae4aada91"
-					(reference "#PWR05")
+					(reference "#PWR010")
 					(unit 1)
 				)
 			)
@@ -4846,7 +4846,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "27aeeaf6-531c-484e-bf0f-9b98eebc642e")
-		(property "Reference" "C5"
+		(property "Reference" "C3"
 			(at 76.2 161.2899 0)
 			(effects
 				(font
@@ -4900,7 +4900,7 @@
 		(instances
 			(project "bramble"
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/df1d8afa-9717-44ff-901e-40cae4aada91"
-					(reference "C5")
+					(reference "C3")
 					(unit 1)
 				)
 			)
@@ -4915,7 +4915,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "2ff0c1d9-cc35-437c-aa4d-03e2dc0b9879")
-		(property "Reference" "C22"
+		(property "Reference" "C8"
 			(at 226.06 62.2299 0)
 			(effects
 				(font
@@ -4969,7 +4969,7 @@
 		(instances
 			(project "bramble"
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/df1d8afa-9717-44ff-901e-40cae4aada91"
-					(reference "C22")
+					(reference "C8")
 					(unit 1)
 				)
 			)
@@ -5053,7 +5053,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "3d6e75a0-2c5d-4856-b498-fea8ef2fe3d8")
-		(property "Reference" "#PWR016"
+		(property "Reference" "#PWR09"
 			(at 58.42 154.94 0)
 			(effects
 				(font
@@ -5103,7 +5103,7 @@
 		(instances
 			(project "bramble"
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/df1d8afa-9717-44ff-901e-40cae4aada91"
-					(reference "#PWR016")
+					(reference "#PWR09")
 					(unit 1)
 				)
 			)
@@ -5118,7 +5118,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "4057e346-fcfb-48b0-9acb-17ce8958bd22")
-		(property "Reference" "R22"
+		(property "Reference" "R13"
 			(at 79.502 84.328 90)
 			(effects
 				(font
@@ -5170,7 +5170,7 @@
 		(instances
 			(project "bramble"
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/df1d8afa-9717-44ff-901e-40cae4aada91"
-					(reference "R22")
+					(reference "R13")
 					(unit 1)
 				)
 			)
@@ -5185,7 +5185,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "514558fa-44ee-459c-9782-f4424e3b0d0b")
-		(property "Reference" "C21"
+		(property "Reference" "C7"
 			(at 213.995 50.1649 0)
 			(effects
 				(font
@@ -5239,7 +5239,7 @@
 		(instances
 			(project "bramble"
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/df1d8afa-9717-44ff-901e-40cae4aada91"
-					(reference "C21")
+					(reference "C7")
 					(unit 1)
 				)
 			)
@@ -5327,7 +5327,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "608b060d-de1f-4712-bd00-cd5599062317")
-		(property "Reference" "C24"
+		(property "Reference" "C4"
 			(at 132.08 123.1901 0)
 			(effects
 				(font
@@ -5381,7 +5381,7 @@
 		(instances
 			(project "bramble"
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/df1d8afa-9717-44ff-901e-40cae4aada91"
-					(reference "C24")
+					(reference "C4")
 					(unit 1)
 				)
 			)
@@ -5397,7 +5397,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "66a4bc6a-483d-4c0f-ba82-68343efb6a77")
-		(property "Reference" "U5"
+		(property "Reference" "U4"
 			(at 148.59 111.76 0)
 			(effects
 				(font
@@ -5452,7 +5452,7 @@
 		(instances
 			(project ""
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/df1d8afa-9717-44ff-901e-40cae4aada91"
-					(reference "U5")
+					(reference "U4")
 					(unit 1)
 				)
 			)
@@ -5468,7 +5468,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "6859b515-9365-4227-9837-919c6a2a691e")
-		(property "Reference" "R11"
+		(property "Reference" "R15"
 			(at 165.1 44.45 90)
 			(effects
 				(font
@@ -5520,7 +5520,7 @@
 		(instances
 			(project ""
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/df1d8afa-9717-44ff-901e-40cae4aada91"
-					(reference "R11")
+					(reference "R15")
 					(unit 1)
 				)
 			)
@@ -5535,7 +5535,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "77842917-cba2-4706-8557-1863a34fe5e5")
-		(property "Reference" "#U$034"
+		(property "Reference" "#U$016"
 			(at 210.185 67.31 0)
 			(effects
 				(font
@@ -5586,7 +5586,7 @@
 		(instances
 			(project "bramble"
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/df1d8afa-9717-44ff-901e-40cae4aada91"
-					(reference "#U$034")
+					(reference "#U$016")
 					(unit 1)
 				)
 			)
@@ -5602,7 +5602,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "80782f59-aac0-4fc4-8715-33768e7a0aa3")
-		(property "Reference" "#PWR014"
+		(property "Reference" "#PWR08"
 			(at 52.07 40.64 0)
 			(effects
 				(font
@@ -5652,7 +5652,7 @@
 		(instances
 			(project "bramble"
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/df1d8afa-9717-44ff-901e-40cae4aada91"
-					(reference "#PWR014")
+					(reference "#PWR08")
 					(unit 1)
 				)
 			)
@@ -5667,7 +5667,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "82e264a6-514e-42e2-a72c-0d68c3c656fb")
-		(property "Reference" "#U$09"
+		(property "Reference" "#U$014"
 			(at 196.85 85.09 0)
 			(effects
 				(font
@@ -5718,7 +5718,7 @@
 		(instances
 			(project "bramble"
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/df1d8afa-9717-44ff-901e-40cae4aada91"
-					(reference "#U$09")
+					(reference "#U$014")
 					(unit 1)
 				)
 			)
@@ -5733,7 +5733,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "93f618d4-b8a8-4286-b991-2c16f7749fd2")
-		(property "Reference" "#U$04"
+		(property "Reference" "#U$09"
 			(at 52.07 80.01 0)
 			(effects
 				(font
@@ -5784,7 +5784,7 @@
 		(instances
 			(project "bramble"
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/df1d8afa-9717-44ff-901e-40cae4aada91"
-					(reference "#U$04")
+					(reference "#U$09")
 					(unit 1)
 				)
 			)
@@ -5799,7 +5799,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "a1e43dab-5e09-4efa-b070-0ad251a8ddb2")
-		(property "Reference" "#U$010"
+		(property "Reference" "#U$013"
 			(at 148.59 135.89 0)
 			(effects
 				(font
@@ -5850,7 +5850,7 @@
 		(instances
 			(project "bramble"
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/df1d8afa-9717-44ff-901e-40cae4aada91"
-					(reference "#U$010")
+					(reference "#U$013")
 					(unit 1)
 				)
 			)
@@ -5989,7 +5989,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "ad61d86f-8efc-4196-87dd-50de45889586")
-		(property "Reference" "#U$05"
+		(property "Reference" "#U$010"
 			(at 58.42 179.07 0)
 			(effects
 				(font
@@ -6040,7 +6040,7 @@
 		(instances
 			(project "bramble"
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/df1d8afa-9717-44ff-901e-40cae4aada91"
-					(reference "#U$05")
+					(reference "#U$010")
 					(unit 1)
 				)
 			)
@@ -6055,7 +6055,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "b0532bfc-f3a5-48fb-bdf2-73cb46d35a1c")
-		(property "Reference" "R23"
+		(property "Reference" "R14"
 			(at 84.582 84.328 90)
 			(effects
 				(font
@@ -6107,7 +6107,7 @@
 		(instances
 			(project "bramble"
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/df1d8afa-9717-44ff-901e-40cae4aada91"
-					(reference "R23")
+					(reference "R14")
 					(unit 1)
 				)
 			)
@@ -6123,7 +6123,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "b7533ff9-1fdb-4229-bbf9-358e06391fc6")
-		(property "Reference" "#PWR017"
+		(property "Reference" "#PWR012"
 			(at 165.1 116.84 0)
 			(effects
 				(font
@@ -6173,7 +6173,7 @@
 		(instances
 			(project "bramble"
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/df1d8afa-9717-44ff-901e-40cae4aada91"
-					(reference "#PWR017")
+					(reference "#PWR012")
 					(unit 1)
 				)
 			)
@@ -6188,7 +6188,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "b8803238-7606-453b-8926-41b12ff67d72")
-		(property "Reference" "#U$08"
+		(property "Reference" "#U$015"
 			(at 203.2 64.77 0)
 			(effects
 				(font
@@ -6239,7 +6239,7 @@
 		(instances
 			(project "bramble"
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/df1d8afa-9717-44ff-901e-40cae4aada91"
-					(reference "#U$08")
+					(reference "#U$015")
 					(unit 1)
 				)
 			)
@@ -6255,7 +6255,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "cddfe47a-91b3-486e-b5a6-2d8c8d620777")
-		(property "Reference" "#PWR015"
+		(property "Reference" "#PWR013"
 			(at 165.735 71.12 0)
 			(effects
 				(font
@@ -6305,7 +6305,7 @@
 		(instances
 			(project "bramble"
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/df1d8afa-9717-44ff-901e-40cae4aada91"
-					(reference "#PWR015")
+					(reference "#PWR013")
 					(unit 1)
 				)
 			)
@@ -6321,7 +6321,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "e4007abe-e5c6-4648-b0e8-a2db169220d2")
-		(property "Reference" "C3"
+		(property "Reference" "C1"
 			(at 49.53 161.2899 0)
 			(effects
 				(font
@@ -6375,7 +6375,7 @@
 		(instances
 			(project ""
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/df1d8afa-9717-44ff-901e-40cae4aada91"
-					(reference "C3")
+					(reference "C1")
 					(unit 1)
 				)
 			)
@@ -6390,7 +6390,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "ea332629-91b8-445e-875c-98ffa797bc5b")
-		(property "Reference" "#U$06"
+		(property "Reference" "#U$011"
 			(at 80.01 110.49 0)
 			(effects
 				(font
@@ -6441,7 +6441,7 @@
 		(instances
 			(project "bramble"
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/df1d8afa-9717-44ff-901e-40cae4aada91"
-					(reference "#U$06")
+					(reference "#U$011")
 					(unit 1)
 				)
 			)
@@ -6457,7 +6457,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "ead2833b-9b8b-4452-b5a0-5fb81fcc473c")
-		(property "Reference" "J6"
+		(property "Reference" "J2"
 			(at 111.125 153.67 0)
 			(effects
 				(font
@@ -6512,7 +6512,7 @@
 		(instances
 			(project ""
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/df1d8afa-9717-44ff-901e-40cae4aada91"
-					(reference "J6")
+					(reference "J2")
 					(unit 1)
 				)
 			)
