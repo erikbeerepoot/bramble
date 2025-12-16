@@ -2158,7 +2158,7 @@
 				(justify right)
 			)
 		)
-		(property "Footprint" "TerminalBlock_Phoenix:TerminalBlock_Phoenix_MKDS-1,5-2-5.08_1x02_P5.08mm_Horizontal"
+		(property "Footprint" "Package_TO_SOT_THT:TO-220-3_Vertical"
 			(at 137.16 52.07 0)
 			(effects
 				(font
