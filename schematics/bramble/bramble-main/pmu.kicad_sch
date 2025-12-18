@@ -4367,7 +4367,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "042aa7af-8258-40c5-b7d2-8108c53f1a37")
-		(property "Reference" "J1"
+		(property "Reference" "STM_DEBUG1"
 			(at 34.925 40.64 0)
 			(effects
 				(font
@@ -4428,7 +4428,7 @@
 		(instances
 			(project ""
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/df1d8afa-9717-44ff-901e-40cae4aada91"
-					(reference "J1")
+					(reference "STM_DEBUG1")
 					(unit 1)
 				)
 			)
@@ -5255,7 +5255,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "51a5b98e-f990-4245-a6c5-85333f0f28b7")
-		(property "Reference" "D1"
+		(property "Reference" "STM_STATUS1"
 			(at 86.36 93.9164 90)
 			(effects
 				(font
@@ -5312,7 +5312,7 @@
 		(instances
 			(project ""
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/df1d8afa-9717-44ff-901e-40cae4aada91"
-					(reference "D1")
+					(reference "STM_STATUS1")
 					(unit 1)
 				)
 			)
@@ -5397,7 +5397,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "66a4bc6a-483d-4c0f-ba82-68343efb6a77")
-		(property "Reference" "U4"
+		(property "Reference" "U3"
 			(at 148.59 111.76 0)
 			(effects
 				(font
@@ -5452,7 +5452,7 @@
 		(instances
 			(project ""
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/df1d8afa-9717-44ff-901e-40cae4aada91"
-					(reference "U4")
+					(reference "U3")
 					(unit 1)
 				)
 			)
@@ -5866,7 +5866,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "a9ce0def-4613-4c49-a05f-3f1775db4858")
-		(property "Reference" "U3"
+		(property "Reference" "U2"
 			(at 124.46 38.1 0)
 			(effects
 				(font
@@ -5974,7 +5974,7 @@
 		(instances
 			(project "bramble"
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/df1d8afa-9717-44ff-901e-40cae4aada91"
-					(reference "U3")
+					(reference "U2")
 					(unit 1)
 				)
 			)
@@ -6457,7 +6457,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "ead2833b-9b8b-4452-b5a0-5fb81fcc473c")
-		(property "Reference" "J2"
+		(property "Reference" "PWR1"
 			(at 111.125 153.67 0)
 			(effects
 				(font
@@ -6512,7 +6512,7 @@
 		(instances
 			(project ""
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/df1d8afa-9717-44ff-901e-40cae4aada91"
-					(reference "J2")
+					(reference "PWR1")
 					(unit 1)
 				)
 			)

@@ -1438,25 +1438,23 @@
 			(exclude_from_sim no)
 			(in_bom yes)
 			(on_board yes)
-			(property "Reference" "VR"
-				(at -10.16 10.922 0)
+			(property "Reference" "VR1"
+				(at 0 15.748 0)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
-					(justify left bottom)
 				)
 			)
 			(property "Value" "TPSM861253RDXR"
-				(at -10.16 -12.7 0)
+				(at 0 13.208 0)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
-					(justify left bottom)
 				)
 			)
-			(property "Footprint" "TPSM861253RDXR:VREG_TPSM861253RDXR"
+			(property "Footprint" "Bramble:VREG_TPSM861253RDXR"
 				(at 0 0 0)
 				(effects
 					(font
@@ -2323,6 +2321,12 @@
 		(uuid "b1e39b5b-a984-42fe-89b4-7040bcd4a833")
 	)
 	(junction
+		(at 104.394 61.468)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "b5848bf0-cc04-4fe6-9254-51787ed4db47")
+	)
+	(junction
 		(at 31.242 50.038)
 		(diameter 0)
 		(color 0 0 0 0)
@@ -2333,12 +2337,6 @@
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "f1329185-a3b3-45a5-99e5-1323747b8636")
-	)
-	(junction
-		(at 104.394 61.468)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "f68fea52-0069-4805-9208-5971af3f07c2")
 	)
 	(wire
 		(pts
@@ -2482,6 +2480,16 @@
 	)
 	(wire
 		(pts
+			(xy 101.854 71.628) (xy 104.394 71.628)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "27a23de7-5286-4fbc-af36-5a015ebb2211")
+	)
+	(wire
+		(pts
 			(xy 203.2 58.42) (xy 199.39 58.42)
 		)
 		(stroke
@@ -2499,16 +2507,6 @@
 			(type default)
 		)
 		(uuid "2d29b662-a6ed-45d7-bffb-80f7b51bdbb0")
-	)
-	(wire
-		(pts
-			(xy 104.394 66.548) (xy 104.394 61.468)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "32b14dc0-2289-4aac-8445-d3e16f795464")
 	)
 	(wire
 		(pts
@@ -2589,6 +2587,16 @@
 			(type default)
 		)
 		(uuid "48e952d7-0cc3-4994-9aeb-b8a147b51320")
+	)
+	(wire
+		(pts
+			(xy 104.394 61.468) (xy 104.394 71.628)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "4d7ec486-f029-41e9-9933-ff32e7389a96")
 	)
 	(wire
 		(pts
@@ -2762,13 +2770,13 @@
 	)
 	(wire
 		(pts
-			(xy 101.854 66.548) (xy 104.394 66.548)
+			(xy 104.394 53.848) (xy 104.394 61.468)
 		)
 		(stroke
 			(width 0)
 			(type default)
 		)
-		(uuid "91ec060b-1600-4592-9dd7-9df86ad25564")
+		(uuid "9564b542-9581-4011-9895-98ffd75a02c5")
 	)
 	(wire
 		(pts
@@ -2949,16 +2957,6 @@
 			(type default)
 		)
 		(uuid "bdd05b9a-9bac-4cae-875e-5301be618786")
-	)
-	(wire
-		(pts
-			(xy 104.394 53.848) (xy 104.394 61.468)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "c29103ec-142b-4598-8586-112c2f14efb6")
 	)
 	(wire
 		(pts
@@ -3314,7 +3312,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "18f7e6e7-e04a-4b9d-a883-43816cfa51c9")
-		(property "Reference" "U2"
+		(property "Reference" "U1"
 			(at 274.32 31.75 0)
 			(effects
 				(font
@@ -3438,7 +3436,7 @@
 		(instances
 			(project ""
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4"
-					(reference "U2")
+					(reference "U1")
 					(unit 3)
 				)
 			)
@@ -3530,7 +3528,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "253fa757-75c1-4f14-84ba-7e7923607154")
-		(property "Reference" "U2"
+		(property "Reference" "U1"
 			(at 140.97 46.99 0)
 			(effects
 				(font
@@ -3654,7 +3652,7 @@
 		(instances
 			(project ""
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4"
-					(reference "U2")
+					(reference "U1")
 					(unit 1)
 				)
 			)
@@ -3736,7 +3734,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "2e15b64e-34a9-4632-a97d-b4885ebf4ef0")
-		(property "Reference" "U2"
+		(property "Reference" "U1"
 			(at 210.82 45.72 0)
 			(effects
 				(font
@@ -3860,7 +3858,7 @@
 		(instances
 			(project ""
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4"
-					(reference "U2")
+					(reference "U1")
 					(unit 2)
 				)
 			)
@@ -4285,7 +4283,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "62a093af-64b6-4fb1-a148-2f2c1e98c991")
-		(property "Reference" "U2"
+		(property "Reference" "U1"
 			(at 274.32 50.8 0)
 			(effects
 				(font
@@ -4409,7 +4407,7 @@
 		(instances
 			(project ""
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4"
-					(reference "U2")
+					(reference "U1")
 					(unit 4)
 				)
 			)
@@ -5358,6 +5356,10 @@
 					(reference "VR1")
 					(unit 1)
 				)
+				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/df1d8afa-9717-44ff-901e-40cae4aada91"
+					(reference "VR1")
+					(unit 1)
+				)
 			)
 		)
 	)
@@ -5781,7 +5783,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "ee22cd43-24b7-49fc-9b43-741b7d61a461")
-		(property "Reference" "U2"
+		(property "Reference" "U1"
 			(at 252.73 48.2599 0)
 			(effects
 				(font
@@ -5907,7 +5909,7 @@
 		(instances
 			(project ""
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4"
-					(reference "U2")
+					(reference "U1")
 					(unit 5)
 				)
 			)
