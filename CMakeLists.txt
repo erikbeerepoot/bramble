@@ -209,7 +209,7 @@ if(NOT BUILD_TESTS)
     pico_set_program_name(${TARGET_NAME} "${TARGET_NAME}")
     pico_set_program_version(${TARGET_NAME} "0.1")
 
-    # Enable stdio on UART (GPIO12 TX) for Debug Probe output
+    # Enable stdio on UART for Debug Probe output (persists through resets)
     pico_enable_stdio_uart(${TARGET_NAME} 1)
     pico_enable_stdio_usb(${TARGET_NAME} 0)
     pico_enable_stdio_rtt(${TARGET_NAME} 0)

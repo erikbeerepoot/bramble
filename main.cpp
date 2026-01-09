@@ -156,7 +156,7 @@ int main() {
     
     // Initialize hardware
     NeoPixel led(PIN_NEOPIXEL, 1);
-    
+
     // Show role with initial LED color
     if (is_hub) {
         led.setPixel(0, 0, 0, 255);  // Blue for hub
