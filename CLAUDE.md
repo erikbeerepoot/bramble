@@ -59,6 +59,7 @@ The project follows a modular design with HAL abstraction:
 - `bramble.cpp`: Main application with LoRa communication and reliability testing
 - `src/hal/`: Hardware abstraction layer (NeoPixel, sensors, actuators)
 - `src/lora/`: LoRa communication (SX1276 driver, message protocol, reliability)
+- `src/storage/`: Persistent storage layer (flash buffer, sensor data records)
 - `src/tests/`: Integration test framework with mock hardware
 - `CMakeLists.txt`: Build configuration supporting both production and test builds
 - `pico_sdk_import.cmake`: SDK import script
