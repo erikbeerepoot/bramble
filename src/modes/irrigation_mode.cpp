@@ -3,6 +3,8 @@
 #include "../lora/reliable_messenger.h"
 #include "../led_patterns.h"
 #include "../hal/logger.h"
+#include "pico/unique_id.h"
+#include <cstring>
 
 constexpr uint16_t HUB_ADDRESS = ADDRESS_HUB;
 constexpr uint32_t HEARTBEAT_INTERVAL_MS = 60000;   // 60 seconds
@@ -20,6 +22,12 @@ void IrrigationMode::onStart() {
     logger.info("- 2 valve irrigation node");
     logger.info("- PMU power management integration");
     logger.info("- Green LED heartbeat");
+
+    // Check if we need to register (no saved address)
+    needs_registration_ = (messenger_.getNodeAddress() == ADDRESS_UNREGISTERED);
+    if (needs_registration_) {
+        logger.info("No saved address - will register on first PMU wake");
+    }
 
     // Initialize valve controller
     valve_controller_.initialize();
@@ -116,6 +124,12 @@ void IrrigationMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEn
 
         case PMU::WakeReason::External:
             pmu_logger.info("External wake trigger");
+            // External wake might be first boot or manual intervention
+            // If we need registration, do it now
+            if (needs_registration_) {
+                logger.info("External wake + no address - attempting registration");
+                attemptDeferredRegistration();
+            }
             break;
     }
 }
@@ -381,5 +395,33 @@ void IrrigationMode::onUpdateAvailable(const UpdateAvailablePayload* payload) {
             logger.error("Unknown update type %d", payload->update_type);
             update_state_.reset();
             break;
+    }
+}
+void IrrigationMode::attemptDeferredRegistration() {
+    // Get device ID from hardware
+    pico_unique_board_id_t board_id;
+    pico_get_unique_board_id(&board_id);
+    uint64_t device_id = 0;
+    memcpy(&device_id, board_id.id, sizeof(device_id));
+
+    // Send registration request
+    logger.info("Sending deferred registration (device_id=0x%016llX)", device_id);
+
+    uint8_t registration_seq = messenger_.sendRegistrationRequest(
+        ADDRESS_HUB,
+        device_id,
+        NODE_TYPE_HYBRID,
+        CAP_VALVE_CONTROL | CAP_SOIL_MOISTURE,
+        0x0100,  // Firmware version
+        "Irrigation Node"
+    );
+
+    if (registration_seq != 0) {
+        logger.info("Registration request sent (seq=%d)", registration_seq);
+        needs_registration_ = false;  // Clear flag - we've attempted registration
+        // We'll get the response via normal message processing
+        // When REG_RESPONSE arrives, messenger will update our address
+    } else {
+        logger.error("Failed to send registration request");
     }
 }

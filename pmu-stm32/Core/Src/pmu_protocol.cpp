@@ -381,7 +381,7 @@ uint8_t MessageBuilder::calculateChecksum() const {
 
 Protocol::Protocol(UartSendCallback uartSend, SetWakeCallback setWake,
                    KeepAwakeCallback keepAwake)
-    : wakeInterval_(300), uartSend_(uartSend), setWake_(setWake),
+    : wakeInterval_(15), uartSend_(uartSend), setWake_(setWake),
       keepAwake_(keepAwake) {
 }
 

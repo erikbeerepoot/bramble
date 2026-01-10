@@ -1,9 +1,12 @@
 #pragma once
 #include <cstdio>
 #include <cstdarg>
-#include "pico/stdio_usb.h"
 #include "pico/stdlib.h"
 #include "hardware/rtc.h"
+
+#if LIB_PICO_STDIO_USB
+#include "pico/stdio_usb.h"
+#endif
 
 /**
  * @brief Logging levels for debug output control
@@ -31,9 +34,11 @@ private:
     template<LogLevel Level>
     void log(const char* prefix, const char* fmt, va_list args) const {
         // Skip logging if USB checking is enabled and no USB connection
+#if LIB_PICO_STDIO_USB
         if (check_usb_ && !stdio_usb_connected()) {
             return;
         }
+#endif
 
         if (static_cast<uint8_t>(global_level_) >= static_cast<uint8_t>(Level)) {
             // Print timestamp prefix

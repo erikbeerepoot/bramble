@@ -28,6 +28,9 @@ set(PICO_BOARD adafruit_feather_rp2040 CACHE STRING "Board type")
 # Pull in Raspberry Pi Pico SDK (must be before project)
 include(pico_sdk_import.cmake)
 
+# Use W25Q boot2 - matches W25Q16JV flash chip
+set(PICO_DEFAULT_BOOT_STAGE2_FILE ${PICO_SDK_PATH}/src/rp2040/boot_stage2/boot2_w25q080.S)
+
 # Pull in Pico extras (if available)
 set(PICO_EXTRAS_PATH ${CMAKE_CURRENT_LIST_DIR}/pico-extras)
 if(EXISTS ${PICO_EXTRAS_PATH})
@@ -103,6 +106,7 @@ else()
         src/lora/network_stats.cpp
         src/hal/neopixel.cpp
         src/hal/flash.cpp
+        src/hal/external_flash.cpp
         src/hal/logger.cpp
         src/hal/spi_device.cpp
         src/hal/gpio_interrupt_manager.cpp
@@ -204,8 +208,21 @@ if(NOT BUILD_TESTS)
     # Target configuration
     pico_set_program_name(${TARGET_NAME} "${TARGET_NAME}")
     pico_set_program_version(${TARGET_NAME} "0.1")
-    pico_enable_stdio_uart(${TARGET_NAME} 0)
-    pico_enable_stdio_usb(${TARGET_NAME} 1)
+
+    # Enable stdio on UART (GPIO12 TX) for Debug Probe output
+    pico_enable_stdio_uart(${TARGET_NAME} 1)
+    pico_enable_stdio_usb(${TARGET_NAME} 0)
+    pico_enable_stdio_rtt(${TARGET_NAME} 0)
+
+    # Configure UART1 to use GPIO24 for TX (motor HI1 pin on Bramble board)
+    # GPIO12 is now used for SPI1 MISO (LoRa)
+    # This allows printf output via Debug Probe's UART RX
+    target_compile_definitions(${TARGET_NAME} PRIVATE
+        PICO_DEFAULT_UART=1
+        PICO_DEFAULT_UART_TX_PIN=24
+        PICO_DEFAULT_UART_RX_PIN=-1
+        PICO_XOSC_STARTUP_DELAY_MULTIPLIER=128
+    )
     
     # Libraries and configuration for the target
     target_link_libraries(${TARGET_NAME} pico_stdlib)
@@ -225,6 +242,7 @@ if(NOT BUILD_TESTS)
         hardware_rtc
         pico_multicore
         pico_util
+        pico_unique_id
     )
     
     # Add pico-extras libraries if available
