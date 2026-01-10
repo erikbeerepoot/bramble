@@ -49,9 +49,9 @@
     #include "modes/generic_mode.h"
 #endif
 
-// Hardware configuration - Bramble board v1
+// Hardware configuration - Bramble board v3
 static auto SPI_PORT = spi1;  // SPI1 for LoRa module
-constexpr uint PIN_MISO = 12;  // SPI1 RX (directly to RFM95W, bodge wire from VALVE_4)
+constexpr uint PIN_MISO = 8;   // SPI1 RX
 constexpr uint PIN_SCK  = 14;  // SPI1 SCK
 constexpr uint PIN_MOSI = 15;  // SPI1 TX
 constexpr uint PIN_CS   = 16;  // GPIO as chip select
@@ -156,7 +156,7 @@ int main() {
     
     // Initialize hardware
     NeoPixel led(PIN_NEOPIXEL, 1);
-    
+
     // Show role with initial LED color
     if (is_hub) {
         led.setPixel(0, 0, 0, 255);  // Blue for hub
