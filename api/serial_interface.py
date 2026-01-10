@@ -8,6 +8,7 @@ from queue import Queue, Empty
 import logging
 
 from config import Config
+from database import SensorDatabase, SensorReading
 
 
 logger = logging.getLogger(__name__)
@@ -16,12 +17,14 @@ logger = logging.getLogger(__name__)
 class SerialInterface:
     """Handles bidirectional serial communication with the LoRa hub."""
 
-    def __init__(self, port: str = Config.SERIAL_PORT, baud: int = Config.SERIAL_BAUD):
+    def __init__(self, port: str = Config.SERIAL_PORT, baud: int = Config.SERIAL_BAUD,
+                 database: Optional[SensorDatabase] = None):
         """Initialize serial interface.
 
         Args:
             port: Serial port path (e.g., /dev/ttyACM0)
             baud: Baud rate (default 115200)
+            database: Optional SensorDatabase for storing sensor readings
         """
         self.port = port
         self.baud = baud
@@ -33,6 +36,10 @@ class SerialInterface:
         self.response_queue = Queue()
         self.pending_command: Optional[str] = None
         self.command_lock = threading.Lock()
+
+        # Sensor data handling
+        self.database = database
+        self._batch_state: Optional[dict] = None  # Tracks in-progress batch
 
     def connect(self):
         """Open serial connection to hub."""
@@ -96,6 +103,23 @@ class SerialInterface:
         # Check if this is a query from hub
         if line == "GET_DATETIME":
             self._handle_datetime_query()
+            return
+
+        # Handle sensor data messages
+        if line.startswith("SENSOR_DATA "):
+            self._handle_sensor_data(line)
+            return
+
+        if line.startswith("SENSOR_BATCH "):
+            self._handle_sensor_batch_start(line)
+            return
+
+        if line.startswith("SENSOR_RECORD "):
+            self._handle_sensor_record(line)
+            return
+
+        if line.startswith("BATCH_COMPLETE "):
+            self._handle_batch_complete(line)
             return
 
         # Otherwise, it's a response to our command
@@ -225,3 +249,180 @@ class SerialInterface:
 
         # Default: wait a bit longer for more lines
         return False
+
+    # ===== Sensor Data Handling =====
+
+    def _handle_sensor_data(self, line: str):
+        """Handle individual sensor data from hub.
+
+        Format: SENSOR_DATA <node_addr> TEMP|HUM <value>
+        """
+        if not self.database:
+            logger.warning("Received sensor data but no database configured")
+            return
+
+        try:
+            parts = line.split()
+            if len(parts) < 4:
+                logger.error(f"Invalid SENSOR_DATA format: {line}")
+                return
+
+            node_addr = int(parts[1])
+            sensor_type = parts[2]
+            value = int(parts[3])
+            timestamp = int(time.time())
+
+            # For individual readings, we only have one value at a time
+            # Store with placeholder for the missing value
+            if sensor_type == "TEMP":
+                reading = SensorReading(
+                    node_address=node_addr,
+                    timestamp=timestamp,
+                    temperature_centidegrees=value,
+                    humidity_centipercent=0,  # Will be updated if humidity follows
+                    received_at=timestamp
+                )
+            elif sensor_type == "HUM":
+                reading = SensorReading(
+                    node_address=node_addr,
+                    timestamp=timestamp,
+                    temperature_centidegrees=0,
+                    humidity_centipercent=value,
+                    received_at=timestamp
+                )
+            else:
+                logger.warning(f"Unknown sensor type: {sensor_type}")
+                return
+
+            if self.database.insert_reading(reading):
+                logger.info(f"Stored sensor data: node={node_addr}, {sensor_type}={value}")
+            else:
+                logger.debug(f"Duplicate sensor data: node={node_addr}, {sensor_type}={value}")
+
+        except (ValueError, IndexError) as e:
+            logger.error(f"Failed to parse SENSOR_DATA: {e}")
+
+    def _handle_sensor_batch_start(self, line: str):
+        """Handle start of sensor batch from hub.
+
+        Format: SENSOR_BATCH <node_addr> <count>
+        """
+        try:
+            parts = line.split()
+            if len(parts) < 3:
+                logger.error(f"Invalid SENSOR_BATCH format: {line}")
+                return
+
+            node_addr = int(parts[1])
+            count = int(parts[2])
+
+            self._batch_state = {
+                'node_addr': node_addr,
+                'expected_count': count,
+                'records': [],
+                'start_time': time.time()
+            }
+
+            logger.info(f"Starting batch receive: node={node_addr}, expected={count}")
+
+        except (ValueError, IndexError) as e:
+            logger.error(f"Failed to parse SENSOR_BATCH: {e}")
+
+    def _handle_sensor_record(self, line: str):
+        """Handle individual record in a batch.
+
+        Format: SENSOR_RECORD <node_addr> <timestamp> <temp> <humidity> <flags>
+        """
+        if not self._batch_state:
+            logger.warning("Received SENSOR_RECORD without active batch")
+            return
+
+        try:
+            parts = line.split()
+            if len(parts) < 6:
+                logger.error(f"Invalid SENSOR_RECORD format: {line}")
+                return
+
+            node_addr = int(parts[1])
+            timestamp = int(parts[2])
+            temperature = int(parts[3])
+            humidity = int(parts[4])
+            flags = int(parts[5])
+
+            reading = SensorReading(
+                node_address=node_addr,
+                timestamp=timestamp,
+                temperature_centidegrees=temperature,
+                humidity_centipercent=humidity,
+                flags=flags,
+                received_at=int(time.time())
+            )
+
+            self._batch_state['records'].append(reading)
+            logger.debug(f"Batch record: ts={timestamp}, temp={temperature}, hum={humidity}")
+
+        except (ValueError, IndexError) as e:
+            logger.error(f"Failed to parse SENSOR_RECORD: {e}")
+
+    def _handle_batch_complete(self, line: str):
+        """Handle end of sensor batch.
+
+        Format: BATCH_COMPLETE <node_addr> <count>
+        """
+        if not self._batch_state:
+            logger.warning("Received BATCH_COMPLETE without active batch")
+            return
+
+        try:
+            parts = line.split()
+            if len(parts) < 3:
+                logger.error(f"Invalid BATCH_COMPLETE format: {line}")
+                return
+
+            node_addr = int(parts[1])
+            count = int(parts[2])
+
+            # Verify batch integrity
+            actual_count = len(self._batch_state['records'])
+            if actual_count != count:
+                logger.warning(f"Batch count mismatch: expected={count}, actual={actual_count}")
+
+            # Store batch in database
+            if self.database and self._batch_state['records']:
+                inserted, duplicates = self.database.insert_batch(self._batch_state['records'])
+                logger.info(f"Batch stored: inserted={inserted}, duplicates={duplicates}")
+
+                # Send acknowledgment to hub
+                self._send_batch_ack(node_addr, inserted, 0 if inserted > 0 else 1)
+            else:
+                logger.warning("No records to store or database not configured")
+                self._send_batch_ack(node_addr, 0, 1)
+
+            # Clear batch state
+            elapsed = time.time() - self._batch_state['start_time']
+            logger.info(f"Batch complete: node={node_addr}, records={actual_count}, elapsed={elapsed:.2f}s")
+            self._batch_state = None
+
+        except (ValueError, IndexError) as e:
+            logger.error(f"Failed to parse BATCH_COMPLETE: {e}")
+            self._batch_state = None
+
+    def _send_batch_ack(self, node_addr: int, count: int, status: int):
+        """Send batch acknowledgment to hub.
+
+        Args:
+            node_addr: Node address to acknowledge
+            count: Number of records received
+            status: 0 for success, non-zero for error
+        """
+        if not self.serial or not self.serial.is_open:
+            logger.error("Cannot send BATCH_ACK: serial not open")
+            return
+
+        try:
+            response = f"BATCH_ACK {node_addr} {count} {status}\n"
+            self.serial.write(response.encode('utf-8'))
+            self.serial.flush()
+            logger.info(f"Sent BATCH_ACK: node={node_addr}, count={count}, status={status}")
+        except Exception as e:
+            logger.error(f"Failed to send BATCH_ACK: {e}")

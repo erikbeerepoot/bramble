@@ -17,3 +17,7 @@ class Config:
     # Hub communication settings
     COMMAND_TIMEOUT = float(os.getenv('COMMAND_TIMEOUT', '5.0'))
     MAX_RETRIES = int(os.getenv('MAX_RETRIES', '3'))
+
+    # Database settings
+    SENSOR_DB_PATH = os.getenv('SENSOR_DB_PATH', '/data/sensor_data.db')
+    DB_BATCH_SIZE = int(os.getenv('DB_BATCH_SIZE', '100'))  # Records per batch insert
