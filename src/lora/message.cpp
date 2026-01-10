@@ -17,6 +17,8 @@ const char* MessageHandler::getMessageTypeName(uint8_t type) {
         case MSG_TYPE_CHECK_UPDATES:        return "CHECK_UPDATES";
         case MSG_TYPE_UPDATE_AVAILABLE:     return "UPDATE_AVAILABLE";
         case MSG_TYPE_HEARTBEAT_RESPONSE:   return "HEARTBEAT_RESPONSE";
+        case MSG_TYPE_SENSOR_DATA_BATCH:    return "SENSOR_DATA_BATCH";
+        case MSG_TYPE_BATCH_ACK:            return "BATCH_ACK";
         default:                            return "UNKNOWN";
     }
 }
