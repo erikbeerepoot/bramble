@@ -169,6 +169,7 @@ else()
         add_executable(bramble_sensor
             main.cpp
             src/modes/sensor_mode.cpp
+            src/hal/cht832x.cpp
             ${COMMON_SOURCES}
         )
         target_compile_definitions(bramble_sensor PRIVATE
@@ -234,6 +235,7 @@ if(NOT BUILD_TESTS)
     
     target_link_libraries(${TARGET_NAME}
         hardware_spi
+        hardware_i2c
         hardware_timer
         hardware_clocks
         hardware_pio
