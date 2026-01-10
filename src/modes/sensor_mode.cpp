@@ -260,7 +260,8 @@ bool SensorMode::transmitBatch(const SensorDataRecord* records, size_t count) {
             if (ack_status == 0 && flash_buffer_) {
                 // ACK received - mark all records in batch as transmitted
                 for (size_t i = 0; i < count; i++) {
-                    uint32_t record_index = static_cast<uint32_t>(start_index + i);
+                    // Use modulo to handle circular buffer wraparound
+                    uint32_t record_index = (start_index + i) % SensorFlashBuffer::MAX_RECORDS;
                     if (flash_buffer_->markTransmitted(record_index)) {
                         logger.debug("Marked batch record %lu as transmitted", record_index);
                     }
