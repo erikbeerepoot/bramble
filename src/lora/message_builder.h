@@ -121,6 +121,56 @@ public:
     }
     
     /**
+     * @brief Create a sensor data batch message for backlog transmission
+     * @param src_addr Source node address
+     * @param dst_addr Destination address (hub)
+     * @param seq_num Sequence number
+     * @param start_index Flash buffer start index (for debugging/tracking)
+     * @param records Array of sensor data records
+     * @param record_count Number of records (1-20)
+     * @param flags Message flags
+     * @param buffer Output buffer (must be at least MESSAGE_MAX_SIZE bytes)
+     * @return Size of created message, 0 on error
+     */
+    static size_t createSensorDataBatchMessage(uint16_t src_addr, uint16_t dst_addr, uint8_t seq_num,
+                                               uint32_t start_index,
+                                               const BatchSensorRecord* records, uint8_t record_count,
+                                               uint8_t flags, uint8_t* buffer) {
+        if (!buffer || !records || record_count == 0 || record_count > MAX_BATCH_RECORDS) {
+            return 0;
+        }
+
+        // Calculate payload size: header (7 bytes) + records
+        size_t payload_size = 7 + (record_count * BATCH_RECORD_SIZE);
+        size_t total_size = MESSAGE_HEADER_SIZE + payload_size;
+
+        if (total_size > MESSAGE_MAX_SIZE) {
+            return 0;
+        }
+
+        Message* msg = reinterpret_cast<Message*>(buffer);
+
+        // Create header
+        msg->header.magic = MESSAGE_MAGIC;
+        msg->header.type = MSG_TYPE_SENSOR_DATA_BATCH;
+        msg->header.flags = flags;
+        msg->header.src_addr = src_addr;
+        msg->header.dst_addr = dst_addr;
+        msg->header.seq_num = seq_num;
+
+        // Create batch payload
+        SensorDataBatchPayload* batch = reinterpret_cast<SensorDataBatchPayload*>(msg->payload);
+        batch->node_addr = src_addr;
+        batch->start_index = start_index;
+        batch->record_count = record_count;
+
+        // Copy records
+        std::memcpy(batch->records, records, record_count * BATCH_RECORD_SIZE);
+
+        return total_size;
+    }
+
+    /**
      * @brief Convert criticality to message flags
      */
     static uint8_t criticalityToFlags(DeliveryCriticality criticality) {

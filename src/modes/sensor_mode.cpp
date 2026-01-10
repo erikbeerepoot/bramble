@@ -232,37 +232,53 @@ void SensorMode::checkAndTransmitBacklog(uint32_t current_time) {
 }
 
 bool SensorMode::transmitBatch(const SensorDataRecord* records, size_t count) {
-    if (!records || count == 0) {
+    if (!records || count == 0 || !flash_buffer_) {
         return false;
     }
 
-    // TODO: Implement batch message protocol (Phase 2)
-    // For now, transmit individual records
-    for (size_t i = 0; i < count; i++) {
-        const auto& record = records[i];
+    // Get the start index for tracking which records are in this batch
+    SensorFlashMetadata stats;
+    flash_buffer_->getStatistics(stats);
+    uint32_t start_index = stats.read_index;
 
-        // Send temperature
-        uint8_t temp_data[2] = {
-            static_cast<uint8_t>(record.temperature & 0xFF),
-            static_cast<uint8_t>((record.temperature >> 8) & 0xFF)
-        };
-        messenger_.sendSensorData(HUB_ADDRESS, SENSOR_TEMPERATURE,
-                                 temp_data, sizeof(temp_data), RELIABLE);
-
-        // Send humidity
-        uint8_t hum_data[2] = {
-            static_cast<uint8_t>(record.humidity & 0xFF),
-            static_cast<uint8_t>((record.humidity >> 8) & 0xFF)
-        };
-        messenger_.sendSensorData(HUB_ADDRESS, SENSOR_HUMIDITY,
-                                 hum_data, sizeof(hum_data), RELIABLE);
-
-        logger.debug("Batch record %zu: temp=%d, hum=%d, timestamp=%lu",
-                    i, record.temperature, record.humidity, record.timestamp);
+    // Convert SensorDataRecord to BatchSensorRecord format
+    BatchSensorRecord batch_records[MAX_BATCH_RECORDS];
+    for (size_t i = 0; i < count && i < MAX_BATCH_RECORDS; i++) {
+        batch_records[i].timestamp = records[i].timestamp;
+        batch_records[i].temperature = records[i].temperature;
+        batch_records[i].humidity = records[i].humidity;
+        batch_records[i].flags = records[i].flags;
+        batch_records[i].reserved = records[i].reserved;
+        batch_records[i].crc16 = records[i].crc16;
     }
 
-    // TODO: Mark records as transmitted only after receiving ACK from hub
-    // This will be implemented in Phase 2 with proper batch protocol
+    // Send batch with callback to mark records as transmitted on ACK
+    uint8_t seq = messenger_.sendSensorDataBatchWithCallback(
+        HUB_ADDRESS, start_index,
+        batch_records, static_cast<uint8_t>(count), RELIABLE,
+        [this, start_index, count](uint8_t seq_num, uint8_t ack_status, uint64_t context) {
+            if (ack_status == 0 && flash_buffer_) {
+                // ACK received - mark all records in batch as transmitted
+                for (size_t i = 0; i < count; i++) {
+                    uint32_t record_index = static_cast<uint32_t>(start_index + i);
+                    if (flash_buffer_->markTransmitted(record_index)) {
+                        logger.debug("Marked batch record %lu as transmitted", record_index);
+                    }
+                }
+                logger.info("Batch ACK received (seq=%d): %zu records marked transmitted",
+                           seq_num, count);
+            } else {
+                logger.warn("Batch transmission failed (seq=%d, status=%d)", seq_num, ack_status);
+            }
+        },
+        start_index  // Pass start index as user_context
+    );
 
+    if (seq == 0) {
+        logger.error("Failed to send batch message");
+        return false;
+    }
+
+    logger.debug("Sent batch of %zu records (start_index=%lu, seq=%d)", count, start_index, seq);
     return true;
 }

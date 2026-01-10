@@ -275,6 +275,46 @@ uint8_t ReliableMessenger::sendSensorDataWithCallback(uint16_t dst_addr, uint8_t
     return sendWithCallback(buffer, length, criticality, ack_callback, user_context);
 }
 
+uint8_t ReliableMessenger::sendSensorDataBatch(uint16_t dst_addr, uint32_t start_index,
+                                                const BatchSensorRecord* records, uint8_t record_count,
+                                                DeliveryCriticality criticality) {
+    return sendSensorDataBatchWithCallback(dst_addr, start_index, records, record_count,
+                                           criticality, nullptr, 0);
+}
+
+uint8_t ReliableMessenger::sendSensorDataBatchWithCallback(uint16_t dst_addr, uint32_t start_index,
+                                                            const BatchSensorRecord* records, uint8_t record_count,
+                                                            DeliveryCriticality criticality,
+                                                            AckCallback ack_callback,
+                                                            uint64_t user_context) {
+    if (!records || record_count == 0 || record_count > MAX_BATCH_RECORDS) {
+        logger_.error("Invalid batch parameters: count=%d", record_count);
+        return 0;
+    }
+
+    uint8_t flags = MessageBuilder::criticalityToFlags(criticality);
+    uint8_t seq_num = getNextSequenceNumber();
+
+    logger_.info("sendSensorDataBatch: src=0x%04X, dst=0x%04X, start_idx=%lu, count=%d",
+                 node_addr_, dst_addr, start_index, record_count);
+
+    uint8_t buffer[MESSAGE_MAX_SIZE];
+    size_t length = MessageBuilder::createSensorDataBatchMessage(
+        node_addr_, dst_addr, seq_num,
+        start_index, records, record_count, flags,
+        buffer
+    );
+
+    if (length == 0) {
+        logger_.error("Failed to create batch message");
+        return 0;
+    }
+
+    logger_.debug("Created batch message: %zu bytes (%d records)", length, record_count);
+
+    return sendWithCallback(buffer, length, criticality, ack_callback, user_context);
+}
+
 bool ReliableMessenger::processIncomingMessage(const uint8_t* buffer, size_t length) {
     if (!MessageValidator::validateMessage(buffer, length)) {
         logger_.error("Invalid incoming message");

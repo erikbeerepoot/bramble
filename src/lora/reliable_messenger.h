@@ -172,6 +172,36 @@ public:
     uint8_t sendCheckUpdates(uint16_t dst_addr, uint8_t node_sequence);
 
     /**
+     * @brief Send batch of sensor data records from flash backlog
+     * @param dst_addr Destination address (hub)
+     * @param start_index Flash buffer start index (for tracking)
+     * @param records Array of batch sensor records
+     * @param record_count Number of records (1-20)
+     * @param criticality Delivery criticality
+     * @return Sequence number of sent message (0 on failure)
+     */
+    uint8_t sendSensorDataBatch(uint16_t dst_addr, uint32_t start_index,
+                                const BatchSensorRecord* records, uint8_t record_count,
+                                DeliveryCriticality criticality = RELIABLE);
+
+    /**
+     * @brief Send batch of sensor data records with ACK callback
+     * @param dst_addr Destination address (hub)
+     * @param start_index Flash buffer start index (for tracking)
+     * @param records Array of batch sensor records
+     * @param record_count Number of records (1-20)
+     * @param criticality Delivery criticality
+     * @param ack_callback Callback invoked when ACK is received
+     * @param user_context User-defined context passed to callback
+     * @return Sequence number of sent message (0 on failure)
+     */
+    uint8_t sendSensorDataBatchWithCallback(uint16_t dst_addr, uint32_t start_index,
+                                            const BatchSensorRecord* records, uint8_t record_count,
+                                            DeliveryCriticality criticality,
+                                            AckCallback ack_callback,
+                                            uint64_t user_context = 0);
+
+    /**
      * @brief Generic send method for any message type
      * @param buffer Pre-built message buffer
      * @param length Message length
