@@ -35,22 +35,22 @@ public:
         size_t total_size = MESSAGE_HEADER_SIZE + sizeof(PayloadType);
         if (total_size > MESSAGE_MAX_SIZE) return 0;
         
-        Message* msg = reinterpret_cast<Message*>(buffer);
-        
+        Message* message = reinterpret_cast<Message*>(buffer);
+
         // Create header
-        msg->header.magic = MESSAGE_MAGIC;
-        msg->header.type = type;
-        msg->header.flags = flags;
-        msg->header.src_addr = src_addr;
-        msg->header.dst_addr = dst_addr;
-        msg->header.seq_num = seq_num;
-        
+        message->header.magic = MESSAGE_MAGIC;
+        message->header.type = type;
+        message->header.flags = flags;
+        message->header.src_addr = src_addr;
+        message->header.dst_addr = dst_addr;
+        message->header.seq_num = seq_num;
+
         // Copy payload
-        std::memcpy(msg->payload, &payload_data, sizeof(PayloadType));
-        
+        std::memcpy(message->payload, &payload_data, sizeof(PayloadType));
+
         return total_size;
     }
-    
+
     /**
      * @brief Create a variable-length message (for sensor/actuator data)
      */
@@ -65,26 +65,26 @@ public:
         size_t total_size = MESSAGE_HEADER_SIZE + total_payload;
         if (total_size > MESSAGE_MAX_SIZE) return 0;
         
-        Message* msg = reinterpret_cast<Message*>(buffer);
-        
+        Message* message = reinterpret_cast<Message*>(buffer);
+
         // Create header
-        msg->header.magic = MESSAGE_MAGIC;
-        msg->header.type = type;
-        msg->header.flags = flags;
-        msg->header.src_addr = src_addr;
-        msg->header.dst_addr = dst_addr;
-        msg->header.seq_num = seq_num;
-        
+        message->header.magic = MESSAGE_MAGIC;
+        message->header.type = type;
+        message->header.flags = flags;
+        message->header.src_addr = src_addr;
+        message->header.dst_addr = dst_addr;
+        message->header.seq_num = seq_num;
+
         // Copy fixed header part
         if (header_data && header_size > 0) {
-            std::memcpy(msg->payload, header_data, header_size);
+            std::memcpy(message->payload, header_data, header_size);
         }
-        
+
         // Copy variable data part
         if (variable_data && variable_size > 0) {
-            std::memcpy(msg->payload + header_size, variable_data, variable_size);
+            std::memcpy(message->payload + header_size, variable_data, variable_size);
         }
-        
+
         return total_size;
     }
     
@@ -148,18 +148,18 @@ public:
             return 0;
         }
 
-        Message* msg = reinterpret_cast<Message*>(buffer);
+        Message* message = reinterpret_cast<Message*>(buffer);
 
         // Create header
-        msg->header.magic = MESSAGE_MAGIC;
-        msg->header.type = MSG_TYPE_SENSOR_DATA_BATCH;
-        msg->header.flags = flags;
-        msg->header.src_addr = src_addr;
-        msg->header.dst_addr = dst_addr;
-        msg->header.seq_num = seq_num;
+        message->header.magic = MESSAGE_MAGIC;
+        message->header.type = MSG_TYPE_SENSOR_DATA_BATCH;
+        message->header.flags = flags;
+        message->header.src_addr = src_addr;
+        message->header.dst_addr = dst_addr;
+        message->header.seq_num = seq_num;
 
         // Create batch payload
-        SensorDataBatchPayload* batch = reinterpret_cast<SensorDataBatchPayload*>(msg->payload);
+        SensorDataBatchPayload* batch = reinterpret_cast<SensorDataBatchPayload*>(message->payload);
         batch->node_addr = src_addr;
         batch->start_index = start_index;
         batch->record_count = record_count;

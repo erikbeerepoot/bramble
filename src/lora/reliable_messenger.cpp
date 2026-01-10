@@ -209,9 +209,9 @@ uint8_t ReliableMessenger::sendWithCallback(const uint8_t* buffer, size_t length
     }
 
     // Extract sequence number from message
-    const Message* msg = reinterpret_cast<const Message*>(buffer);
-    uint8_t seq_num = msg->header.seq_num;
-    uint16_t dst_addr = msg->header.dst_addr;
+    const Message* message = reinterpret_cast<const Message*>(buffer);
+    uint8_t seq_num = message->header.seq_num;
+    uint16_t dst_addr = message->header.dst_addr;
 
     // If BEST_EFFORT, send immediately without tracking
     if (criticality == BEST_EFFORT) {

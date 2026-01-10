@@ -588,23 +588,23 @@ void HubMode::handleSensorDataBatch(uint16_t source_addr, const SensorDataBatchP
 void HubMode::sendBatchAck(uint16_t dest_addr, uint8_t seq_num, uint8_t status, uint8_t records_received) {
     // Create and send BATCH_ACK message
     uint8_t buffer[MESSAGE_MAX_SIZE];
-    Message* msg = reinterpret_cast<Message*>(buffer);
+    Message* message = reinterpret_cast<Message*>(buffer);
 
-    msg->header.magic = MESSAGE_MAGIC;
-    msg->header.type = MSG_TYPE_BATCH_ACK;
-    msg->header.flags = 0;  // No ACK required for BATCH_ACK
-    msg->header.src_addr = ADDRESS_HUB;
-    msg->header.dst_addr = dest_addr;
-    msg->header.seq_num = seq_num;
+    message->header.magic = MESSAGE_MAGIC;
+    message->header.type = MSG_TYPE_BATCH_ACK;
+    message->header.flags = 0;  // No ACK required for BATCH_ACK
+    message->header.src_addr = ADDRESS_HUB;
+    message->header.dst_addr = dest_addr;
+    message->header.seq_num = seq_num;
 
-    BatchAckPayload* ack = reinterpret_cast<BatchAckPayload*>(msg->payload);
+    BatchAckPayload* ack = reinterpret_cast<BatchAckPayload*>(message->payload);
     ack->ack_seq_num = seq_num;
     ack->status = status;
     ack->records_received = records_received;
 
-    size_t msg_size = MESSAGE_HEADER_SIZE + sizeof(BatchAckPayload);
+    size_t message_size = MESSAGE_HEADER_SIZE + sizeof(BatchAckPayload);
 
-    if (messenger_.send(buffer, msg_size, BEST_EFFORT)) {
+    if (messenger_.send(buffer, message_size, BEST_EFFORT)) {
         printf("Sent BATCH_ACK to 0x%04X: seq=%u, status=%u, records=%u\n",
                dest_addr, seq_num, status, records_received);
     } else {
