@@ -1438,23 +1438,25 @@
 			(exclude_from_sim no)
 			(in_bom yes)
 			(on_board yes)
-			(property "Reference" "VR1"
-				(at 0 15.748 0)
+			(property "Reference" "VR"
+				(at -10.16 10.922 0)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
+					(justify left bottom)
 				)
 			)
 			(property "Value" "TPSM861253RDXR"
-				(at 0 13.208 0)
+				(at -10.16 -12.7 0)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
+					(justify left bottom)
 				)
 			)
-			(property "Footprint" "Bramble:VREG_TPSM861253RDXR"
+			(property "Footprint" "TPSM861253RDXR:VREG_TPSM861253RDXR"
 				(at 0 0 0)
 				(effects
 					(font
@@ -2279,6 +2281,12 @@
 		(uuid "335a0beb-ba3a-415a-9c4b-27e3816c5806")
 	)
 	(junction
+		(at 104.394 61.468)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "37a57be3-f641-4944-b452-ade216fdbca9")
+	)
+	(junction
 		(at 220.98 55.88)
 		(diameter 0)
 		(color 0 0 0 0)
@@ -2319,12 +2327,6 @@
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "b1e39b5b-a984-42fe-89b4-7040bcd4a833")
-	)
-	(junction
-		(at 104.394 61.468)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "b5848bf0-cc04-4fe6-9254-51787ed4db47")
 	)
 	(junction
 		(at 31.242 50.038)
@@ -2480,16 +2482,6 @@
 	)
 	(wire
 		(pts
-			(xy 101.854 71.628) (xy 104.394 71.628)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "27a23de7-5286-4fbc-af36-5a015ebb2211")
-	)
-	(wire
-		(pts
 			(xy 203.2 58.42) (xy 199.39 58.42)
 		)
 		(stroke
@@ -2587,16 +2579,6 @@
 			(type default)
 		)
 		(uuid "48e952d7-0cc3-4994-9aeb-b8a147b51320")
-	)
-	(wire
-		(pts
-			(xy 104.394 61.468) (xy 104.394 71.628)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "4d7ec486-f029-41e9-9933-ff32e7389a96")
 	)
 	(wire
 		(pts
@@ -2750,6 +2732,16 @@
 	)
 	(wire
 		(pts
+			(xy 101.854 71.628) (xy 104.394 71.628)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "8cbd4b00-647e-43a2-b46c-10974c8b9f89")
+	)
+	(wire
+		(pts
 			(xy 160.02 83.82) (xy 228.6 83.82)
 		)
 		(stroke
@@ -2767,16 +2759,6 @@
 			(type default)
 		)
 		(uuid "8f8b39d4-8fd4-4761-83c1-a6bad45d2dc3")
-	)
-	(wire
-		(pts
-			(xy 104.394 53.848) (xy 104.394 61.468)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "9564b542-9581-4011-9895-98ffd75a02c5")
 	)
 	(wire
 		(pts
@@ -2957,6 +2939,26 @@
 			(type default)
 		)
 		(uuid "bdd05b9a-9bac-4cae-875e-5301be618786")
+	)
+	(wire
+		(pts
+			(xy 104.394 71.628) (xy 104.394 61.468)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "bee89565-2560-4fbc-9e50-a49835e9bb73")
+	)
+	(wire
+		(pts
+			(xy 104.394 53.848) (xy 104.394 61.468)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "c29103ec-142b-4598-8586-112c2f14efb6")
 	)
 	(wire
 		(pts
@@ -5353,10 +5355,6 @@
 		(instances
 			(project ""
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4"
-					(reference "VR1")
-					(unit 1)
-				)
-				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/df1d8afa-9717-44ff-901e-40cae4aada91"
 					(reference "VR1")
 					(unit 1)
 				)

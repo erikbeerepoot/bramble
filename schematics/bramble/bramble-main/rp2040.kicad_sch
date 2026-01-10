@@ -2339,604 +2339,6 @@
 			)
 			(embedded_fonts no)
 		)
-		(symbol "Adafruit Feather RP2040 RFM-eagle-import:WS2812B_SK6805_1515"
-			(exclude_from_sim no)
-			(in_bom yes)
-			(on_board yes)
-			(property "Reference" "LED"
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(property "Value" ""
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(property "Footprint" "Adafruit Feather RP2040 RFM:SK6805_1515"
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(property "Datasheet" ""
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(property "Description" ""
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(property "ki_locked" ""
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-				)
-			)
-			(symbol "WS2812B_SK6805_1515_1_0"
-				(polyline
-					(pts
-						(xy -7.62 10.16) (xy -7.62 -2.54)
-					)
-					(stroke
-						(width 0.254)
-						(type solid)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy -7.62 -2.54) (xy -7.62 -5.08)
-					)
-					(stroke
-						(width 0.254)
-						(type solid)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy -7.62 -5.08) (xy 0 -5.08)
-					)
-					(stroke
-						(width 0.254)
-						(type solid)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy -6.35 5.08) (xy -5.08 5.08)
-					)
-					(stroke
-						(width 0.254)
-						(type solid)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy -6.35 2.54) (xy -5.08 2.54)
-					)
-					(stroke
-						(width 0.254)
-						(type solid)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy -5.08 7.62) (xy -5.08 5.08)
-					)
-					(stroke
-						(width 0.254)
-						(type solid)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy -5.08 5.08) (xy -3.81 5.08)
-					)
-					(stroke
-						(width 0.254)
-						(type solid)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy -5.08 2.54) (xy -6.35 5.08)
-					)
-					(stroke
-						(width 0.254)
-						(type solid)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy -5.08 2.54) (xy -5.08 1.27)
-					)
-					(stroke
-						(width 0.254)
-						(type solid)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy -5.08 2.54) (xy -3.81 5.08)
-					)
-					(stroke
-						(width 0.254)
-						(type solid)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy -3.81 2.54) (xy -5.08 2.54)
-					)
-					(stroke
-						(width 0.254)
-						(type solid)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy -2.54 5.08) (xy 0 5.08)
-					)
-					(stroke
-						(width 0.254)
-						(type solid)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy -2.54 2.54) (xy -1.27 2.54)
-					)
-					(stroke
-						(width 0.254)
-						(type solid)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy -1.27 7.62) (xy -5.08 7.62)
-					)
-					(stroke
-						(width 0.254)
-						(type solid)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy -1.27 5.08) (xy -1.27 7.62)
-					)
-					(stroke
-						(width 0.254)
-						(type solid)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy -1.27 2.54) (xy -2.54 5.08)
-					)
-					(stroke
-						(width 0.254)
-						(type solid)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy -1.27 2.54) (xy -1.27 1.27)
-					)
-					(stroke
-						(width 0.254)
-						(type solid)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy -1.27 2.54) (xy 0 2.54)
-					)
-					(stroke
-						(width 0.254)
-						(type solid)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy -1.27 1.27) (xy -5.08 1.27)
-					)
-					(stroke
-						(width 0.254)
-						(type solid)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 0 5.08) (xy -1.27 2.54)
-					)
-					(stroke
-						(width 0.254)
-						(type solid)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 0 -4.064) (xy 0 -5.08)
-					)
-					(stroke
-						(width 0.254)
-						(type solid)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 0 -5.08) (xy 7.62 -5.08)
-					)
-					(stroke
-						(width 0.254)
-						(type solid)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 1.27 5.08) (xy 2.54 5.08)
-					)
-					(stroke
-						(width 0.254)
-						(type solid)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 1.27 5.08) (xy 2.54 2.54)
-					)
-					(stroke
-						(width 0.254)
-						(type solid)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 2.54 7.62) (xy -1.27 7.62)
-					)
-					(stroke
-						(width 0.254)
-						(type solid)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 2.54 7.62) (xy 5.08 7.62)
-					)
-					(stroke
-						(width 0.254)
-						(type solid)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 2.54 5.08) (xy 2.54 7.62)
-					)
-					(stroke
-						(width 0.254)
-						(type solid)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 2.54 2.54) (xy 1.27 2.54)
-					)
-					(stroke
-						(width 0.254)
-						(type solid)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 2.54 2.54) (xy 2.54 1.27)
-					)
-					(stroke
-						(width 0.254)
-						(type solid)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 2.54 2.54) (xy 3.81 5.08)
-					)
-					(stroke
-						(width 0.254)
-						(type solid)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 2.54 2.54) (xy 3.81 2.54)
-					)
-					(stroke
-						(width 0.254)
-						(type solid)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 2.54 1.27) (xy -1.27 1.27)
-					)
-					(stroke
-						(width 0.254)
-						(type solid)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 3.81 5.08) (xy 2.54 5.08)
-					)
-					(stroke
-						(width 0.254)
-						(type solid)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 5.08 10.16) (xy -7.62 10.16)
-					)
-					(stroke
-						(width 0.254)
-						(type solid)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 5.08 10.16) (xy 5.08 7.62)
-					)
-					(stroke
-						(width 0.254)
-						(type solid)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 7.62 10.16) (xy 5.08 10.16)
-					)
-					(stroke
-						(width 0.254)
-						(type solid)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 7.62 -2.54) (xy 7.62 10.16)
-					)
-					(stroke
-						(width 0.254)
-						(type solid)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 7.62 -5.08) (xy 7.62 -2.54)
-					)
-					(stroke
-						(width 0.254)
-						(type solid)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(text "WS2812B"
-					(at -4.064 8.382 0)
-					(effects
-						(font
-							(size 1.27 1.0795)
-						)
-						(justify left bottom)
-					)
-				)
-				(pin input line
-					(at -12.7 -2.54 0)
-					(length 5.08)
-					(name "DI"
-						(effects
-							(font
-								(size 1.524 1.524)
-							)
-						)
-					)
-					(number "1"
-						(effects
-							(font
-								(size 0 0)
-							)
-						)
-					)
-				)
-				(pin power_in line
-					(at 0 -10.16 90)
-					(length 5.08)
-					(name "GND"
-						(effects
-							(font
-								(size 1.524 1.524)
-							)
-						)
-					)
-					(number "4"
-						(effects
-							(font
-								(size 0 0)
-							)
-						)
-					)
-				)
-				(pin power_in line
-					(at 5.08 15.24 270)
-					(length 5.08)
-					(name "VDD"
-						(effects
-							(font
-								(size 1.524 1.524)
-							)
-						)
-					)
-					(number "2"
-						(effects
-							(font
-								(size 0 0)
-							)
-						)
-					)
-				)
-				(pin output line
-					(at 12.7 -2.54 180)
-					(length 5.08)
-					(name "DO"
-						(effects
-							(font
-								(size 1.524 1.524)
-							)
-						)
-					)
-					(number "3"
-						(effects
-							(font
-								(size 0 0)
-							)
-						)
-					)
-				)
-			)
-			(embedded_fonts no)
-		)
 		(symbol "Adafruit Feather RP2040 RFM-eagle-import:supply1_371_GND"
 			(power)
 			(exclude_from_sim no)
@@ -5012,6 +4414,261 @@
 			)
 			(embedded_fonts no)
 		)
+		(symbol "LED:WS2812B-2020"
+			(pin_names
+				(offset 0.254)
+			)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "D"
+				(at 5.08 5.715 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(justify right bottom)
+				)
+			)
+			(property "Value" "WS2812B-2020"
+				(at 1.27 -5.715 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(justify left top)
+				)
+			)
+			(property "Footprint" "LED_SMD:LED_WS2812B-2020_PLCC4_2.0x2.0mm"
+				(at 1.27 -7.62 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(justify left top)
+					(hide yes)
+				)
+			)
+			(property "Datasheet" "https://cdn-shop.adafruit.com/product-files/4684/4684_WS2812B-2020_V1.3_EN.pdf"
+				(at 2.54 -9.525 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(justify left top)
+					(hide yes)
+				)
+			)
+			(property "Description" "RGB LED with integrated controller, 2.0 x 2.0 mm, 12 mA"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "ki_keywords" "RGB LED NeoPixel Nano addressable"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "ki_fp_filters" "LED*WS2812*-2020_PLCC4*"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(symbol "WS2812B-2020_0_0"
+				(text "RGB"
+					(at 2.286 -4.191 0)
+					(effects
+						(font
+							(size 0.762 0.762)
+						)
+					)
+				)
+			)
+			(symbol "WS2812B-2020_0_1"
+				(polyline
+					(pts
+						(xy 1.27 -2.54) (xy 1.778 -2.54)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 1.27 -3.556) (xy 1.778 -3.556)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 2.286 -1.524) (xy 1.27 -2.54) (xy 1.27 -2.032)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 2.286 -2.54) (xy 1.27 -3.556) (xy 1.27 -3.048)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 3.683 -1.016) (xy 3.683 -3.556) (xy 3.683 -4.064)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 4.699 -1.524) (xy 2.667 -1.524) (xy 3.683 -3.556) (xy 4.699 -1.524)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 4.699 -3.556) (xy 2.667 -3.556)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(rectangle
+					(start 5.08 5.08)
+					(end -5.08 -5.08)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type background)
+					)
+				)
+			)
+			(symbol "WS2812B-2020_1_1"
+				(pin input line
+					(at -7.62 0 0)
+					(length 2.54)
+					(name "DIN"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "3"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_in line
+					(at 0 7.62 270)
+					(length 2.54)
+					(name "VDD"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "4"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin power_in line
+					(at 0 -7.62 90)
+					(length 2.54)
+					(name "VSS"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "2"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin output line
+					(at 7.62 0 180)
+					(length 2.54)
+					(name "DOUT"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)
 		(symbol "Memory_Flash:W25Q16JVSS"
 			(exclude_from_sim no)
 			(in_bom yes)
@@ -6728,6 +6385,16 @@
 	)
 	(wire
 		(pts
+			(xy 361.442 104.14) (xy 365.76 104.14)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "43541dbf-12c6-4592-935a-fdcc94f39b4e")
+	)
+	(wire
+		(pts
 			(xy 23.495 219.71) (xy 23.495 227.33)
 		)
 		(stroke
@@ -7398,7 +7065,7 @@
 	)
 	(wire
 		(pts
-			(xy 373.38 90.17) (xy 373.38 87.63)
+			(xy 373.38 87.63) (xy 373.38 96.52)
 		)
 		(stroke
 			(width 0.1524)
@@ -7558,7 +7225,7 @@
 	)
 	(wire
 		(pts
-			(xy 355.6 107.95) (xy 345.44 107.95)
+			(xy 361.442 104.14) (xy 351.282 104.14)
 		)
 		(stroke
 			(width 0.1524)
@@ -7805,6 +7472,16 @@
 			(type default)
 		)
 		(uuid "f18e6d04-476d-4fee-ba35-ad0ac7124a9b")
+	)
+	(wire
+		(pts
+			(xy 373.38 111.76) (xy 373.38 116.586)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "f3fa3ef1-1a67-44f4-b977-c0292aadfe86")
 	)
 	(wire
 		(pts
@@ -8407,7 +8084,7 @@
 		(uuid "b951312b-3aa6-48a5-b73e-01c66cea5a3e")
 	)
 	(label "RGB_LED"
-		(at 345.44 107.95 0)
+		(at 351.282 104.14 0)
 		(effects
 			(font
 				(size 1.2446 1.2446)
@@ -8648,13 +8325,14 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "01fd9d2e-f334-466d-a8dc-1f93281166ff")
-		(property "Reference" "RESET1"
+		(property "Reference" "SW3"
 			(at 135.89 58.4199 90)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
 				(justify left)
+				(hide yes)
 			)
 		)
 		(property "Value" "RESET"
@@ -8693,6 +8371,15 @@
 				(hide yes)
 			)
 		)
+		(property "Silkscreen_Label" "RESET"
+			(at 132.08 59.69 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "2"
 			(uuid "3772df19-c05d-425b-b180-401088268520")
 		)
@@ -8702,7 +8389,7 @@
 		(instances
 			(project ""
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/74ee86d6-15f8-4467-9b29-c5ab14125d21"
-					(reference "RESET1")
+					(reference "SW3")
 					(unit 1)
 				)
 			)
@@ -8718,7 +8405,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "0383d3ac-521a-4268-afaa-99ca66494eba")
-		(property "Reference" "J3"
+		(property "Reference" "J6"
 			(at 316.23 199.39 0)
 			(effects
 				(font
@@ -8800,7 +8487,7 @@
 		(instances
 			(project ""
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/74ee86d6-15f8-4467-9b29-c5ab14125d21"
-					(reference "J3")
+					(reference "J6")
 					(unit 1)
 				)
 			)
@@ -9019,7 +8706,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "15b8e0e8-4fe2-420b-92ce-c9d97394e7d8")
-		(property "Reference" "J2"
+		(property "Reference" "J5"
 			(at 269.24 189.5231 0)
 			(effects
 				(font
@@ -9073,82 +8760,7 @@
 		(instances
 			(project ""
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/74ee86d6-15f8-4467-9b29-c5ab14125d21"
-					(reference "J2")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "Adafruit Feather RP2040 RFM-eagle-import:WS2812B_SK6805_1515")
-		(at 368.3 105.41 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "1d0504de-a118-4211-b0b9-444f835ff8fc")
-		(property "Reference" "RPI_STATUS1"
-			(at 368.3 105.41 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Value" "WS2812B_SK6805_1515"
-			(at 368.3 105.41 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Footprint" "LED_SMD:LED_WS2812B-2020_PLCC4_2.0x2.0mm"
-			(at 368.3 105.41 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" ""
-			(at 368.3 105.41 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" ""
-			(at 368.3 105.41 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "e4115f84-660c-475f-8d3a-2bb52148170b")
-		)
-		(pin "4"
-			(uuid "6a09c255-b0e6-43f4-8b1e-b29d5d30575c")
-		)
-		(pin "2"
-			(uuid "123f6896-2729-4193-bd6a-a5283802f6c7")
-		)
-		(pin "3"
-			(uuid "4ba35264-c4be-4de0-8b6e-4b5ed7448bf4")
-		)
-		(instances
-			(project "bramble"
-				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/74ee86d6-15f8-4467-9b29-c5ab14125d21"
-					(reference "RPI_STATUS1")
+					(reference "J5")
 					(unit 1)
 				)
 			)
@@ -9433,7 +9045,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "28a71655-ae65-43f5-aae8-4859032c437e")
-		(property "Reference" "RPI_DEBUG1"
+		(property "Reference" "J3"
 			(at 177.8 267.9699 0)
 			(effects
 				(font
@@ -9490,7 +9102,7 @@
 		(instances
 			(project ""
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/74ee86d6-15f8-4467-9b29-c5ab14125d21"
-					(reference "RPI_DEBUG1")
+					(reference "J3")
 					(unit 1)
 				)
 			)
@@ -9638,7 +9250,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "2b7affd2-8e2d-4302-b202-9002c1c851d6")
-		(property "Reference" "D1"
+		(property "Reference" "D2"
 			(at 116.84 43.1799 90)
 			(effects
 				(font
@@ -9710,7 +9322,83 @@
 		(instances
 			(project ""
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/74ee86d6-15f8-4467-9b29-c5ab14125d21"
-					(reference "D1")
+					(reference "D2")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "LED:WS2812B-2020")
+		(at 373.38 104.14 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "2bfa7535-6bbf-4ba4-9537-dcbba86e695a")
+		(property "Reference" "RPI_STATUS1"
+			(at 387.35 97.7198 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "WS2812B-2020"
+			(at 387.35 100.2598 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "LED_SMD:LED_WS2812B-2020_PLCC4_2.0x2.0mm"
+			(at 374.65 111.76 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "https://cdn-shop.adafruit.com/product-files/4684/4684_WS2812B-2020_V1.3_EN.pdf"
+			(at 375.92 113.665 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+				(hide yes)
+			)
+		)
+		(property "Description" "RGB LED with integrated controller, 2.0 x 2.0 mm, 12 mA"
+			(at 373.38 104.14 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "2"
+			(uuid "2dec5d44-fc34-42a6-ae32-f86cc46c3a8e")
+		)
+		(pin "4"
+			(uuid "87a2e9f2-7176-447c-8c6e-be386135547b")
+		)
+		(pin "3"
+			(uuid "2318ab9a-96fa-4253-abbc-136a613c9abb")
+		)
+		(pin "1"
+			(uuid "594ff711-6e31-4de7-b7b5-4921ee445e49")
+		)
+		(instances
+			(project ""
+				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/74ee86d6-15f8-4467-9b29-c5ab14125d21"
+					(reference "RPI_STATUS1")
 					(unit 1)
 				)
 			)
@@ -11055,7 +10743,7 @@
 	)
 	(symbol
 		(lib_id "Adafruit Feather RP2040 RFM-eagle-import:supply1_371_GND")
-		(at 368.3 118.11 0)
+		(at 373.38 119.126 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -11063,7 +10751,7 @@
 		(dnp no)
 		(uuid "61c6a995-7b47-442d-add3-2b80bfd709b1")
 		(property "Reference" "#GND011"
-			(at 368.3 118.11 0)
+			(at 373.38 119.126 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11072,7 +10760,7 @@
 			)
 		)
 		(property "Value" "GND"
-			(at 365.76 120.65 0)
+			(at 370.84 121.666 0)
 			(effects
 				(font
 					(size 1.778 1.5113)
@@ -11081,7 +10769,7 @@
 			)
 		)
 		(property "Footprint" ""
-			(at 368.3 118.11 0)
+			(at 373.38 119.126 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11090,7 +10778,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 368.3 118.11 0)
+			(at 373.38 119.126 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11099,7 +10787,7 @@
 			)
 		)
 		(property "Description" ""
-			(at 368.3 118.11 0)
+			(at 373.38 119.126 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11196,13 +10884,14 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "687597ca-c919-40bc-85b6-de09e7151daa")
-		(property "Reference" "BOOT1"
+		(property "Reference" "SW2"
 			(at 118.11 55.8799 90)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
 				(justify left)
+				(hide yes)
 			)
 		)
 		(property "Value" "BOOT"
@@ -11250,7 +10939,7 @@
 		(instances
 			(project "bramble"
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/74ee86d6-15f8-4467-9b29-c5ab14125d21"
-					(reference "BOOT1")
+					(reference "SW2")
 					(unit 1)
 				)
 			)
@@ -11866,7 +11555,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "83f609ae-6f41-4067-a2f8-932c0b7591f3")
-		(property "Reference" "J1"
+		(property "Reference" "J4"
 			(at 198.12 77.47 0)
 			(effects
 				(font
@@ -11963,7 +11652,7 @@
 		(instances
 			(project ""
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4/74ee86d6-15f8-4467-9b29-c5ab14125d21"
-					(reference "J1")
+					(reference "J4")
 					(unit 1)
 				)
 			)
