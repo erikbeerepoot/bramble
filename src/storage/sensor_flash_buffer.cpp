@@ -260,8 +260,9 @@ bool SensorFlashBuffer::readUntransmittedRecords(SensorDataRecord* records,
         current_index = (current_index + 1) % MAX_RECORDS;
     }
 
-    // Update read index
-    metadata_.read_index = current_index;
+    // NOTE: We intentionally do NOT update read_index here.
+    // The caller must call advanceReadIndex() after successful transmission
+    // is confirmed via ACK callback. This prevents data loss if transmission fails.
 
     return true;
 }
@@ -284,6 +285,33 @@ uint32_t SensorFlashBuffer::getUntransmittedCount() const {
     } else {
         return MAX_RECORDS - metadata_.read_index + metadata_.write_index;
     }
+}
+
+bool SensorFlashBuffer::advanceReadIndex(uint32_t count) {
+    if (!initialized_) {
+        logger_.error("Buffer not initialized");
+        return false;
+    }
+
+    if (count == 0) {
+        return true;  // Nothing to advance
+    }
+
+    // Calculate new read index with wraparound
+    uint32_t new_read_index = (metadata_.read_index + count) % MAX_RECORDS;
+
+    // Sanity check: don't advance past write index
+    uint32_t available = getUntransmittedCount();
+    if (count > available) {
+        logger_.error("Cannot advance read_index by %lu, only %lu records available",
+                     count, available);
+        return false;
+    }
+
+    metadata_.read_index = new_read_index;
+    logger_.debug("Advanced read_index by %lu to %lu", count, new_read_index);
+
+    return saveMetadata();
 }
 
 bool SensorFlashBuffer::updateLastSync(uint32_t timestamp) {

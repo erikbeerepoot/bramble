@@ -265,6 +265,10 @@ bool SensorMode::transmitBatch(const SensorDataRecord* records, size_t count) {
                         logger.debug("Marked batch record %lu as transmitted", record_index);
                     }
                 }
+                // Advance read index now that transmission is confirmed
+                if (flash_buffer_->advanceReadIndex(static_cast<uint32_t>(count))) {
+                    logger.debug("Advanced read_index by %zu", count);
+                }
                 logger.info("Batch ACK received (seq=%d): %zu records marked transmitted",
                            seq_num, count);
             } else {

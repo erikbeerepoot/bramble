@@ -102,7 +102,11 @@ public:
      * @brief Read untransmitted records for batch transmission
      *
      * Reads up to max_count records starting from read_index that have
-     * not been marked as transmitted. Advances read_index appropriately.
+     * not been marked as transmitted.
+     *
+     * NOTE: This function does NOT advance read_index. The caller must
+     * call advanceReadIndex(actual_count) after successful transmission
+     * is confirmed via ACK callback to prevent data loss on failed transmissions.
      *
      * @param records Output buffer for records
      * @param max_count Maximum number of records to read
@@ -129,6 +133,17 @@ public:
      * @return Count of records not yet transmitted
      */
     uint32_t getUntransmittedCount() const;
+
+    /**
+     * @brief Advance read index after successful transmission
+     *
+     * Called by the caller after transmission is confirmed via ACK callback.
+     * This ensures records are only skipped after successful delivery.
+     *
+     * @param count Number of records to advance past
+     * @return true if advance successful
+     */
+    bool advanceReadIndex(uint32_t count);
 
     /**
      * @brief Update last sync timestamp
