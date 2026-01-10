@@ -16,7 +16,7 @@ void SensorMode::onStart() {
     logger.info("=== SENSOR MODE ACTIVE ===");
     logger.info("- Temperature/humidity data logger");
     logger.info("- 30 second reading interval");
-    logger.info("- Cyan LED breathing pattern");
+    logger.info("- Purple LED breathing pattern");
 
     // Initialize CHT832X temperature/humidity sensor
     sensor_ = std::make_unique<CHT832X>(i2c1, PIN_I2C_SDA, PIN_I2C_SCL);
@@ -37,8 +37,8 @@ void SensorMode::onStart() {
                     PIN_I2C_SCL, PIN_I2C_SDA);
     }
 
-    // Cyan breathing pattern for sensor nodes
-    led_pattern_ = std::make_unique<BreathingPattern>(led_, 0, 255, 255);
+    // Purple breathing pattern for sensor nodes
+    led_pattern_ = std::make_unique<BreathingPattern>(led_, 128, 0, 255);
 
     // Add periodic sensor reading task
     task_manager_.addTask(
