@@ -139,37 +139,20 @@ void SensorMode::readAndTransmitSensorData(uint32_t current_time) {
         }
     }
 
-    // Then attempt LoRa transmission (when network available)
-    // Use RELIABLE criticality to get ACKs and mark records as transmitted
+    // Attempt immediate LoRa transmission (best effort for real-time visibility)
+    // Note: We don't track individual transmission status - batch mechanism with
+    // read_index handles reliability. Timestamps allow RPi to deduplicate.
     uint8_t temp_data[2] = {
         static_cast<uint8_t>(temp_fixed & 0xFF),
         static_cast<uint8_t>((temp_fixed >> 8) & 0xFF)
     };
 
-    // Send with callback to mark as transmitted on ACK
-    uint8_t temp_seq = messenger_.sendSensorDataWithCallback(
-        HUB_ADDRESS, SENSOR_TEMPERATURE,
-        temp_data, sizeof(temp_data), RELIABLE,
-        [this, write_index](uint8_t seq_num, uint8_t ack_status, uint64_t context) {
-            if (ack_status == 0 && flash_buffer_) {
-                // ACK received successfully - mark record as transmitted
-                uint32_t flash_index = static_cast<uint32_t>(context);
-                if (flash_buffer_->markTransmitted(flash_index)) {
-                    logger.debug("Marked flash record %lu as transmitted (seq=%d)",
-                                flash_index, seq_num);
-                } else {
-                    logger.warn("Failed to mark flash record %lu as transmitted", flash_index);
-                }
-            }
-        },
-        write_index  // Pass flash index as user_context
-    );
+    uint8_t temp_seq = messenger_.sendSensorData(
+        HUB_ADDRESS, SENSOR_TEMPERATURE, temp_data, sizeof(temp_data), BEST_EFFORT);
 
     logger.debug("Transmitted temp via LoRa: seq=%d, flash_index=%lu", temp_seq, write_index);
 
-    // Note: We're only tracking temperature ACKs for simplicity.
-    // Humidity is sent separately but not tracked. In production, you might want
-    // to combine temp+humidity into a single message or track both separately.
+    // Send humidity as separate message (also best effort)
     uint8_t hum_data[2] = {
         static_cast<uint8_t>(hum_fixed & 0xFF),
         static_cast<uint8_t>((hum_fixed >> 8) & 0xFF)

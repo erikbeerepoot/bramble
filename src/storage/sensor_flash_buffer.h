@@ -99,10 +99,10 @@ public:
     bool markTransmitted(uint32_t index);
 
     /**
-     * @brief Read untransmitted records for batch transmission
+     * @brief Read pending records for batch transmission
      *
-     * Reads up to max_count records starting from read_index that have
-     * not been marked as transmitted.
+     * Reads up to max_count valid records starting from read_index.
+     * Records between read_index and write_index are considered pending.
      *
      * NOTE: This function does NOT advance read_index. The caller must
      * call advanceReadIndex(actual_count) after successful transmission

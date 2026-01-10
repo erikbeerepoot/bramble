@@ -251,9 +251,9 @@ bool SensorFlashBuffer::readUntransmittedRecords(SensorDataRecord* records,
             continue;
         }
 
-        // Check if valid and not transmitted
-        if ((record.flags & RECORD_FLAG_VALID) &&
-            !(record.flags & RECORD_FLAG_TRANSMITTED)) {
+        // Check if valid (we no longer filter by transmitted flag -
+        // read_index tracks what's been sent, timestamps allow deduplication)
+        if (record.flags & RECORD_FLAG_VALID) {
             records[actual_count++] = record;
         }
 
