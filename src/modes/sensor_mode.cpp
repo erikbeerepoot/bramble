@@ -18,6 +18,26 @@ void SensorMode::onStart() {
     logger.info("- 30 second reading interval");
     logger.info("- Purple LED breathing pattern");
 
+    // Initialize external flash for sensor data storage
+    external_flash_ = std::make_unique<ExternalFlash>();
+    if (external_flash_->init()) {
+        logger.info("External flash initialized");
+
+        // Initialize flash buffer
+        flash_buffer_ = std::make_unique<SensorFlashBuffer>(*external_flash_);
+        if (flash_buffer_->init()) {
+            SensorFlashMetadata stats;
+            flash_buffer_->getStatistics(stats);
+            logger.info("Flash buffer initialized: %lu records (%lu untransmitted)",
+                       stats.total_records,
+                       flash_buffer_->getUntransmittedCount());
+        } else {
+            logger.error("Failed to initialize flash buffer!");
+        }
+    } else {
+        logger.error("Failed to initialize external flash!");
+    }
+
     // Initialize CHT832X temperature/humidity sensor
     sensor_ = std::make_unique<CHT832X>(i2c1, PIN_I2C_SDA, PIN_I2C_SCL);
 
@@ -57,6 +77,15 @@ void SensorMode::onStart() {
         HEARTBEAT_INTERVAL_MS,
         "Heartbeat"
     );
+
+    // Add backlog transmission task
+    task_manager_.addTask(
+        [this](uint32_t time) {
+            checkAndTransmitBacklog(time);
+        },
+        BACKLOG_TX_INTERVAL_MS,
+        "Backlog Transmission"
+    );
 }
 
 void SensorMode::onLoop() {
@@ -79,12 +108,31 @@ void SensorMode::readAndTransmitSensorData(uint32_t current_time) {
 
     logger.info("Sensor reading: %.2fC, %.2f%%RH", reading.temperature, reading.humidity);
 
-    // Convert to fixed-point format for transmission
+    // Convert to fixed-point format
     // Temperature: int16_t in 0.01C units (e.g., 2350 = 23.50C)
     // Humidity: uint16_t in 0.01% units (e.g., 6500 = 65.00%)
     int16_t temp_fixed = static_cast<int16_t>(reading.temperature * 100.0f);
     uint16_t hum_fixed = static_cast<uint16_t>(reading.humidity * 100.0f);
 
+    // ALWAYS write to flash first (ensures zero data loss)
+    if (flash_buffer_) {
+        SensorDataRecord record = {
+            .timestamp = static_cast<uint32_t>(current_time / 1000),  // Convert ms to seconds
+            .temperature = temp_fixed,
+            .humidity = hum_fixed,
+            .flags = 0,  // Not transmitted yet
+            .reserved = 0,
+            .crc16 = 0   // Will be calculated by writeRecord()
+        };
+
+        if (!flash_buffer_->writeRecord(record)) {
+            logger.error("Failed to write record to flash!");
+        } else {
+            logger.debug("Record written to flash (temp=%d, hum=%d)", temp_fixed, hum_fixed);
+        }
+    }
+
+    // Then attempt LoRa transmission (when network available)
     // Send temperature (2 bytes, little-endian)
     uint8_t temp_data[2] = {
         static_cast<uint8_t>(temp_fixed & 0xFF),
@@ -101,8 +149,17 @@ void SensorMode::readAndTransmitSensorData(uint32_t current_time) {
     messenger_.sendSensorData(HUB_ADDRESS, SENSOR_HUMIDITY,
                              hum_data, sizeof(hum_data), BEST_EFFORT);
 
-    logger.debug("Transmitted: temp=%d (0.01C), hum=%d (0.01%%)",
+    logger.debug("Transmitted via LoRa: temp=%d (0.01C), hum=%d (0.01%%)",
                 temp_fixed, hum_fixed);
+
+    // TODO: Mark flash record as transmitted only on successful ACK from hub
+    // This requires extending ReliableMessenger to:
+    // 1. Add callback for ACK received (onAckReceived)
+    // 2. Pass record index/timestamp through message metadata
+    // 3. Call flash_buffer_->markTransmitted(index) in callback
+    // 4. Handle ACK timeout by leaving record untransmitted for batch retry
+    // Without this, records stay untransmitted and will be resent via batch
+    // transmission, providing resilience at the cost of potential duplicates.
 }
 
 void SensorMode::sendHeartbeat(uint32_t current_time) {
@@ -116,4 +173,80 @@ void SensorMode::sendHeartbeat(uint32_t current_time) {
 
     messenger_.sendHeartbeat(HUB_ADDRESS, uptime, battery_level,
                             signal_strength, active_sensors, error_flags);
+}
+
+void SensorMode::checkAndTransmitBacklog(uint32_t current_time) {
+    if (!flash_buffer_) {
+        return;
+    }
+
+    uint32_t untransmitted_count = flash_buffer_->getUntransmittedCount();
+
+    if (untransmitted_count == 0) {
+        logger.debug("No backlog to transmit");
+        return;
+    }
+
+    logger.info("Backlog check: %lu untransmitted records", untransmitted_count);
+
+    // Read up to BATCH_SIZE records
+    SensorDataRecord records[SensorFlashBuffer::BATCH_SIZE];
+    size_t actual_count = 0;
+
+    if (!flash_buffer_->readUntransmittedRecords(records, SensorFlashBuffer::BATCH_SIZE, actual_count)) {
+        logger.error("Failed to read untransmitted records");
+        return;
+    }
+
+    if (actual_count == 0) {
+        logger.debug("No valid records to transmit");
+        return;
+    }
+
+    logger.info("Transmitting batch of %zu records", actual_count);
+
+    // Transmit the batch
+    if (transmitBatch(records, actual_count)) {
+        logger.info("Batch transmission successful");
+        // Update last sync timestamp
+        flash_buffer_->updateLastSync(static_cast<uint32_t>(current_time / 1000));
+    } else {
+        logger.warn("Batch transmission failed, will retry later");
+    }
+}
+
+bool SensorMode::transmitBatch(const SensorDataRecord* records, size_t count) {
+    if (!records || count == 0) {
+        return false;
+    }
+
+    // TODO: Implement batch message protocol (Phase 2)
+    // For now, transmit individual records
+    for (size_t i = 0; i < count; i++) {
+        const auto& record = records[i];
+
+        // Send temperature
+        uint8_t temp_data[2] = {
+            static_cast<uint8_t>(record.temperature & 0xFF),
+            static_cast<uint8_t>((record.temperature >> 8) & 0xFF)
+        };
+        messenger_.sendSensorData(HUB_ADDRESS, SENSOR_TEMPERATURE,
+                                 temp_data, sizeof(temp_data), RELIABLE);
+
+        // Send humidity
+        uint8_t hum_data[2] = {
+            static_cast<uint8_t>(record.humidity & 0xFF),
+            static_cast<uint8_t>((record.humidity >> 8) & 0xFF)
+        };
+        messenger_.sendSensorData(HUB_ADDRESS, SENSOR_HUMIDITY,
+                                 hum_data, sizeof(hum_data), RELIABLE);
+
+        logger.debug("Batch record %zu: temp=%d, hum=%d, timestamp=%lu",
+                    i, record.temperature, record.humidity, record.timestamp);
+    }
+
+    // TODO: Mark records as transmitted only after receiving ACK from hub
+    // This will be implemented in Phase 2 with proper batch protocol
+
+    return true;
 }
