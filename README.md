@@ -15,7 +15,7 @@ Bramble implements a hub-and-spoke network architecture where:
 - **Board**: Adafruit Feather RP2040 LoRa
 - **Microcontroller**: Raspberry Pi Pico (RP2040)
 - **Radio**: SX1276 LoRa module (915 MHz)
-- **Storage**: 8MB external QSPI flash
+- **Storage**: MT25QL01GBBB 128MB external flash (sensor data), 8MB QSPI flash (config)
 - **Indicator**: WS2812 NeoPixel LED
 - **Power**: USB or battery operation
 
@@ -39,6 +39,14 @@ Bramble implements a hub-and-spoke network architecture where:
 - **Actuator control**: Irrigation valves, water pumps, ventilation fans
 - **Node-to-node coordination**: Moisture sensors triggering irrigation
 - **Status reporting**: Real-time network health and node status
+
+### 💾 Sensor Data Storage
+- **128MB flash circular buffer**: ~10.6 million records capacity
+- **12-year storage**: At 30-second sampling intervals
+- **CRC16 validation**: Data integrity verification
+- **Batch transmission**: Up to 20 records per LoRa message
+- **Transmission tracking**: Records marked after successful ACK
+- **Offline resilience**: Data preserved during network outages
 
 ### 🛠️ Developer Features
 - **Comprehensive testing framework** with mock hardware
@@ -84,11 +92,20 @@ bramble/
     │   ├── node_config.h/cpp # Node persistent settings
     │   ├── hub_config.h/cpp  # Hub registry management
     │   └── config_base.h/cpp # Base configuration class
+    ├── storage/               # Sensor data persistence
+    │   ├── sensor_flash_buffer.h/cpp  # 128MB circular buffer
+    │   ├── sensor_flash_metadata.h    # Buffer state tracking
+    │   └── sensor_data_record.h       # 12-byte record format
     └── tests/                 # Testing framework
         ├── test_framework.h/cpp      # Test runner
         ├── mock_sx1276.h/cpp        # Mock hardware
         ├── reliability_tests.h/cpp   # Communication tests
         └── test_main.cpp            # Test entry point
+├── api/                       # Raspberry Pi REST API
+│   ├── app.py                # Flask application
+│   ├── database.py           # SQLite sensor storage
+│   ├── serial_interface.py   # Hub serial communication
+│   └── config.py             # API configuration
 ```
 
 ## Message Protocol
@@ -271,6 +288,138 @@ SensorMode sensor(messenger, lora, led, nullptr, nullptr, &network_stats);
 - Automatic failover and message queuing
 - Real-time network status monitoring
 
+## Raspberry Pi Integration
+
+The hub connects to a Raspberry Pi via serial (UART) for data storage and web access.
+
+### System Architecture
+
+```
+[Sensor Nodes] --LoRa--> [Hub/Pico] --Serial--> [Raspberry Pi] --REST--> [Web/Apps]
+                              |                       |
+                         128MB Flash              SQLite DB
+                       (local buffer)          (permanent storage)
+```
+
+### Serial Protocol
+
+The hub forwards sensor data to the Raspberry Pi using a text-based protocol:
+
+```
+# Single reading
+SENSOR_DATA <node_addr> TEMP|HUM <value>
+
+# Batch transmission (up to 20 records)
+SENSOR_BATCH <node_addr> <count>
+SENSOR_RECORD <node_addr> <timestamp> <temp> <humidity> <flags>
+...
+BATCH_COMPLETE <node_addr> <count>
+
+# Acknowledgment (Pi to Hub)
+BATCH_ACK <node_addr> <count> <status>
+
+# Time sync (Hub queries, Pi responds)
+GET_DATETIME
+DATETIME YYYY-MM-DD HH:MM:SS <day_of_week>
+```
+
+### Database Schema
+
+Sensor readings are stored in SQLite with the following schema:
+
+```sql
+CREATE TABLE sensor_readings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    node_address INTEGER NOT NULL,
+    timestamp INTEGER NOT NULL,           -- Unix timestamp
+    temperature_centidegrees INTEGER,     -- Temperature in 0.01°C
+    humidity_centipercent INTEGER,        -- Humidity in 0.01%
+    flags INTEGER DEFAULT 0,
+    received_at INTEGER NOT NULL,
+    UNIQUE(node_address, timestamp)
+);
+
+CREATE TABLE nodes (
+    address INTEGER PRIMARY KEY,
+    node_type TEXT NOT NULL,
+    first_seen_at INTEGER NOT NULL,
+    last_seen_at INTEGER NOT NULL,
+    total_readings INTEGER DEFAULT 0
+);
+```
+
+### REST API
+
+The Raspberry Pi runs a Flask-based REST API for querying sensor data.
+
+#### Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/sensor-data` | Query sensor readings with filters |
+| GET | `/api/sensor-data/export` | Export readings as CSV |
+| GET | `/api/nodes/<addr>/sensor-data` | Get readings for specific node |
+| GET | `/api/nodes/<addr>/latest` | Get most recent reading |
+| GET | `/api/nodes/<addr>/stats` | Get node statistics |
+
+#### Query Parameters
+
+- `node` - Filter by node address
+- `start` - Start timestamp (Unix)
+- `end` - End timestamp (Unix)
+- `limit` - Maximum records (default 1000)
+- `offset` - Pagination offset
+
+#### Examples
+
+```bash
+# Get latest 100 readings
+curl http://pi:5000/api/sensor-data?limit=100
+
+# Get readings from node 0x0001 in last 24 hours
+curl "http://pi:5000/api/nodes/1/sensor-data?start=$(date -d '24 hours ago' +%s)"
+
+# Export all data as CSV
+curl http://pi:5000/api/sensor-data/export > sensor_data.csv
+
+# Get statistics for node 0x0001
+curl http://pi:5000/api/nodes/1/stats
+```
+
+#### Response Format
+
+```json
+{
+  "readings": [
+    {
+      "node_address": 1,
+      "timestamp": 1704067200,
+      "temperature_celsius": 22.5,
+      "humidity_percent": 65.0,
+      "flags": 0,
+      "received_at": 1704067205
+    }
+  ],
+  "count": 1,
+  "total": 15000
+}
+```
+
+### Running the API
+
+```bash
+cd api
+pip install -r requirements.txt
+python app.py
+```
+
+Configuration via environment variables:
+- `SERIAL_PORT` - Serial port path (default: `/dev/ttyAMA0`)
+- `SERIAL_BAUD` - Baud rate (default: `115200`)
+- `SENSOR_DB_PATH` - Database file path (default: `/data/sensor_data.db`)
+- `HOST` - API host (default: `0.0.0.0`)
+- `PORT` - API port (default: `5000`)
+
 ## Development Status
 
 ### ✅ Completed Features
@@ -285,17 +434,22 @@ SensorMode sensor(messenger, lora, led, nullptr, nullptr, &network_stats);
 - **H-bridge driver for DC solenoids**
 - **Build system for multiple hardware variants**
 - Comprehensive testing framework
+- **128MB sensor data flash storage** with circular buffer
+- **Batch LoRa transmission protocol** (SENSOR_DATA_BATCH, BATCH_ACK)
+- **Raspberry Pi integration** with serial protocol
+- **SQLite sensor database** with query capabilities
+- **REST API** for sensor data access and export
 
-### 🚧 Next Phase (Immediate)  
+### 🚧 Next Phase (Immediate)
 - **Controller mode implementation** (scheduling, coordination)
-- **Sensor mode implementation** (temperature, humidity, soil moisture)
+- Real sensor integration (DS18B20, SHT30)
 - Error handling improvements
 - Input validation and security
 - SPI communication robustness
 - Interrupt-driven operations
 
 ### 🔮 Later Phase (Future)
-- Real sensor integration (DS18B20, SHT30, soil sensors)
+- Soil moisture sensors integration
 - Advanced irrigation scheduling algorithms
 - Power management and sleep modes
 - Current monitoring for valve diagnostics
