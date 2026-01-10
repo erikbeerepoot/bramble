@@ -56,6 +56,10 @@ public:
     // Batch transmission constants
     static constexpr size_t BATCH_SIZE = 20;
 
+    // Sector geometry
+    static constexpr uint32_t SECTOR_SIZE = ExternalFlash::SECTOR_SIZE;  // 4KB
+    static constexpr uint32_t RECORDS_PER_SECTOR = SECTOR_SIZE / sizeof(SensorDataRecord);  // ~341
+
     /**
      * @brief Construct sensor flash buffer
      * @param flash External flash driver instance
@@ -151,6 +155,10 @@ private:
     SensorFlashMetadata metadata_;
     bool initialized_;
     Logger logger_;
+
+    // Sector buffer for read-modify-write operations
+    // Used by markTransmitted() to preserve other records when updating a single record
+    uint8_t sector_buffer_[SECTOR_SIZE];
 
     /**
      * @brief Load metadata from flash

@@ -187,22 +187,32 @@ bool SensorFlashBuffer::markTransmitted(uint32_t index) {
     record.flags |= RECORD_FLAG_TRANSMITTED;
     record.crc16 = CRC16::calculateRecordCRC(record);
 
-    // Erase and rewrite the sector
-    // Note: This is inefficient, but flash requires erase before write
-    // In practice, we'll mark batches as transmitted, so this happens infrequently
-    uint32_t sector_start = (address / ExternalFlash::SECTOR_SIZE) * ExternalFlash::SECTOR_SIZE;
+    // Read-modify-write pattern to preserve all records in the sector
+    // Flash requires erase before write, so we must save all records
+    uint32_t sector_start = (address / SECTOR_SIZE) * SECTOR_SIZE;
+    uint32_t offset_in_sector = address - sector_start;
 
+    // Step 1: Read entire sector into RAM buffer
+    result = flash_.read(sector_start, sector_buffer_, SECTOR_SIZE);
+    if (result != ExternalFlashResult::Success) {
+        logger_.error("Failed to read sector for mark transmitted");
+        return false;
+    }
+
+    // Step 2: Modify the target record in the buffer
+    memcpy(sector_buffer_ + offset_in_sector, &record, sizeof(record));
+
+    // Step 3: Erase the sector
     result = flash_.eraseSector(sector_start);
     if (result != ExternalFlashResult::Success) {
         logger_.error("Failed to erase sector for mark");
         return false;
     }
 
-    result = flash_.write(address,
-                         reinterpret_cast<const uint8_t*>(&record),
-                         sizeof(record));
+    // Step 4: Write entire sector back
+    result = flash_.write(sector_start, sector_buffer_, SECTOR_SIZE);
     if (result != ExternalFlashResult::Success) {
-        logger_.error("Failed to write marked record");
+        logger_.error("Failed to write sector after mark");
         return false;
     }
 
