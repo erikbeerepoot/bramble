@@ -252,28 +252,22 @@ bool SensorMode::transmitBatch(const SensorDataRecord* records, size_t count) {
         batch_records[i].crc16 = records[i].crc16;
     }
 
-    // Send batch with callback to mark records as transmitted on ACK
+    // Send batch with callback to advance read index on ACK
+    // Note: We don't mark individual records as transmitted - timestamps allow
+    // deduplication during USB recovery if needed. This avoids flash wear.
     uint8_t seq = messenger_.sendSensorDataBatchWithCallback(
         HUB_ADDRESS, start_index,
         batch_records, static_cast<uint8_t>(count), RELIABLE,
-        [this, start_index, count](uint8_t seq_num, uint8_t ack_status, uint64_t context) {
+        [this, count](uint8_t seq_num, uint8_t ack_status, uint64_t context) {
             if (ack_status == 0 && flash_buffer_) {
-                // ACK received - mark all records in batch as transmitted
-                for (size_t i = 0; i < count; i++) {
-                    // Use modulo to handle circular buffer wraparound
-                    uint32_t record_index = (start_index + i) % SensorFlashBuffer::MAX_RECORDS;
-                    if (flash_buffer_->markTransmitted(record_index)) {
-                        logger.debug("Marked batch record %lu as transmitted", record_index);
-                    }
-                }
-                // Advance read index now that transmission is confirmed
+                // ACK received - advance read index past transmitted records
                 if (flash_buffer_->advanceReadIndex(static_cast<uint32_t>(count))) {
-                    logger.debug("Advanced read_index by %zu", count);
+                    logger.info("Batch ACK received (seq=%d): %zu records transmitted",
+                               seq_num, count);
                 }
-                logger.info("Batch ACK received (seq=%d): %zu records marked transmitted",
-                           seq_num, count);
             } else {
-                logger.warn("Batch transmission failed (seq=%d, status=%d)", seq_num, ack_status);
+                logger.warn("Batch transmission failed (seq=%d, status=%d), will retry",
+                           seq_num, ack_status);
             }
         },
         start_index  // Pass start index as user_context
