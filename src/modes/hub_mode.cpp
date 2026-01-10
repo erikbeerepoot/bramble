@@ -126,7 +126,7 @@ void HubMode::processIncomingMessage(uint8_t* rx_buffer, int rx_len, uint32_t cu
            rx_len, lora_.getRssi());
 
     // Handle special message types
-    if (rx_len >= sizeof(MessageHeader)) {
+    if (rx_len >= static_cast<int>(sizeof(MessageHeader))) {
         const MessageHeader* header = reinterpret_cast<const MessageHeader*>(rx_buffer);
 
         if (header->type == MSG_TYPE_HEARTBEAT) {
@@ -149,6 +149,27 @@ void HubMode::processIncomingMessage(uint8_t* rx_buffer, int rx_len, uint32_t cu
 
             // Don't call base class - would cause double handling of CHECK_UPDATES
             // (base class calls global processIncomingMessage which also calls hub_router)
+            return;
+        }
+        else if (header->type == MSG_TYPE_SENSOR_DATA) {
+            // Forward individual sensor readings to Raspberry Pi
+            const SensorPayload* sensor =
+                reinterpret_cast<const SensorPayload*>(rx_buffer + sizeof(MessageHeader));
+            handleSensorData(header->src_addr, sensor);
+            // Fall through to base class for ACK handling if needed
+        }
+        else if (header->type == MSG_TYPE_SENSOR_DATA_BATCH) {
+            // Forward batch sensor data to Raspberry Pi
+            const SensorDataBatchPayload* batch =
+                reinterpret_cast<const SensorDataBatchPayload*>(rx_buffer + sizeof(MessageHeader));
+
+            // Process via messenger first (handles ACK for RELIABLE messages)
+            messenger_.processIncomingMessage(rx_buffer, rx_len);
+
+            // Forward to Raspberry Pi
+            handleSensorDataBatch(header->src_addr, batch);
+
+            // Don't call base class - we've handled the message
             return;
         }
     }
@@ -209,6 +230,8 @@ void HubMode::handleSerialCommand(const char* cmd) {
         handleGetDateTime();
     } else if (strncmp(cmd, "DATETIME ", 9) == 0) {
         handleDateTimeResponse(cmd + 9);
+    } else if (strncmp(cmd, "BATCH_ACK ", 10) == 0) {
+        handleBatchAckResponse(cmd + 10);
     } else {
         uart_puts(API_UART_ID, "ERROR Unknown command\n");
     }
@@ -482,4 +505,133 @@ void HubMode::handleHeartbeat(uint16_t source_addr, const HeartbeatPayload* payl
 
     printf("Sent time to node 0x%04X: %04d-%02d-%02d %02d:%02d:%02d\n",
            source_addr, dt.year, dt.month, dt.day, dt.hour, dt.min, dt.sec);
+}
+
+// ===== Sensor Data Forwarding =====
+
+void HubMode::handleSensorData(uint16_t source_addr, const SensorPayload* payload) {
+    if (!payload) {
+        return;
+    }
+
+    // Forward sensor data to Raspberry Pi via UART
+    // Format: SENSOR_DATA <node_addr> <sensor_type> <data_hex>
+    char response[128];
+
+    // For temperature/humidity, extract the 2-byte values
+    if (payload->sensor_type == SENSOR_TEMPERATURE || payload->sensor_type == SENSOR_HUMIDITY) {
+        if (payload->data_length >= 2) {
+            int16_t value = static_cast<int16_t>(payload->data[0] | (payload->data[1] << 8));
+            const char* type_str = (payload->sensor_type == SENSOR_TEMPERATURE) ? "TEMP" : "HUM";
+            snprintf(response, sizeof(response), "SENSOR_DATA %u %s %d\n",
+                     source_addr, type_str, value);
+            uart_puts(API_UART_ID, response);
+            printf("Forwarded sensor data: node=%u, type=%s, value=%d\n",
+                   source_addr, type_str, value);
+        }
+    } else {
+        // Generic sensor data (hex encoded)
+        snprintf(response, sizeof(response), "SENSOR_DATA %u %u ", source_addr, payload->sensor_type);
+        uart_puts(API_UART_ID, response);
+
+        // Send data as hex
+        for (uint8_t i = 0; i < payload->data_length && i < MAX_SENSOR_DATA_LENGTH; i++) {
+            char hex[4];
+            snprintf(hex, sizeof(hex), "%02X", payload->data[i]);
+            uart_puts(API_UART_ID, hex);
+        }
+        uart_puts(API_UART_ID, "\n");
+    }
+}
+
+void HubMode::handleSensorDataBatch(uint16_t source_addr, const SensorDataBatchPayload* payload) {
+    if (!payload || payload->record_count == 0 || payload->record_count > MAX_BATCH_RECORDS) {
+        printf("Invalid batch payload from node 0x%04X\n", source_addr);
+        return;
+    }
+
+    printf("Received batch from node 0x%04X: %u records (start_idx=%lu)\n",
+           source_addr, payload->record_count, payload->start_index);
+
+    // Send batch start marker to Raspberry Pi
+    char response[128];
+    snprintf(response, sizeof(response), "SENSOR_BATCH %u %u\n",
+             source_addr, payload->record_count);
+    uart_puts(API_UART_ID, response);
+
+    // Forward each record
+    for (uint8_t i = 0; i < payload->record_count; i++) {
+        const BatchSensorRecord& record = payload->records[i];
+
+        // Format: SENSOR_RECORD <node_addr> <timestamp> <temp> <humidity> <flags>
+        snprintf(response, sizeof(response), "SENSOR_RECORD %u %lu %d %u %u\n",
+                 source_addr,
+                 record.timestamp,
+                 record.temperature,
+                 record.humidity,
+                 record.flags);
+        uart_puts(API_UART_ID, response);
+    }
+
+    // Send batch complete marker
+    snprintf(response, sizeof(response), "BATCH_COMPLETE %u %u\n",
+             source_addr, payload->record_count);
+    uart_puts(API_UART_ID, response);
+
+    printf("Forwarded batch to RasPi: %u records\n", payload->record_count);
+
+    // Note: BATCH_ACK will be sent when Raspberry Pi responds with confirmation
+    // For now, send immediate ACK to sensor node to confirm receipt
+    // The Raspberry Pi can send BATCH_ACK response which we'll forward back
+}
+
+void HubMode::sendBatchAck(uint16_t dest_addr, uint8_t seq_num, uint8_t status, uint8_t records_received) {
+    // Create and send BATCH_ACK message
+    uint8_t buffer[MESSAGE_MAX_SIZE];
+    Message* msg = reinterpret_cast<Message*>(buffer);
+
+    msg->header.magic = MESSAGE_MAGIC;
+    msg->header.type = MSG_TYPE_BATCH_ACK;
+    msg->header.flags = 0;  // No ACK required for BATCH_ACK
+    msg->header.src_addr = ADDRESS_HUB;
+    msg->header.dst_addr = dest_addr;
+    msg->header.seq_num = seq_num;
+
+    BatchAckPayload* ack = reinterpret_cast<BatchAckPayload*>(msg->payload);
+    ack->ack_seq_num = seq_num;
+    ack->status = status;
+    ack->records_received = records_received;
+
+    size_t msg_size = MESSAGE_HEADER_SIZE + sizeof(BatchAckPayload);
+
+    if (messenger_.send(buffer, msg_size, BEST_EFFORT)) {
+        printf("Sent BATCH_ACK to 0x%04X: seq=%u, status=%u, records=%u\n",
+               dest_addr, seq_num, status, records_received);
+    } else {
+        printf("Failed to send BATCH_ACK to 0x%04X\n", dest_addr);
+    }
+}
+
+void HubMode::handleBatchAckResponse(const char* args) {
+    // Parse: BATCH_ACK <node_addr> <count> <status>
+    uint16_t node_addr;
+    int count, status;
+
+    if (sscanf(args, "%hu %d %d", &node_addr, &count, &status) != 3) {
+        uart_puts(API_UART_ID, "ERROR Invalid BATCH_ACK syntax\n");
+        return;
+    }
+
+    printf("RasPi confirmed batch: node=0x%04X, count=%d, status=%d\n",
+           node_addr, count, status);
+
+    // Forward BATCH_ACK to sensor node
+    // Note: The seq_num here is somewhat arbitrary since we don't track it
+    // The sensor node uses the ACK callback mechanism instead
+    sendBatchAck(node_addr, 0, static_cast<uint8_t>(status), static_cast<uint8_t>(count));
+
+    // Respond to RasPi
+    char response[64];
+    snprintf(response, sizeof(response), "BATCH_ACK_SENT %u %d\n", node_addr, count);
+    uart_puts(API_UART_ID, response);
 }
