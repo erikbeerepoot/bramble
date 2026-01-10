@@ -115,6 +115,7 @@ void SensorMode::readAndTransmitSensorData(uint32_t current_time) {
     uint16_t hum_fixed = static_cast<uint16_t>(reading.humidity * 100.0f);
 
     // ALWAYS write to flash first (ensures zero data loss)
+    uint32_t write_index = 0;
     if (flash_buffer_) {
         SensorDataRecord record = {
             .timestamp = static_cast<uint32_t>(current_time / 1000),  // Convert ms to seconds
@@ -125,41 +126,56 @@ void SensorMode::readAndTransmitSensorData(uint32_t current_time) {
             .crc16 = 0   // Will be calculated by writeRecord()
         };
 
+        // Get current write index BEFORE writing (this is what we'll mark as transmitted)
+        SensorFlashMetadata stats;
+        flash_buffer_->getStatistics(stats);
+        write_index = stats.write_index;
+
         if (!flash_buffer_->writeRecord(record)) {
             logger.error("Failed to write record to flash!");
         } else {
-            logger.debug("Record written to flash (temp=%d, hum=%d)", temp_fixed, hum_fixed);
+            logger.debug("Record written to flash at index %lu (temp=%d, hum=%d)",
+                        write_index, temp_fixed, hum_fixed);
         }
     }
 
     // Then attempt LoRa transmission (when network available)
-    // Send temperature (2 bytes, little-endian)
+    // Use RELIABLE criticality to get ACKs and mark records as transmitted
     uint8_t temp_data[2] = {
         static_cast<uint8_t>(temp_fixed & 0xFF),
         static_cast<uint8_t>((temp_fixed >> 8) & 0xFF)
     };
-    messenger_.sendSensorData(HUB_ADDRESS, SENSOR_TEMPERATURE,
-                             temp_data, sizeof(temp_data), BEST_EFFORT);
 
-    // Send humidity (2 bytes, little-endian)
+    // Send with callback to mark as transmitted on ACK
+    uint8_t temp_seq = messenger_.sendSensorDataWithCallback(
+        HUB_ADDRESS, SENSOR_TEMPERATURE,
+        temp_data, sizeof(temp_data), RELIABLE,
+        [this, write_index](uint8_t seq_num, uint8_t ack_status, uint64_t context) {
+            if (ack_status == 0 && flash_buffer_) {
+                // ACK received successfully - mark record as transmitted
+                uint32_t flash_index = static_cast<uint32_t>(context);
+                if (flash_buffer_->markTransmitted(flash_index)) {
+                    logger.debug("Marked flash record %lu as transmitted (seq=%d)",
+                                flash_index, seq_num);
+                } else {
+                    logger.warn("Failed to mark flash record %lu as transmitted", flash_index);
+                }
+            }
+        },
+        write_index  // Pass flash index as user_context
+    );
+
+    logger.debug("Transmitted temp via LoRa: seq=%d, flash_index=%lu", temp_seq, write_index);
+
+    // Note: We're only tracking temperature ACKs for simplicity.
+    // Humidity is sent separately but not tracked. In production, you might want
+    // to combine temp+humidity into a single message or track both separately.
     uint8_t hum_data[2] = {
         static_cast<uint8_t>(hum_fixed & 0xFF),
         static_cast<uint8_t>((hum_fixed >> 8) & 0xFF)
     };
     messenger_.sendSensorData(HUB_ADDRESS, SENSOR_HUMIDITY,
                              hum_data, sizeof(hum_data), BEST_EFFORT);
-
-    logger.debug("Transmitted via LoRa: temp=%d (0.01C), hum=%d (0.01%%)",
-                temp_fixed, hum_fixed);
-
-    // TODO: Mark flash record as transmitted only on successful ACK from hub
-    // This requires extending ReliableMessenger to:
-    // 1. Add callback for ACK received (onAckReceived)
-    // 2. Pass record index/timestamp through message metadata
-    // 3. Call flash_buffer_->markTransmitted(index) in callback
-    // 4. Handle ACK timeout by leaving record untransmitted for batch retry
-    // Without this, records stay untransmitted and will be resent via batch
-    // transmission, providing resilience at the cost of potential duplicates.
 }
 
 void SensorMode::sendHeartbeat(uint32_t current_time) {

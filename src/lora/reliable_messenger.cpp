@@ -199,6 +199,82 @@ bool ReliableMessenger::send(const uint8_t* buffer, size_t length,
     return true;
 }
 
+uint8_t ReliableMessenger::sendWithCallback(const uint8_t* buffer, size_t length,
+                                            DeliveryCriticality criticality,
+                                            AckCallback ack_callback,
+                                            uint64_t user_context) {
+    if (!buffer || length == 0 || length > MESSAGE_MAX_SIZE) {
+        logger_.error("Invalid message parameters");
+        return 0;
+    }
+
+    // Extract sequence number from message
+    const Message* msg = reinterpret_cast<const Message*>(buffer);
+    uint8_t seq_num = msg->header.seq_num;
+    uint16_t dst_addr = msg->header.dst_addr;
+
+    // If BEST_EFFORT, send immediately without tracking
+    if (criticality == BEST_EFFORT) {
+        logger_.debug("Sending BEST_EFFORT with callback - note: callbacks only work for RELIABLE/CRITICAL");
+        if (sendMessage(buffer, length)) {
+            return seq_num;
+        }
+        return 0;
+    }
+
+    // For RELIABLE/CRITICAL: Send and track for ACK
+    if (!sendMessage(buffer, length)) {
+        return 0;
+    }
+
+    // Store message for retry tracking with callback
+    PendingMessage pending;
+    pending.buffer = std::make_unique<uint8_t[]>(length);
+    memcpy(pending.buffer.get(), buffer, length);
+    pending.length = length;
+    pending.dst_addr = dst_addr;
+    pending.send_time = TimeUtils::getCurrentTimeMs();
+    pending.attempts = 1;
+    pending.criticality = criticality;
+    pending.retry_config = RetryPolicy::getConfig(criticality);
+    pending.ack_callback = ack_callback;
+    pending.user_context = user_context;
+
+    pending_messages_[seq_num] = std::move(pending);
+
+    logger_.debug("Sent %s message seq=%d with callback, awaiting ACK (pending: %zu)",
+                 RetryPolicy::getPolicyName(criticality), seq_num,
+                 pending_messages_.size());
+
+    return seq_num;
+}
+
+uint8_t ReliableMessenger::sendSensorDataWithCallback(uint16_t dst_addr, uint8_t sensor_type,
+                                                      const uint8_t* data, uint8_t data_length,
+                                                      DeliveryCriticality criticality,
+                                                      AckCallback ack_callback,
+                                                      uint64_t user_context) {
+    uint8_t flags = MessageBuilder::criticalityToFlags(criticality);
+    uint8_t seq_num = getNextSequenceNumber();
+
+    logger_.debug("sendSensorDataWithCallback: src=0x%04X, dst=0x%04X, type=%d, criticality=%d, context=%llu",
+                  node_addr_, dst_addr, sensor_type, criticality, user_context);
+
+    uint8_t buffer[MESSAGE_MAX_SIZE];
+    size_t length = MessageBuilder::createSensorMessage(
+        node_addr_, dst_addr, seq_num,
+        sensor_type, data, data_length, flags,
+        buffer
+    );
+
+    if (length == 0) {
+        logger_.error("Failed to create sensor message");
+        return 0;
+    }
+
+    return sendWithCallback(buffer, length, criticality, ack_callback, user_context);
+}
+
 bool ReliableMessenger::processIncomingMessage(const uint8_t* buffer, size_t length) {
     if (!MessageValidator::validateMessage(buffer, length)) {
         logger_.error("Invalid incoming message");
@@ -485,21 +561,28 @@ bool ReliableMessenger::sendMessage(const uint8_t* buffer, size_t length) {
 
 void ReliableMessenger::handleAck(const AckPayload* ack_payload) {
     if (!ack_payload) return;
-    
+
     auto it = pending_messages_.find(ack_payload->ack_seq_num);
     if (it != pending_messages_.end()) {
         auto& [seq_num, pending] = *it;
-        
-        logger_.info("ACK received for seq=%d, status=%d", 
+
+        logger_.info("ACK received for seq=%d, status=%d",
                     ack_payload->ack_seq_num, ack_payload->status);
-        
+
+        // Invoke callback if set BEFORE removing from pending
+        if (pending.ack_callback) {
+            logger_.debug("Invoking ACK callback for seq=%d, context=%llu",
+                         seq_num, pending.user_context);
+            pending.ack_callback(seq_num, ack_payload->status, pending.user_context);
+        }
+
         // Record successful transmission for statistics
         if (network_stats_) {
-            network_stats_->recordMessageSent(pending.dst_addr, pending.criticality, 
+            network_stats_->recordMessageSent(pending.dst_addr, pending.criticality,
                                             true, pending.attempts);
             network_stats_->recordAckReceived(pending.dst_addr);
         }
-        
+
         // Remove from pending
         pending_messages_.erase(it);
     } else {

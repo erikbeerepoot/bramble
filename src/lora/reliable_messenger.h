@@ -24,6 +24,14 @@ struct OutgoingMessage {
 };
 
 /**
+ * @brief Callback type for ACK received notification
+ *
+ * Called when an ACK is received for a message. Provides the sequence number,
+ * ACK status, and optional user context (can be used for flash record index).
+ */
+using AckCallback = std::function<void(uint8_t seq_num, uint8_t ack_status, uint64_t user_context)>;
+
+/**
  * @brief Pending message for retry tracking
  */
 struct PendingMessage {
@@ -34,6 +42,8 @@ struct PendingMessage {
     uint8_t attempts;
     DeliveryCriticality criticality;
     RetryPolicy::RetryConfig retry_config;
+    AckCallback ack_callback;  // Optional callback when ACK received
+    uint64_t user_context;      // User-defined context (e.g., flash record index)
 };
 
 /**
@@ -75,9 +85,26 @@ public:
      * @param criticality Delivery criticality (BEST_EFFORT, RELIABLE, CRITICAL)
      * @return true if message sent/queued successfully
      */
-    bool sendSensorData(uint16_t dst_addr, uint8_t sensor_type, 
+    bool sendSensorData(uint16_t dst_addr, uint8_t sensor_type,
                        const uint8_t* data, uint8_t data_length,
                        DeliveryCriticality criticality = BEST_EFFORT);
+
+    /**
+     * @brief Send sensor data with ACK callback
+     * @param dst_addr Destination address
+     * @param sensor_type Type of sensor
+     * @param data Sensor data
+     * @param data_length Length of sensor data
+     * @param criticality Delivery criticality (BEST_EFFORT, RELIABLE, CRITICAL)
+     * @param ack_callback Callback invoked when ACK is received
+     * @param user_context User-defined context passed to callback
+     * @return Sequence number of sent message (0 on failure)
+     */
+    uint8_t sendSensorDataWithCallback(uint16_t dst_addr, uint8_t sensor_type,
+                                       const uint8_t* data, uint8_t data_length,
+                                       DeliveryCriticality criticality,
+                                       AckCallback ack_callback,
+                                       uint64_t user_context = 0);
     
     /**
      * @brief Send heartbeat message with node status
@@ -153,6 +180,20 @@ public:
      */
     bool send(const uint8_t* buffer, size_t length,
               DeliveryCriticality criticality = BEST_EFFORT);
+
+    /**
+     * @brief Generic send method with ACK callback
+     * @param buffer Pre-built message buffer
+     * @param length Message length
+     * @param criticality Delivery criticality
+     * @param ack_callback Callback invoked when ACK is received
+     * @param user_context User-defined context passed to callback
+     * @return Sequence number of sent message (0 on failure)
+     */
+    uint8_t sendWithCallback(const uint8_t* buffer, size_t length,
+                             DeliveryCriticality criticality,
+                             AckCallback ack_callback,
+                             uint64_t user_context = 0);
     
     /**
      * @brief Process incoming messages and handle ACKs
