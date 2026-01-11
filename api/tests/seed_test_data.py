@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 """Seed the database with test sensor data for local development."""
+import sys
 import time
 import random
 import argparse
 import os
+from pathlib import Path
+
+# Add parent directory (api/) to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Use local test DB by default when running this script
 os.environ.setdefault('SENSOR_DB_PATH', './test_sensor.db')
