@@ -86,8 +86,10 @@ def main():
     if stats:
         print(f"\nNode {args.node:#04x} statistics:")
         print(f"  Total readings: {stats['total_readings']}")
-        print(f"  Temp range: {stats['min_temperature']:.1f}°C - {stats['max_temperature']:.1f}°C")
-        print(f"  Humidity range: {stats['min_humidity']:.1f}% - {stats['max_humidity']:.1f}%")
+        temp = stats['temperature']
+        hum = stats['humidity']
+        print(f"  Temp range: {temp['min_celsius']:.1f}°C - {temp['max_celsius']:.1f}°C")
+        print(f"  Humidity range: {hum['min_percent']:.1f}% - {hum['max_percent']:.1f}%")
 
 
 if __name__ == '__main__':
