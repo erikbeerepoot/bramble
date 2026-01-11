@@ -408,9 +408,14 @@ curl http://pi:5000/api/nodes/1/stats
 ### Running the API
 
 ```bash
+# Create data directory for database (first time only)
+sudo mkdir -p /data
+sudo chown $USER:$USER /data
+
+# Install and run
 cd api
-pip install -r requirements.txt
-python app.py
+uv sync       # or: pip install -r requirements.txt
+uv run app.py # or: python app.py
 ```
 
 Configuration via environment variables:
