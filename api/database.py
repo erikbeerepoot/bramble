@@ -197,7 +197,7 @@ class SensorDatabase:
             logger.error(f"Batch insert failed: {e}")
             return (0, len(readings))
 
-    def _update_node_stats(self, conn: sqlite3.Connection, node_addr: int, timestamp: int):
+    def _update_node_stats(self, conn: sqlite3.Connection, node_address: int, timestamp: int):
         """Update node statistics after inserting a reading."""
         conn.execute("""
             INSERT INTO nodes (address, node_type, first_seen_at, last_seen_at, total_readings)
@@ -205,7 +205,7 @@ class SensorDatabase:
             ON CONFLICT(address) DO UPDATE SET
                 last_seen_at = MAX(last_seen_at, excluded.last_seen_at),
                 total_readings = total_readings + 1
-        """, (node_addr, timestamp, timestamp))
+        """, (node_address, timestamp, timestamp))
 
     def query_readings(
         self,

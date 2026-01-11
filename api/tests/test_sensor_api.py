@@ -72,8 +72,9 @@ class TestNodeSensorEndpoints:
         data = response.get_json()
         assert 'total_readings' in data
         assert data['total_readings'] == 50
-        assert 'min_temperature' in data
-        assert 'max_temperature' in data
+        assert 'temperature' in data
+        assert 'min_celsius' in data['temperature']
+        assert 'max_celsius' in data['temperature']
 
 
 class TestDatabaseLayer:

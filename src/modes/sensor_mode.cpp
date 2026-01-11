@@ -147,10 +147,10 @@ void SensorMode::readAndTransmitSensorData(uint32_t current_time) {
         static_cast<uint8_t>((temp_fixed >> 8) & 0xFF)
     };
 
-    uint8_t temp_seq = messenger_.sendSensorData(
+    uint8_t temperature_sequence = messenger_.sendSensorData(
         HUB_ADDRESS, SENSOR_TEMPERATURE, temp_data, sizeof(temp_data), BEST_EFFORT);
 
-    logger.debug("Transmitted temp via LoRa: seq=%d, flash_index=%lu", temp_seq, write_index);
+    logger.debug("Transmitted temp via LoRa: seq=%d, flash_index=%lu", temperature_sequence, write_index);
 
     // Send humidity as separate message (also best effort)
     uint8_t hum_data[2] = {
