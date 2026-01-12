@@ -534,11 +534,7 @@ class SensorDatabase:
                 s3_path = f"s3://{bucket}/{prefix}sensor_readings.parquet"
                 conn.execute(f"COPY sensor_readings TO '{s3_path}' (FORMAT PARQUET)")
 
-                # Also export nodes table
-                nodes_path = f"s3://{bucket}/{prefix}nodes.parquet"
-                conn.execute(f"COPY nodes TO '{nodes_path}' (FORMAT PARQUET)")
-
-                logger.info(f"Synced database to s3://{bucket}/{prefix}")
+                logger.info(f"Synced database to {s3_path}")
                 return True
 
         except Exception as e:
