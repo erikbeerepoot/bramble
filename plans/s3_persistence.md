@@ -86,9 +86,9 @@ conn.execute(f"SET s3_secret_access_key='{secret}';")
 
 ## Tasks
 
-- [ ] Add `sync_to_s3()` method to SensorDatabase
-- [ ] Add S3 config to config.py
-- [ ] Add hourly cron job or background sync
+- [x] Add `sync_to_s3()` method to SensorDatabase
+- [x] Add S3 config to config.py
+- [x] Add `s3_sync.py` CLI script for cron
 - [ ] Document IAM/bucket setup in README
 
 ## File Changes
