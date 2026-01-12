@@ -503,3 +503,44 @@ class SensorDatabase:
             lines.append(f"{r.node_address},{r.timestamp},{r.temperature_celsius:.2f},{r.humidity_percent:.2f},{r.flags}")
 
         return "\n".join(lines)
+
+    def sync_to_s3(
+        self,
+        bucket: str = Config.S3_BUCKET,
+        prefix: str = Config.S3_PREFIX,
+        region: str = Config.S3_REGION
+    ) -> bool:
+        """Export sensor data to S3 as Parquet. Returns True on success.
+
+        Args:
+            bucket: S3 bucket name (empty to disable)
+            prefix: Key prefix within bucket
+            region: AWS region
+
+        Returns:
+            True if sync succeeded, False otherwise
+        """
+        if not bucket:
+            logger.debug("S3 sync disabled (no bucket configured)")
+            return False
+
+        try:
+            with self._get_connection() as conn:
+                # Install and load httpfs extension
+                conn.execute("INSTALL httpfs; LOAD httpfs;")
+                conn.execute(f"SET s3_region='{region}';")
+
+                # Export sensor readings to Parquet
+                s3_path = f"s3://{bucket}/{prefix}sensor_readings.parquet"
+                conn.execute(f"COPY sensor_readings TO '{s3_path}' (FORMAT PARQUET)")
+
+                # Also export nodes table
+                nodes_path = f"s3://{bucket}/{prefix}nodes.parquet"
+                conn.execute(f"COPY nodes TO '{nodes_path}' (FORMAT PARQUET)")
+
+                logger.info(f"Synced database to s3://{bucket}/{prefix}")
+                return True
+
+        except Exception as e:
+            logger.warning(f"S3 sync failed (non-fatal): {e}")
+            return False

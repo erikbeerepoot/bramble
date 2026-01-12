@@ -22,3 +22,8 @@ class Config:
     SENSOR_DB_PATH = os.getenv('SENSOR_DB_PATH', '/data/sensor_data.duckdb')
     DB_BATCH_SIZE = int(os.getenv('DB_BATCH_SIZE', '100'))  # Records per batch insert
     DB_FLUSH_INTERVAL = float(os.getenv('DB_FLUSH_INTERVAL', '5.0'))  # Seconds between buffer flushes
+
+    # S3 backup settings (optional - leave S3_BUCKET empty to disable)
+    S3_BUCKET = os.getenv('S3_BUCKET', '')
+    S3_PREFIX = os.getenv('S3_PREFIX', 'bramble/')
+    S3_REGION = os.getenv('S3_REGION', 'us-east-1')
