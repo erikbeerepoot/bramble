@@ -111,16 +111,16 @@ duckdb>=0.10.0
 
 ## Tasks
 
-- [ ] Replace `sqlite3` import with `duckdb`
-- [ ] Update schema (VARCHAR, remove AUTOINCREMENT)
-- [ ] Change `INSERT OR IGNORE` to `INSERT ... ON CONFLICT DO NOTHING`
-- [ ] Add `WriteBuffer` class
-- [ ] Wire up buffer in `SensorDatabase` for `insert_reading()`
-- [ ] Add periodic flush call (in Flask app or background thread)
-- [ ] Add `shutdown()` call on app teardown
-- [ ] Update config with new defaults
-- [ ] Add `duckdb` to requirements.txt
-- [ ] Update tests to work with DuckDB
+- [x] Replace `sqlite3` import with `duckdb`
+- [x] Update schema (VARCHAR, remove AUTOINCREMENT)
+- [x] Change `INSERT OR IGNORE` to `INSERT ... ON CONFLICT DO NOTHING`
+- [x] Add `WriteBuffer` class
+- [x] Wire up buffer in `SensorDatabase` for `insert_reading()`
+- [ ] Add periodic flush call (in Flask app or background thread) - optional, buffer available via `get_write_buffer()`
+- [ ] Add `shutdown()` call on app teardown - optional, for graceful shutdown
+- [x] Update config with new defaults
+- [x] Add `duckdb` to pyproject.toml
+- [x] Update tests to work with DuckDB
 
 ## File Changes
 
