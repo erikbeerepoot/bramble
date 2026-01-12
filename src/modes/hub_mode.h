@@ -28,6 +28,12 @@ private:
 
     void syncTimeFromRaspberryPi();  // Initiate time sync
 
+    // Sensor data forwarding to Raspberry Pi
+    void handleSensorData(uint16_t source_addr, const SensorPayload* payload);
+    void handleSensorDataBatch(uint16_t source_addr, const SensorDataBatchPayload* payload);
+    void sendBatchAck(uint16_t dest_addr, uint8_t seq_num, uint8_t status, uint8_t records_received);
+    void handleBatchAckResponse(const char* args);  // Parse RasPi BATCH_ACK and forward to node
+
 public:
     using ApplicationMode::ApplicationMode;
 

@@ -38,7 +38,9 @@ enum MessageType {
     MSG_TYPE_ROUTE          = 0x08,  // Message routing (future use)
     MSG_TYPE_CHECK_UPDATES  = 0x09,  // Node → Hub: Check for pending updates
     MSG_TYPE_UPDATE_AVAILABLE = 0x0A, // Hub → Node: Update response (ACK'd with MSG_TYPE_ACK)
-    MSG_TYPE_HEARTBEAT_RESPONSE = 0x0B // Hub → Node: Heartbeat response with current time
+    MSG_TYPE_HEARTBEAT_RESPONSE = 0x0B, // Hub → Node: Heartbeat response with current time
+    MSG_TYPE_SENSOR_DATA_BATCH = 0x0C,  // Batch transmission of sensor records from flash
+    MSG_TYPE_BATCH_ACK      = 0x0D   // Batch acknowledgment from hub
 };
 
 // Sensor data subtypes
@@ -217,6 +219,50 @@ struct __attribute__((packed)) UpdateAvailablePayload {
     uint8_t  update_type;        // UpdateType enum
     uint8_t  sequence;           // Hub's sequence for this update
     uint8_t  payload_data[24];   // Type-specific data
+};
+
+/**
+ * @brief Compact sensor data record for batch transmission
+ *
+ * Matches SensorDataRecord from storage but packed for wire transmission.
+ * Each record is 12 bytes.
+ */
+struct __attribute__((packed)) BatchSensorRecord {
+    uint32_t timestamp;        // Unix timestamp (seconds since epoch)
+    int16_t  temperature;      // Temperature in 0.01°C units
+    uint16_t humidity;         // Humidity in 0.01% units
+    uint8_t  flags;            // Status flags
+    uint8_t  reserved;         // Reserved for future use
+    uint16_t crc16;            // CRC16 of record
+};
+
+// Batch size constants
+constexpr size_t MAX_BATCH_RECORDS = 20;  // Max records per batch message
+constexpr size_t BATCH_RECORD_SIZE = sizeof(BatchSensorRecord);  // 12 bytes
+constexpr size_t MAX_BATCH_PAYLOAD_SIZE = 7 + (MAX_BATCH_RECORDS * BATCH_RECORD_SIZE);  // 247 bytes
+
+/**
+ * @brief Sensor data batch payload (Node → Hub)
+ *
+ * Transmits multiple sensor records in a single message for efficient
+ * catch-up after network outages. Max 20 records per batch.
+ */
+struct __attribute__((packed)) SensorDataBatchPayload {
+    uint16_t node_addr;        // Source node address (for routing/validation)
+    uint32_t start_index;      // Flash buffer start index (for debugging)
+    uint8_t  record_count;     // Number of records in this batch (1-20)
+    BatchSensorRecord records[MAX_BATCH_RECORDS];  // Sensor records
+};
+
+/**
+ * @brief Batch acknowledgment payload (Hub → Node)
+ *
+ * Acknowledges receipt of a batch. Node can mark records as transmitted.
+ */
+struct __attribute__((packed)) BatchAckPayload {
+    uint8_t  ack_seq_num;      // Sequence number being acknowledged
+    uint8_t  status;           // ACK status (0=success)
+    uint8_t  records_received; // Number of records successfully stored
 };
 
 /**

@@ -1,10 +1,12 @@
 """Bramble REST API - Flask application."""
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response
 import logging
+import time
 from typing import Optional
 
 from config import Config
 from serial_interface import SerialInterface
+from database import SensorDatabase
 from models import Node, Schedule, QueuedUpdate
 
 
@@ -19,15 +21,29 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.config.from_object(Config)
 
+# Initialize database
+sensor_db: Optional[SensorDatabase] = None
+
 # Initialize serial interface
 serial_interface: Optional[SerialInterface] = None
+
+
+def get_database() -> SensorDatabase:
+    """Get database instance, initializing if needed."""
+    global sensor_db
+    if sensor_db is None:
+        sensor_db = SensorDatabase(Config.SENSOR_DB_PATH)
+        sensor_db.init_db()
+        logger.info(f"Sensor database initialized at {Config.SENSOR_DB_PATH}")
+    return sensor_db
 
 
 def get_serial() -> SerialInterface:
     """Get serial interface instance, initializing if needed."""
     global serial_interface
     if serial_interface is None:
-        serial_interface = SerialInterface()
+        db = get_database()
+        serial_interface = SerialInterface(database=db)
         serial_interface.connect()
     return serial_interface
 
@@ -435,6 +451,200 @@ def set_datetime(addr: int):
         return jsonify({'error': 'Hub did not respond'}), 504
     except Exception as e:
         logger.error(f"Error setting datetime for node {addr}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ===== Sensor Data Endpoints =====
+
+@app.route('/api/sensor-data', methods=['GET'])
+def get_sensor_data():
+    """Query sensor data with optional filters.
+
+    Query parameters:
+        node_address: Filter by node address (optional)
+        start_time: Start timestamp (optional)
+        end_time: End timestamp (optional)
+        limit: Maximum records to return (default 1000)
+        offset: Number of records to skip (default 0)
+
+    Returns:
+        JSON array of sensor readings
+    """
+    try:
+        db = get_database()
+
+        # Parse query parameters
+        node_address = request.args.get('node_address', type=int)
+        start_time = request.args.get('start_time', type=int)
+        end_time = request.args.get('end_time', type=int)
+        limit = request.args.get('limit', default=1000, type=int)
+        offset = request.args.get('offset', default=0, type=int)
+
+        # Validate limits
+        if limit < 1 or limit > 10000:
+            return jsonify({'error': 'limit must be 1-10000'}), 400
+        if offset < 0:
+            return jsonify({'error': 'offset must be >= 0'}), 400
+
+        # Query database
+        readings = db.query_readings(
+            node_address=node_address,
+            start_time=start_time,
+            end_time=end_time,
+            limit=limit,
+            offset=offset
+        )
+
+        # Get total count for pagination
+        total = db.get_reading_count(
+            node_address=node_address,
+            start_time=start_time,
+            end_time=end_time
+        )
+
+        return jsonify({
+            'count': len(readings),
+            'total': total,
+            'limit': limit,
+            'offset': offset,
+            'readings': [r.to_dict() for r in readings]
+        })
+
+    except Exception as e:
+        logger.error(f"Error querying sensor data: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/sensor-data/export', methods=['GET'])
+def export_sensor_data():
+    """Export sensor data as CSV.
+
+    Query parameters:
+        node_address: Filter by node address (optional)
+        start_time: Start timestamp (optional)
+        end_time: End timestamp (optional)
+        format: Export format (default 'csv')
+
+    Returns:
+        CSV file download
+    """
+    try:
+        db = get_database()
+
+        # Parse query parameters
+        node_address = request.args.get('node_address', type=int)
+        start_time = request.args.get('start_time', type=int)
+        end_time = request.args.get('end_time', type=int)
+        export_format = request.args.get('format', default='csv')
+
+        if export_format != 'csv':
+            return jsonify({'error': 'Only CSV format is currently supported'}), 400
+
+        # Generate CSV
+        csv_content = db.export_csv(
+            node_address=node_address,
+            start_time=start_time,
+            end_time=end_time
+        )
+
+        # Return as downloadable file
+        filename = f"sensor_data_{int(time.time())}.csv"
+        return Response(
+            csv_content,
+            mimetype='text/csv',
+            headers={'Content-Disposition': f'attachment; filename={filename}'}
+        )
+
+    except Exception as e:
+        logger.error(f"Error exporting sensor data: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/nodes/<int:addr>/sensor-data', methods=['GET'])
+def get_node_sensor_data(addr: int):
+    """Get sensor data for a specific node.
+
+    Args:
+        addr: Node address
+
+    Query parameters:
+        start_time: Start timestamp (optional)
+        end_time: End timestamp (optional)
+        limit: Maximum records to return (default 100)
+
+    Returns:
+        JSON array of sensor readings for this node
+    """
+    try:
+        db = get_database()
+
+        start_time = request.args.get('start_time', type=int)
+        end_time = request.args.get('end_time', type=int)
+        limit = request.args.get('limit', default=100, type=int)
+
+        readings = db.query_readings(
+            node_address=addr,
+            start_time=start_time,
+            end_time=end_time,
+            limit=limit
+        )
+
+        return jsonify({
+            'node_address': addr,
+            'count': len(readings),
+            'readings': [r.to_dict() for r in readings]
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting sensor data for node {addr}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/nodes/<int:addr>/sensor-data/latest', methods=['GET'])
+def get_node_latest(addr: int):
+    """Get the most recent sensor reading for a node.
+
+    Args:
+        addr: Node address
+
+    Returns:
+        JSON sensor reading or 404 if not found
+    """
+    try:
+        db = get_database()
+        reading = db.get_latest_reading(addr)
+
+        if reading:
+            return jsonify(reading.to_dict())
+        else:
+            return jsonify({'error': f'No readings found for node {addr}'}), 404
+
+    except Exception as e:
+        logger.error(f"Error getting latest reading for node {addr}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/nodes/<int:addr>/statistics', methods=['GET'])
+def get_node_statistics(addr: int):
+    """Get statistics for a specific node.
+
+    Args:
+        addr: Node address
+
+    Returns:
+        JSON object with node statistics
+    """
+    try:
+        db = get_database()
+        stats = db.get_node_statistics(addr)
+
+        if stats:
+            return jsonify(stats)
+        else:
+            return jsonify({'error': f'No data found for node {addr}'}), 404
+
+    except Exception as e:
+        logger.error(f"Error getting statistics for node {addr}: {e}")
         return jsonify({'error': str(e)}), 500
 
 

@@ -24,7 +24,7 @@ public:
      */
     static bool validateHeader(const MessageHeader* header) {
         if (!header || header->magic != MESSAGE_MAGIC) return false;
-        if (header->type < MSG_TYPE_SENSOR_DATA || header->type > MSG_TYPE_HEARTBEAT_RESPONSE) return false;
+        if (header->type < MSG_TYPE_SENSOR_DATA || header->type > MSG_TYPE_BATCH_ACK) return false;
         return isValidAddress(header->src_addr) && isValidAddress(header->dst_addr);
     }
     
@@ -103,6 +103,12 @@ public:
             case MSG_TYPE_HEARTBEAT_RESPONSE:
                 return validateFixedPayload<HeartbeatResponsePayload>(payload, payload_length);
 
+            case MSG_TYPE_SENSOR_DATA_BATCH:
+                return validateBatchPayload(payload, payload_length);
+
+            case MSG_TYPE_BATCH_ACK:
+                return validateFixedPayload<BatchAckPayload>(payload, payload_length);
+
             default:
                 return false;
         }
@@ -116,8 +122,26 @@ private:
         }
         return false;
     }
-    
+
     static bool validateRegistrationResponse(const RegistrationResponsePayload* resp) {
         return resp->status <= REG_ERROR_INTERNAL;
+    }
+
+    static bool validateBatchPayload(const uint8_t* payload, size_t payload_length) {
+        // Minimum: header (7 bytes) + at least 1 record (12 bytes) = 19 bytes
+        constexpr size_t MIN_BATCH_SIZE = 7 + BATCH_RECORD_SIZE;
+        if (payload_length < MIN_BATCH_SIZE) return false;
+
+        // Extract record_count from payload
+        const SensorDataBatchPayload* batch = reinterpret_cast<const SensorDataBatchPayload*>(payload);
+
+        // Validate record count
+        if (batch->record_count == 0 || batch->record_count > MAX_BATCH_RECORDS) {
+            return false;
+        }
+
+        // Calculate expected payload size
+        size_t expected_size = 7 + (batch->record_count * BATCH_RECORD_SIZE);
+        return payload_length == expected_size;
     }
 };
