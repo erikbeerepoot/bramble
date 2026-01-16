@@ -16,12 +16,13 @@ os.environ.setdefault('SENSOR_DB_PATH', './test_sensor.db')
 from database import SensorDatabase, SensorReading
 
 
-def seed_database(db: SensorDatabase, node_address: int, num_readings: int, interval_seconds: int = 30):
+def seed_database(db: SensorDatabase, node_address: int, device_id: int, num_readings: int, interval_seconds: int = 30):
     """Insert test readings for a node.
 
     Args:
         db: Database instance
         node_address: Node address to simulate
+        device_id: Hardware device ID
         num_readings: Number of readings to insert
         interval_seconds: Time between readings (simulated)
     """
@@ -38,6 +39,7 @@ def seed_database(db: SensorDatabase, node_address: int, num_readings: int, inte
 
         reading = SensorReading(
             node_address=node_address,
+            device_id=device_id,
             timestamp=timestamp,
             temperature_centidegrees=temp,
             humidity_centipercent=humidity,
@@ -59,6 +61,8 @@ def main():
     parser = argparse.ArgumentParser(description='Seed test sensor data')
     parser.add_argument('--db', default='./test_sensor.db', help='Database path')
     parser.add_argument('--node', type=int, default=0x02, help='Node address (default: 2)')
+    parser.add_argument('--device-id', type=lambda x: int(x, 0), default=0x123456789ABCDEF0,
+                        help='Hardware device ID (default: 0x123456789ABCDEF0)')
     parser.add_argument('--count', type=int, default=100, help='Number of readings (default: 100)')
     parser.add_argument('--interval', type=int, default=30, help='Seconds between readings (default: 30)')
     parser.add_argument('--reset', action='store_true', help='Delete existing data first')
@@ -77,14 +81,15 @@ def main():
             conn.commit()
         print(f"Cleared existing data from {args.db}")
 
-    print(f"Seeding {args.count} readings for node {args.node:#04x}...")
-    inserted = seed_database(db, args.node, args.count, args.interval)
+    print(f"Seeding {args.count} readings for node {args.node:#04x} (device_id={args.device_id:#018x})...")
+    inserted = seed_database(db, args.node, args.device_id, args.count, args.interval)
     print(f"Inserted {inserted} readings into {args.db}")
 
     # Show summary
     stats = db.get_node_statistics(args.node)
     if stats:
         print(f"\nNode {args.node:#04x} statistics:")
+        print(f"  Device ID: {stats['device_id']:#018x}" if stats['device_id'] else "  Device ID: None")
         print(f"  Total readings: {stats['total_readings']}")
         temp = stats['temperature']
         hum = stats['humidity']

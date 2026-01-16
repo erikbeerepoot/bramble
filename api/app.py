@@ -1,5 +1,6 @@
 """Bramble REST API - Flask application."""
 from flask import Flask, request, jsonify, Response
+from flask_cors import CORS
 import logging
 import time
 from typing import Optional
@@ -7,7 +8,7 @@ from typing import Optional
 from config import Config
 from serial_interface import SerialInterface
 from database import SensorDatabase
-from models import Node, Schedule, QueuedUpdate
+from models import Node, NodeMetadata, Schedule, QueuedUpdate
 
 
 # Setup logging
@@ -20,6 +21,9 @@ logger = logging.getLogger(__name__)
 # Initialize Flask app
 app = Flask(__name__)
 app.config.from_object(Config)
+
+# Enable CORS for all /api/* routes
+CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 # Initialize database
 sensor_db: Optional[SensorDatabase] = None
@@ -87,7 +91,7 @@ def list_nodes():
     """List all registered nodes.
 
     Returns:
-        JSON array of node objects
+        JSON array of node objects with metadata if available
     """
     try:
         serial = get_serial()
@@ -95,25 +99,36 @@ def list_nodes():
 
         # Parse response
         # Format: NODE_LIST <count>
-        #         NODE <addr> <type> <online> <last_seen_sec>
+        #         NODE <addr> <device_id> <type> <online> <last_seen_sec>
         if not responses or not responses[0].startswith('NODE_LIST'):
             return jsonify({'error': 'Invalid response from hub'}), 500
 
         header = responses[0].split()
         count = int(header[1])
 
+        # Get all metadata to include with nodes
+        db = get_database()
+        all_metadata = db.get_all_node_metadata()
+
         nodes = []
         for line in responses[1:]:
             if line.startswith('NODE '):
                 parts = line.split()
-                if len(parts) >= 5:
+                if len(parts) >= 6:
+                    device_id = int(parts[2])
+                    address = int(parts[1])
                     node = Node(
-                        address=int(parts[1]),
-                        node_type=parts[2],
-                        online=parts[3] == '1',
-                        last_seen_seconds=int(parts[4])
+                        address=address,
+                        device_id=device_id if device_id != 0 else None,
+                        node_type=parts[3],
+                        online=parts[4] == '1',
+                        last_seen_seconds=int(parts[5])
                     )
-                    nodes.append(node.to_dict())
+                    node_dict = node.to_dict()
+                    # Include metadata if available
+                    if address in all_metadata:
+                        node_dict['metadata'] = all_metadata[address]
+                    nodes.append(node_dict)
 
         return jsonify({
             'count': count,
@@ -142,15 +157,18 @@ def get_node(addr: int):
         responses = serial.send_command('LIST_NODES')
 
         # Parse and find the node
+        # Format: NODE <addr> <device_id> <type> <online> <last_seen_sec>
         for line in responses[1:]:
             if line.startswith('NODE '):
                 parts = line.split()
-                if len(parts) >= 5 and int(parts[1]) == addr:
+                if len(parts) >= 6 and int(parts[1]) == addr:
+                    device_id = int(parts[2])
                     node = Node(
                         address=int(parts[1]),
-                        node_type=parts[2],
-                        online=parts[3] == '1',
-                        last_seen_seconds=int(parts[4])
+                        device_id=device_id if device_id != 0 else None,
+                        node_type=parts[3],
+                        online=parts[4] == '1',
+                        last_seen_seconds=int(parts[5])
                     )
                     return jsonify(node.to_dict())
 
@@ -158,6 +176,74 @@ def get_node(addr: int):
 
     except Exception as e:
         logger.error(f"Error getting node {addr}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/nodes/<int:addr>/metadata', methods=['GET'])
+def get_node_metadata(addr: int):
+    """Get metadata for a specific node.
+
+    Args:
+        addr: Node address
+
+    Returns:
+        JSON metadata object or 404 if not found
+    """
+    try:
+        db = get_database()
+        metadata = db.get_node_metadata(addr)
+
+        if metadata:
+            return jsonify(metadata)
+        else:
+            # Return empty metadata structure for nodes without metadata
+            return jsonify({
+                'address': addr,
+                'name': None,
+                'location': None,
+                'notes': None,
+                'updated_at': None
+            })
+
+    except Exception as e:
+        logger.error(f"Error getting metadata for node {addr}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/nodes/<int:addr>/metadata', methods=['PUT'])
+def update_node_metadata(addr: int):
+    """Update metadata for a node.
+
+    Args:
+        addr: Node address
+
+    Request body:
+        {
+            "name": "Greenhouse Sensor",
+            "location": "North greenhouse, row 3",
+            "notes": "Replaced battery 2024-01"
+        }
+
+    Returns:
+        JSON updated metadata object
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Request body must be JSON'}), 400
+
+        db = get_database()
+        metadata = db.update_node_metadata(
+            address=addr,
+            name=data.get('name'),
+            location=data.get('location'),
+            notes=data.get('notes')
+        )
+
+        return jsonify(metadata)
+
+    except Exception as e:
+        logger.error(f"Error updating metadata for node {addr}: {e}")
         return jsonify({'error': str(e)}), 500
 
 

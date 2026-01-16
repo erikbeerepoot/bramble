@@ -7,15 +7,20 @@ from typing import Optional
 class Node:
     """Represents a LoRa node in the network."""
     address: int
+    device_id: Optional[int]
     node_type: str
     online: bool
     last_seen_seconds: int
 
     @classmethod
-    def from_hub_response(cls, addr: int, node_type: str, online: str, last_seen: str):
-        """Create Node from hub LIST_NODES response line."""
+    def from_hub_response(cls, addr: int, device_id: int, node_type: str, online: str, last_seen: str):
+        """Create Node from hub LIST_NODES response line.
+
+        Format: NODE <addr> <device_id> <type> <online> <last_seen_sec>
+        """
         return cls(
             address=addr,
+            device_id=device_id if device_id != 0 else None,
             node_type=node_type,
             online=online == '1',
             last_seen_seconds=int(last_seen)
@@ -25,9 +30,30 @@ class Node:
         """Convert to dictionary for JSON serialization."""
         return {
             'address': self.address,
+            'device_id': self.device_id,
             'type': self.node_type,
             'online': self.online,
             'last_seen_seconds': self.last_seen_seconds
+        }
+
+
+@dataclass
+class NodeMetadata:
+    """Metadata for a LoRa node (friendly name, location, notes)."""
+    address: int
+    name: Optional[str] = None
+    location: Optional[str] = None
+    notes: Optional[str] = None
+    updated_at: Optional[int] = None
+
+    def to_dict(self):
+        """Convert to dictionary for JSON serialization."""
+        return {
+            'address': self.address,
+            'name': self.name,
+            'location': self.location,
+            'notes': self.notes,
+            'updated_at': self.updated_at
         }
 
 
