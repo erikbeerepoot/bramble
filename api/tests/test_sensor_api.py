@@ -96,6 +96,41 @@ class TestDatabaseLayer:
         assert readings[0].temperature_celsius == 25.34
         assert readings[0].humidity_percent == 65.21
 
+    def test_device_id_stored_and_retrieved(self, temp_db):
+        """Device ID is properly stored and retrieved."""
+        device_id = 0xDEADBEEF12345678
+        reading = SensorReading(
+            node_address=0x05,
+            device_id=device_id,
+            timestamp=int(time.time()),
+            temperature_centidegrees=2200,
+            humidity_centipercent=6000,
+            received_at=int(time.time())
+        )
+        temp_db.insert_reading(reading)
+
+        readings = temp_db.query_readings(node_address=0x05)
+        assert len(readings) == 1
+        assert readings[0].device_id == device_id
+
+    def test_device_id_in_to_dict(self, temp_db):
+        """Device ID appears in to_dict output."""
+        device_id = 0xCAFEBABE
+        reading = SensorReading(
+            node_address=0x05,
+            device_id=device_id,
+            timestamp=int(time.time()),
+            temperature_centidegrees=2200,
+            humidity_centipercent=6000,
+            received_at=int(time.time())
+        )
+        temp_db.insert_reading(reading)
+
+        readings = temp_db.query_readings(node_address=0x05)
+        result = readings[0].to_dict()
+        assert 'device_id' in result
+        assert result['device_id'] == device_id
+
     def test_duplicate_rejected(self, temp_db):
         """Duplicate node+timestamp is rejected."""
         timestamp = int(time.time())

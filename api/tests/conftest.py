@@ -44,10 +44,12 @@ def seeded_db(temp_db):
 
     base_time = int(time.time()) - 3600  # Start 1 hour ago
     node_address = 0x02
+    device_id = 0x123456789ABCDEF0  # Test hardware ID
 
     for i in range(50):
         reading = SensorReading(
             node_address=node_address,
+            device_id=device_id,
             timestamp=base_time + (i * 60),
             temperature_centidegrees=2200 + random.randint(-100, 100),
             humidity_centipercent=6500 + random.randint(-200, 200),
