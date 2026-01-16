@@ -149,6 +149,10 @@ void HubMode::processIncomingMessage(uint8_t* rx_buffer, int rx_len, uint32_t cu
             // This sends UPDATE_AVAILABLE response
             hub_router_->handleCheckUpdates(header->src_addr, check->node_sequence);
 
+            // Update node activity tracking (normally done in base class)
+            address_manager_->updateLastSeen(header->src_addr, current_time);
+            hub_router_->updateRouteOnline(header->src_addr);
+
             // Don't call base class - would cause double handling of CHECK_UPDATES
             // (base class calls global processIncomingMessage which also calls hub_router)
             return;
@@ -170,6 +174,10 @@ void HubMode::processIncomingMessage(uint8_t* rx_buffer, int rx_len, uint32_t cu
 
             // Forward to Raspberry Pi
             handleSensorDataBatch(header->src_addr, batch);
+
+            // Update node activity tracking (normally done in base class)
+            address_manager_->updateLastSeen(header->src_addr, current_time);
+            hub_router_->updateRouteOnline(header->src_addr);
 
             // Don't call base class - we've handled the message
             return;
