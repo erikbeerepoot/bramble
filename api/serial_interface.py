@@ -255,7 +255,7 @@ class SerialInterface:
     def _handle_sensor_data(self, line: str):
         """Handle individual sensor data from hub.
 
-        Format: SENSOR_DATA <node_addr> TEMP|HUM <value>
+        Format: SENSOR_DATA <node_addr> <device_id> TEMP|HUM <value>
         """
         if not self.database:
             logger.warning("Received sensor data but no database configured")
@@ -263,13 +263,14 @@ class SerialInterface:
 
         try:
             parts = line.split()
-            if len(parts) < 4:
+            if len(parts) < 5:
                 logger.error(f"Invalid SENSOR_DATA format: {line}")
                 return
 
             node_addr = int(parts[1])
-            sensor_type = parts[2]
-            value = int(parts[3])
+            device_id = int(parts[2])
+            sensor_type = parts[3]
+            value = int(parts[4])
             timestamp = int(time.time())
 
             # For individual readings, we only have one value at a time
@@ -277,6 +278,7 @@ class SerialInterface:
             if sensor_type == "TEMP":
                 reading = SensorReading(
                     node_address=node_addr,
+                    device_id=device_id,
                     timestamp=timestamp,
                     temperature_centidegrees=value,
                     humidity_centipercent=0,  # Will be updated if humidity follows
@@ -285,6 +287,7 @@ class SerialInterface:
             elif sensor_type == "HUM":
                 reading = SensorReading(
                     node_address=node_addr,
+                    device_id=device_id,
                     timestamp=timestamp,
                     temperature_centidegrees=0,
                     humidity_centipercent=value,
@@ -295,9 +298,9 @@ class SerialInterface:
                 return
 
             if self.database.insert_reading(reading):
-                logger.info(f"Stored sensor data: node={node_addr}, {sensor_type}={value}")
+                logger.info(f"Stored sensor data: node={node_addr}, device_id={device_id}, {sensor_type}={value}")
             else:
-                logger.debug(f"Duplicate sensor data: node={node_addr}, {sensor_type}={value}")
+                logger.debug(f"Duplicate sensor data: node={node_addr}, device_id={device_id}, {sensor_type}={value}")
 
         except (ValueError, IndexError) as e:
             logger.error(f"Failed to parse SENSOR_DATA: {e}")
@@ -305,25 +308,27 @@ class SerialInterface:
     def _handle_sensor_batch_start(self, line: str):
         """Handle start of sensor batch from hub.
 
-        Format: SENSOR_BATCH <node_addr> <count>
+        Format: SENSOR_BATCH <node_addr> <device_id> <count>
         """
         try:
             parts = line.split()
-            if len(parts) < 3:
+            if len(parts) < 4:
                 logger.error(f"Invalid SENSOR_BATCH format: {line}")
                 return
 
             node_addr = int(parts[1])
-            count = int(parts[2])
+            device_id = int(parts[2])
+            count = int(parts[3])
 
             self._batch_state = {
                 'node_addr': node_addr,
+                'device_id': device_id,
                 'expected_count': count,
                 'records': [],
                 'start_time': time.time()
             }
 
-            logger.info(f"Starting batch receive: node={node_addr}, expected={count}")
+            logger.info(f"Starting batch receive: node={node_addr}, device_id={device_id}, expected={count}")
 
         except (ValueError, IndexError) as e:
             logger.error(f"Failed to parse SENSOR_BATCH: {e}")
@@ -331,7 +336,7 @@ class SerialInterface:
     def _handle_sensor_record(self, line: str):
         """Handle individual record in a batch.
 
-        Format: SENSOR_RECORD <node_addr> <timestamp> <temp> <humidity> <flags>
+        Format: SENSOR_RECORD <node_addr> <device_id> <timestamp> <temp> <humidity> <flags>
         """
         if not self._batch_state:
             logger.warning("Received SENSOR_RECORD without active batch")
@@ -339,18 +344,20 @@ class SerialInterface:
 
         try:
             parts = line.split()
-            if len(parts) < 6:
+            if len(parts) < 7:
                 logger.error(f"Invalid SENSOR_RECORD format: {line}")
                 return
 
             node_addr = int(parts[1])
-            timestamp = int(parts[2])
-            temperature = int(parts[3])
-            humidity = int(parts[4])
-            flags = int(parts[5])
+            device_id = int(parts[2])
+            timestamp = int(parts[3])
+            temperature = int(parts[4])
+            humidity = int(parts[5])
+            flags = int(parts[6])
 
             reading = SensorReading(
                 node_address=node_addr,
+                device_id=device_id,
                 timestamp=timestamp,
                 temperature_centidegrees=temperature,
                 humidity_centipercent=humidity,
@@ -359,7 +366,7 @@ class SerialInterface:
             )
 
             self._batch_state['records'].append(reading)
-            logger.debug(f"Batch record: ts={timestamp}, temp={temperature}, hum={humidity}")
+            logger.debug(f"Batch record: device_id={device_id}, ts={timestamp}, temp={temperature}, hum={humidity}")
 
         except (ValueError, IndexError) as e:
             logger.error(f"Failed to parse SENSOR_RECORD: {e}")
@@ -367,7 +374,7 @@ class SerialInterface:
     def _handle_batch_complete(self, line: str):
         """Handle end of sensor batch.
 
-        Format: BATCH_COMPLETE <node_addr> <count>
+        Format: BATCH_COMPLETE <node_addr> <device_id> <count>
         """
         if not self._batch_state:
             logger.warning("Received BATCH_COMPLETE without active batch")
@@ -375,12 +382,13 @@ class SerialInterface:
 
         try:
             parts = line.split()
-            if len(parts) < 3:
+            if len(parts) < 4:
                 logger.error(f"Invalid BATCH_COMPLETE format: {line}")
                 return
 
             node_addr = int(parts[1])
-            count = int(parts[2])
+            device_id = int(parts[2])
+            count = int(parts[3])
 
             # Verify batch integrity
             actual_count = len(self._batch_state['records'])
