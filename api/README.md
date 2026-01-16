@@ -13,6 +13,22 @@ REST API for managing irrigation schedules over LoRa. Runs on Raspberry Pi Zero 
 
 ### Option 1: Docker (Recommended)
 
+**Quick Start - Pull pre-built image:**
+```bash
+# Pull from GitHub Container Registry (works on x86 and Raspberry Pi)
+docker pull ghcr.io/erikbeerepoot/bramble/api:latest
+
+# Run with serial device access
+docker run -d \
+  --name bramble-api \
+  -p 5000:5000 \
+  --device /dev/ttyACM0:/dev/ttyACM0 \
+  -v bramble-data:/app/data \
+  ghcr.io/erikbeerepoot/bramble/api:latest
+
+# API runs on http://localhost:5000
+```
+
 **Prerequisites - Install Docker on Raspberry Pi/Debian:**
 
 ```bash
