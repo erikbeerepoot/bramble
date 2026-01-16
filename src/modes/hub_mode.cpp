@@ -263,9 +263,9 @@ void HubMode::handleListNodes() {
             uint32_t now = to_ms_since_boot(get_absolute_time());
             uint32_t last_seen_sec = (now - node->last_seen_time) / 1000;
 
-            // Send node info
-            snprintf(response, sizeof(response), "NODE %u %s %d %lu\n",
-                   addr, type,
+            // Send node info (include device_id for hardware identification)
+            snprintf(response, sizeof(response), "NODE %u %llu %s %d %lu\n",
+                   addr, node->device_id, type,
                    node->is_active ? 1 : 0,
                    last_seen_sec);
             uart_puts(API_UART_ID, response);
@@ -514,8 +514,15 @@ void HubMode::handleSensorData(uint16_t source_addr, const SensorPayload* payloa
         return;
     }
 
+    // Look up device_id from address manager
+    uint64_t device_id = 0;
+    const NodeInfo* node = address_manager_->getNodeInfo(source_addr);
+    if (node) {
+        device_id = node->device_id;
+    }
+
     // Forward sensor data to Raspberry Pi via UART
-    // Format: SENSOR_DATA <node_addr> <sensor_type> <data_hex>
+    // Format: SENSOR_DATA <node_addr> <device_id> <sensor_type> <data_hex>
     char response[128];
 
     // For temperature/humidity, extract the 2-byte values
@@ -523,15 +530,15 @@ void HubMode::handleSensorData(uint16_t source_addr, const SensorPayload* payloa
         if (payload->data_length >= 2) {
             int16_t value = static_cast<int16_t>(payload->data[0] | (payload->data[1] << 8));
             const char* type_str = (payload->sensor_type == SENSOR_TEMPERATURE) ? "TEMP" : "HUM";
-            snprintf(response, sizeof(response), "SENSOR_DATA %u %s %d\n",
-                     source_addr, type_str, value);
+            snprintf(response, sizeof(response), "SENSOR_DATA %u %llu %s %d\n",
+                     source_addr, device_id, type_str, value);
             uart_puts(API_UART_ID, response);
-            printf("Forwarded sensor data: node=%u, type=%s, value=%d\n",
-                   source_addr, type_str, value);
+            printf("Forwarded sensor data: node=%u, device_id=%llu, type=%s, value=%d\n",
+                   source_addr, device_id, type_str, value);
         }
     } else {
         // Generic sensor data (hex encoded)
-        snprintf(response, sizeof(response), "SENSOR_DATA %u %u ", source_addr, payload->sensor_type);
+        snprintf(response, sizeof(response), "SENSOR_DATA %u %llu %u ", source_addr, device_id, payload->sensor_type);
         uart_puts(API_UART_ID, response);
 
         // Send data as hex
@@ -550,22 +557,30 @@ void HubMode::handleSensorDataBatch(uint16_t source_addr, const SensorDataBatchP
         return;
     }
 
-    printf("Received batch from node 0x%04X: %u records (start_idx=%lu)\n",
-           source_addr, payload->record_count, payload->start_index);
+    // Look up device_id from address manager
+    uint64_t device_id = 0;
+    const NodeInfo* node = address_manager_->getNodeInfo(source_addr);
+    if (node) {
+        device_id = node->device_id;
+    }
+
+    printf("Received batch from node 0x%04X (device_id=%llu): %u records (start_idx=%lu)\n",
+           source_addr, device_id, payload->record_count, payload->start_index);
 
     // Send batch start marker to Raspberry Pi
     char response[128];
-    snprintf(response, sizeof(response), "SENSOR_BATCH %u %u\n",
-             source_addr, payload->record_count);
+    snprintf(response, sizeof(response), "SENSOR_BATCH %u %llu %u\n",
+             source_addr, device_id, payload->record_count);
     uart_puts(API_UART_ID, response);
 
     // Forward each record
     for (uint8_t i = 0; i < payload->record_count; i++) {
         const BatchSensorRecord& record = payload->records[i];
 
-        // Format: SENSOR_RECORD <node_addr> <timestamp> <temp> <humidity> <flags>
-        snprintf(response, sizeof(response), "SENSOR_RECORD %u %lu %d %u %u\n",
+        // Format: SENSOR_RECORD <node_addr> <device_id> <timestamp> <temp> <humidity> <flags>
+        snprintf(response, sizeof(response), "SENSOR_RECORD %u %llu %lu %d %u %u\n",
                  source_addr,
+                 device_id,
                  record.timestamp,
                  record.temperature,
                  record.humidity,
@@ -574,8 +589,8 @@ void HubMode::handleSensorDataBatch(uint16_t source_addr, const SensorDataBatchP
     }
 
     // Send batch complete marker
-    snprintf(response, sizeof(response), "BATCH_COMPLETE %u %u\n",
-             source_addr, payload->record_count);
+    snprintf(response, sizeof(response), "BATCH_COMPLETE %u %llu %u\n",
+             source_addr, device_id, payload->record_count);
     uart_puts(API_UART_ID, response);
 
     printf("Forwarded batch to RasPi: %u records\n", payload->record_count);
