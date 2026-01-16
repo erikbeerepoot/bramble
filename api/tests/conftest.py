@@ -13,8 +13,10 @@ from database import SensorDatabase, SensorReading
 @pytest.fixture
 def temp_db():
     """Create a temporary database for testing."""
-    with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as f:
+    # Get a temp file path but delete it - DuckDB needs to create the file itself
+    with tempfile.NamedTemporaryFile(suffix='.duckdb', delete=False) as f:
         db_path = f.name
+    os.unlink(db_path)  # Remove empty file so DuckDB can create it
 
     os.environ['SENSOR_DB_PATH'] = db_path
     db = SensorDatabase(db_path)
@@ -25,6 +27,11 @@ def temp_db():
     # Cleanup
     try:
         os.unlink(db_path)
+    except OSError:
+        pass
+    # DuckDB may create additional files
+    try:
+        os.unlink(db_path + '.wal')
     except OSError:
         pass
 
