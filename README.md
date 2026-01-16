@@ -103,9 +103,16 @@ bramble/
         └── test_main.cpp            # Test entry point
 ├── api/                       # Raspberry Pi REST API
 │   ├── app.py                # Flask application
-│   ├── database.py           # SQLite sensor storage
+│   ├── database.py           # DuckDB sensor storage
 │   ├── serial_interface.py   # Hub serial communication
 │   └── config.py             # API configuration
+├── dashboard/                 # React web dashboard
+│   ├── src/
+│   │   ├── components/       # React components
+│   │   ├── api/client.ts     # API client
+│   │   └── App.tsx           # Main application
+│   ├── package.json          # Dependencies
+│   └── vite.config.ts        # Vite configuration
 ```
 
 ## Message Protocol
@@ -290,7 +297,7 @@ The hub connects to a Raspberry Pi via serial (UART) for data storage and web ac
 ```
 [Sensor Nodes] --LoRa--> [Hub/Pico] --Serial--> [Raspberry Pi] --REST--> [Web/Apps]
                               |                       |
-                         128MB Flash              SQLite DB
+                         128MB Flash              DuckDB
                        (local buffer)          (permanent storage)
 ```
 
@@ -318,7 +325,7 @@ DATETIME YYYY-MM-DD HH:MM:SS <day_of_week>
 
 ### Database Schema
 
-Sensor readings are stored in SQLite with the following schema:
+Sensor readings are stored in DuckDB with the following schema:
 
 ```sql
 CREATE TABLE sensor_readings (
@@ -349,11 +356,14 @@ The Raspberry Pi runs a Flask-based REST API for querying sensor data.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
+| GET | `/api/nodes` | List all nodes with metadata |
+| GET | `/api/nodes/<addr>/metadata` | Get node name/location/notes |
+| PUT | `/api/nodes/<addr>/metadata` | Update node name/location/notes |
 | GET | `/api/sensor-data` | Query sensor readings with filters |
 | GET | `/api/sensor-data/export` | Export readings as CSV |
 | GET | `/api/nodes/<addr>/sensor-data` | Get readings for specific node |
 | GET | `/api/nodes/<addr>/latest` | Get most recent reading |
-| GET | `/api/nodes/<addr>/stats` | Get node statistics |
+| GET | `/api/nodes/<addr>/statistics` | Get node statistics |
 
 #### Query Parameters
 
@@ -411,6 +421,37 @@ uv sync       # or: pip install -r requirements.txt
 uv run app.py # or: python app.py
 ```
 
+### Web Dashboard
+
+The web dashboard is a React SPA that connects to the REST API to display sensor data and manage nodes.
+
+#### Features
+- **Node list view** with online/offline status indicators
+- **Node metadata editing** (friendly names, locations, notes)
+- **Temperature/humidity charts** using Plotly.js
+- **Time range selection** (1h, 6h, 24h, 7d, 30d)
+- **Statistics display** (min/max/avg values)
+- **Configurable API URL** (stored in browser localStorage)
+
+#### Running the Dashboard
+
+```bash
+cd dashboard
+npm install
+npm run dev
+```
+
+The dashboard runs at `http://localhost:3000`. Configure the API URL in Settings to point to your Raspberry Pi (e.g., `http://pi:5000`).
+
+#### Building for Production
+
+```bash
+cd dashboard
+npm run build
+```
+
+The built files in `dist/` can be served by any static file server (nginx, Apache, etc.).
+
 Configuration via environment variables:
 - `SERIAL_PORT` - Serial port path (default: `/dev/ttyAMA0`)
 - `SERIAL_BAUD` - Baud rate (default: `115200`)
@@ -435,8 +476,9 @@ Configuration via environment variables:
 - **128MB sensor data flash storage** with circular buffer
 - **Batch LoRa transmission protocol** (SENSOR_DATA_BATCH, BATCH_ACK)
 - **Raspberry Pi integration** with serial protocol
-- **SQLite sensor database** with query capabilities
+- **DuckDB sensor database** with query capabilities
 - **REST API** for sensor data access and export
+- **Web dashboard** with sensor charts and node management
 
 ### 🚧 Next Phase (Immediate)
 - **Controller mode implementation** (scheduling, coordination)
@@ -452,7 +494,6 @@ Configuration via environment variables:
 - Power management and sleep modes
 - Current monitoring for valve diagnostics
 - Encryption and authentication
-- Web interface and monitoring dashboard
 - Multi-hop mesh networking
 
 ## Testing
