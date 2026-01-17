@@ -112,7 +112,7 @@ class SensorDatabase:
     CREATE TABLE IF NOT EXISTS sensor_readings (
         id INTEGER PRIMARY KEY,
         node_address INTEGER NOT NULL,
-        device_id BIGINT,
+        device_id UBIGINT,
         timestamp INTEGER NOT NULL,
         temperature_centidegrees INTEGER NOT NULL,
         humidity_centipercent INTEGER NOT NULL,
@@ -133,7 +133,7 @@ class SensorDatabase:
 
     CREATE TABLE IF NOT EXISTS nodes (
         address INTEGER PRIMARY KEY,
-        device_id BIGINT UNIQUE,
+        device_id UBIGINT UNIQUE,
         node_type VARCHAR NOT NULL,
         first_seen_at INTEGER NOT NULL,
         last_seen_at INTEGER NOT NULL,
