@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { Node, NodeStatistics, SensorReading, TimeRange, NodeMetadata } from '../types';
+import type { Node, NodeStatistics, SensorReading, TimeRange, NodeMetadata, CustomTimeRange } from '../types';
 import { TIME_RANGES } from '../types';
 import { getNodeSensorData, getNodeStatistics } from '../api/client';
 import NodeNameEditor from './NodeNameEditor';
@@ -16,6 +16,13 @@ function NodeDetail({ node, onBack, onUpdate }: NodeDetailProps) {
   const [readings, setReadings] = useState<SensorReading[]>([]);
   const [statistics, setStatistics] = useState<NodeStatistics | null>(null);
   const [timeRange, setTimeRange] = useState<TimeRange>('24h');
+  const [customRange, setCustomRange] = useState<CustomTimeRange>(() => {
+    const now = Math.floor(Date.now() / 1000);
+    return {
+      startTime: now - 86400,
+      endTime: now,
+    };
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -23,13 +30,22 @@ function NodeDetail({ node, onBack, onUpdate }: NodeDetailProps) {
     setLoading(true);
     setError(null);
     try {
-      const now = Math.floor(Date.now() / 1000);
-      const rangeConfig = TIME_RANGES[timeRange as keyof typeof TIME_RANGES];
-      const startTime = rangeConfig ? now - rangeConfig.seconds : undefined;
+      let startTime: number | undefined;
+      let endTime: number | undefined;
+
+      if (timeRange === 'custom') {
+        startTime = customRange.startTime;
+        endTime = customRange.endTime;
+      } else {
+        const now = Math.floor(Date.now() / 1000);
+        const rangeConfig = TIME_RANGES[timeRange];
+        startTime = now - rangeConfig.seconds;
+      }
 
       const [sensorData, stats] = await Promise.all([
         getNodeSensorData(node.address, {
           startTime,
+          endTime,
           limit: 5000,
         }),
         getNodeStatistics(node.address),
@@ -42,7 +58,7 @@ function NodeDetail({ node, onBack, onUpdate }: NodeDetailProps) {
     } finally {
       setLoading(false);
     }
-  }, [node.address, timeRange]);
+  }, [node.address, timeRange, customRange]);
 
   useEffect(() => {
     fetchData();
@@ -141,7 +157,12 @@ function NodeDetail({ node, onBack, onUpdate }: NodeDetailProps) {
           <div className="card">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-medium text-gray-900">Sensor Data</h3>
-              <TimeRangeSelector value={timeRange} onChange={setTimeRange} />
+              <TimeRangeSelector
+                value={timeRange}
+                onChange={setTimeRange}
+                customRange={customRange}
+                onCustomRangeChange={setCustomRange}
+              />
             </div>
 
             {loading ? (
