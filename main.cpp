@@ -83,11 +83,14 @@ int main() {
     // Initialize stdio (UART on GPIO12 configured via CMakeLists.txt)
     stdio_init_all();
 
-    printf("\n==== Bramble Network Device ====\n");
+    // Create main logger
+    Logger log("Main");
+
+    log.info("==== Bramble Network Device ====");
 
     // Test external flash
     // Results stored in volatile vars for debugger inspection
-    printf("\n--- External Flash Test ---\n");
+    log.debug("--- External Flash Test ---");
     ExternalFlash ext_flash;
 
     volatile bool flash_ok = false;
@@ -103,7 +106,7 @@ int main() {
             flash_type = mem_type;
             flash_cap = capacity;
 
-            printf("Flash ID: Mfr=0x%02X Type=0x%02X Cap=0x%02X\n", mfr, mem_type, capacity);
+            log.debug("Flash ID: Mfr=0x%02X Type=0x%02X Cap=0x%02X", mfr, mem_type, capacity);
 
             // Check if it's a Micron flash (0x20)
             if (mfr == 0x20) {
@@ -116,15 +119,13 @@ int main() {
                 for (int i = 0; i < 16; i++) {
                     flash_data[i] = buffer[i];
                 }
-                printf("First 16 bytes: ");
-                for (int i = 0; i < 16; i++) {
-                    printf("%02X ", buffer[i]);
-                }
-                printf("\n");
+                // Log hex data (simplified - just first 4 bytes to avoid long output)
+                log.debug("First 4 bytes: %02X %02X %02X %02X ...",
+                         buffer[0], buffer[1], buffer[2], buffer[3]);
             }
         }
     } else {
-        printf("External flash init FAILED\n");
+        log.error("External flash init FAILED");
     }
 
     // SET BREAKPOINT HERE to inspect results:
@@ -132,7 +133,7 @@ int main() {
     volatile int flash_test_done = 1;  // Breakpoint marker
     (void)flash_test_done;  // Prevent unused warning
 
-    printf("--- End Flash Test ---\n\n");
+    log.debug("--- End Flash Test ---");
     
     // Determine role from build configuration
     #if defined(DEFAULT_IS_HUB) && DEFAULT_IS_HUB
@@ -141,18 +142,17 @@ int main() {
         constexpr bool is_hub = false;
     #endif
     
-    printf("Hardware variant: ");
     #ifdef HARDWARE_CONTROLLER
-        printf("CONTROLLER\n");
+        log.info("Hardware variant: CONTROLLER");
     #elif HARDWARE_IRRIGATION
-        printf("IRRIGATION\n");
+        log.info("Hardware variant: IRRIGATION");
     #elif HARDWARE_SENSOR
-        printf("SENSOR\n");
+        log.info("Hardware variant: SENSOR");
     #else
-        printf("GENERIC\n");
+        log.info("Hardware variant: GENERIC");
     #endif
-    
-    printf("Network role: %s\n", is_hub ? "HUB" : "NODE");
+
+    log.info("Network role: %s", is_hub ? "HUB" : "NODE");
     
     // Initialize hardware
     NeoPixel led(PIN_NEOPIXEL, 1);
@@ -180,31 +180,31 @@ int main() {
     
     if (is_hub) {
         // Hub mode initialization
-        printf("=== STARTING AS HUB ===\n");
-        
+        log.info("=== STARTING AS HUB ===");
+
         Flash flash;
         HubConfigManager hub_config_manager(flash);
-        
+
         // Hub uses address 0x0000
         ReliableMessenger messenger(&lora, ADDRESS_HUB, &network_stats);
         AddressManager address_manager;
         HubRouter hub_router(address_manager, messenger);
-        
+
         // Create appropriate hub mode
         #ifdef HARDWARE_CONTROLLER
             if (DEMO_MODE) {
-                printf("Starting CONTROLLER DEMO mode\n");
+                log.info("Starting CONTROLLER DEMO mode");
                 // TODO: Create ControllerDemoMode when needed
                 DemoMode mode(messenger, lora, led, &address_manager, &hub_router, &network_stats);
                 mode.run();
             } else {
-                printf("Starting CONTROLLER PRODUCTION mode\n");
+                log.info("Starting CONTROLLER PRODUCTION mode");
                 ControllerMode mode(messenger, lora, led, &address_manager, &hub_router, &network_stats);
                 mode.run();
             }
         #else
             // Non-controller hardware running as hub (emergency mode)
-            printf("WARNING: Non-controller hardware running as HUB!\n");
+            log.warn("Non-controller hardware running as HUB!");
             if (DEMO_MODE) {
                 DemoMode mode(messenger, lora, led, &address_manager, &hub_router, &network_stats);
                 mode.run();
@@ -216,22 +216,22 @@ int main() {
         
     } else {
         // Node mode initialization
-        printf("=== STARTING AS NODE ===\n");
-        
+        log.info("=== STARTING AS NODE ===");
+
         NodeConfiguration node_config;
         Flash flash;
         NodeConfigManager config_manager(flash);
-        
+
         // Start with unregistered address
         uint16_t current_address = ADDRESS_UNREGISTERED;
-        
+
         // Check for saved configuration
-        if (config_manager.loadConfiguration(node_config) && 
+        if (config_manager.loadConfiguration(node_config) &&
             node_config.assigned_address != ADDRESS_UNREGISTERED) {
             current_address = node_config.assigned_address;
-            printf("Found saved address: 0x%04X\n", current_address);
+            log.info("Found saved address: 0x%04X", current_address);
         }
-        
+
         // Create messenger with current address
         ReliableMessenger messenger(&lora, current_address, &network_stats);
 
@@ -241,59 +241,59 @@ int main() {
         // Skip registration if we have a saved address
         // IrrigationMode will handle deferred registration based on PMU wake reason
         if (current_address == ADDRESS_UNREGISTERED) {
-            printf("No saved address - attempting registration...\n");
+            log.info("No saved address - attempting registration...");
             if (attemptRegistration(messenger, lora, config_manager, device_id)) {
-                printf("Registration successful!\n");
+                log.info("Registration successful!");
             } else {
-                printf("Registration failed - will retry after PMU init\n");
+                log.warn("Registration failed - will retry after PMU init");
             }
         } else {
-            printf("Using saved address 0x%04X - skipping boot registration\n", current_address);
-            printf("(Will re-register if PMU reports External wake)\n");
+            log.info("Using saved address 0x%04X - skipping boot registration", current_address);
+            log.info("(Will re-register if PMU reports External wake)");
         }
-        
+
         // Create appropriate node mode
         #ifdef HARDWARE_IRRIGATION
             if (DEMO_MODE) {
-                printf("Starting IRRIGATION DEMO mode\n");
+                log.info("Starting IRRIGATION DEMO mode");
                 // For now use generic demo mode
                 DemoMode mode(messenger, lora, led, nullptr, nullptr, &network_stats);
                 mode.run();
             } else {
-                printf("Starting IRRIGATION PRODUCTION mode\n");
+                log.info("Starting IRRIGATION PRODUCTION mode");
                 IrrigationMode mode(messenger, lora, led, nullptr, nullptr, &network_stats, false); // Disable multicore
                 mode.run();
             }
         #elif HARDWARE_SENSOR
             if (DEMO_MODE) {
-                printf("Starting SENSOR DEMO mode\n");
+                log.info("Starting SENSOR DEMO mode");
                 DemoMode mode(messenger, lora, led, nullptr, nullptr, &network_stats);
                 mode.run();
             } else {
-                printf("Starting SENSOR PRODUCTION mode\n");
+                log.info("Starting SENSOR PRODUCTION mode");
                 SensorMode mode(messenger, lora, led, nullptr, nullptr, &network_stats);
                 mode.run();
             }
         #elif HARDWARE_CONTROLLER
             // Controller hardware running as node (unusual but possible)
-            printf("WARNING: Controller hardware running as NODE!\n");
+            log.warn("Controller hardware running as NODE!");
             if (DEMO_MODE) {
-                printf("Starting CONTROLLER NODE DEMO mode\n");
+                log.info("Starting CONTROLLER NODE DEMO mode");
                 DemoMode mode(messenger, lora, led, nullptr, nullptr, &network_stats);
                 mode.run();
             } else {
-                printf("Starting CONTROLLER NODE mode (using hub mode)\n");
+                log.info("Starting CONTROLLER NODE mode (using hub mode)");
                 HubMode mode(messenger, lora, led, nullptr, nullptr, &network_stats);
                 mode.run();
             }
         #else
             // Generic node
             if (DEMO_MODE) {
-                printf("Starting GENERIC DEMO mode\n");
+                log.info("Starting GENERIC DEMO mode");
                 DemoMode mode(messenger, lora, led, nullptr, nullptr, &network_stats);
                 mode.run();
             } else {
-                printf("Starting GENERIC PRODUCTION mode\n");
+                log.info("Starting GENERIC PRODUCTION mode");
                 GenericMode mode(messenger, lora, led, nullptr, nullptr, &network_stats);
                 mode.run();
             }
@@ -304,26 +304,28 @@ int main() {
 }
 
 bool initializeHardware(SX1276& lora, NeoPixel& led) {
+    Logger log("Hardware");
+
     // SPI initialization - 1MHz for reliable communication
     spi_init(SPI_PORT, 1000*1000);
     gpio_set_function(PIN_MISO, GPIO_FUNC_SPI);
     gpio_set_function(PIN_CS,   GPIO_FUNC_SIO);
     gpio_set_function(PIN_SCK,  GPIO_FUNC_SPI);
     gpio_set_function(PIN_MOSI, GPIO_FUNC_SPI);
-    
+
     // Chip select is active-low, so we'll initialise it to a driven-high state
     gpio_set_dir(PIN_CS, GPIO_OUT);
     gpio_put(PIN_CS, 1);
-    
-    printf("System Clock: %d Hz, USB Clock: %d Hz\n", 
-           clock_get_hz(clk_sys), clock_get_hz(clk_usb));
-    
+
+    log.debug("System Clock: %d Hz, USB Clock: %d Hz",
+              clock_get_hz(clk_sys), clock_get_hz(clk_usb));
+
     // Initialize LoRa module
     if (!lora.begin()) {
-        printf("ERROR: Failed to initialize LoRa module!\n");
+        log.error("Failed to initialize LoRa module!");
         return false;
     }
-    
+
     // Configure LoRa parameters
     lora.setFrequency(915000000);  // 915 MHz for US
     lora.setTxPower(20);  // 17 dBm
@@ -332,19 +334,19 @@ bool initializeHardware(SX1276& lora, NeoPixel& led) {
     lora.setCodingRate(5);
     lora.setPreambleLength(8);
     lora.setCrc(true);  // Enable CRC
-    
-    printf("LoRa module initialized successfully\n");
-    
+
+    log.info("LoRa module initialized successfully");
+
     // Enable interrupt mode for efficient operation
     if (lora.enableInterruptMode()) {
-        printf("Interrupt mode enabled - efficient power usage\n");
+        log.debug("Interrupt mode enabled - efficient power usage");
     } else {
-        printf("Failed to enable interrupt mode - using polling\n");
+        log.warn("Failed to enable interrupt mode - using polling");
     }
-    
+
     // Start in receive mode
     lora.startReceive();
-    
+
     return true;
 }
 
@@ -361,16 +363,18 @@ uint64_t getDeviceId() {
     return id;
 }
 
-bool attemptRegistration(ReliableMessenger& messenger, SX1276& lora, 
+bool attemptRegistration(ReliableMessenger& messenger, SX1276& lora,
                         NodeConfigManager& config_manager, uint64_t device_id) {
-    printf("Attempting registration with hub...\n");
-    printf("Device ID: 0x%016llX\n", device_id);
-    
+    Logger log("Registration");
+
+    log.info("Attempting registration with hub...");
+    log.info("Device ID: 0x%016llX", device_id);
+
     // Determine node type and capabilities based on hardware
     uint8_t node_type = NODE_TYPE_SENSOR;  // Default
     uint8_t capabilities = 0;
     const char* device_name = "Generic Node";
-    
+
     #ifdef HARDWARE_IRRIGATION
         node_type = NODE_TYPE_HYBRID;
         capabilities = CAP_VALVE_CONTROL | CAP_SOIL_MOISTURE;
@@ -384,12 +388,12 @@ bool attemptRegistration(ReliableMessenger& messenger, SX1276& lora,
         capabilities = CAP_CONTROLLER | CAP_SCHEDULING;
         device_name = "Controller";
     #endif
-    
+
     // Send registration request and store sequence number
     uint8_t registration_seq = messenger.sendRegistrationRequest(ADDRESS_HUB, device_id, node_type,
                                                                  capabilities, 0x0100, device_name);
     if (registration_seq == 0) {
-        printf("Failed to send registration request\n");
+        log.error("Failed to send registration request");
         return false;
     }
 
@@ -418,7 +422,7 @@ bool attemptRegistration(ReliableMessenger& messenger, SX1276& lora,
                     // Check if we got a new address
                     uint16_t new_addr = messenger.getNodeAddress();
                     if (new_addr != ADDRESS_UNREGISTERED) {
-                        printf("Got address assignment: 0x%04X\n", new_addr);
+                        log.info("Got address assignment: 0x%04X", new_addr);
 
                         // CRITICAL: Cancel the pending registration message to prevent retries
                         // The registration succeeded, so we don't want it retrying in application mode
@@ -430,7 +434,7 @@ bool attemptRegistration(ReliableMessenger& messenger, SX1276& lora,
                         config.device_id = device_id;
 
                         if (config_manager.saveConfiguration(config)) {
-                            printf("Configuration saved to flash\n");
+                            log.debug("Configuration saved to flash");
                         }
 
                         return true;
@@ -441,42 +445,44 @@ bool attemptRegistration(ReliableMessenger& messenger, SX1276& lora,
 
         sleep_ms(10);
     }
-    
-    printf("Registration timeout\n");
+
+    log.warn("Registration timeout");
     return false;
 }
 
 void processIncomingMessage(uint8_t* rx_buffer, int rx_len, ReliableMessenger& messenger,
-                          AddressManager* address_manager, HubRouter* hub_router, 
+                          AddressManager* address_manager, HubRouter* hub_router,
                           uint32_t current_time, NetworkStats* network_stats, SX1276* lora) {
+    Logger log("Message");
+
     // Process message with reliable messenger (handles ACKs, sensor data, etc.)
     messenger.processIncomingMessage(rx_buffer, rx_len);
-    
+
     // Record statistics if available
-    if (network_stats && lora && rx_len >= sizeof(MessageHeader)) {
+    if (network_stats && lora && rx_len >= static_cast<int>(sizeof(MessageHeader))) {
         const MessageHeader* header = reinterpret_cast<const MessageHeader*>(rx_buffer);
-        network_stats->recordMessageReceived(header->src_addr, lora->getRssi(), 
+        network_stats->recordMessageReceived(header->src_addr, lora->getRssi(),
                                            lora->getSnr(), false);
     }
-    
+
     // If not a hub, we're done
-    if (!hub_router || !address_manager || rx_len < sizeof(MessageHeader)) {
+    if (!hub_router || !address_manager || rx_len < static_cast<int>(sizeof(MessageHeader))) {
         return;
     }
-    
+
     // Hub-specific processing
     const MessageHeader* header = reinterpret_cast<const MessageHeader*>(rx_buffer);
     uint16_t source_address = header->src_addr;
-    
+
     // Update node activity tracking
     address_manager->updateLastSeen(source_address, current_time);
     hub_router->updateRouteOnline(source_address);
-    
+
     // Handle registration requests
     if (header->type == MSG_TYPE_REGISTRATION) {
         const Message* msg = reinterpret_cast<const Message*>(rx_buffer);
         const RegistrationPayload* reg_payload = reinterpret_cast<const RegistrationPayload*>(msg->payload);
-        
+
         // Register the node with AddressManager
         uint16_t assigned_addr = address_manager->registerNode(
             reg_payload->device_id,
@@ -485,7 +491,7 @@ void processIncomingMessage(uint8_t* rx_buffer, int rx_len, ReliableMessenger& m
             reg_payload->firmware_ver,
             reg_payload->device_name
         );
-        
+
         // Determine registration status
         uint8_t status = REG_SUCCESS;
         if (assigned_addr == 0x0000) {
@@ -496,7 +502,7 @@ void processIncomingMessage(uint8_t* rx_buffer, int rx_len, ReliableMessenger& m
                 status = REG_ERROR_FULL;
             }
         }
-        
+
         // Send registration response
         messenger.sendRegistrationResponse(
             header->src_addr,  // Send back to requesting node
@@ -506,19 +512,19 @@ void processIncomingMessage(uint8_t* rx_buffer, int rx_len, ReliableMessenger& m
             30,  // Retry interval in seconds
             current_time / 1000  // Network time in seconds
         );
-        
+
         if (status == REG_SUCCESS) {
-            printf("Successfully registered node 0x%016llX with address 0x%04X\n",
+            log.info("Successfully registered node 0x%016llX with address 0x%04X",
                    reg_payload->device_id, assigned_addr);
         }
     }
-    
+
     // Handle heartbeat messages with status logging
     if (header->type == MSG_TYPE_HEARTBEAT) {
         const HeartbeatPayload* heartbeat =
             reinterpret_cast<const HeartbeatPayload*>(rx_buffer + sizeof(MessageHeader));
 
-        printf("Heartbeat from 0x%04X: uptime=%lus, battery=%u%%, signal=%u, sensors=0x%02X\n",
+        log.debug("Heartbeat from 0x%04X: uptime=%lus, battery=%u%%, signal=%u, sensors=0x%02X",
                source_address, heartbeat->uptime_seconds, heartbeat->battery_level,
                heartbeat->signal_strength, heartbeat->active_sensors);
     }
@@ -528,7 +534,7 @@ void processIncomingMessage(uint8_t* rx_buffer, int rx_len, ReliableMessenger& m
         const Message* msg = reinterpret_cast<const Message*>(rx_buffer);
         const CheckUpdatesPayload* payload = reinterpret_cast<const CheckUpdatesPayload*>(msg->payload);
 
-        printf("CHECK_UPDATES from 0x%04X (node_seq=%d)\n",
+        log.debug("CHECK_UPDATES from 0x%04X (node_seq=%d)",
                source_address, payload->node_sequence);
 
         hub_router->handleCheckUpdates(source_address, payload->node_sequence);
