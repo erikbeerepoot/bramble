@@ -34,13 +34,13 @@ private:
     // Timing configuration
     static constexpr uint32_t SENSOR_READ_INTERVAL_MS = 30000;   // 30 seconds
     static constexpr uint32_t HEARTBEAT_INTERVAL_MS = 60000;     // 60 seconds
-    static constexpr uint32_t BACKLOG_TX_INTERVAL_MS = 300000;   // 5 minutes
+    static constexpr uint32_t BACKLOG_TX_INTERVAL_MS = 120000;   // 2 minutes
 
     /**
-     * @brief Read sensor and transmit data
+     * @brief Read sensor and store data to flash (no immediate TX)
      * @param current_time Current system time in milliseconds
      */
-    void readAndTransmitSensorData(uint32_t current_time);
+    void readAndStoreSensorData(uint32_t current_time);
 
     /**
      * @brief Send heartbeat with current status
