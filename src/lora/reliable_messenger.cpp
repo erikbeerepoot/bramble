@@ -446,10 +446,20 @@ bool ReliableMessenger::processIncomingMessage(const uint8_t* buffer, size_t len
         if (reg_response) {
             logger_.info("Received registration response: device_id=0x%016llX, assigned_addr=0x%04X, status=%d",
                    reg_response->device_id, reg_response->assigned_addr, reg_response->status);
-            
-            // TODO: Handle registration response - save assigned address if successful
+
             if (reg_response->status == REG_SUCCESS) {
                 logger_.info("Registration successful! Assigned address: 0x%04X", reg_response->assigned_addr);
+                // Update our address
+                node_addr_ = reg_response->assigned_addr;
+                // Notify application to persist the new address
+                if (registration_success_callback_) {
+                    registration_success_callback_(reg_response->assigned_addr);
+                }
+            } else if (reg_response->status == REG_REREGISTER_REQUIRED) {
+                logger_.warn("Hub requests re-registration - node address unknown to hub");
+                if (reregistration_callback_) {
+                    reregistration_callback_();
+                }
             } else {
                 logger_.error("Registration failed with status: %d", reg_response->status);
             }

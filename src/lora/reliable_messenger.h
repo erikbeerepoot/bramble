@@ -60,6 +60,12 @@ public:
     // Callback type for heartbeat response messages
     using HeartbeatResponseCallback = std::function<void(const HeartbeatResponsePayload*)>;
 
+    // Callback type for reregistration required (hub doesn't recognize node)
+    using ReregistrationCallback = std::function<void()>;
+
+    // Callback type for registration success (provides new assigned address)
+    using RegistrationSuccessCallback = std::function<void(uint16_t new_address)>;
+
     ReliableMessenger(SX1276* lora, uint16_t node_addr, NetworkStats* stats = nullptr);
     
     /**
@@ -282,6 +288,24 @@ public:
     void setHeartbeatResponseCallback(HeartbeatResponseCallback callback) { heartbeat_response_callback_ = callback; }
 
     /**
+     * @brief Set callback for reregistration required
+     * @param callback Function to call when hub requests re-registration
+     */
+    void setReregistrationCallback(ReregistrationCallback callback) { reregistration_callback_ = callback; }
+
+    /**
+     * @brief Set callback for registration success
+     * @param callback Function to call when registration succeeds (receives new address)
+     */
+    void setRegistrationSuccessCallback(RegistrationSuccessCallback callback) { registration_success_callback_ = callback; }
+
+    /**
+     * @brief Update node address (used after re-registration)
+     * @param new_addr New assigned address
+     */
+    void setNodeAddress(uint16_t new_addr) { node_addr_ = new_addr; }
+
+    /**
      * @brief Cancel a pending message by sequence number
      * @param seq_num Sequence number of message to cancel
      * @return true if message was found and cancelled
@@ -300,7 +324,9 @@ private:
     ActuatorCallback actuator_callback_;
     UpdateCallback update_callback_;
     HeartbeatResponseCallback heartbeat_response_callback_;
-    
+    ReregistrationCallback reregistration_callback_;
+    RegistrationSuccessCallback registration_success_callback_;
+
     /**
      * @brief Send a message immediately
      * @param buffer Message buffer
