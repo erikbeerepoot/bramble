@@ -98,3 +98,8 @@ secrets.*
 # Cache directories
 .cache/
 .serena/cache/
+
+# KiCad autosave and backup files
+*-backups/
+_autosave-*
+~*.lck
