@@ -56,7 +56,7 @@ The build outputs are in the `build/` directory. The main executable will be `br
 ## Code Architecture
 
 The project follows a modular design with HAL abstraction:
-- `bramble.cpp`: Main application with LoRa communication and reliability testing
+- `main.cpp`: Main application entry point with hardware initialization and mode selection
 - `src/hal/`: Hardware abstraction layer (NeoPixel, sensors, actuators)
 - `src/lora/`: LoRa communication (SX1276 driver, message protocol, reliability)
 - `src/storage/`: Persistent storage layer (flash buffer, sensor data records)
@@ -79,7 +79,7 @@ The project follows a modular design with HAL abstraction:
 ### Production Configuration
 The main application has completely separate demo and production modes for clarity:
 
-**Demo Mode** (`DEMO_MODE = true` in bramble.cpp):
+**Demo Mode** (`DEMO_MODE = true` in main.cpp):
 - Runs `runDemoMode()` function with its own main loop
 - Colorful LED cycling for visual feedback
 - Sends test messages every 15 seconds
