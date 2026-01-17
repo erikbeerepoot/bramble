@@ -95,6 +95,14 @@ Each variant includes only the code needed for that hardware type.
 * Organized as NOW (critical), NEXT (important), LATER (future), and COMPLETED
 * Each time we start on a new feature from the NOW list in project.md, create a new feature plan, named "${feature}.md".
 
+## Git Workflow
+
+* **Never commit directly to main/master** - always create a feature branch first
+* Branch naming: use descriptive names like `feature/add-logging`, `fix/valve-timing`, `refactor/cleanup-hal`
+* After completing work on a branch, create a pull request for review
+* Only merge to main after the PR is approved
+* Keep commits atomic and focused on a single logical change
+
 ## Design Philosophy Principles
 * KISS (Keep It Simple, Stupid)
 * Clearly seperate concerns (especially "hardware hiding" -- the HAL should be separate from the domain logic)
