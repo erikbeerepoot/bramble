@@ -62,6 +62,10 @@ void SensorMode::onStart() {
     // Purple breathing pattern for sensor nodes
     led_pattern_ = std::make_unique<BreathingPattern>(led_, 128, 0, 255);
 
+    // Send initial heartbeat immediately to sync RTC before first sensor reading
+    logger.info("Sending initial heartbeat for time sync...");
+    sendHeartbeat(0);
+
     // Add periodic sensor reading task (stores to flash, no immediate TX)
     task_manager_.addTask(
         [this](uint32_t time) {
@@ -96,8 +100,16 @@ void SensorMode::onLoop() {
 }
 
 void SensorMode::readAndStoreSensorData(uint32_t current_time) {
+    (void)current_time;  // No longer used - we use RTC Unix timestamp
+
     if (!sensor_) {
         logger.error("Sensor not initialized");
+        return;
+    }
+
+    // Check if RTC has been synced - don't store readings with invalid timestamps
+    if (!isRtcSynced()) {
+        logger.warn("RTC not synced yet, skipping sensor storage");
         return;
     }
 
@@ -108,7 +120,14 @@ void SensorMode::readAndStoreSensorData(uint32_t current_time) {
         return;
     }
 
-    logger.info("Sensor reading: %.2fC, %.2f%%RH", reading.temperature, reading.humidity);
+    // Get Unix timestamp from RTC
+    uint32_t unix_timestamp = getUnixTimestamp();
+    if (unix_timestamp == 0) {
+        logger.error("Failed to get Unix timestamp from RTC");
+        return;
+    }
+
+    logger.info("Sensor reading: %.2fC, %.2f%%RH (ts=%lu)", reading.temperature, reading.humidity, unix_timestamp);
 
     // Convert to fixed-point format
     // Temperature: int16_t in 0.01C units (e.g., 2350 = 23.50C)
@@ -119,7 +138,7 @@ void SensorMode::readAndStoreSensorData(uint32_t current_time) {
     // Write to flash only (no immediate TX - batch transmission handles delivery)
     if (flash_buffer_) {
         SensorDataRecord record = {
-            .timestamp = static_cast<uint32_t>(current_time / 1000),  // Convert ms to seconds
+            .timestamp = unix_timestamp,
             .temperature = temp_fixed,
             .humidity = hum_fixed,
             .flags = 0,  // Not transmitted yet

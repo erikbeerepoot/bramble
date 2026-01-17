@@ -16,7 +16,7 @@ class NetworkStats;
 
 /**
  * @brief Base class for different application modes (demo, production, hub)
- * 
+ *
  * This provides a common framework for the main loop, reducing code duplication
  */
 class ApplicationMode {
@@ -29,6 +29,7 @@ protected:
     NetworkStats* network_stats_;
     std::unique_ptr<LEDPattern> led_pattern_;
     PeriodicTaskManager task_manager_;
+    bool rtc_synced_ = false;  // True after receiving heartbeat response with time
     
 public:
     ApplicationMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led,
@@ -101,4 +102,16 @@ protected:
      * @return true to use sleep, false to continue immediately
      */
     virtual bool shouldSleep() const { return true; }
+
+    /**
+     * @brief Check if RTC has been synchronized via heartbeat response
+     * @return true if RTC contains valid time from hub
+     */
+    bool isRtcSynced() const { return rtc_synced_; }
+
+    /**
+     * @brief Get current Unix timestamp from RTC
+     * @return Unix timestamp (seconds since 1970-01-01), or 0 if RTC not synced
+     */
+    uint32_t getUnixTimestamp() const;
 };

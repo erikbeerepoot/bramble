@@ -116,10 +116,44 @@ void ApplicationMode::onHeartbeatResponse(const HeartbeatResponsePayload* payloa
 
     // Set RP2040 RTC
     if (rtc_set_datetime(&dt)) {
+        rtc_synced_ = true;
         logger.info("RTC synchronized: %04d-%02d-%02d %02d:%02d:%02d (dow=%d)",
                dt.year, dt.month, dt.day, dt.hour, dt.min, dt.sec, dt.dotw);
     } else {
         logger.error("Failed to set RTC");
     }
+}
+
+uint32_t ApplicationMode::getUnixTimestamp() const {
+    if (!rtc_synced_ || !rtc_running()) {
+        return 0;
+    }
+
+    datetime_t dt;
+    if (!rtc_get_datetime(&dt)) {
+        return 0;
+    }
+
+    // Convert datetime to Unix timestamp
+    // Days from year 1970 to current year
+    uint32_t days = 0;
+    for (int y = 1970; y < dt.year; y++) {
+        days += (y % 4 == 0 && (y % 100 != 0 || y % 400 == 0)) ? 366 : 365;
+    }
+
+    // Days from months in current year
+    static const uint16_t days_before_month[] = {0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334};
+    days += days_before_month[dt.month - 1];
+
+    // Add leap day if applicable
+    if (dt.month > 2 && (dt.year % 4 == 0 && (dt.year % 100 != 0 || dt.year % 400 == 0))) {
+        days++;
+    }
+
+    // Add days in current month
+    days += dt.day - 1;
+
+    // Convert to seconds and add time
+    return days * 86400UL + dt.hour * 3600UL + dt.min * 60UL + dt.sec;
 }
 
