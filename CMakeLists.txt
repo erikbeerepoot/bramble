@@ -201,14 +201,20 @@ if(NOT BUILD_TESTS)
     pico_set_program_name(${TARGET_NAME} "${TARGET_NAME}")
     pico_set_program_version(${TARGET_NAME} "0.1")
 
-    # Enable stdio on USB only - UART1 is reserved for API communication
-    pico_enable_stdio_uart(${TARGET_NAME} 0)
+    # Enable stdio on USB for all targets
     pico_enable_stdio_usb(${TARGET_NAME} 1)
     pico_enable_stdio_rtt(${TARGET_NAME} 0)
 
-    # UART1 pins for API communication with Raspberry Pi
-    # Note: stdio_uart is disabled above to prevent debug output from
-    # interfering with API protocol messages on UART1
+    # Configure stdio_uart per-target:
+    # - Hub: disabled (UART1 used for API communication with Raspberry Pi)
+    # - Other nodes: enabled (for debug probe UART output)
+    if(HARDWARE_VARIANT STREQUAL "HUB")
+        pico_enable_stdio_uart(${TARGET_NAME} 0)
+    else()
+        pico_enable_stdio_uart(${TARGET_NAME} 1)
+    endif()
+
+    # UART1 pin configuration for custom board (all targets use same pins)
     target_compile_definitions(${TARGET_NAME} PRIVATE
         PICO_DEFAULT_UART=1
         PICO_DEFAULT_UART_TX_PIN=24
