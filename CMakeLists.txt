@@ -201,9 +201,9 @@ if(NOT BUILD_TESTS)
     pico_set_program_name(${TARGET_NAME} "${TARGET_NAME}")
     pico_set_program_version(${TARGET_NAME} "0.1")
 
-    # Enable stdio on UART for Debug Probe output (persists through resets)
+    # Enable stdio on UART and USB for debugging
     pico_enable_stdio_uart(${TARGET_NAME} 1)
-    pico_enable_stdio_usb(${TARGET_NAME} 0)
+    pico_enable_stdio_usb(${TARGET_NAME} 1)
     pico_enable_stdio_rtt(${TARGET_NAME} 0)
 
     # Configure UART1 to use GPIO24 for TX (motor HI1 pin on Bramble board)
