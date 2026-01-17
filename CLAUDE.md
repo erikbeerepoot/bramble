@@ -99,8 +99,7 @@ Each variant includes only the code needed for that hardware type.
 
 * **Never commit directly to main/master** - always create a feature branch first
 * Branch naming: use descriptive names like `feature/add-logging`, `fix/valve-timing`, `refactor/cleanup-hal`
-* After completing work on a branch, create a pull request for review
-* Only merge to main after the PR is approved
+* After completing work on a branch, create a pull request and merge it (no approval required)
 * Keep commits atomic and focused on a single logical change
 
 ## Design Philosophy Principles
