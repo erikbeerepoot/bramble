@@ -70,6 +70,7 @@ bool initializeHardware(SX1276& lora, NeoPixel& led);
 uint64_t getDeviceId();
 bool attemptRegistration(ReliableMessenger& messenger, SX1276& lora,
                         NodeConfigManager& config_manager, uint64_t device_id);
+bool testExternalFlash();
 
 /**
  * @brief Main entry point
@@ -86,53 +87,9 @@ int main() {
 
     log.info("==== Bramble Network Device ====");
 
-    // Test external flash
-    // Results stored in volatile vars for debugger inspection
-    log.debug("--- External Flash Test ---");
-    ExternalFlash ext_flash;
+    // Test external flash (results available via debugger)
+    testExternalFlash();
 
-    volatile bool flash_ok = false;
-    volatile uint8_t flash_mfr = 0;
-    volatile uint8_t flash_type = 0;
-    volatile uint8_t flash_cap = 0;
-    volatile uint8_t flash_data[16] = {0};
-
-    if (ext_flash.init()) {
-        uint8_t mfr, mem_type, capacity;
-        if (ext_flash.readId(mfr, mem_type, capacity) == ExternalFlashResult::Success) {
-            flash_mfr = mfr;
-            flash_type = mem_type;
-            flash_cap = capacity;
-
-            log.debug("Flash ID: Mfr=0x%02X Type=0x%02X Cap=0x%02X", mfr, mem_type, capacity);
-
-            // Check if it's a Micron flash (0x20)
-            if (mfr == 0x20) {
-                flash_ok = true;
-            }
-
-            // Try reading first 16 bytes
-            uint8_t buffer[16];
-            if (ext_flash.read(0, buffer, sizeof(buffer)) == ExternalFlashResult::Success) {
-                for (int i = 0; i < 16; i++) {
-                    flash_data[i] = buffer[i];
-                }
-                // Log hex data (simplified - just first 4 bytes to avoid long output)
-                log.debug("First 4 bytes: %02X %02X %02X %02X ...",
-                         buffer[0], buffer[1], buffer[2], buffer[3]);
-            }
-        }
-    } else {
-        log.error("External flash init FAILED");
-    }
-
-    // SET BREAKPOINT HERE to inspect results:
-    // flash_ok, flash_mfr, flash_type, flash_cap, flash_data
-    volatile int flash_test_done = 1;  // Breakpoint marker
-    (void)flash_test_done;  // Prevent unused warning
-
-    log.debug("--- End Flash Test ---");
-    
     // Determine role from build configuration
     #if defined(DEFAULT_IS_HUB) && DEFAULT_IS_HUB
         constexpr bool is_hub = true;
@@ -503,4 +460,59 @@ void processIncomingMessage(uint8_t* rx_buffer, int rx_len, ReliableMessenger& m
 
     // Try to route the message if it's not for the hub
     hub_router->processMessage(rx_buffer, rx_len, source_address);
+}
+
+bool testExternalFlash() {
+    Logger log("Flash");
+
+    log.debug("--- External Flash Test ---");
+    ExternalFlash ext_flash;
+
+    // Results stored in volatile vars for debugger inspection
+    volatile bool flash_ok = false;
+    volatile uint8_t flash_mfr = 0;
+    volatile uint8_t flash_type = 0;
+    volatile uint8_t flash_cap = 0;
+    volatile uint8_t flash_data[16] = {0};
+
+    if (!ext_flash.init()) {
+        log.error("External flash init FAILED");
+        return false;
+    }
+
+    uint8_t mfr, mem_type, capacity;
+    if (ext_flash.readId(mfr, mem_type, capacity) != ExternalFlashResult::Success) {
+        log.error("Failed to read flash ID");
+        return false;
+    }
+
+    flash_mfr = mfr;
+    flash_type = mem_type;
+    flash_cap = capacity;
+
+    log.debug("Flash ID: Mfr=0x%02X Type=0x%02X Cap=0x%02X", mfr, mem_type, capacity);
+
+    // Check if it's a Micron flash (0x20)
+    if (mfr == 0x20) {
+        flash_ok = true;
+    }
+
+    // Try reading first 16 bytes
+    uint8_t buffer[16];
+    if (ext_flash.read(0, buffer, sizeof(buffer)) == ExternalFlashResult::Success) {
+        for (int i = 0; i < 16; i++) {
+            flash_data[i] = buffer[i];
+        }
+        log.debug("First 4 bytes: %02X %02X %02X %02X ...",
+                 buffer[0], buffer[1], buffer[2], buffer[3]);
+    }
+
+    // SET BREAKPOINT HERE to inspect results:
+    // flash_ok, flash_mfr, flash_type, flash_cap, flash_data
+    volatile int flash_test_done = 1;  // Breakpoint marker
+    (void)flash_test_done;  // Prevent unused warning
+    (void)flash_ok;  // Prevent unused warning
+
+    log.debug("--- End Flash Test ---");
+    return true;
 }
