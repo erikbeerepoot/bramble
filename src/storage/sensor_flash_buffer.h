@@ -53,8 +53,8 @@ public:
     static constexpr uint32_t DATA_REGION_SIZE = ExternalFlash::TOTAL_SIZE - DATA_START_OFFSET;
     static constexpr uint32_t MAX_RECORDS = DATA_REGION_SIZE / sizeof(SensorDataRecord);
 
-    // Batch transmission constants
-    static constexpr size_t BATCH_SIZE = 20;
+    // Batch transmission constants (must match MAX_BATCH_RECORDS in message.h)
+    static constexpr size_t BATCH_SIZE = 19;
 
     // Sector geometry
     static constexpr uint32_t SECTOR_SIZE = ExternalFlash::SECTOR_SIZE;  // 4KB

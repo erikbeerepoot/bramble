@@ -238,20 +238,22 @@ struct __attribute__((packed)) BatchSensorRecord {
 };
 
 // Batch size constants
-constexpr size_t MAX_BATCH_RECORDS = 20;  // Max records per batch message
+// Max records limited by LoRa packet size: 255 - 9 (header) - 7 (batch header) = 239 bytes
+// 239 / 12 bytes per record = 19.9, so max 19 records
+constexpr size_t MAX_BATCH_RECORDS = 19;
 constexpr size_t BATCH_RECORD_SIZE = sizeof(BatchSensorRecord);  // 12 bytes
-constexpr size_t MAX_BATCH_PAYLOAD_SIZE = 7 + (MAX_BATCH_RECORDS * BATCH_RECORD_SIZE);  // 247 bytes
+constexpr size_t MAX_BATCH_PAYLOAD_SIZE = 7 + (MAX_BATCH_RECORDS * BATCH_RECORD_SIZE);  // 235 bytes
 
 /**
  * @brief Sensor data batch payload (Node → Hub)
  *
  * Transmits multiple sensor records in a single message for efficient
- * catch-up after network outages. Max 20 records per batch.
+ * catch-up after network outages. Max 19 records per batch (LoRa packet limit).
  */
 struct __attribute__((packed)) SensorDataBatchPayload {
     uint16_t node_addr;        // Source node address (for routing/validation)
     uint32_t start_index;      // Flash buffer start index (for debugging)
-    uint8_t  record_count;     // Number of records in this batch (1-20)
+    uint8_t  record_count;     // Number of records in this batch (1-19)
     BatchSensorRecord records[MAX_BATCH_RECORDS];  // Sensor records
 };
 
