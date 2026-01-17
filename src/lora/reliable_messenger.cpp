@@ -346,18 +346,28 @@ bool ReliableMessenger::processIncomingMessage(const uint8_t* buffer, size_t len
     // Handle any message that requires ACK based on flags
     if (message->header.flags & MSG_FLAG_RELIABLE) {
         bool is_critical = (message->header.flags & MSG_FLAG_CRITICAL) != 0;
-        logger_.info("Received %s message requiring ACK", 
+        logger_.info("Received %s message requiring ACK",
                     is_critical ? "CRITICAL" : "RELIABLE");
-            
+
         // Send ACK back to sender
         sendAck(message->header.src_addr, message->header.seq_num, 0);
-        
+
         // Record ACK sent for statistics
         if (network_stats_) {
             network_stats_->recordAckSent(message->header.src_addr);
         }
+
+        // Deduplication: check if we've already processed this message
+        if (wasRecentlySeen(message->header.src_addr, message->header.seq_num)) {
+            logger_.info("Duplicate message (src=0x%04X, seq=%d) - ACK sent, skipping processing",
+                        message->header.src_addr, message->header.seq_num);
+            return true;  // ACK was sent, but don't process again
+        }
+
+        // Mark this message as seen for future deduplication
+        markAsSeen(message->header.src_addr, message->header.seq_num);
     }
-    
+
     // Handle specific message types
     if (message->header.type == MSG_TYPE_ACTUATOR_CMD) {
         const ActuatorPayload* actuator = reinterpret_cast<const ActuatorPayload*>(message->payload);
@@ -693,4 +703,32 @@ bool ReliableMessenger::cancelPendingMessage(uint8_t seq_num) {
         return true;
     }
     return false;
+}
+
+bool ReliableMessenger::wasRecentlySeen(uint16_t src_addr, uint8_t seq_num) {
+    uint32_t current_time = TimeUtils::getCurrentTimeMs();
+
+    for (size_t i = 0; i < SEEN_MESSAGE_BUFFER_SIZE; i++) {
+        const auto& seen = seen_messages_[i];
+        // Check if entry matches and hasn't expired
+        if (seen.src_addr == src_addr &&
+            seen.seq_num == seq_num &&
+            seen.timestamp != 0 &&
+            (current_time - seen.timestamp) < SEEN_MESSAGE_EXPIRY_MS) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void ReliableMessenger::markAsSeen(uint16_t src_addr, uint8_t seq_num) {
+    // Add to ring buffer at current index
+    seen_messages_[seen_messages_index_] = {
+        .src_addr = src_addr,
+        .seq_num = seq_num,
+        .timestamp = TimeUtils::getCurrentTimeMs()
+    };
+
+    // Advance index (wrap around)
+    seen_messages_index_ = (seen_messages_index_ + 1) % SEEN_MESSAGE_BUFFER_SIZE;
 }

@@ -13,6 +13,24 @@
 #include <queue>
 
 /**
+ * @brief Recently seen message for deduplication
+ *
+ * Tracks (src_addr, seq_num) pairs to avoid processing the same
+ * reliable message multiple times when retransmissions occur.
+ */
+struct SeenMessage {
+    uint16_t src_addr;
+    uint8_t seq_num;
+    uint32_t timestamp;  // When this message was first seen
+};
+
+// Number of recent messages to track for deduplication
+constexpr size_t SEEN_MESSAGE_BUFFER_SIZE = 16;
+
+// How long to remember seen messages (in milliseconds)
+constexpr uint32_t SEEN_MESSAGE_EXPIRY_MS = 30000;  // 30 seconds
+
+/**
  * @brief Outgoing message waiting to be transmitted
  */
 struct OutgoingMessage {
@@ -326,6 +344,25 @@ private:
     HeartbeatResponseCallback heartbeat_response_callback_;
     ReregistrationCallback reregistration_callback_;
     RegistrationSuccessCallback registration_success_callback_;
+
+    // Deduplication: ring buffer of recently seen messages
+    SeenMessage seen_messages_[SEEN_MESSAGE_BUFFER_SIZE] = {};
+    size_t seen_messages_index_ = 0;
+
+    /**
+     * @brief Check if a message was recently seen (for deduplication)
+     * @param src_addr Source address of the message
+     * @param seq_num Sequence number of the message
+     * @return true if this (src_addr, seq_num) was recently processed
+     */
+    bool wasRecentlySeen(uint16_t src_addr, uint8_t seq_num);
+
+    /**
+     * @brief Mark a message as seen (add to deduplication buffer)
+     * @param src_addr Source address of the message
+     * @param seq_num Sequence number of the message
+     */
+    void markAsSeen(uint16_t src_addr, uint8_t seq_num);
 
     /**
      * @brief Send a message immediately
