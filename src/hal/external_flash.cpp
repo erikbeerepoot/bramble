@@ -1,17 +1,11 @@
 #include "external_flash.h"
-#include "hardware/clocks.h"
 #include "hardware/gpio.h"
 #include "pico/stdlib.h"
 #include <cstring>
 
-// Simple bit-banged SPI using PIO
-// We'll use a minimal approach first - can optimize with proper PIO program later
-
-ExternalFlash::ExternalFlash(const ExternalFlashPins& pins, PIO pio)
-    : pins_(pins)
-    , pio_(pio)
-    , sm_(0)
-    , offset_(0)
+ExternalFlash::ExternalFlash(spi_inst_t* spi, const ExternalFlashPins& pins)
+    : spi_(spi)
+    , pins_(pins)
     , initialized_(false)
     , logger_("EXTFLASH")
 {
@@ -23,60 +17,28 @@ ExternalFlash::~ExternalFlash() {
     }
 }
 
-bool ExternalFlash::initPio() {
-    // For simplicity, we'll bit-bang SPI using GPIO
-    // This is slower but works on any pins
-    // Can be optimized with PIO later if needed
-
-    // Configure CS as output, active low
+bool ExternalFlash::initGpio() {
+    // Configure CS as output, active low (directly controlled, not SPI function)
     gpio_init(pins_.cs);
     gpio_set_dir(pins_.cs, GPIO_OUT);
     gpio_put(pins_.cs, 1);  // Deselect
-
-    // Configure SCK as output
-    gpio_init(pins_.sck);
-    gpio_set_dir(pins_.sck, GPIO_OUT);
-    gpio_put(pins_.sck, 0);  // Clock idle low (SPI mode 0)
-
-    // Configure MOSI (DQ0) as output
-    gpio_init(pins_.dq0);
-    gpio_set_dir(pins_.dq0, GPIO_OUT);
-    gpio_put(pins_.dq0, 0);
-
-    // Configure MISO (DQ1) as input
-    gpio_init(pins_.dq1);
-    gpio_set_dir(pins_.dq1, GPIO_IN);
 
     // Configure reset as output, active low
     gpio_init(pins_.reset);
     gpio_set_dir(pins_.reset, GPIO_OUT);
     gpio_put(pins_.reset, 1);  // Not in reset
 
-    // DQ2 and DQ3 configured as outputs for now (hold/WP disabled)
-    gpio_init(pins_.dq2);
-    gpio_set_dir(pins_.dq2, GPIO_OUT);
-    gpio_put(pins_.dq2, 1);  // WP# high (write protect disabled)
-
-    gpio_init(pins_.dq3);
-    gpio_set_dir(pins_.dq3, GPIO_OUT);
-    gpio_put(pins_.dq3, 1);  // HOLD# high (hold disabled)
-
     return true;
 }
 
 bool ExternalFlash::init() {
-    logger_.info("Initializing external flash...");
-    logger_.info("  Pins: SCK=%d, CS=%d, DQ0=%d, DQ1=%d, DQ2=%d, DQ3=%d, RST=%d",
-                 pins_.sck, pins_.cs, pins_.dq0, pins_.dq1, pins_.dq2, pins_.dq3, pins_.reset);
+    logger_.info("Initializing external flash (hardware SPI)...");
+    logger_.info("  Pins: CS=%d, RST=%d (SPI shared with LoRa)", pins_.cs, pins_.reset);
 
-    if (!initPio()) {
-        logger_.error("Failed to initialize PIO");
+    if (!initGpio()) {
+        logger_.error("Failed to initialize GPIO");
         return false;
     }
-
-    // Debug: verify GPIO state
-    logger_.info("  GPIO state after init: CS=%d, SCK=%d, DQ1(MISO)=%d",
-                 gpio_get(pins_.cs), gpio_get(pins_.sck), gpio_get(pins_.dq1));
 
     // Reset the flash
     reset();
@@ -87,9 +49,6 @@ bool ExternalFlash::init() {
     // Wake up in case it's in power-down mode
     wakeUp();
     sleep_us(50);  // tRES1 = 3us typical
-
-    // Debug: check MISO state
-    logger_.info("  DQ1(MISO) state after wake: %d", gpio_get(pins_.dq1));
 
     // Read and verify JEDEC ID
     uint8_t manufacturer, memory_type, capacity;
@@ -127,94 +86,21 @@ void ExternalFlash::csDeselect() {
 }
 
 void ExternalFlash::spiWriteByte(uint8_t byte) {
-    // Bit-bang SPI mode 0: CPOL=0, CPHA=0
-    // Data sampled on rising edge, shifted on falling edge
-    for (int i = 7; i >= 0; i--) {
-        // Set MOSI
-        gpio_put(pins_.dq0, (byte >> i) & 1);
-
-        // Small delay
-        __asm volatile("nop\nnop");
-
-        // Rising edge - data sampled by slave
-        gpio_put(pins_.sck, 1);
-
-        // Small delay
-        __asm volatile("nop\nnop\nnop\nnop");
-
-        // Falling edge
-        gpio_put(pins_.sck, 0);
-
-        // Small delay
-        __asm volatile("nop\nnop");
-    }
+    spi_write_blocking(spi_, &byte, 1);
 }
 
 uint8_t ExternalFlash::spiReadByte() {
-    uint8_t byte = 0;
-
-    for (int i = 7; i >= 0; i--) {
-        // Rising edge
-        gpio_put(pins_.sck, 1);
-
-        // Small delay before sampling
-        __asm volatile("nop\nnop\nnop\nnop");
-
-        // Sample MISO
-        if (gpio_get(pins_.dq1)) {
-            byte |= (1 << i);
-        }
-
-        // Falling edge
-        gpio_put(pins_.sck, 0);
-
-        // Small delay
-        __asm volatile("nop\nnop");
-    }
-
+    uint8_t byte;
+    spi_read_blocking(spi_, 0xFF, &byte, 1);
     return byte;
 }
 
 void ExternalFlash::spiWrite(const uint8_t* data, size_t length) {
-    for (size_t i = 0; i < length; i++) {
-        spiWriteByte(data[i]);
-    }
+    spi_write_blocking(spi_, data, length);
 }
 
 void ExternalFlash::spiRead(uint8_t* data, size_t length) {
-    for (size_t i = 0; i < length; i++) {
-        data[i] = spiReadByte();
-    }
-}
-
-void ExternalFlash::spiTransfer(const uint8_t* tx, uint8_t* rx, size_t length) {
-    for (size_t i = 0; i < length; i++) {
-        uint8_t tx_byte = tx ? tx[i] : 0xFF;
-        uint8_t rx_byte = 0;
-
-        for (int bit = 7; bit >= 0; bit--) {
-            // Set MOSI
-            gpio_put(pins_.dq0, (tx_byte >> bit) & 1);
-            __asm volatile("nop\nnop");
-
-            // Rising edge
-            gpio_put(pins_.sck, 1);
-            __asm volatile("nop\nnop\nnop\nnop");
-
-            // Sample MISO
-            if (gpio_get(pins_.dq1)) {
-                rx_byte |= (1 << bit);
-            }
-
-            // Falling edge
-            gpio_put(pins_.sck, 0);
-            __asm volatile("nop\nnop");
-        }
-
-        if (rx) {
-            rx[i] = rx_byte;
-        }
-    }
+    spi_read_blocking(spi_, 0xFF, data, length);
 }
 
 ExternalFlashResult ExternalFlash::readId(uint8_t& manufacturer, uint8_t& memory_type, uint8_t& capacity) {

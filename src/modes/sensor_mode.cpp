@@ -19,6 +19,8 @@ void SensorMode::onStart() {
     logger.info("- Purple LED breathing pattern");
 
     // Initialize external flash for sensor data storage
+    // Flash shares SPI1 with LoRa (MISO=GPIO8, SCK=GPIO14, MOSI=GPIO15)
+    // Flash has its own CS (GPIO6) and RESET (GPIO7)
     external_flash_ = std::make_unique<ExternalFlash>();
     if (external_flash_->init()) {
         logger.info("External flash initialized");
@@ -60,10 +62,10 @@ void SensorMode::onStart() {
     // Purple breathing pattern for sensor nodes
     led_pattern_ = std::make_unique<BreathingPattern>(led_, 128, 0, 255);
 
-    // Add periodic sensor reading task
+    // Add periodic sensor reading task (stores to flash, no immediate TX)
     task_manager_.addTask(
         [this](uint32_t time) {
-            readAndTransmitSensorData(time);
+            readAndStoreSensorData(time);
         },
         SENSOR_READ_INTERVAL_MS,
         "Sensor Read"
@@ -93,7 +95,7 @@ void SensorMode::onLoop() {
     // Sensor reading is handled by periodic task
 }
 
-void SensorMode::readAndTransmitSensorData(uint32_t current_time) {
+void SensorMode::readAndStoreSensorData(uint32_t current_time) {
     if (!sensor_) {
         logger.error("Sensor not initialized");
         return;
@@ -114,8 +116,7 @@ void SensorMode::readAndTransmitSensorData(uint32_t current_time) {
     int16_t temp_fixed = static_cast<int16_t>(reading.temperature * 100.0f);
     uint16_t hum_fixed = static_cast<uint16_t>(reading.humidity * 100.0f);
 
-    // ALWAYS write to flash first (ensures zero data loss)
-    uint32_t write_index = 0;
+    // Write to flash only (no immediate TX - batch transmission handles delivery)
     if (flash_buffer_) {
         SensorDataRecord record = {
             .timestamp = static_cast<uint32_t>(current_time / 1000),  // Convert ms to seconds
@@ -126,39 +127,12 @@ void SensorMode::readAndTransmitSensorData(uint32_t current_time) {
             .crc16 = 0   // Will be calculated by writeRecord()
         };
 
-        // Get current write index BEFORE writing (this is what we'll mark as transmitted)
-        SensorFlashMetadata stats;
-        flash_buffer_->getStatistics(stats);
-        write_index = stats.write_index;
-
         if (!flash_buffer_->writeRecord(record)) {
             logger.error("Failed to write record to flash!");
         } else {
-            logger.debug("Record written to flash at index %lu (temp=%d, hum=%d)",
-                        write_index, temp_fixed, hum_fixed);
+            logger.info("Stored sensor data to flash (temp=%d, hum=%d)", temp_fixed, hum_fixed);
         }
     }
-
-    // Attempt immediate LoRa transmission (best effort for real-time visibility)
-    // Note: We don't track individual transmission status - batch mechanism with
-    // read_index handles reliability. Timestamps allow RPi to deduplicate.
-    uint8_t temp_data[2] = {
-        static_cast<uint8_t>(temp_fixed & 0xFF),
-        static_cast<uint8_t>((temp_fixed >> 8) & 0xFF)
-    };
-
-    uint8_t temperature_sequence = messenger_.sendSensorData(
-        HUB_ADDRESS, SENSOR_TEMPERATURE, temp_data, sizeof(temp_data), BEST_EFFORT);
-
-    logger.debug("Transmitted temp via LoRa: seq=%d, flash_index=%lu", temperature_sequence, write_index);
-
-    // Send humidity as separate message (also best effort)
-    uint8_t hum_data[2] = {
-        static_cast<uint8_t>(hum_fixed & 0xFF),
-        static_cast<uint8_t>((hum_fixed >> 8) & 0xFF)
-    };
-    messenger_.sendSensorData(HUB_ADDRESS, SENSOR_HUMIDITY,
-                             hum_data, sizeof(hum_data), BEST_EFFORT);
 }
 
 void SensorMode::sendHeartbeat(uint32_t current_time) {

@@ -70,7 +70,7 @@ bool initializeHardware(SX1276& lora, NeoPixel& led);
 uint64_t getDeviceId();
 bool attemptRegistration(ReliableMessenger& messenger, SX1276& lora,
                         NodeConfigManager& config_manager, uint64_t device_id);
-bool testExternalFlash();
+bool testExternalFlash(spi_inst_t* spi);
 
 /**
  * @brief Main entry point
@@ -87,8 +87,7 @@ int main() {
 
     log.info("==== Bramble Network Device ====");
 
-    // Test external flash (results available via debugger)
-    testExternalFlash();
+    // External flash test moved after SPI initialization (see below)
 
     // Determine role from build configuration
     #if defined(DEFAULT_IS_HUB) && DEFAULT_IS_HUB
@@ -129,7 +128,10 @@ int main() {
         led.show();
         // panic("Hardware initialization failed!");
     }
-    
+
+    // Test external flash (must be after SPI initialization)
+    testExternalFlash(SPI_PORT);
+
     // Initialize network statistics
     NetworkStats network_stats;
     
@@ -500,11 +502,11 @@ void processIncomingMessage(uint8_t* rx_buffer, int rx_len, ReliableMessenger& m
     hub_router->processMessage(rx_buffer, rx_len, source_address);
 }
 
-bool testExternalFlash() {
+bool testExternalFlash(spi_inst_t* spi) {
     Logger log("Flash");
 
     log.debug("--- External Flash Test ---");
-    ExternalFlash ext_flash;
+    ExternalFlash ext_flash(spi);
 
     // Results stored in volatile vars for debugger inspection
     volatile bool flash_ok = false;

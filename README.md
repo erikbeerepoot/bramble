@@ -19,6 +19,37 @@ Bramble implements a hub-and-spoke network architecture where:
 - **Indicator**: WS2812 NeoPixel LED
 - **Power**: USB or battery operation
 
+### Pin Configuration
+
+#### LoRa Module (SX1276) - SPI1
+
+| Signal | Pin | GPIO | Notes |
+|--------|-----|------|-------|
+| MISO | 11 | GPIO8 | SPI1 RX |
+| SCK | 17 | GPIO14 | SPI1 SCK |
+| MOSI | 18 | GPIO15 | SPI1 TX |
+| CS | 27 | GPIO16 | Chip select |
+| RST | 28 | GPIO17 | Reset |
+| DIO0 | 32 | GPIO21 | Interrupt |
+
+#### External Flash (MT25QL) - SPI1 (shared with LoRa)
+
+| Signal | Pin | GPIO | Notes |
+|--------|-----|------|-------|
+| MISO | 11 | GPIO8 | Shared with LoRa |
+| SCK | 17 | GPIO14 | Shared with LoRa |
+| MOSI | 18 | GPIO15 | Shared with LoRa |
+| CS | 8 | GPIO6 | Flash chip select |
+| RST | 9 | GPIO7 | Flash reset |
+
+#### Other Peripherals
+
+| Signal | Pin | GPIO | Notes |
+|--------|-----|------|-------|
+| NeoPixel | 6 | GPIO4 | WS2812 data |
+| UART TX | 2 | GPIO0 | Debug output |
+| UART RX | 3 | GPIO1 | Debug input |
+
 ## Key Features
 
 ### 🌐 Network Management
