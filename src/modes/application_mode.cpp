@@ -11,8 +11,6 @@ extern void processIncomingMessage(uint8_t* rx_buffer, int rx_len, ReliableMesse
                                   AddressManager* address_manager, HubRouter* hub_router, 
                                   uint32_t current_time, NetworkStats* network_stats, SX1276* lora);
 
-// Forward declaration of sleep function
-extern void sleepUntilInterrupt();
 
 void ApplicationMode::run() {
     // Initialize RTC for all nodes
@@ -84,9 +82,9 @@ void ApplicationMode::run() {
             hub_router_->processQueuedMessages();
         }
         
-        // Sleep efficiently between iterations
+        // Brief sleep between iterations
         if (shouldSleep() && !lora_.isInterruptPending()) {
-            sleepUntilInterrupt();
+            sleep_ms(10);
         }
     }
 }

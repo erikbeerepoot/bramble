@@ -69,9 +69,8 @@ constexpr uint PIN_A1 = 27;  // A1 analog/digital input
 // Forward declarations
 bool initializeHardware(SX1276& lora, NeoPixel& led);
 uint64_t getDeviceId();
-bool attemptRegistration(ReliableMessenger& messenger, SX1276& lora, 
+bool attemptRegistration(ReliableMessenger& messenger, SX1276& lora,
                         NodeConfigManager& config_manager, uint64_t device_id);
-void sleepUntilInterrupt();
 
 /**
  * @brief Main entry point
@@ -542,10 +541,4 @@ void processIncomingMessage(uint8_t* rx_buffer, int rx_len, ReliableMessenger& m
 
     // Try to route the message if it's not for the hub
     hub_router->processMessage(rx_buffer, rx_len, source_address);
-}
-
-void sleepUntilInterrupt() {
-    // For now, just use a short sleep
-    // TODO: Implement proper interrupt-based wakeup
-    sleep_ms(10);
 }
