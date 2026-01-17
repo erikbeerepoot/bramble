@@ -1,9 +1,8 @@
 /**
  * @file main.cpp
  * @brief Unified entry point for all Bramble hardware variants
- * 
- * This replaces the previous bramble.cpp and provides a single entry point
- * that creates the appropriate mode based on compile-time hardware configuration.
+ *
+ * Creates the appropriate mode based on compile-time hardware configuration.
  */
 
 #include <cstdio>
@@ -45,7 +44,7 @@
 #elif HARDWARE_SENSOR
     #include "modes/sensor_mode.h"
 #else
-    #include "modes/generic_mode.h"
+    #include "modes/application_mode.h"
 #endif
 
 // Hardware configuration - Bramble board v3
@@ -213,7 +212,7 @@ int main() {
         #else
             // Generic node
             log.info("Starting GENERIC mode");
-            GenericMode mode(messenger, lora, led, nullptr, nullptr, &network_stats);
+            ApplicationMode mode(messenger, lora, led, nullptr, nullptr, &network_stats);
             mode.run();
         #endif
     }

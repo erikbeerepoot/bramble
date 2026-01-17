@@ -182,7 +182,7 @@ else()
     else() # GENERIC
         add_executable(bramble_generic
             main.cpp
-            src/modes/generic_mode.cpp
+            src/modes/application_mode.cpp
             ${COMMON_SOURCES}
         )
         target_compile_definitions(bramble_generic PRIVATE
