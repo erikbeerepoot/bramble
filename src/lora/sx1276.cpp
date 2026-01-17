@@ -1,5 +1,4 @@
 #include "sx1276.h"
-#include <stdio.h>
 #include <string.h>
 #include "hardware/gpio.h"
 #include "../hal/gpio_interrupt_manager.h"
@@ -76,7 +75,7 @@ bool SX1276::begin() {
     // Clear any stale interrupt flags from power-on or previous boot
     writeRegister(SX1276_REG_IRQ_FLAGS, 0xFF);
 
-    printf("SX1276: Initialized successfully\n");
+    logger_.info("Initialized successfully");
     return true;
 }
 

@@ -1,22 +1,24 @@
 #include "controller_mode.h"
-#include <cstdio>
+#include "hal/logger.h"
 #include "../lora/reliable_messenger.h"
 #include "../lora/message.h"
+
+static Logger logger("Controller");
 
 // Controller will send commands to this irrigation node address  
 constexpr uint16_t DEFAULT_IRRIGATION_NODE = 0x0001;
 
 void ControllerMode::onStart() {
-    printf("=== CONTROLLER MODE ACTIVE ===\n");
-    printf("- Irrigation controller with A0/A1 input monitoring\n");
-    printf("- A0 HIGH -> Valve 0 ON, A0 LOW -> Valve 0 OFF\n");
-    printf("- A1 HIGH -> Valve 1 ON, A1 LOW -> Valve 1 OFF\n");
-    printf("- Hub mode: managing irrigation network\n");
-    
+    logger.info("=== CONTROLLER MODE ACTIVE ===");
+    logger.info("- Irrigation controller with A0/A1 input monitoring");
+    logger.info("- A0 HIGH -> Valve 0 ON, A0 LOW -> Valve 0 OFF");
+    logger.info("- A1 HIGH -> Valve 1 ON, A1 LOW -> Valve 1 OFF");
+    logger.info("- Hub mode: managing irrigation network");
+
     // Set default irrigation node address
     irrigation_node_address_ = DEFAULT_IRRIGATION_NODE;
-    
-    printf("=== About to initialize ControllerInputs ===\n");
+
+    logger.info("=== About to initialize ControllerInputs ===");
 
     // Initialize input handler with callback
     input_handler_.initialize(26, 27,  // PIN_A0, PIN_A1
@@ -40,21 +42,21 @@ void ControllerMode::onStart() {
     // Add heartbeat task for hub status
     task_manager_.addTask(
         [this](uint32_t time) {
-            printf("Controller heartbeat - A0:%s A1:%s -> Target node: 0x%04X\n",
+            logger.info("Controller heartbeat - A0:%s A1:%s -> Target node: 0x%04X",
                    input_handler_.getInputState(0) ? "HIGH" : "LOW",
-                   input_handler_.getInputState(1) ? "HIGH" : "LOW", 
+                   input_handler_.getInputState(1) ? "HIGH" : "LOW",
                    irrigation_node_address_);
         },
         30000,  // Every 30 seconds
         "Status Report"
     );
-    
-    printf("Controller initialized - monitoring A0/A1 inputs\n");
+
+    logger.info("Controller initialized - monitoring A0/A1 inputs");
 }
 
 void ControllerMode::onInputChange(uint8_t input_id, bool state) {
-    printf("=== INPUT CHANGE ===\n");
-    printf("Input A%d: %s\n", input_id, state ? "HIGH (ON)" : "LOW (OFF)");
+    logger.info("=== INPUT CHANGE ===");
+    logger.info("Input A%d: %s", input_id, state ? "HIGH (ON)" : "LOW (OFF)");
     
     // Map input_id to valve_id (direct mapping: A0->Valve0, A1->Valve1)
     uint8_t valve_id = input_id;
@@ -64,13 +66,13 @@ void ControllerMode::onInputChange(uint8_t input_id, bool state) {
 }
 
 void ControllerMode::sendValveCommand(uint8_t valve_id, bool turn_on) {
-    printf("Sending valve command: Valve %d -> %s to node 0x%04X\n",
+    logger.info("Sending valve command: Valve %d -> %s to node 0x%04X",
            valve_id, turn_on ? "ON" : "OFF", irrigation_node_address_);
 
     // Create actuator command payload
     uint8_t command = turn_on ? CMD_TURN_ON : CMD_TURN_OFF;
     uint8_t params[] = {valve_id};  // Valve ID as parameter
-    
+
     // Send reliable actuator command
     bool success = messenger_.sendActuatorCommand(
         irrigation_node_address_,    // Target irrigation node
@@ -80,10 +82,10 @@ void ControllerMode::sendValveCommand(uint8_t valve_id, bool turn_on) {
         sizeof(params),             // Parameter length
         RELIABLE                    // Ensure delivery
     );
-    
+
     if (success) {
-        printf("Valve command sent successfully\n");
+        logger.info("Valve command sent successfully");
     } else {
-        printf("ERROR: Failed to send valve command\n");
+        logger.error("Failed to send valve command");
     }
 }

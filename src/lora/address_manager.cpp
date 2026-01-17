@@ -3,7 +3,6 @@
 #include "../config/hub_config.h"
 #include "../hal/logger.h"
 #include "pico/stdlib.h"
-#include <stdio.h>
 #include <cstring>
 
 static Logger logger("AddressManager");
@@ -37,7 +36,7 @@ uint16_t AddressManager::registerNode(uint64_t device_id, uint8_t node_type, uin
     // Check if device is already registered
     if (isDeviceRegistered(device_id)) {
         uint16_t existing_address = getDeviceAddress(device_id);
-        printf("Device 0x%016llx already registered with address 0x%04x\n", 
+        logger.info("Device 0x%016llx already registered with address 0x%04x",
                (unsigned long long)device_id, existing_address);
         
         // Update node info with potentially new capabilities/firmware
@@ -60,14 +59,14 @@ uint16_t AddressManager::registerNode(uint64_t device_id, uint8_t node_type, uin
     
     // Check if address space is full
     if (isAddressSpaceFull()) {
-        printf("Address space full! Cannot register new device\n");
+        logger.error("Address space full! Cannot register new device");
         return 0x0000;
     }
-    
+
     // Find next available address
     uint16_t assigned_address = findNextAvailableAddress();
     if (assigned_address == 0x0000) {
-        printf("No available addresses!\n");
+        logger.error("No available addresses!");
         return 0x0000;
     }
     
@@ -94,7 +93,7 @@ uint16_t AddressManager::registerNode(uint64_t device_id, uint8_t node_type, uin
     node_registry_[assigned_address] = new_node;
     device_to_address_[device_id] = assigned_address;
     
-    printf("Registered device 0x%016llx as '%s' with address 0x%04x\n", 
+    logger.info("Registered device 0x%016llx as '%s' with address 0x%04x",
            (unsigned long long)device_id, new_node.device_name, assigned_address);
     
     return assigned_address;
@@ -153,7 +152,7 @@ bool AddressManager::unregisterNode(uint16_t address) {
         device_to_address_.erase(device_id);
         node_registry_.erase(it);
         
-        printf("Unregistered node at address 0x%04x\n", address);
+        logger.info("Unregistered node at address 0x%04x", address);
         return true;
     }
     return false;
@@ -181,7 +180,7 @@ uint32_t AddressManager::checkForInactiveNodes(uint32_t current_time, uint32_t t
             if ((current_time - node_info.last_seen_time) > timeout_ms) {
                 node_info.is_active = false;
                 inactive_count++;
-                printf("Node 0x%04x (%s) marked as inactive\n", 
+                logger.info("Node 0x%04x (%s) marked as inactive",
                        address, node_info.device_name);
                 // Start accumulating inactive time
                 node_info.inactive_duration_ms += time_since_last_check;
@@ -209,16 +208,16 @@ uint32_t AddressManager::getActiveNodeCount() {
 }
 
 void AddressManager::printNetworkStatus() {
-    printf("\n=== Network Status ===\n");
-    printf("Registered nodes: %d\n", getRegisteredNodeCount());
-    printf("Active nodes: %d\n", getActiveNodeCount());
-    printf("Next available address: 0x%04x\n", next_available_address_);
-    printf("\nNode List:\n");
-    printf("Address  Device ID          Name              Type  Caps  Active  Last Seen\n");
-    printf("-------  ----------------  ----------------  ----  ----  ------  ---------\n");
-    
+    logger.info("=== Network Status ===");
+    logger.info("Registered nodes: %d", getRegisteredNodeCount());
+    logger.info("Active nodes: %d", getActiveNodeCount());
+    logger.info("Next available address: 0x%04x", next_available_address_);
+    logger.info("Node List:");
+    logger.info("Address  Device ID          Name              Type  Caps  Active  Last Seen");
+    logger.info("-------  ----------------  ----------------  ----  ----  ------  ---------");
+
     for (const auto& [address, node] : node_registry_) {
-        printf("0x%04x  0x%016llx  %-16s  0x%02x  0x%02x  %-6s  %d ms ago\n",
+        logger.info("0x%04x  0x%016llx  %-16s  0x%02x  0x%02x  %-6s  %d ms ago",
                address,
                (unsigned long long)node.device_id,
                node.device_name,
@@ -227,7 +226,6 @@ void AddressManager::printNetworkStatus() {
                node.is_active ? "Yes" : "No",
                TimeUtils::getCurrentTimeMs() - node.last_seen_time);
     }
-    printf("\n");
 }
 
 uint16_t AddressManager::findNextAvailableAddress() {

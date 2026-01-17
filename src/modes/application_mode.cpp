@@ -5,6 +5,9 @@
 #include "lora/address_manager.h"
 #include "lora/hub_router.h"
 #include "lora/network_stats.h"
+#include "hal/logger.h"
+
+static Logger logger("AppMode");
 
 // Forward declaration of common message processing function
 extern void processIncomingMessage(uint8_t* rx_buffer, int rx_len, ReliableMessenger& messenger,
@@ -15,7 +18,7 @@ extern void processIncomingMessage(uint8_t* rx_buffer, int rx_len, ReliableMesse
 void ApplicationMode::run() {
     // Initialize RTC for all nodes
     rtc_init();
-    printf("RTC initialized\n");
+    logger.info("RTC initialized");
 
     // Set up actuator command callback
     messenger_.setActuatorCallback([this](const ActuatorPayload* payload) {
@@ -110,9 +113,9 @@ void ApplicationMode::onHeartbeatResponse(const HeartbeatResponsePayload* payloa
 
     // Set RP2040 RTC
     if (rtc_set_datetime(&dt)) {
-        printf("RTC synchronized: %04d-%02d-%02d %02d:%02d:%02d (dow=%d)\n",
+        logger.info("RTC synchronized: %04d-%02d-%02d %02d:%02d:%02d (dow=%d)",
                dt.year, dt.month, dt.day, dt.hour, dt.min, dt.sec, dt.dotw);
     } else {
-        printf("ERROR: Failed to set RTC\n");
+        logger.error("Failed to set RTC");
     }
 }

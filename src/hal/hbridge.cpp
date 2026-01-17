@@ -1,7 +1,9 @@
 #include "hbridge.h"
 #include "hardware/gpio.h"
 #include "pico/time.h"
-#include <cstdio>
+#include "hal/logger.h"
+
+static Logger log("HBridge");
 
 void HBridge::initialize(uint8_t pin_high_a, uint8_t pin_low_a,
                         uint8_t pin_high_b, uint8_t pin_low_b) {
@@ -25,19 +27,19 @@ void HBridge::initialize(uint8_t pin_high_a, uint8_t pin_low_a,
     is_active_ = false;
     initialized_ = true;
     
-    printf("HBridge initialized - HA:%d LA:%d HB:%d LB:%d\n",
+    log.info("Initialized - HA:%d LA:%d HB:%d LB:%d",
            pin_high_a, pin_low_a, pin_high_b, pin_low_b);
 }
 
 void HBridge::pulse(Direction dir, uint32_t duration_ms) {
     if (!initialized_) {
-        printf("ERROR: HBridge not initialized\n");
+        log.error("Not initialized");
         return;
     }
     
     // Enforce maximum pulse duration
     if (duration_ms > MAX_PULSE_DURATION_MS) {
-        printf("WARNING: Pulse duration %dms exceeds max %dms, clamping\n",
+        log.warn("Pulse duration %dms exceeds max %dms, clamping",
                duration_ms, MAX_PULSE_DURATION_MS);
         duration_ms = MAX_PULSE_DURATION_MS;
     }
@@ -54,12 +56,12 @@ void HBridge::pulse(Direction dir, uint32_t duration_ms) {
         // Current flows A->B
         gpio_put(pin_high_side_a_, 1);
         gpio_put(pin_low_side_b_, 1);
-        printf("HBridge pulse FORWARD for %dms\n", duration_ms);
+        log.info("Pulse FORWARD for %dms", duration_ms);
     } else {
         // Current flows B->A
         gpio_put(pin_high_side_b_, 1);
         gpio_put(pin_low_side_a_, 1);
-        printf("HBridge pulse REVERSE for %dms\n", duration_ms);
+        log.info("Pulse REVERSE for %dms", duration_ms);
     }
     
     // Hold for specified duration

@@ -1,5 +1,5 @@
 #include "hub_mode.h"
-#include <cstdio>
+#include "hal/logger.h"
 #include <cstring>
 #include "lora/address_manager.h"
 #include "lora/hub_router.h"
@@ -9,6 +9,8 @@
 #include "hal/pmu_protocol.h"
 #include "pico/stdlib.h"
 #include "hardware/uart.h"
+
+static Logger logger("HubMode");
 
 // UART configuration for Raspberry Pi communication
 // Uses UART1 on Feather RP2040 RFM9x module header (D24/D25)
@@ -22,11 +24,11 @@ constexpr uint32_t MAINTENANCE_INTERVAL_MS = 300000; // 5 minutes
 constexpr uint32_t DATETIME_QUERY_INTERVAL_MS = 3600000; // 1 hour
 
 void HubMode::onStart() {
-    printf("=== HUB MODE ACTIVE ===\n");
-    printf("- Managing node registrations\n");
-    printf("- Routing node-to-node messages\n");
-    printf("- Blue LED indicates hub status\n");
-    printf("- API UART on pins %d/%d @ %d baud\n", API_UART_TX_PIN, API_UART_RX_PIN, API_UART_BAUD);
+    logger.info("=== HUB MODE ACTIVE ===");
+    logger.info("- Managing node registrations");
+    logger.info("- Routing node-to-node messages");
+    logger.info("- Blue LED indicates hub status");
+    logger.info("- API UART on pins %d/%d @ %d baud", API_UART_TX_PIN, API_UART_RX_PIN, API_UART_BAUD);
 
     // Initialize serial input buffer
     serial_input_pos_ = 0;
@@ -40,12 +42,12 @@ void HubMode::onStart() {
     uart_set_format(API_UART_ID, 8, 1, UART_PARITY_NONE);
     uart_set_fifo_enabled(API_UART_ID, true);
 
-    printf("API UART initialized successfully\n");
+    logger.info("API UART initialized successfully");
     uart_puts(API_UART_ID, "HUB_READY\n");  // Send ready signal to RasPi
 
     // Initialize RTC
     rtc_init();
-    printf("RTC initialized\n");
+    logger.info("RTC initialized");
 
     // Request initial time from RasPi
     syncTimeFromRaspberryPi();
@@ -58,10 +60,10 @@ void HubMode::onStart() {
         [this](uint32_t time) {
             uint32_t routed, queued, dropped;
             hub_router_->getRoutingStats(routed, queued, dropped);
-            printf("Hub stats - Routed: %lu, Queued: %lu, Dropped: %lu\n", 
+            logger.info("Hub stats - Routed: %lu, Queued: %lu, Dropped: %lu",
                    routed, queued, dropped);
-            
-            printf("Registered nodes: %u\n", address_manager_->getRegisteredNodeCount());
+
+            logger.info("Registered nodes: %u", address_manager_->getRegisteredNodeCount());
             
             // Print network statistics if available
             if (network_stats_) {
@@ -81,20 +83,20 @@ void HubMode::onStart() {
     // Add periodic maintenance
     task_manager_.addTask(
         [this](uint32_t time) {
-            printf("Performing hub maintenance...\n");
+            logger.debug("Performing hub maintenance...");
             hub_router_->clearOldRoutes(time);
             hub_router_->processQueuedMessages();
-            
+
             // Check for inactive nodes and update network status
             uint32_t inactive_count = address_manager_->checkForInactiveNodes(time);
             if (inactive_count > 0) {
-                printf("Marked %lu nodes as inactive\n", inactive_count);
+                logger.info("Marked %lu nodes as inactive", inactive_count);
             }
-            
+
             // Deregister nodes that have been inactive for extended period
             uint32_t deregistered_count = address_manager_->deregisterInactiveNodes(time);
             if (deregistered_count > 0) {
-                printf("Deregistered %lu nodes (inactive > %lu hours)\n", 
+                logger.info("Deregistered %lu nodes (inactive > %lu hours)",
                        deregistered_count, 86400000UL / 3600000UL);
                 // Persist the updated registry to flash
                 Flash flash_hal;
@@ -122,7 +124,7 @@ void HubMode::onLoop() {
 }
 
 void HubMode::processIncomingMessage(uint8_t* rx_buffer, int rx_len, uint32_t current_time) {
-    printf("Hub received message (len=%d, RSSI=%d dBm)\n",
+    logger.debug("Hub received message (len=%d, RSSI=%d dBm)",
            rx_len, lora_.getRssi());
 
     // Handle special message types
@@ -244,7 +246,7 @@ void HubMode::handleListNodes() {
     // Send header
     char response[128];
     snprintf(response, sizeof(response), "NODE_LIST %lu\n", count);
-    printf("Hub TX: %s", response);  // Debug: confirm we're sending
+    logger.debug("Hub TX: %s", response);  // Debug: confirm we're sending
     uart_puts(API_UART_ID, response);
 
     // Iterate all registered nodes
@@ -432,7 +434,7 @@ void HubMode::handleDateTimeResponse(const char* args) {
     int year, month, day, hour, minute, second, weekday;
     if (sscanf(args, "%d-%d-%d %d:%d:%d %d",
                &year, &month, &day, &hour, &minute, &second, &weekday) != 7) {
-        printf("ERROR: Invalid DATETIME response format: %s\n", args);
+        logger.error("Invalid DATETIME response format: %s", args);
         return;
     }
 
@@ -447,10 +449,10 @@ void HubMode::handleDateTimeResponse(const char* args) {
     dt.sec = second;
 
     if (rtc_set_datetime(&dt)) {
-        printf("RTC set to: %04d-%02d-%02d %02d:%02d:%02d (dow=%d)\n",
+        logger.info("RTC set to: %04d-%02d-%02d %02d:%02d:%02d (dow=%d)",
                year, month, day, hour, minute, second, weekday);
     } else {
-        printf("ERROR: Failed to set RTC\n");
+        logger.error("Failed to set RTC");
     }
 }
 
@@ -482,7 +484,7 @@ void HubMode::syncTimeFromRaspberryPi() {
     // Send request for datetime
     uart_puts(API_UART_ID, "GET_DATETIME\n");
     last_datetime_sync_ms_ = to_ms_since_boot(get_absolute_time());
-    printf("Requesting datetime from RasPi\n");
+    logger.debug("Requesting datetime from RasPi");
 }
 
 void HubMode::handleGetDateTime() {
@@ -495,7 +497,7 @@ void HubMode::handleHeartbeat(uint16_t source_addr, const HeartbeatPayload* payl
     // Get current datetime from RTC
     datetime_t dt;
     if (!rtc_get_datetime(&dt)) {
-        printf("Warning: RTC not running, cannot send time to node 0x%04X\n", source_addr);
+        logger.warn("RTC not running, cannot send time to node 0x%04X", source_addr);
         return;
     }
 
@@ -503,7 +505,7 @@ void HubMode::handleHeartbeat(uint16_t source_addr, const HeartbeatPayload* payl
     messenger_.sendHeartbeatResponse(source_addr, dt.year, dt.month, dt.day,
                                      dt.dotw, dt.hour, dt.min, dt.sec);
 
-    printf("Sent time to node 0x%04X: %04d-%02d-%02d %02d:%02d:%02d\n",
+    logger.debug("Sent time to node 0x%04X: %04d-%02d-%02d %02d:%02d:%02d",
            source_addr, dt.year, dt.month, dt.day, dt.hour, dt.min, dt.sec);
 }
 
@@ -533,7 +535,7 @@ void HubMode::handleSensorData(uint16_t source_addr, const SensorPayload* payloa
             snprintf(response, sizeof(response), "SENSOR_DATA %u %llu %s %d\n",
                      source_addr, device_id, type_str, value);
             uart_puts(API_UART_ID, response);
-            printf("Forwarded sensor data: node=%u, device_id=%llu, type=%s, value=%d\n",
+            logger.debug("Forwarded sensor data: node=%u, device_id=%llu, type=%s, value=%d",
                    source_addr, device_id, type_str, value);
         }
     } else {
@@ -553,7 +555,7 @@ void HubMode::handleSensorData(uint16_t source_addr, const SensorPayload* payloa
 
 void HubMode::handleSensorDataBatch(uint16_t source_addr, const SensorDataBatchPayload* payload) {
     if (!payload || payload->record_count == 0 || payload->record_count > MAX_BATCH_RECORDS) {
-        printf("Invalid batch payload from node 0x%04X\n", source_addr);
+        logger.warn("Invalid batch payload from node 0x%04X", source_addr);
         return;
     }
 
@@ -564,7 +566,7 @@ void HubMode::handleSensorDataBatch(uint16_t source_addr, const SensorDataBatchP
         device_id = node->device_id;
     }
 
-    printf("Received batch from node 0x%04X (device_id=%llu): %u records (start_idx=%lu)\n",
+    logger.debug("Received batch from node 0x%04X (device_id=%llu): %u records (start_idx=%lu)",
            source_addr, device_id, payload->record_count, payload->start_index);
 
     // Send batch start marker to Raspberry Pi
@@ -593,7 +595,7 @@ void HubMode::handleSensorDataBatch(uint16_t source_addr, const SensorDataBatchP
              source_addr, device_id, payload->record_count);
     uart_puts(API_UART_ID, response);
 
-    printf("Forwarded batch to RasPi: %u records\n", payload->record_count);
+    logger.debug("Forwarded batch to RasPi: %u records", payload->record_count);
 
     // Note: BATCH_ACK will be sent when Raspberry Pi responds with confirmation
     // For now, send immediate ACK to sensor node to confirm receipt
@@ -620,10 +622,10 @@ void HubMode::sendBatchAck(uint16_t dest_addr, uint8_t seq_num, uint8_t status, 
     size_t message_size = MESSAGE_HEADER_SIZE + sizeof(BatchAckPayload);
 
     if (messenger_.send(buffer, message_size, BEST_EFFORT)) {
-        printf("Sent BATCH_ACK to 0x%04X: seq=%u, status=%u, records=%u\n",
+        logger.debug("Sent BATCH_ACK to 0x%04X: seq=%u, status=%u, records=%u",
                dest_addr, seq_num, status, records_received);
     } else {
-        printf("Failed to send BATCH_ACK to 0x%04X\n", dest_addr);
+        logger.error("Failed to send BATCH_ACK to 0x%04X", dest_addr);
     }
 }
 
@@ -637,7 +639,7 @@ void HubMode::handleBatchAckResponse(const char* args) {
         return;
     }
 
-    printf("RasPi confirmed batch: node=0x%04X, count=%d, status=%d\n",
+    logger.debug("RasPi confirmed batch: node=0x%04X, count=%d, status=%d",
            node_addr, count, status);
 
     // Forward BATCH_ACK to sensor node

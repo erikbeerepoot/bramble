@@ -1,6 +1,8 @@
 #include "pmu_protocol.h"
+#include "hal/logger.h"
 #include <cstring>
-#include <cstdio>
+
+static Logger log("PMU");
 
 namespace PMU {
 
@@ -357,7 +359,7 @@ void Protocol::handleWakeNotification(const uint8_t* data, uint8_t length) {
     if (length < 1) return;
 
     WakeReason reason = static_cast<WakeReason>(data[0]);
-    printf("R=%d\n", static_cast<int>(reason));
+    log.debug("WakeReason=%d", static_cast<int>(reason));
 
     // Parse schedule entry data (sent with scheduled wake events)
     static ScheduleEntry entry;
@@ -369,9 +371,9 @@ void Protocol::handleWakeNotification(const uint8_t* data, uint8_t length) {
         entry.daysMask = static_cast<DayOfWeek>(data[5]);
         entry.valveId = data[6];
         entry.enabled = (data[7] != 0);
-        printf("V=%d\n", entry.valveId);
+        log.debug("ValveId=%d", entry.valveId);
         wakeNotificationCallback_(reason, &entry);
-        printf("CB done\n");
+        log.debug("Callback done");
     } else {
         // Periodic or external wake (no schedule data)
         wakeNotificationCallback_(reason, nullptr);

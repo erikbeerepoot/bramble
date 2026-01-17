@@ -1,11 +1,13 @@
 #include "valve_indexer.h"
 #include "hardware/gpio.h"
-#include <cstdio>
+#include "hal/logger.h"
 #include <cstring>
+
+static Logger log("ValveIdx");
 
 void ValveIndexer::initialize(const uint8_t* valve_pins, uint8_t valve_count) {
     if (valve_count > MAX_VALVES) {
-        printf("ERROR: Valve count %d exceeds maximum %d\n", valve_count, MAX_VALVES);
+        log.error("Valve count %d exceeds maximum %d", valve_count, MAX_VALVES);
         valve_count = MAX_VALVES;
     }
     
@@ -18,24 +20,24 @@ void ValveIndexer::initialize(const uint8_t* valve_pins, uint8_t valve_count) {
     // Configure all valve pins as outputs, initially OFF
     for (uint8_t i = 0; i < valve_count_; i++) {
         configurePin(valve_pins_[i]);
-        printf("Valve %d configured on GPIO %d\n", i, valve_pins_[i]);
+        log.debug("Valve %d configured on GPIO %d", i, valve_pins_[i]);
     }
     
     // No valve selected initially
     selected_valve_ = NO_VALVE_SELECTED;
     initialized_ = true;
     
-    printf("ValveIndexer initialized with %d valves\n", valve_count_);
+    log.info("Initialized with %d valves", valve_count_);
 }
 
 void ValveIndexer::selectValve(uint8_t valve_id) {
     if (!initialized_) {
-        printf("ERROR: ValveIndexer not initialized\n");
+        log.error("Not initialized");
         return;
     }
-    
+
     if (!isValidValveId(valve_id)) {
-        printf("ERROR: Invalid valve ID %d (max %d)\n", valve_id, valve_count_ - 1);
+        log.error("Invalid valve ID %d (max %d)", valve_id, valve_count_ - 1);
         return;
     }
     
@@ -48,7 +50,7 @@ void ValveIndexer::selectValve(uint8_t valve_id) {
     gpio_put(valve_pins_[valve_id], 1);
     selected_valve_ = valve_id;
     
-    printf("Valve %d selected\n", valve_id);
+    log.debug("Valve %d selected", valve_id);
 }
 
 void ValveIndexer::deselectAll() {

@@ -1,5 +1,7 @@
 #include "gpio_interrupt_manager.h"
-#include <cstdio>
+#include "hal/logger.h"
+
+static Logger log("GPIO_IRQ");
 
 GpioInterruptManager& GpioInterruptManager::getInstance() {
     static GpioInterruptManager instance;
@@ -19,11 +21,11 @@ void GpioInterruptManager::registerHandler(uint gpio, uint32_t events, Interrupt
         // First registration - set up the global callback
         gpio_set_irq_enabled_with_callback(gpio, events, true, &GpioInterruptManager::globalInterruptHandler);
         global_handler_registered_ = true;
-        printf("GPIO Interrupt Manager: Registered global handler with pin %d\n", gpio);
+        log.info("Registered global handler with pin %d", gpio);
     } else {
         // Subsequent registrations - just enable interrupts for this pin
         gpio_set_irq_enabled(gpio, events, true);
-        printf("GPIO Interrupt Manager: Enabled interrupts for pin %d\n", gpio);
+        log.debug("Enabled interrupts for pin %d", gpio);
     }
 }
 
@@ -34,11 +36,11 @@ void GpioInterruptManager::unregisterHandler(uint gpio) {
     // Remove the handler
     handlers_.erase(gpio);
 
-    printf("GPIO Interrupt Manager: Unregistered handler for pin %d\n", gpio);
+    log.debug("Unregistered handler for pin %d", gpio);
 }
 
 void GpioInterruptManager::globalInterruptHandler(uint gpio, uint32_t events) {
-    printf("GPIO Interrupt Manager: Global handler called for pin %d (events: 0x%X)\n", gpio, events);
+    log.debug("Global handler called for pin %d (events: 0x%X)", gpio, events);
 
     // Get the singleton instance and route the interrupt
     auto& manager = getInstance();
@@ -46,10 +48,10 @@ void GpioInterruptManager::globalInterruptHandler(uint gpio, uint32_t events) {
     // Find the handler for this GPIO
     auto it = manager.handlers_.find(gpio);
     if (it != manager.handlers_.end()) {
-        printf("GPIO Interrupt Manager: Routing to registered handler for pin %d\n", gpio);
+        log.debug("Routing to registered handler for pin %d", gpio);
         // Call the registered handler
         it->second(gpio, events);
     } else {
-        printf("GPIO Interrupt Manager: Unhandled interrupt on pin %d (events: 0x%X)\n", gpio, events);
+        log.warn("Unhandled interrupt on pin %d (events: 0x%X)", gpio, events);
     }
 }
