@@ -3,31 +3,23 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "logger.h"
-#include "hardware/pio.h"
+#include "hardware/spi.h"
 
 /**
  * @brief Pin configuration for MT25QL external flash
  *
- * Connected via GPIO (not hardware SPI), so we use PIO for SPI
+ * Flash shares SPI1 bus with LoRa module (MISO=GPIO8, SCK=GPIO14, MOSI=GPIO15).
+ * Only CS and RESET pins are flash-specific.
  */
 struct ExternalFlashPins {
-    uint8_t sck;     // Clock
-    uint8_t cs;      // Chip select
-    uint8_t dq0;     // Data 0 (MOSI in single SPI)
-    uint8_t dq1;     // Data 1 (MISO in single SPI)
-    uint8_t dq2;     // Data 2 (QSPI mode)
-    uint8_t dq3;     // Data 3 (QSPI mode)
-    uint8_t reset;   // Reset pin
+    uint8_t cs;      // Chip select (GPIO6)
+    uint8_t reset;   // Reset pin (GPIO7)
 };
 
-// Default pin configuration for Bramble board
+// Default pin configuration for Bramble board v3
+// Flash shares SPI1 with LoRa, so only CS and RST are specified here
 constexpr ExternalFlashPins BRAMBLE_FLASH_PINS = {
-    .sck = 8,
     .cs = 6,
-    .dq0 = 10,   // MOSI
-    .dq1 = 5,    // MISO
-    .dq2 = 4,
-    .dq3 = 9,
     .reset = 7
 };
 
@@ -74,10 +66,10 @@ enum class ExternalFlashResult : uint8_t {
 };
 
 /**
- * @brief MT25QL01GBBB external flash driver using PIO-based SPI
+ * @brief MT25QL01GBBB external flash driver using hardware SPI
  *
- * This driver uses PIO to bit-bang SPI since the flash is connected
- * to GPIOs that don't map to hardware SPI peripherals.
+ * This driver uses hardware SPI1 (shared with LoRa module).
+ * SPI must be initialized before using this driver (done in main.cpp).
  *
  * Flash specs:
  * - Size: 1Gbit (128MB)
@@ -96,11 +88,11 @@ public:
 
     /**
      * @brief Construct external flash driver
-     * @param pins Pin configuration
-     * @param pio PIO instance to use (pio0 or pio1)
+     * @param spi SPI instance to use (must be already initialized)
+     * @param pins Pin configuration (CS and RESET only)
      */
-    ExternalFlash(const ExternalFlashPins& pins = BRAMBLE_FLASH_PINS,
-                  PIO pio = pio0);
+    ExternalFlash(spi_inst_t* spi = spi1,
+                  const ExternalFlashPins& pins = BRAMBLE_FLASH_PINS);
 
     ~ExternalFlash();
 
@@ -191,21 +183,18 @@ public:
     bool isInitialized() const { return initialized_; }
 
 private:
+    spi_inst_t* spi_;
     ExternalFlashPins pins_;
-    PIO pio_;
-    uint sm_;           // State machine number
-    uint offset_;       // PIO program offset
     bool initialized_;
     Logger logger_;
 
-    // Low-level SPI operations
+    // Chip select control
     void csSelect();
     void csDeselect();
+
+    // SPI operations using hardware SPI
     void spiWrite(const uint8_t* data, size_t length);
     void spiRead(uint8_t* data, size_t length);
-    void spiTransfer(const uint8_t* tx, uint8_t* rx, size_t length);
-
-    // Send single byte
     void spiWriteByte(uint8_t byte);
     uint8_t spiReadByte();
 
@@ -216,6 +205,6 @@ private:
     // Write a single page (max 256 bytes)
     ExternalFlashResult writePage(uint32_t address, const uint8_t* data, size_t length);
 
-    // Initialize PIO for SPI
-    bool initPio();
+    // Initialize GPIO pins (CS and RESET only)
+    bool initGpio();
 };
