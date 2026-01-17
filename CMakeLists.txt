@@ -201,14 +201,14 @@ if(NOT BUILD_TESTS)
     pico_set_program_name(${TARGET_NAME} "${TARGET_NAME}")
     pico_set_program_version(${TARGET_NAME} "0.1")
 
-    # Enable stdio on UART and USB for debugging
-    pico_enable_stdio_uart(${TARGET_NAME} 1)
+    # Enable stdio on USB only - UART1 is reserved for API communication
+    pico_enable_stdio_uart(${TARGET_NAME} 0)
     pico_enable_stdio_usb(${TARGET_NAME} 1)
     pico_enable_stdio_rtt(${TARGET_NAME} 0)
 
-    # Configure UART1 to use GPIO24 for TX (motor HI1 pin on Bramble board)
-    # GPIO12 is now used for SPI1 MISO (LoRa)
-    # This allows printf output via Debug Probe's UART RX
+    # UART1 pins for API communication with Raspberry Pi
+    # Note: stdio_uart is disabled above to prevent debug output from
+    # interfering with API protocol messages on UART1
     target_compile_definitions(${TARGET_NAME} PRIVATE
         PICO_DEFAULT_UART=1
         PICO_DEFAULT_UART_TX_PIN=24
