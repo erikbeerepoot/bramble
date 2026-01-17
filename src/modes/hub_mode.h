@@ -19,6 +19,9 @@ private:
     // Track last reregister request time per address to avoid spamming
     std::map<uint16_t, uint32_t> last_reregister_request_time_;
 
+    // Track pending batch seq_num per node for BATCH_ACK response
+    std::map<uint16_t, uint8_t> pending_batch_seq_num_;
+
     void processSerialInput();
     void handleSerialCommand(const char* cmd);
     void handleListNodes();

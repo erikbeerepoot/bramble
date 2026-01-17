@@ -207,6 +207,9 @@ void HubMode::processIncomingMessage(uint8_t* rx_buffer, int rx_len, uint32_t cu
             // Process via messenger first (handles ACK for RELIABLE messages)
             messenger_.processIncomingMessage(rx_buffer, rx_len);
 
+            // Store seq_num for later BATCH_ACK response (after RasPi confirms storage)
+            pending_batch_seq_num_[header->src_addr] = header->seq_num;
+
             // Forward to Raspberry Pi
             handleSensorDataBatch(header->src_addr, batch);
 
@@ -682,13 +685,21 @@ void HubMode::handleBatchAckResponse(const char* args) {
         return;
     }
 
-    logger.debug("RasPi confirmed batch: node=0x%04X, count=%d, status=%d",
-           node_addr, count, status);
+    // Look up the stored seq_num for this node's pending batch
+    uint8_t seq_num = 0;
+    auto it = pending_batch_seq_num_.find(node_addr);
+    if (it != pending_batch_seq_num_.end()) {
+        seq_num = it->second;
+        pending_batch_seq_num_.erase(it);  // Clear after use
+    } else {
+        logger.warn("No pending batch seq_num for node 0x%04X, using 0", node_addr);
+    }
 
-    // Forward BATCH_ACK to sensor node
-    // Note: The seq_num here is somewhat arbitrary since we don't track it
-    // The sensor node uses the ACK callback mechanism instead
-    sendBatchAck(node_addr, 0, static_cast<uint8_t>(status), static_cast<uint8_t>(count));
+    logger.debug("RasPi confirmed batch: node=0x%04X, count=%d, status=%d, seq=%d",
+           node_addr, count, status, seq_num);
+
+    // Forward BATCH_ACK to sensor node with correct seq_num
+    sendBatchAck(node_addr, seq_num, static_cast<uint8_t>(status), static_cast<uint8_t>(count));
 
     // Respond to RasPi
     char response[64];

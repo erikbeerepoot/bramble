@@ -342,6 +342,19 @@ bool ReliableMessenger::processIncomingMessage(const uint8_t* buffer, size_t len
         handleAck(ack);
         return true;
     }
+
+    // Handle BATCH_ACK messages (storage confirmation from hub)
+    if (message->header.type == MSG_TYPE_BATCH_ACK) {
+        const BatchAckPayload* batch_ack = reinterpret_cast<const BatchAckPayload*>(message->payload);
+        // Convert to standard AckPayload format for callback invocation
+        AckPayload ack;
+        ack.ack_seq_num = batch_ack->ack_seq_num;
+        ack.status = batch_ack->status;
+        handleAck(&ack);
+        logger_.info("Handled BATCH_ACK: seq=%d, status=%d, records=%d",
+                    batch_ack->ack_seq_num, batch_ack->status, batch_ack->records_received);
+        return true;
+    }
     
     // Handle any message that requires ACK based on flags
     if (message->header.flags & MSG_FLAG_RELIABLE) {
