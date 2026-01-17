@@ -18,7 +18,12 @@ void SensorMode::onStart() {
     logger.info("- 30 second reading interval");
     logger.info("- Purple LED breathing pattern");
 
-    // Initialize external flash for sensor data storage
+    // TODO: External flash driver needs rewrite to use hardware SPI1 (shared with LoRa)
+    // Currently disabled - the PIO bit-bang driver uses wrong pins that conflict with
+    // NeoPixel (GPIO4) and LoRa MISO (GPIO8)
+    // Correct MT25 pins: MISO=GPIO8, SCK=GPIO14, MOSI=GPIO15, CS=GPIO6, RESET=GPIO7
+    logger.warn("External flash disabled - driver needs SPI1 rewrite");
+    /*
     external_flash_ = std::make_unique<ExternalFlash>();
     if (external_flash_->init()) {
         logger.info("External flash initialized");
@@ -37,6 +42,7 @@ void SensorMode::onStart() {
     } else {
         logger.error("Failed to initialize external flash!");
     }
+    */
 
     // Initialize CHT832X temperature/humidity sensor
     sensor_ = std::make_unique<CHT832X>(i2c1, PIN_I2C_SDA, PIN_I2C_SCL);

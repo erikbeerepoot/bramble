@@ -87,8 +87,10 @@ int main() {
 
     log.info("==== Bramble Network Device ====");
 
-    // Test external flash (results available via debugger)
-    testExternalFlash();
+    // TODO: External flash driver needs rewrite to use hardware SPI1 (shared with LoRa)
+    // Currently disabled - the PIO bit-bang driver uses wrong pins that conflict with
+    // NeoPixel (GPIO4) and LoRa MISO (GPIO8)
+    // testExternalFlash();
 
     // Determine role from build configuration
     #if defined(DEFAULT_IS_HUB) && DEFAULT_IS_HUB
