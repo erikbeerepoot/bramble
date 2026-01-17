@@ -118,7 +118,6 @@ else()
         src/storage/sensor_flash_buffer.cpp
         src/modes/application_mode.cpp
         src/modes/hub_mode.cpp
-        src/modes/production_mode.cpp
     )
     
     # Build specialized executable based on hardware variant

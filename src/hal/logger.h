@@ -27,12 +27,11 @@ private:
     const char* module_name_;
     static LogLevel global_level_;
     static bool check_usb_;  // Enable USB checking for power savings
-    
+
     /**
-     * @brief Template for unified logging implementation
+     * @brief Unified logging implementation
      */
-    template<LogLevel Level>
-    void log(const char* prefix, const char* fmt, va_list args) const {
+    void log(LogLevel level, const char* prefix, const char* fmt, va_list args) const {
         // Skip logging if USB checking is enabled and no USB connection
 #if LIB_PICO_STDIO_USB
         if (check_usb_ && !stdio_usb_connected()) {
@@ -40,7 +39,7 @@ private:
         }
 #endif
 
-        if (static_cast<uint8_t>(global_level_) >= static_cast<uint8_t>(Level)) {
+        if (static_cast<uint8_t>(global_level_) >= static_cast<uint8_t>(level)) {
             // Print timestamp prefix
             datetime_t dt;
             if (rtc_running() && rtc_get_datetime(&dt)) {
@@ -58,7 +57,7 @@ private:
             printf("\n");
         }
     }
-    
+
 public:
     /**
      * @brief Create a logger for a specific module
@@ -72,37 +71,37 @@ public:
     void error(const char* fmt, ...) const {
         va_list args;
         va_start(args, fmt);
-        log<LogLevel::Error>("ERR", fmt, args);
+        log(LogLevel::Error, "ERR", fmt, args);
         va_end(args);
     }
-    
+
     /**
      * @brief Log a warning message
      */
     void warn(const char* fmt, ...) const {
         va_list args;
         va_start(args, fmt);
-        log<LogLevel::Warn>("WARN", fmt, args);
+        log(LogLevel::Warn, "WARN", fmt, args);
         va_end(args);
     }
-    
+
     /**
      * @brief Log an informational message
      */
     void info(const char* fmt, ...) const {
         va_list args;
         va_start(args, fmt);
-        log<LogLevel::Info>("INFO", fmt, args);
+        log(LogLevel::Info, "INFO", fmt, args);
         va_end(args);
     }
-    
+
     /**
      * @brief Log a debug message
      */
     void debug(const char* fmt, ...) const {
         va_list args;
         va_start(args, fmt);
-        log<LogLevel::Debug>("DBG", fmt, args);
+        log(LogLevel::Debug, "DBG", fmt, args);
         va_end(args);
     }
     
