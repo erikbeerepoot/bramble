@@ -6506,7 +6506,7 @@
 			(net 24 "/rp2040/~{RESET}")
 			(pinfunction "1")
 			(pintype "passive")
-			(uuid "79e7fb3c-383e-4c67-a531-c9696682c2ae")
+			(uuid "7ee9d3e3-c9ac-44fa-9617-829e2da3eb7d")
 		)
 		(pad "2" smd roundrect
 			(at -2.575 0.85 180)
@@ -6526,7 +6526,7 @@
 			(net 1 "GND")
 			(pinfunction "2")
 			(pintype "passive")
-			(uuid "9faa9480-6a14-4186-b64b-d9cea91d99fc")
+			(uuid "78fa032f-bb30-42f1-aa5e-49b749412357")
 		)
 		(embedded_fonts no)
 		(model "${KICAD9_3DMODEL_DIR}/Button_Switch_SMD.3dshapes/SW_SPST_EVQP2_MiddlePushTravel_H2.5mm.step"
