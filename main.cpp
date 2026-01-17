@@ -65,6 +65,31 @@ constexpr uint PIN_A1 = 27;  // A1 analog/digital input
 // Demo mode configuration is set by CMake
 // Debug UART: printf goes to GPIO12 (VALVE_3) via CMakeLists.txt config
 
+/**
+ * @brief Node configuration info for registration
+ */
+struct NodeConfigInfo {
+    uint8_t node_type;
+    uint8_t capabilities;
+    const char* device_name;
+};
+
+/**
+ * @brief Get node configuration based on hardware variant
+ * @return NodeConfigInfo with type, capabilities, and name
+ */
+inline NodeConfigInfo getNodeConfiguration() {
+    #ifdef HARDWARE_IRRIGATION
+        return {NODE_TYPE_HYBRID, CAP_VALVE_CONTROL | CAP_SOIL_MOISTURE, "Irrigation Node"};
+    #elif HARDWARE_SENSOR
+        return {NODE_TYPE_SENSOR, CAP_TEMPERATURE | CAP_HUMIDITY, "Sensor Node"};
+    #elif HARDWARE_CONTROLLER
+        return {NODE_TYPE_CONTROLLER, CAP_CONTROLLER | CAP_SCHEDULING, "Controller"};
+    #else
+        return {NODE_TYPE_SENSOR, 0, "Generic Node"};
+    #endif
+}
+
 // Forward declarations
 bool initializeHardware(SX1276& lora, NeoPixel& led);
 uint64_t getDeviceId();
@@ -183,29 +208,14 @@ int main() {
         // Get device ID for registration
         uint64_t device_id = getDeviceId();
 
-        // Determine node type and capabilities for re-registration
-        uint8_t node_type = NODE_TYPE_SENSOR;
-        uint8_t capabilities = 0;
-        const char* device_name = "Generic Node";
-        #ifdef HARDWARE_IRRIGATION
-            node_type = NODE_TYPE_HYBRID;
-            capabilities = CAP_VALVE_CONTROL | CAP_SOIL_MOISTURE;
-            device_name = "Irrigation Node";
-        #elif HARDWARE_SENSOR
-            node_type = NODE_TYPE_SENSOR;
-            capabilities = CAP_TEMPERATURE | CAP_HUMIDITY;
-            device_name = "Sensor Node";
-        #elif HARDWARE_CONTROLLER
-            node_type = NODE_TYPE_CONTROLLER;
-            capabilities = CAP_CONTROLLER | CAP_SCHEDULING;
-            device_name = "Controller";
-        #endif
+        // Get node configuration for registration
+        auto config = getNodeConfiguration();
 
         // Set up re-registration callback (hub doesn't recognize us)
-        messenger.setReregistrationCallback([&messenger, device_id, node_type, capabilities, device_name]() {
+        messenger.setReregistrationCallback([&messenger, device_id, config]() {
             printf("Re-registering with hub...\n");
-            messenger.sendRegistrationRequest(ADDRESS_HUB, device_id, node_type,
-                                              capabilities, 0x0100, device_name);
+            messenger.sendRegistrationRequest(ADDRESS_HUB, device_id, config.node_type,
+                                              config.capabilities, 0x0100, config.device_name);
         });
 
         // Set up registration success callback (save new address to flash)
@@ -328,28 +338,12 @@ bool attemptRegistration(ReliableMessenger& messenger, SX1276& lora,
     log.info("Attempting registration with hub...");
     log.info("Device ID: 0x%016llX", device_id);
 
-    // Determine node type and capabilities based on hardware
-    uint8_t node_type = NODE_TYPE_SENSOR;  // Default
-    uint8_t capabilities = 0;
-    const char* device_name = "Generic Node";
-
-    #ifdef HARDWARE_IRRIGATION
-        node_type = NODE_TYPE_HYBRID;
-        capabilities = CAP_VALVE_CONTROL | CAP_SOIL_MOISTURE;
-        device_name = "Irrigation Node";
-    #elif HARDWARE_SENSOR
-        node_type = NODE_TYPE_SENSOR;
-        capabilities = CAP_TEMPERATURE | CAP_HUMIDITY;
-        device_name = "Sensor Node";
-    #elif HARDWARE_CONTROLLER
-        node_type = NODE_TYPE_CONTROLLER;
-        capabilities = CAP_CONTROLLER | CAP_SCHEDULING;
-        device_name = "Controller";
-    #endif
+    // Get node configuration
+    auto config = getNodeConfiguration();
 
     // Send registration request and store sequence number
-    uint8_t registration_seq = messenger.sendRegistrationRequest(ADDRESS_HUB, device_id, node_type,
-                                                                 capabilities, 0x0100, device_name);
+    uint8_t registration_seq = messenger.sendRegistrationRequest(ADDRESS_HUB, device_id, config.node_type,
+                                                                 config.capabilities, 0x0100, config.device_name);
     if (registration_seq == 0) {
         log.error("Failed to send registration request");
         return false;

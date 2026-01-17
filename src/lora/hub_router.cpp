@@ -53,10 +53,7 @@ bool HubRouter::forwardMessage(const uint8_t* buffer, size_t length,
     // Update routing table with successful path
     RouteEntry& route = routing_table_[destination_address];
     route.destination_address = destination_address;
-    route.next_hop_address = destination_address;  // Direct connection for now
     route.last_used_time = TimeUtils::getCurrentTimeMs();
-    route.hop_count = 1;
-    route.is_direct = true;
     
     // Forward the message directly using the send method
     bool success = messenger_.send(buffer, length, BEST_EFFORT);
@@ -96,11 +93,8 @@ void HubRouter::updateRouteOnline(uint16_t node_address) {
     
     // Update routing table
     route.destination_address = node_address;
-    route.next_hop_address = node_address;  // Direct connection
     route.last_used_time = current_time;
     route.last_online_time = current_time;
-    route.hop_count = 1;
-    route.is_direct = true;
     route.is_online = true;
 }
 
@@ -174,16 +168,14 @@ void HubRouter::getRoutingStats(uint32_t& total_routed, uint32_t& total_queued, 
 
 void HubRouter::printRoutingTable() {
     logger.info("=== Routing Table ===");
-    logger.info("Destination | Next Hop | Hops | Direct | Last Used");
-    logger.info("------------|----------|------|--------|----------");
+    logger.info("Destination | Online | Last Used");
+    logger.info("------------|--------|----------");
 
     for (const auto& entry : routing_table_) {
         const RouteEntry& route = entry.second;
-        logger.info("0x%04X      | 0x%04X   | %d    | %s     | %lu",
+        logger.info("0x%04X      | %s   | %lu",
                route.destination_address,
-               route.next_hop_address,
-               route.hop_count,
-               route.is_direct ? "Yes" : "No",
+               route.is_online ? "Yes" : "No ",
                route.last_used_time);
     }
 
