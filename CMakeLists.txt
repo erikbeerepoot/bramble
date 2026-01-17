@@ -117,7 +117,6 @@ else()
         src/config/hub_config.cpp
         src/storage/sensor_flash_buffer.cpp
         src/modes/application_mode.cpp
-        src/modes/demo_mode.cpp
         src/modes/hub_mode.cpp
         src/modes/production_mode.cpp
     )
@@ -194,15 +193,6 @@ else()
         message(STATUS "Building GENERIC variant")
     endif()
     
-    # Add demo mode option
-    option(DEMO_MODE "Build in demo mode with verbose output" OFF)
-    if(DEMO_MODE)
-        target_compile_definitions(${TARGET_NAME} PRIVATE DEMO_MODE=1)
-        message(STATUS "Demo mode enabled")
-    else()
-        target_compile_definitions(${TARGET_NAME} PRIVATE DEMO_MODE=0)
-        message(STATUS "Production mode enabled")
-    endif()
 endif()
 
 # Configure specialized target if not building tests

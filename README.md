@@ -154,10 +154,6 @@ cmake --build build
 cmake -B build -DHARDWARE_VARIANT=SENSOR
 cmake --build build
 
-# Build with production mode (minimal output)
-cmake -B build -DHARDWARE_VARIANT=IRRIGATION -DDEMO_MODE=OFF
-cmake --build build
-
 # Build test version
 cmake -B build -DBUILD_TESTS=ON
 cmake --build build
@@ -206,9 +202,6 @@ Configuration is set via CMake variables:
 ```bash
 # Hardware variant selection
 -DHARDWARE_VARIANT=IRRIGATION|CONTROLLER|SENSOR|GENERIC
-
-# Mode selection  
--DDEMO_MODE=ON|OFF    # Development vs production mode
 
 # Test build
 -DBUILD_TESTS=ON|OFF  # Include test framework

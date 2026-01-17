@@ -35,7 +35,6 @@
 #include "config/hub_config.h"
 
 // Common mode includes
-#include "modes/demo_mode.h"
 #include "modes/hub_mode.h"
 
 // Mode includes based on hardware variant
@@ -191,26 +190,14 @@ int main() {
 
         // Create appropriate hub mode
         #ifdef HARDWARE_CONTROLLER
-            if (DEMO_MODE) {
-                log.info("Starting CONTROLLER DEMO mode");
-                // TODO: Create ControllerDemoMode when needed
-                DemoMode mode(messenger, lora, led, &address_manager, &hub_router, &network_stats);
-                mode.run();
-            } else {
-                log.info("Starting CONTROLLER PRODUCTION mode");
-                ControllerMode mode(messenger, lora, led, &address_manager, &hub_router, &network_stats);
-                mode.run();
-            }
+            log.info("Starting CONTROLLER mode");
+            ControllerMode mode(messenger, lora, led, &address_manager, &hub_router, &network_stats);
+            mode.run();
         #else
             // Non-controller hardware running as hub (emergency mode)
             log.warn("Non-controller hardware running as HUB!");
-            if (DEMO_MODE) {
-                DemoMode mode(messenger, lora, led, &address_manager, &hub_router, &network_stats);
-                mode.run();
-            } else {
-                HubMode mode(messenger, lora, led, &address_manager, &hub_router, &network_stats);
-                mode.run();
-            }
+            HubMode mode(messenger, lora, led, &address_manager, &hub_router, &network_stats);
+            mode.run();
         #endif
         
     } else {
@@ -253,49 +240,24 @@ int main() {
 
         // Create appropriate node mode
         #ifdef HARDWARE_IRRIGATION
-            if (DEMO_MODE) {
-                log.info("Starting IRRIGATION DEMO mode");
-                // For now use generic demo mode
-                DemoMode mode(messenger, lora, led, nullptr, nullptr, &network_stats);
-                mode.run();
-            } else {
-                log.info("Starting IRRIGATION PRODUCTION mode");
-                IrrigationMode mode(messenger, lora, led, nullptr, nullptr, &network_stats, false); // Disable multicore
-                mode.run();
-            }
+            log.info("Starting IRRIGATION mode");
+            IrrigationMode mode(messenger, lora, led, nullptr, nullptr, &network_stats, false);
+            mode.run();
         #elif HARDWARE_SENSOR
-            if (DEMO_MODE) {
-                log.info("Starting SENSOR DEMO mode");
-                DemoMode mode(messenger, lora, led, nullptr, nullptr, &network_stats);
-                mode.run();
-            } else {
-                log.info("Starting SENSOR PRODUCTION mode");
-                SensorMode mode(messenger, lora, led, nullptr, nullptr, &network_stats);
-                mode.run();
-            }
+            log.info("Starting SENSOR mode");
+            SensorMode mode(messenger, lora, led, nullptr, nullptr, &network_stats);
+            mode.run();
         #elif HARDWARE_CONTROLLER
             // Controller hardware running as node (unusual but possible)
             log.warn("Controller hardware running as NODE!");
-            if (DEMO_MODE) {
-                log.info("Starting CONTROLLER NODE DEMO mode");
-                DemoMode mode(messenger, lora, led, nullptr, nullptr, &network_stats);
-                mode.run();
-            } else {
-                log.info("Starting CONTROLLER NODE mode (using hub mode)");
-                HubMode mode(messenger, lora, led, nullptr, nullptr, &network_stats);
-                mode.run();
-            }
+            log.info("Starting CONTROLLER NODE mode (using hub mode)");
+            HubMode mode(messenger, lora, led, nullptr, nullptr, &network_stats);
+            mode.run();
         #else
             // Generic node
-            if (DEMO_MODE) {
-                log.info("Starting GENERIC DEMO mode");
-                DemoMode mode(messenger, lora, led, nullptr, nullptr, &network_stats);
-                mode.run();
-            } else {
-                log.info("Starting GENERIC PRODUCTION mode");
-                GenericMode mode(messenger, lora, led, nullptr, nullptr, &network_stats);
-                mode.run();
-            }
+            log.info("Starting GENERIC mode");
+            GenericMode mode(messenger, lora, led, nullptr, nullptr, &network_stats);
+            mode.run();
         #endif
     }
     

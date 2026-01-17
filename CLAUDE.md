@@ -76,29 +76,15 @@ The project follows a modular design with HAL abstraction:
 - Test build: Includes integration test suite with MockSX1276 for reliability validation
 - Build with `-DBUILD_TESTS=ON` to compile test version
 
-### Production Configuration
-The main application has completely separate demo and production modes for clarity:
+### Hardware Variants
+The build system selects the appropriate mode based on hardware variant:
 
-**Demo Mode** (`DEMO_MODE = true` in main.cpp):
-- Runs `runDemoMode()` function with its own main loop
-- Colorful LED cycling for visual feedback
-- Sends test messages every 15 seconds
-- Verbose debug output to console
-- Ideal for development and system verification
+- **IRRIGATION**: IrrigationMode - valve control, soil moisture sensing
+- **SENSOR**: SensorMode - temperature/humidity monitoring
+- **CONTROLLER**: ControllerMode (hub) or HubMode (node fallback)
+- **GENERIC**: GenericMode - basic node functionality
 
-**Production Mode** (`DEMO_MODE = false`):
-- Runs `runProductionMode()` function with its own main loop
-- Green LED heartbeat indication only
-- Minimal console output (reduces power consumption)
-- Sensor readings every 30 seconds, heartbeat every 60 seconds
-- Clear TODO markers for actual sensor/actuator integration
-- Ready for deployment with real hardware
-
-**Benefits of Separation**:
-- Easy to understand each mode independently
-- No conditional logic scattered throughout code
-- Simple to maintain and debug each mode
-- Clear separation of concerns
+Each variant includes only the code needed for that hardware type.
 
 ## Process
 
