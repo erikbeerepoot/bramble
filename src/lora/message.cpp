@@ -295,7 +295,7 @@ bool MessageHandler::validatePayload(const MessageHeader* header, const uint8_t*
             }
             const RegistrationResponsePayload* response = (const RegistrationResponsePayload*)payload;
             // Validate status code is within valid range
-            if (response->status > REG_ERROR_INTERNAL) {
+            if (response->status > REG_REREGISTER_REQUIRED) {
                 return false;
             }
             break;

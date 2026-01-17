@@ -101,7 +101,8 @@ enum RegistrationStatus {
     REG_ERROR_DUPLICATE     = 0x02,  // Device ID already registered
     REG_ERROR_INVALID       = 0x03,  // Invalid registration data
     REG_ERROR_HUB_BUSY      = 0x04,  // Hub temporarily unavailable
-    REG_ERROR_INTERNAL      = 0x05   // Internal hub error
+    REG_ERROR_INTERNAL      = 0x05,  // Internal hub error
+    REG_REREGISTER_REQUIRED = 0x06   // Node unknown, must re-register with device_id
 };
 
 // Delivery criticality levels

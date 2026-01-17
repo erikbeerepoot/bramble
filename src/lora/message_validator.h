@@ -124,7 +124,7 @@ private:
     }
 
     static bool validateRegistrationResponse(const RegistrationResponsePayload* resp) {
-        return resp->status <= REG_ERROR_INTERNAL;
+        return resp->status <= REG_REREGISTER_REQUIRED;
     }
 
     static bool validateBatchPayload(const uint8_t* payload, size_t payload_length) {
