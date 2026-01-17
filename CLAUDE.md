@@ -13,6 +13,13 @@ This is a Raspberry Pi Pico project using the Pico SDK. This project will use a 
 - **Language standards**: C11, C++17 with exceptions and RTTI enabled
 - **Output**: UF2 file for flashing to Pico
 
+### CMake Path
+
+CMake is installed via CMake.app. Use the full path in commands:
+```bash
+CMAKE=/Applications/CMake.app/Contents/bin/cmake
+```
+
 ### Common Commands
 
 #### Production Build
