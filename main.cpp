@@ -13,6 +13,7 @@
 #include "hardware/timer.h"
 #include "hardware/clocks.h"
 #include "hardware/gpio.h"
+#include "hardware/watchdog.h"
 #include "hardware/structs/iobank0.h"
 
 // HAL includes
@@ -179,6 +180,44 @@ int main() {
 
         // Get device ID for registration
         uint64_t device_id = getDeviceId();
+
+        // Determine node type and capabilities for re-registration
+        uint8_t node_type = NODE_TYPE_SENSOR;
+        uint8_t capabilities = 0;
+        const char* device_name = "Generic Node";
+        #ifdef HARDWARE_IRRIGATION
+            node_type = NODE_TYPE_HYBRID;
+            capabilities = CAP_VALVE_CONTROL | CAP_SOIL_MOISTURE;
+            device_name = "Irrigation Node";
+        #elif HARDWARE_SENSOR
+            node_type = NODE_TYPE_SENSOR;
+            capabilities = CAP_TEMPERATURE | CAP_HUMIDITY;
+            device_name = "Sensor Node";
+        #elif HARDWARE_CONTROLLER
+            node_type = NODE_TYPE_CONTROLLER;
+            capabilities = CAP_CONTROLLER | CAP_SCHEDULING;
+            device_name = "Controller";
+        #endif
+
+        // Set up re-registration callback (hub doesn't recognize us)
+        messenger.setReregistrationCallback([&messenger, device_id, node_type, capabilities, device_name]() {
+            printf("Re-registering with hub...\n");
+            messenger.sendRegistrationRequest(ADDRESS_HUB, device_id, node_type,
+                                              capabilities, 0x0100, device_name);
+        });
+
+        // Set up registration success callback (save new address to flash)
+        messenger.setRegistrationSuccessCallback([&config_manager, device_id](uint16_t new_address) {
+            printf("Saving new address 0x%04X to flash\n", new_address);
+            NodeConfiguration config;
+            config.assigned_address = new_address;
+            config.device_id = device_id;
+            if (config_manager.saveConfiguration(config)) {
+                printf("Configuration saved successfully\n");
+            } else {
+                printf("ERROR: Failed to save configuration\n");
+            }
+        });
 
         // Skip registration if we have a saved address
         // IrrigationMode will handle deferred registration based on PMU wake reason

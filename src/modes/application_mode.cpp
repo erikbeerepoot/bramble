@@ -35,6 +35,9 @@ void ApplicationMode::run() {
         onHeartbeatResponse(payload);
     });
 
+    // Note: Reregistration callback should be set up by main.cpp which has access
+    // to the ConfigurationManager needed to clear the saved address before rebooting.
+
     // Call startup hook
     onStart();
     
@@ -119,3 +122,4 @@ void ApplicationMode::onHeartbeatResponse(const HeartbeatResponsePayload* payloa
         logger.error("Failed to set RTC");
     }
 }
+
