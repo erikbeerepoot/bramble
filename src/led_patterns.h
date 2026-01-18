@@ -109,17 +109,52 @@ class StaticPattern : public LEDPattern {
 private:
     uint8_t r_, g_, b_;
     bool initialized_ = false;
-    
+
 public:
     StaticPattern(NeoPixel& led, uint8_t r, uint8_t g, uint8_t b)
         : LEDPattern(led), r_(r), g_(g), b_(b) {}
-    
+
     void update(uint32_t current_time) override {
         // Only update once
         if (!initialized_) {
             led_.setPixel(0, r_, g_, b_);
             led_.show();
             initialized_ = true;
+        }
+    }
+};
+
+/**
+ * @brief Blinking pattern - on/off with configurable timing
+ *
+ * Used for initialization state (orange blink while waiting for RTC sync)
+ */
+class BlinkingPattern : public LEDPattern {
+private:
+    uint8_t r_, g_, b_;
+    uint32_t on_ms_;
+    uint32_t off_ms_;
+    uint32_t last_toggle_ = 0;
+    bool is_on_ = true;
+
+public:
+    BlinkingPattern(NeoPixel& led, uint8_t r, uint8_t g, uint8_t b,
+                    uint32_t on_ms = 250, uint32_t off_ms = 250)
+        : LEDPattern(led), r_(r), g_(g), b_(b), on_ms_(on_ms), off_ms_(off_ms) {}
+
+    void update(uint32_t current_time) override {
+        uint32_t interval = is_on_ ? on_ms_ : off_ms_;
+
+        if (current_time - last_toggle_ >= interval) {
+            last_toggle_ = current_time;
+            is_on_ = !is_on_;
+
+            if (is_on_) {
+                led_.setPixel(0, r_, g_, b_);
+            } else {
+                led_.setPixel(0, 0, 0, 0);
+            }
+            led_.show();
         }
     }
 };
