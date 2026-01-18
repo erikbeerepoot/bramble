@@ -287,15 +287,16 @@ SensorMode sensor(messenger, lora, led, nullptr, nullptr, &network_stats);
 
 ## LED Status Indicators
 
-### By Hardware Variant
-- **Controller Hub**: Blue breathing pattern during normal operation
-- **Irrigation Node**: Green heartbeat pulse every 60 seconds
-- **Sensor Node**: Green heartbeat pulse during data transmission
+### Initialization
+All nodes display **orange blinking** during startup while waiting for RTC synchronization via heartbeat response from the hub. Once RTC is synced, nodes transition to their operational patterns.
+
+### Operational Patterns (by Hardware Variant)
+- **Controller Hub**: Blue breathing pattern
+- **Irrigation Node**: Green heartbeat pulse
+- **Sensor Node**: Purple breathing pattern
 - **Generic Node**: Green heartbeat pulse
 
-### By Mode
-- **Demo Mode**: Rainbow color cycling and verbose output
-- **Production Mode**: Simple heartbeat patterns, minimal output
+### Special States
 - **Registration**: Role-based color during network join (blue=hub, green=node)
 - **Error State**: Red solid color indicates hardware or network failure
 
