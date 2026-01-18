@@ -64,7 +64,7 @@ sudo usermod -aG dialout $USER
 cd bramble/api
 
 # Build and run with hot reload
-docker-compose up
+docker compose up
 
 # API runs on http://localhost:5000
 # Code changes trigger automatic reload
@@ -73,7 +73,7 @@ docker-compose up
 **Production mode:**
 ```bash
 # Edit docker-compose.yml: change target to 'production'
-docker-compose up -d
+docker compose up -d
 ```
 
 **Note:**
@@ -163,7 +163,7 @@ Commands to nodes (schedules, wake intervals, datetime) are processed through a 
 
 **Docker Compose** runs both the API and worker containers:
 ```bash
-docker-compose up  # Starts api + worker
+docker compose up  # Starts api + worker
 ```
 
 **Local testing** can use synchronous mode:
