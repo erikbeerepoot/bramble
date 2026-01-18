@@ -8,7 +8,13 @@
 
 constexpr uint16_t HUB_ADDRESS = ADDRESS_HUB;
 
+// PMU UART configuration - adjust pins based on your hardware
+#define PMU_UART_ID uart0
+#define PMU_UART_TX_PIN 0
+#define PMU_UART_RX_PIN 1
+
 static Logger logger("SENSOR");
+static Logger pmu_logger("PMU");
 
 SensorMode::~SensorMode() = default;
 
@@ -62,6 +68,21 @@ void SensorMode::onStart() {
     // Purple breathing pattern for sensor nodes
     led_pattern_ = std::make_unique<BreathingPattern>(led_, 128, 0, 255);
 
+    // Initialize PMU client
+    pmu_client_ = new PmuClient(PMU_UART_ID, PMU_UART_TX_PIN, PMU_UART_RX_PIN, 9600);
+    pmu_available_ = pmu_client_->init();
+
+    if (pmu_available_) {
+        pmu_logger.info("PMU client initialized successfully");
+
+        // Set up PMU callback handler
+        pmu_client_->getProtocol().onWakeNotification([this](PMU::WakeReason reason, const PMU::ScheduleEntry* entry) {
+            this->handlePmuWake(reason, entry);
+        });
+    } else {
+        logger.warn("PMU client not available - running without power management");
+    }
+
     // Send initial heartbeat immediately to sync RTC before first sensor reading
     logger.info("Sending initial heartbeat for time sync...");
     sendHeartbeat(0);
@@ -95,8 +116,10 @@ void SensorMode::onStart() {
 }
 
 void SensorMode::onLoop() {
-    // Nothing special needed in the main loop
-    // Sensor reading is handled by periodic task
+    // Process any pending PMU messages (moved out of IRQ context)
+    if (pmu_available_ && pmu_client_) {
+        pmu_client_->process();
+    }
 }
 
 void SensorMode::readAndStoreSensorData(uint32_t current_time) {
@@ -176,6 +199,8 @@ void SensorMode::checkAndTransmitBacklog(uint32_t current_time) {
 
     if (untransmitted_count == 0) {
         logger.debug("No backlog to transmit");
+        // Signal ready for sleep since there's no work to do
+        signalReadyForSleep();
         return;
     }
 
@@ -240,6 +265,12 @@ bool SensorMode::transmitBatch(const SensorDataRecord* records, size_t count) {
                 if (flash_buffer_->advanceReadIndex(static_cast<uint32_t>(count))) {
                     logger.info("Batch ACK received (seq=%d): %zu records transmitted",
                                seq_num, count);
+
+                    // Check if we've cleared all backlog
+                    if (flash_buffer_->getUntransmittedCount() == 0) {
+                        logger.info("All backlog transmitted - ready for sleep");
+                        signalReadyForSleep();
+                    }
                 }
             } else {
                 logger.warn("Batch transmission failed (seq=%d, status=%d), will retry",
@@ -256,4 +287,39 @@ bool SensorMode::transmitBatch(const SensorDataRecord* records, size_t count) {
 
     logger.debug("Sent batch of %zu records (start_index=%lu, seq=%d)", count, start_index, seq);
     return true;
+}
+
+void SensorMode::signalReadyForSleep() {
+    if (!pmu_available_ || !pmu_client_) {
+        logger.debug("PMU not available, skipping ready for sleep signal");
+        return;
+    }
+
+    pmu_logger.info("Signaling ready for sleep");
+    pmu_client_->getProtocol().readyForSleep([](bool success, PMU::ErrorCode error) {
+        if (success) {
+            pmu_logger.info("Ready for sleep acknowledged");
+        } else {
+            pmu_logger.error("Ready for sleep failed: error %d", static_cast<int>(error));
+        }
+    });
+}
+
+void SensorMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry* entry) {
+    switch (reason) {
+        case PMU::WakeReason::Periodic:
+            pmu_logger.info("Periodic wake - sensor will read and transmit data");
+            // Sensor mode handles this automatically via periodic tasks
+            // readyForSleep will be called when backlog is clear
+            break;
+
+        case PMU::WakeReason::Scheduled:
+            // Sensor mode doesn't have scheduled events, but log if received
+            pmu_logger.warn("Unexpected scheduled wake in sensor mode");
+            break;
+
+        case PMU::WakeReason::External:
+            pmu_logger.info("External wake trigger");
+            break;
+    }
 }

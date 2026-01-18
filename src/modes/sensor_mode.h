@@ -3,6 +3,7 @@
 #include "application_mode.h"
 #include "../hal/cht832x.h"
 #include "../hal/external_flash.h"
+#include "../hal/pmu_client.h"
 #include "../storage/sensor_flash_buffer.h"
 #include <memory>
 
@@ -26,6 +27,8 @@ private:
     std::unique_ptr<CHT832X> sensor_;
     std::unique_ptr<ExternalFlash> external_flash_;
     std::unique_ptr<SensorFlashBuffer> flash_buffer_;
+    PmuClient* pmu_client_ = nullptr;
+    bool pmu_available_ = false;
 
     // I2C pin configuration for CHT832X sensor
     static constexpr uint PIN_I2C_SDA = 26;  // GPIO26 (A0)
@@ -61,4 +64,17 @@ private:
      * @return true if transmission successful
      */
     bool transmitBatch(const SensorDataRecord* records, size_t count);
+
+    /**
+     * @brief Signal to PMU that RP2040 is ready for sleep
+     * Called when there's no more work to do (no backlog to transmit)
+     */
+    void signalReadyForSleep();
+
+    /**
+     * @brief Handle PMU wake notification
+     * @param reason Wake reason from PMU
+     * @param entry Schedule entry (if scheduled wake)
+     */
+    void handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry* entry);
 };
