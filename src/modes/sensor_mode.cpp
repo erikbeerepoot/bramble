@@ -127,11 +127,28 @@ void SensorMode::onLoop() {
         backlog_check_requested_ = false;
 
         // Take a sensor reading now that RTC is synced
-        pmu_logger.info("RTC synced - taking sensor reading before backlog check");
+        pmu_logger.info("RTC synced - taking sensor reading");
         readAndStoreSensorData(to_ms_since_boot(get_absolute_time()));
 
-        pmu_logger.info("Processing backlog check");
-        checkAndTransmitBacklog(to_ms_since_boot(get_absolute_time()));
+        // Check if it's time to transmit (every 15 minutes)
+        // Use last_sync_timestamp from flash metadata (persists across power cycles)
+        uint32_t now = getUnixTimestamp();
+        SensorFlashMetadata stats;
+        uint32_t last_sync = 0;
+        if (flash_buffer_ && flash_buffer_->getStatistics(stats)) {
+            last_sync = stats.last_sync_timestamp;
+        }
+        uint32_t elapsed = now - last_sync;
+
+        if (elapsed >= TRANSMIT_INTERVAL_S || last_sync == 0) {
+            pmu_logger.info("Transmit interval reached (%lu s) - checking backlog", elapsed);
+            checkAndTransmitBacklog(to_ms_since_boot(get_absolute_time()));
+            // Note: last_sync_timestamp is updated in checkAndTransmitBacklog on success
+        } else {
+            pmu_logger.info("Not time to transmit yet (%lu s / %lu s) - going to sleep",
+                          elapsed, TRANSMIT_INTERVAL_S);
+            signalReadyForSleep();
+        }
     }
 
     // Handle deferred sleep signal (outside callback chain for stack safety)
@@ -229,6 +246,8 @@ void SensorMode::checkAndTransmitBacklog(uint32_t current_time) {
 
     if (untransmitted_count == 0) {
         logger.debug("No backlog to transmit");
+        // Update last sync timestamp in flash - nothing to send counts as success
+        flash_buffer_->updateLastSync(getUnixTimestamp());
         // Signal ready for sleep since there's no work to do
         signalReadyForSleep();
         return;
@@ -258,8 +277,8 @@ void SensorMode::checkAndTransmitBacklog(uint32_t current_time) {
     // Transmit the batch
     if (transmitBatch(records, actual_count)) {
         logger.info("Batch transmission successful");
-        // Update last sync timestamp
-        flash_buffer_->updateLastSync(static_cast<uint32_t>(current_time / 1000));
+        // Update last sync timestamp in flash (persists across power cycles)
+        flash_buffer_->updateLastSync(getUnixTimestamp());
     } else {
         logger.warn("Batch transmission failed, will retry later");
     }

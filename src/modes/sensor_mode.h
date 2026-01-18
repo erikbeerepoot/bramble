@@ -40,6 +40,7 @@ private:
     static constexpr uint32_t SENSOR_READ_INTERVAL_MS = 30000;   // 30 seconds
     static constexpr uint32_t HEARTBEAT_INTERVAL_MS = 60000;     // 60 seconds
     static constexpr uint32_t BACKLOG_TX_INTERVAL_MS = 120000;   // 2 minutes
+    static constexpr uint32_t TRANSMIT_INTERVAL_S = 600;         // 10 minutes between transmissions
 
     /**
      * @brief Read sensor and store data to flash (no immediate TX)
