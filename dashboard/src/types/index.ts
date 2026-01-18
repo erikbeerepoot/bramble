@@ -64,6 +64,11 @@ export interface TimeRangeConfig {
   seconds: number;
 }
 
+export interface CustomTimeRange {
+  startTime: number;
+  endTime: number;
+}
+
 export const TIME_RANGES: Record<Exclude<TimeRange, 'custom'>, TimeRangeConfig> = {
   '1h': { label: 'Last Hour', seconds: 3600 },
   '6h': { label: 'Last 6 Hours', seconds: 21600 },
