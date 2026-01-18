@@ -28,6 +28,7 @@ protected:
     HubRouter* hub_router_;
     NetworkStats* network_stats_;
     std::unique_ptr<LEDPattern> led_pattern_;
+    std::unique_ptr<LEDPattern> operational_pattern_;  // Pattern to switch to after RTC sync
     PeriodicTaskManager task_manager_;
     bool rtc_synced_ = false;  // True after receiving heartbeat response with time
     
@@ -114,4 +115,12 @@ protected:
      * @return Unix timestamp (seconds since 1970-01-01), or 0 if RTC not synced
      */
     uint32_t getUnixTimestamp() const;
+
+    /**
+     * @brief Switch from initialization pattern to operational pattern
+     *
+     * Called automatically after RTC sync. Modes should set operational_pattern_
+     * in onStart() to define the pattern used after initialization completes.
+     */
+    void switchToOperationalPattern();
 };

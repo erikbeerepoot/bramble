@@ -119,6 +119,9 @@ void ApplicationMode::onHeartbeatResponse(const HeartbeatResponsePayload* payloa
         rtc_synced_ = true;
         logger.info("RTC synchronized: %04d-%02d-%02d %02d:%02d:%02d (dow=%d)",
                dt.year, dt.month, dt.day, dt.hour, dt.min, dt.sec, dt.dotw);
+
+        // Switch to operational LED pattern now that we're initialized
+        switchToOperationalPattern();
     } else {
         logger.error("Failed to set RTC");
     }
@@ -157,3 +160,9 @@ uint32_t ApplicationMode::getUnixTimestamp() const {
     return days * 86400UL + dt.hour * 3600UL + dt.min * 60UL + dt.sec;
 }
 
+void ApplicationMode::switchToOperationalPattern() {
+    if (operational_pattern_) {
+        led_pattern_ = std::move(operational_pattern_);
+        logger.info("Switched to operational LED pattern");
+    }
+}
