@@ -16,7 +16,7 @@ void SensorMode::onStart() {
     logger.info("=== SENSOR MODE ACTIVE ===");
     logger.info("- Temperature/humidity data logger");
     logger.info("- 30 second reading interval");
-    logger.info("- Purple LED breathing pattern");
+    logger.info("- Orange LED blink (init) -> Purple breathing (operational)");
 
     // Initialize external flash for sensor data storage
     // Flash shares SPI1 with LoRa (MISO=GPIO8, SCK=GPIO14, MOSI=GPIO15)
@@ -59,8 +59,10 @@ void SensorMode::onStart() {
                     PIN_I2C_SCL, PIN_I2C_SDA);
     }
 
-    // Purple breathing pattern for sensor nodes
-    led_pattern_ = std::make_unique<BreathingPattern>(led_, 128, 0, 255);
+    // Start with orange blinking pattern while waiting for RTC sync
+    led_pattern_ = std::make_unique<BlinkingPattern>(led_, 255, 165, 0, 250, 250);
+    // Store operational pattern (purple breathing) for after RTC sync
+    operational_pattern_ = std::make_unique<BreathingPattern>(led_, 128, 0, 255);
 
     // Send initial heartbeat immediately to sync RTC before first sensor reading
     logger.info("Sending initial heartbeat for time sync...");
