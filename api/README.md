@@ -136,6 +136,40 @@ Environment variables:
 | `HOST` | `0.0.0.0` | API server host |
 | `PORT` | `5000` | API server port |
 | `DEBUG` | `False` | Enable debug logging |
+| `QUEUE_DB_PATH` | `/data/queue.db` | Path to command queue SQLite database |
+| `QUEUE_IMMEDIATE` | `false` | Run queue synchronously (for testing) |
+| `SENSOR_DB_PATH` | `/data/sensor_data.duckdb` | Path to sensor data database |
+
+## Architecture
+
+### Command Queue
+
+Commands to nodes (schedules, wake intervals, datetime) are processed through a persistent queue that survives container restarts:
+
+```
+┌─────────────┐     ┌──────────────┐     ┌─────────────────────────┐
+│ Flask API   │     │ huey queue   │     │ huey worker (consumer)  │
+│             │ ──► │ (SQLite)     │ ──► │                         │
+│ POST /...   │     │ /data/queue.db     │ send_hub_command()      │
+│ returns 202 │     │              │     │   ├─ serial.send()      │
+└─────────────┘     └──────────────┘     │   └─ retry on failure   │
+                                         └─────────────────────────┘
+```
+
+- Commands return immediately with a `task_id` (HTTP 202 Accepted)
+- Worker processes commands asynchronously with retries (3 attempts, 30s delay)
+- Queue persists in SQLite, surviving container restarts
+- Use `/api/tasks/<task_id>` to check command status
+
+**Docker Compose** runs both the API and worker containers:
+```bash
+docker-compose up  # Starts api + worker
+```
+
+**Local testing** can use synchronous mode:
+```bash
+QUEUE_IMMEDIATE=true uv run python app.py
+```
 
 ## API Endpoints
 
@@ -237,13 +271,14 @@ Environment variables:
 - `days`: Day bitmask (127 = all days, 1 = Sunday, 2 = Monday, etc.)
 - `valve`: Valve ID (0+)
 
-**Response:**
+**Response (202 Accepted):**
 ```json
 {
   "status": "queued",
+  "task_id": "abc123",
   "node_address": 42,
   "schedule": { ... },
-  "position": 1
+  "message": "Command queued for delivery"
 }
 ```
 
@@ -251,12 +286,14 @@ Environment variables:
 
 **DELETE** `/api/nodes/{addr}/schedules/{index}`
 
+**Response (202 Accepted):**
 ```json
 {
   "status": "queued",
+  "task_id": "def456",
   "node_address": 42,
   "schedule_index": 0,
-  "position": 2
+  "message": "Command queued for delivery"
 }
 ```
 
@@ -271,13 +308,49 @@ Environment variables:
 }
 ```
 
-**Response:**
+**Response (202 Accepted):**
 ```json
 {
   "status": "queued",
+  "task_id": "ghi789",
   "node_address": 42,
   "interval_seconds": 60,
-  "position": 3
+  "message": "Command queued for delivery"
+}
+```
+
+### Check Task Status
+
+**GET** `/api/tasks/{task_id}`
+
+Check the status of a queued command.
+
+**Response (pending):**
+```json
+{
+  "status": "pending",
+  "task_id": "abc123"
+}
+```
+
+**Response (completed):**
+```json
+{
+  "status": "completed",
+  "task_id": "abc123",
+  "result": {
+    "status": "success",
+    "response": ["QUEUED SET_SCHEDULE 42 1"]
+  }
+}
+```
+
+**Response (failed):**
+```json
+{
+  "status": "failed",
+  "task_id": "abc123",
+  "error": "Hub timeout"
 }
 ```
 
