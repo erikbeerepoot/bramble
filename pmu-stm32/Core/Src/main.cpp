@@ -61,13 +61,19 @@ static uint16_t wateringDuration = 0;
 // RTC wakeup flag - set by interrupt, handled in main loop
 static volatile bool rtcWakeupFlag = false;
 
+// Periodic wake state tracking
+static bool periodicWakeActive = false;
+static uint32_t periodicWakeStartTime = 0;
+static constexpr uint32_t PERIODIC_WAKE_TIMEOUT_MS = 120000;  // 2 minutes
+
 // Protocol callbacks
 static void uartSendCallback(const uint8_t* data, uint8_t length);
 static void setWakeIntervalCallback(uint32_t seconds);
 static void keepAwakeCallback(uint16_t seconds);
+static void readyForSleepCallback();
 
 // Protocol instance
-static PMU::Protocol protocol(uartSendCallback, setWakeIntervalCallback, keepAwakeCallback);
+static PMU::Protocol protocol(uartSendCallback, setWakeIntervalCallback, keepAwakeCallback, readyForSleepCallback);
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -192,8 +198,24 @@ int main(void)
         led.off();
         HAL_Delay(900);  // Check every second
       }
+    } else if (periodicWakeActive) {
+      // Waiting for RP2040 to signal ready for sleep
+      uint32_t elapsed = HAL_GetTick() - periodicWakeStartTime;
+
+      if (elapsed >= PERIODIC_WAKE_TIMEOUT_MS) {
+        // Timeout - RP2040 didn't signal ready in time, force power down
+        dcdc.disable();
+        periodicWakeActive = false;
+        periodicWakeStartTime = 0;
+      } else {
+        // Still waiting - blink ORANGE to show periodic wake in progress
+        led.setColor(LED::ORANGE);
+        HAL_Delay(100);
+        led.off();
+        HAL_Delay(900);  // Check every second
+      }
     } else {
-      // Not watering - normal sleep/wake cycle
+      // Not watering or periodic wake - normal sleep/wake cycle
       // Quick LED pulse to show we're awake
       led.setColor(LED::GREEN);
       HAL_Delay(100);
@@ -519,11 +541,9 @@ static void handleRTCWakeup(void) {
         // Send periodic wake notification
         protocol.sendWakeNotification(PMU::WakeReason::Periodic);
 
-        // Small delay to ensure message is sent
-        HAL_Delay(5000);
-
-        // Power down RP2040 - periodic wake is complete
-        // dcdc.disable();
+        // Start periodic wake tracking - RP2040 will signal when done
+        periodicWakeActive = true;
+        periodicWakeStartTime = HAL_GetTick();
     }
 }
 
@@ -580,6 +600,19 @@ static void keepAwakeCallback(uint16_t seconds)
     // TODO: Implement keep-awake timer
     // For now, we could just delay, but better to use a timer
     // This prevents entering sleep mode for the specified duration
+}
+
+/**
+ * @brief Ready for sleep callback - RP2040 signals work complete
+ */
+static void readyForSleepCallback()
+{
+    if (periodicWakeActive) {
+        // RP2040 is done with its work - power it down
+        dcdc.disable();
+        periodicWakeActive = false;
+        periodicWakeStartTime = 0;
+    }
 }
 
 /* USER CODE END 4 */
