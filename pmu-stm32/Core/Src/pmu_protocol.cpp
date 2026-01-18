@@ -380,9 +380,9 @@ uint8_t MessageBuilder::calculateChecksum() const {
 // ============================================================================
 
 Protocol::Protocol(UartSendCallback uartSend, SetWakeCallback setWake,
-                   KeepAwakeCallback keepAwake)
+                   KeepAwakeCallback keepAwake, ReadyForSleepCallback readyForSleep)
     : wakeInterval_(15), uartSend_(uartSend), setWake_(setWake),
-      keepAwake_(keepAwake) {
+      keepAwake_(keepAwake), readyForSleep_(readyForSleep) {
 }
 
 void Protocol::processReceivedByte(uint8_t byte) {
@@ -413,6 +413,9 @@ void Protocol::processReceivedByte(uint8_t byte) {
                 break;
             case Command::SetDateTime:
                 handleSetDateTime(data, dataLen);
+                break;
+            case Command::ReadyForSleep:
+                handleReadyForSleep();
                 break;
             default:
                 sendNack(ErrorCode::InvalidParam);
@@ -593,6 +596,16 @@ void Protocol::handleSetDateTime(const uint8_t* data, uint8_t length) {
     }
 
     sendAck();
+}
+
+void Protocol::handleReadyForSleep() {
+    // RP2040 signals it's done with work and ready for power down
+    // Send ACK first, then call the callback
+    sendAck();
+
+    if (readyForSleep_) {
+        readyForSleep_();
+    }
 }
 
 // Response senders

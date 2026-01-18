@@ -291,6 +291,12 @@ void Protocol::setDateTime(const DateTime& dateTime, CommandResultCallback callb
     sendMessage();
 }
 
+void Protocol::readyForSleep(CommandResultCallback callback) {
+    pendingCommandCallback_ = callback;
+    builder_.startMessage(Command::ReadyForSleep);
+    sendMessage();
+}
+
 // Callback setters for unsolicited messages
 
 void Protocol::onWakeNotification(WakeNotificationCallback callback) {

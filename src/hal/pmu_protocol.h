@@ -14,7 +14,8 @@ enum class Command : uint8_t {
     GetSchedule = 0x13,
     ClearSchedule = 0x14,
     KeepAwake = 0x15,
-    SetDateTime = 0x16  // Set RTC date/time (7 bytes: year, month, day, weekday, hour, minute, second)
+    SetDateTime = 0x16,  // Set RTC date/time (7 bytes: year, month, day, weekday, hour, minute, second)
+    ReadyForSleep = 0x17  // RP2040 signals work complete, ready for power down
 };
 
 // Response codes (STM32 → RP2040)
@@ -201,6 +202,7 @@ public:
     void clearSchedule(uint8_t index, CommandResultCallback callback = nullptr);  // 0xFF to clear all
     void keepAwake(uint16_t seconds, CommandResultCallback callback = nullptr);
     void setDateTime(const DateTime& dateTime, CommandResultCallback callback = nullptr);
+    void readyForSleep(CommandResultCallback callback = nullptr);  // Signal work complete, ready for power down
 
     // Set callback handlers for unsolicited responses
     void onWakeNotification(WakeNotificationCallback callback);

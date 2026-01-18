@@ -14,7 +14,8 @@ enum class Command : uint8_t {
     GetSchedule = 0x13,
     ClearSchedule = 0x14,
     KeepAwake = 0x15,
-    SetDateTime = 0x16  // Set RTC date/time (7 bytes: year, month, day, weekday, hour, minute, second)
+    SetDateTime = 0x16,  // Set RTC date/time (7 bytes: year, month, day, weekday, hour, minute, second)
+    ReadyForSleep = 0x17  // RP2040 signals work complete, ready for power down
 };
 
 // Response codes (STM32 → RP2040)
@@ -227,8 +228,10 @@ public:
     using UartSendCallback = void(*)(const uint8_t* data, uint8_t length);
     using SetWakeCallback = void(*)(uint32_t seconds);
     using KeepAwakeCallback = void(*)(uint16_t seconds);
+    using ReadyForSleepCallback = void(*)();
 
-    Protocol(UartSendCallback uartSend, SetWakeCallback setWake, KeepAwakeCallback keepAwake);
+    Protocol(UartSendCallback uartSend, SetWakeCallback setWake, KeepAwakeCallback keepAwake,
+             ReadyForSleepCallback readyForSleep = nullptr);
 
     // Process received byte from UART
     void processReceivedByte(uint8_t byte);
@@ -257,6 +260,7 @@ private:
     UartSendCallback uartSend_;
     SetWakeCallback setWake_;
     KeepAwakeCallback keepAwake_;
+    ReadyForSleepCallback readyForSleep_;
 
     // Command handlers
     void handleSetWakeInterval(const uint8_t* data, uint8_t length);
@@ -266,6 +270,7 @@ private:
     void handleClearSchedule(const uint8_t* data, uint8_t length);
     void handleKeepAwake(const uint8_t* data, uint8_t length);
     void handleSetDateTime(const uint8_t* data, uint8_t length);
+    void handleReadyForSleep();
 
     // Response senders
     void sendAck();
