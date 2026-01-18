@@ -1,0 +1,133 @@
+name: Build Firmware
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'pmu-stm32/**'
+      - 'CMakeLists.txt'
+      - 'pico_sdk_import.cmake'
+      - '.github/workflows/firmware-build.yml'
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'pmu-stm32/**'
+      - 'CMakeLists.txt'
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  build-rp2040:
+    name: Build RP2040 Firmware
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        variant: [SENSOR, IRRIGATION, CONTROLLER, HUB]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install ARM toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-none-eabi libnewlib-arm-none-eabi
+
+      - name: Install Pico SDK
+        run: |
+          git clone --depth 1 --branch 2.1.1 https://github.com/raspberrypi/pico-sdk.git $HOME/pico-sdk
+          cd $HOME/pico-sdk && git submodule update --init
+          echo "PICO_SDK_PATH=$HOME/pico-sdk" >> $GITHUB_ENV
+
+      - name: Configure CMake
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DHARDWARE_VARIANT=${{ matrix.variant }}
+
+      - name: Build firmware
+        run: cmake --build build --parallel
+
+      - name: Rename artifacts
+        run: |
+          mkdir -p artifacts
+          # Find the UF2 file (name depends on variant)
+          find build -name "*.uf2" -exec cp {} artifacts/bramble_${{ matrix.variant }}.uf2 \;
+
+      - name: Upload firmware artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-rp2040-${{ matrix.variant }}
+          path: artifacts/*.uf2
+          if-no-files-found: error
+
+  build-stm32:
+    name: Build STM32 PMU Firmware
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install ARM toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-none-eabi libnewlib-arm-none-eabi
+
+      - name: Configure CMake
+        run: |
+          cd pmu-stm32
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE=cmake/gcc-arm-none-eabi.cmake
+
+      - name: Build firmware
+        run: |
+          cd pmu-stm32
+          cmake --build build --parallel
+
+      - name: Prepare artifacts
+        run: |
+          mkdir -p artifacts
+          cp pmu-stm32/build/pmu-stm32.bin artifacts/ 2>/dev/null || true
+          cp pmu-stm32/build/pmu-stm32.hex artifacts/ 2>/dev/null || true
+          cp pmu-stm32/build/pmu-stm32.elf artifacts/ 2>/dev/null || true
+
+      - name: Upload firmware artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-stm32-pmu
+          path: artifacts/*
+          if-no-files-found: warn
+
+  release-artifacts:
+    name: Attach Firmware to Release
+    needs: [build-rp2040, build-stm32]
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List artifacts
+        run: find artifacts -type f
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            artifacts/*.uf2
+            artifacts/*.bin
+            artifacts/*.hex
