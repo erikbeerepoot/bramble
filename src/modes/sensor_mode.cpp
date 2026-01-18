@@ -347,6 +347,12 @@ void SensorMode::signalReadyForSleep() {
         return;
     }
 
+    // Flush flash buffer metadata before power down
+    // Without this, write_index isn't persisted and records get corrupted on next boot
+    if (flash_buffer_) {
+        flash_buffer_->flush();
+    }
+
     // Set flag for deferred processing in onLoop()
     // Don't call PMU protocol directly here - may be inside callback chain
     pmu_logger.debug("Requesting sleep (will send in main loop)");

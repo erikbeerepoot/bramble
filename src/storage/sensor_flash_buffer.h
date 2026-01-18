@@ -156,6 +156,17 @@ public:
     bool updateLastSync(uint32_t timestamp);
 
     /**
+     * @brief Flush metadata to flash
+     *
+     * Call this before power down to ensure write_index is persisted.
+     * Without this, records written since last flush may be overwritten
+     * on next boot (NOR flash corruption).
+     *
+     * @return true if flush successful
+     */
+    bool flush();
+
+    /**
      * @brief Reset the circular buffer (DANGEROUS - erases all data)
      *
      * Erases metadata sector and reinitializes with fresh metadata.

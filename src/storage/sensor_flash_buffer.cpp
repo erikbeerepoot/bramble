@@ -323,6 +323,13 @@ bool SensorFlashBuffer::updateLastSync(uint32_t timestamp) {
     return saveMetadata();
 }
 
+bool SensorFlashBuffer::flush() {
+    if (!initialized_) {
+        return false;
+    }
+    return saveMetadata();
+}
+
 bool SensorFlashBuffer::reset() {
     logger_.warn("Resetting sensor flash buffer - all data will be lost!");
 
