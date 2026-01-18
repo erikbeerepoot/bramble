@@ -85,15 +85,10 @@ void PmuClient::process() {
     }
 
     // Process all bytes from the ring buffer
-    bool had_bytes = (rxTail_ != rxHead_);
     while (rxTail_ != rxHead_) {
         uint8_t byte = rxBuffer_[rxTail_];
         rxTail_ = (rxTail_ + 1) % RX_BUFFER_SIZE;
-        pmu_client_log.info("RX byte: 0x%02X", byte);
         protocol_.processReceivedByte(byte);
-    }
-    if (had_bytes) {
-        pmu_client_log.info("Done processing bytes");
     }
 }
 

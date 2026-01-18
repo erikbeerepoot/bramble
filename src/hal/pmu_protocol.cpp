@@ -19,13 +19,11 @@ bool MessageParser::processByte(uint8_t byte) {
     switch (state_) {
         case State::WaitStart:
             if (byte == START_BYTE) {
-                log.info("Got START_BYTE");
                 bytesRead_ = 0;
                 complete_ = false;
                 state_ = State::ReadLength;
-            } else {
-                log.warn("Waiting for 0xAA, got 0x%02X", byte);
             }
+            // Silently ignore non-start bytes (normal during idle)
             break;
 
         case State::ReadLength:
