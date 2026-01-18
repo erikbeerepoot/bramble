@@ -1,4 +1,7 @@
 #include "pmu_client.h"
+#include "hal/logger.h"
+
+static Logger pmu_client_log("PMU_RX");
 
 // Static instance for IRQ callback
 PmuClient* PmuClient::instance_ = nullptr;
@@ -13,7 +16,8 @@ PmuClient::PmuClient(uart_inst_t* uart_inst, uint tx_pin, uint rx_pin, uint baud
           this->uartSend(data, length);
       }),
       rxHead_(0),
-      rxTail_(0) {
+      rxTail_(0),
+      lastErrorFlags_(0) {
 
     // Set static instance for IRQ handling
     instance_ = this;
@@ -35,8 +39,13 @@ bool PmuClient::init() {
     gpio_set_function(txPin_, GPIO_FUNC_UART);
     gpio_set_function(rxPin_, GPIO_FUNC_UART);
 
-    // Set UART format: 8 data bits, 1 stop bit, no parity
-    uart_set_format(uart_, 8, 1, UART_PARITY_NONE);
+    // Enable pull-up on RX pin for better signal integrity
+    // UART idle state is high, pull-up helps prevent noise
+    gpio_pull_up(rxPin_);
+
+    // Set UART format: 8 data bits, 2 stop bits, no parity
+    // Must match STM32 LPUART configuration (UART_STOPBITS_2)
+    uart_set_format(uart_, 8, 2, UART_PARITY_NONE);
 
     // Enable FIFO
     uart_set_fifo_enabled(uart_, true);
@@ -65,6 +74,16 @@ void PmuClient::uartSend(const uint8_t* data, uint8_t length) {
 }
 
 void PmuClient::process() {
+    // Check for UART errors
+    if (lastErrorFlags_ != 0) {
+        pmu_client_log.warn("UART errors: FE=%d PE=%d BE=%d OE=%d",
+            (lastErrorFlags_ & 1) ? 1 : 0,
+            (lastErrorFlags_ & 2) ? 1 : 0,
+            (lastErrorFlags_ & 4) ? 1 : 0,
+            (lastErrorFlags_ & 8) ? 1 : 0);
+        lastErrorFlags_ = 0;
+    }
+
     // Process all bytes from the ring buffer
     while (rxTail_ != rxHead_) {
         uint8_t byte = rxBuffer_[rxTail_];
@@ -80,7 +99,20 @@ void PmuClient::onUartRxIrq() {
 
     // Read all available bytes from FIFO and store in ring buffer
     while (uart_is_readable(instance_->uart_)) {
-        uint8_t byte = uart_getc(instance_->uart_);
+        // Check for framing/parity errors before reading
+        uint32_t dr = uart_get_hw(instance_->uart_)->dr;
+        uint8_t byte = dr & 0xFF;
+        bool frame_error = (dr & UART_UARTDR_FE_BITS) != 0;
+        bool parity_error = (dr & UART_UARTDR_PE_BITS) != 0;
+        bool break_error = (dr & UART_UARTDR_BE_BITS) != 0;
+        bool overrun_error = (dr & UART_UARTDR_OE_BITS) != 0;
+
+        // Log any errors (only in IRQ context, keep it brief)
+        if (frame_error || parity_error || break_error || overrun_error) {
+            // Set a flag to log later (can't log from IRQ)
+            instance_->lastErrorFlags_ = (frame_error ? 1 : 0) | (parity_error ? 2 : 0) |
+                                         (break_error ? 4 : 0) | (overrun_error ? 8 : 0);
+        }
 
         size_t next_head = (instance_->rxHead_ + 1) % RX_BUFFER_SIZE;
         if (next_head != instance_->rxTail_) {

@@ -23,6 +23,7 @@ bool MessageParser::processByte(uint8_t byte) {
                 complete_ = false;
                 state_ = State::ReadLength;
             }
+            // Silently ignore non-start bytes (normal during idle)
             break;
 
         case State::ReadLength:
@@ -288,6 +289,12 @@ void Protocol::setDateTime(const DateTime& dateTime, CommandResultCallback callb
     builder_.addByte(dateTime.hour);
     builder_.addByte(dateTime.minute);
     builder_.addByte(dateTime.second);
+    sendMessage();
+}
+
+void Protocol::readyForSleep(CommandResultCallback callback) {
+    pendingCommandCallback_ = callback;
+    builder_.startMessage(Command::ReadyForSleep);
     sendMessage();
 }
 

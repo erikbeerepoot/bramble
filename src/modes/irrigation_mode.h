@@ -49,6 +49,9 @@ private:
     void sendCheckUpdates();
     void onUpdateAvailable(const UpdateAvailablePayload* payload) override;
 
+    // Power management
+    void signalReadyForSleep();
+
 public:
     using ApplicationMode::ApplicationMode;
 

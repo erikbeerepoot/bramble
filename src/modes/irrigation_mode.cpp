@@ -281,8 +281,9 @@ void IrrigationMode::onUpdateAvailable(const UpdateAvailablePayload* payload) {
 
     // Check if there are no more updates
     if (payload->has_update == 0) {
-        logger.info("No more updates - allowing sleep");
+        logger.info("No more updates - signaling ready for sleep");
         update_state_.reset();
+        signalReadyForSleep();
         return;
     }
 
@@ -437,4 +438,20 @@ void IrrigationMode::attemptDeferredRegistration() {
     } else {
         logger.error("Failed to send registration request");
     }
+}
+
+void IrrigationMode::signalReadyForSleep() {
+    if (!pmu_available_ || !pmu_client_) {
+        logger.debug("PMU not available, skipping ready for sleep signal");
+        return;
+    }
+
+    pmu_logger.info("Signaling ready for sleep");
+    pmu_client_->getProtocol().readyForSleep([](bool success, PMU::ErrorCode error) {
+        if (success) {
+            pmu_logger.info("Ready for sleep acknowledged");
+        } else {
+            pmu_logger.error("Ready for sleep failed: error %d", static_cast<int>(error));
+        }
+    });
 }

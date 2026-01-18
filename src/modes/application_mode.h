@@ -37,7 +37,7 @@ public:
                    AddressManager* address_manager = nullptr,
                    HubRouter* hub_router = nullptr,
                    NetworkStats* network_stats = nullptr,
-                   bool use_multicore = true)
+                   bool use_multicore = false)
         : messenger_(messenger), lora_(lora), led_(led),
           address_manager_(address_manager), hub_router_(hub_router),
           network_stats_(network_stats), task_manager_(use_multicore) {}
