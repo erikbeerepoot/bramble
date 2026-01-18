@@ -92,12 +92,18 @@ jobs:
           cd pmu-stm32
           cmake --build build --parallel
 
+      - name: Generate binary outputs
+        run: |
+          cd pmu-stm32/build
+          arm-none-eabi-objcopy -O binary pmu-stm32.elf pmu-stm32.bin
+          arm-none-eabi-objcopy -O ihex pmu-stm32.elf pmu-stm32.hex
+
       - name: Prepare artifacts
         run: |
           mkdir -p artifacts
-          cp pmu-stm32/build/pmu-stm32.bin artifacts/ 2>/dev/null || true
-          cp pmu-stm32/build/pmu-stm32.hex artifacts/ 2>/dev/null || true
-          cp pmu-stm32/build/pmu-stm32.elf artifacts/ 2>/dev/null || true
+          cp pmu-stm32/build/pmu-stm32.bin artifacts/
+          cp pmu-stm32/build/pmu-stm32.hex artifacts/
+          cp pmu-stm32/build/pmu-stm32.elf artifacts/
 
       - name: Upload firmware artifact
         uses: actions/upload-artifact@v4
