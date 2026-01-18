@@ -4,6 +4,7 @@
 #include "pico/stdlib.h"
 #include "hardware/uart.h"
 #include "hardware/irq.h"
+#include "hardware/structs/uart.h"
 #include "pmu_protocol.h"
 
 /**
@@ -65,6 +66,9 @@ private:
     volatile uint8_t rxBuffer_[RX_BUFFER_SIZE];
     volatile size_t rxHead_;
     volatile size_t rxTail_;
+
+    // Error flags from last receive (for debugging)
+    volatile uint8_t lastErrorFlags_;
 
     // UART send function (captured by lambda in protocol)
     void uartSend(const uint8_t* data, uint8_t length);

@@ -68,8 +68,8 @@ void SensorMode::onStart() {
     // Purple breathing pattern for sensor nodes
     led_pattern_ = std::make_unique<BreathingPattern>(led_, 128, 0, 255);
 
-    // Initialize PMU client
-    pmu_client_ = new PmuClient(PMU_UART_ID, PMU_UART_TX_PIN, PMU_UART_RX_PIN, 9600);
+    // Initialize PMU client at 2200 baud (measured actual STM32 rate from logic analyzer)
+    pmu_client_ = new PmuClient(PMU_UART_ID, PMU_UART_TX_PIN, PMU_UART_RX_PIN, 2200);
     pmu_available_ = pmu_client_->init();
 
     if (pmu_available_) {
@@ -116,9 +116,31 @@ void SensorMode::onStart() {
 }
 
 void SensorMode::onLoop() {
-    // Process any pending PMU messages (moved out of IRQ context)
+    // Process any pending PMU messages (fills flags, minimal work)
     if (pmu_available_ && pmu_client_) {
         pmu_client_->process();
+    }
+
+    // Handle deferred backlog check (triggered by PMU periodic wake)
+    if (backlog_check_requested_) {
+        backlog_check_requested_ = false;
+        pmu_logger.info("Processing deferred backlog check");
+        checkAndTransmitBacklog(to_ms_since_boot(get_absolute_time()));
+    }
+
+    // Handle deferred sleep signal (outside callback chain for stack safety)
+    if (sleep_requested_) {
+        sleep_requested_ = false;
+        if (pmu_available_ && pmu_client_) {
+            pmu_logger.info("Signaling ready for sleep (deferred)");
+            pmu_client_->getProtocol().readyForSleep([](bool success, PMU::ErrorCode error) {
+                if (success) {
+                    pmu_logger.info("Ready for sleep acknowledged");
+                } else {
+                    pmu_logger.error("Ready for sleep failed: error %d", static_cast<int>(error));
+                }
+            });
+        }
     }
 }
 
@@ -216,7 +238,10 @@ void SensorMode::checkAndTransmitBacklog(uint32_t current_time) {
     }
 
     if (actual_count == 0) {
-        logger.debug("No valid records to transmit");
+        logger.warn("No valid records to transmit - skipping %lu corrupt records", untransmitted_count);
+        // All remaining records are corrupt - advance past them so we don't get stuck
+        flash_buffer_->advanceReadIndex(static_cast<uint32_t>(untransmitted_count));
+        signalReadyForSleep();
         return;
     }
 
@@ -295,22 +320,18 @@ void SensorMode::signalReadyForSleep() {
         return;
     }
 
-    pmu_logger.info("Signaling ready for sleep");
-    pmu_client_->getProtocol().readyForSleep([](bool success, PMU::ErrorCode error) {
-        if (success) {
-            pmu_logger.info("Ready for sleep acknowledged");
-        } else {
-            pmu_logger.error("Ready for sleep failed: error %d", static_cast<int>(error));
-        }
-    });
+    // Set flag for deferred processing in onLoop()
+    // Don't call PMU protocol directly here - may be inside callback chain
+    pmu_logger.debug("Requesting sleep (will send in main loop)");
+    sleep_requested_ = true;
 }
 
 void SensorMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry* entry) {
     switch (reason) {
         case PMU::WakeReason::Periodic:
-            pmu_logger.info("Periodic wake - sensor will read and transmit data");
-            // Sensor mode handles this automatically via periodic tasks
-            // readyForSleep will be called when backlog is clear
+            pmu_logger.info("Periodic wake - requesting backlog check");
+            // Set flag for deferred processing in onLoop() to avoid deep call stack
+            backlog_check_requested_ = true;
             break;
 
         case PMU::WakeReason::Scheduled:

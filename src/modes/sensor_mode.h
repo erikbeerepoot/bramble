@@ -29,6 +29,8 @@ private:
     std::unique_ptr<SensorFlashBuffer> flash_buffer_;
     PmuClient* pmu_client_ = nullptr;
     bool pmu_available_ = false;
+    volatile bool sleep_requested_ = false;   // Deferred sleep signal flag
+    volatile bool backlog_check_requested_ = false;  // Deferred backlog check flag
 
     // I2C pin configuration for CHT832X sensor
     static constexpr uint PIN_I2C_SDA = 26;  // GPIO26 (A0)

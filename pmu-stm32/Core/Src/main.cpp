@@ -139,9 +139,8 @@ int main(void)
   led.init();
   led.off();
 
-  // Initialize DC/DC converter (disabled - only enabled when RP2040 needs power)
+  // Initialize DC/DC converter (start enabled, then we can program the rp2040)
   dcdc.init();
-  // dcdc.disable();
   dcdc.enable();
 
   // Boot indication - flicker green LED
@@ -262,6 +261,10 @@ void SystemClock_Config(void)
     Error_Handler();
   }
 
+  // Explicitly disable HSI divider to ensure 16 MHz clock for LPUART
+  // Without this, HSI might be divided by 4 (4 MHz) causing wrong baud rate
+  CLEAR_BIT(RCC->CR, RCC_CR_HSIDIVEN);
+
   /** Initializes the CPU, AHB and APB buses clocks
   */
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
@@ -276,7 +279,9 @@ void SystemClock_Config(void)
     Error_Handler();
   }
   PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_LPUART1|RCC_PERIPHCLK_RTC;
-  PeriphClkInit.Lpuart1ClockSelection = RCC_LPUART1CLKSOURCE_HSI;  // HSI for STOP mode support
+  // Use PCLK1 (2.097 MHz from MSI) for LPUART - HAL will calculate correct BRR
+  // This avoids HSI clock source issues and provides a known working configuration
+  PeriphClkInit.Lpuart1ClockSelection = RCC_LPUART1CLKSOURCE_PCLK1;
   PeriphClkInit.RTCClockSelection = RCC_RTCCLKSOURCE_LSI;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
   {
@@ -300,9 +305,9 @@ static void MX_LPUART1_UART_Init(void)
 
   /* USER CODE END LPUART1_Init 1 */
   hlpuart1.Instance = LPUART1;
-  hlpuart1.Init.BaudRate = 9600;
+  hlpuart1.Init.BaudRate = 2400;  // Slower rate for better stability
   hlpuart1.Init.WordLength = UART_WORDLENGTH_8B;
-  hlpuart1.Init.StopBits = UART_STOPBITS_1;
+  hlpuart1.Init.StopBits = UART_STOPBITS_2;  // 2 stop bits for better timing margin
   hlpuart1.Init.Parity = UART_PARITY_NONE;
   hlpuart1.Init.Mode = UART_MODE_TX_RX;
   hlpuart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
