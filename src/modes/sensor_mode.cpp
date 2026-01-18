@@ -122,9 +122,15 @@ void SensorMode::onLoop() {
     }
 
     // Handle deferred backlog check (triggered by PMU periodic wake)
-    if (backlog_check_requested_) {
+    // Wait for RTC sync before processing - we need valid timestamps
+    if (backlog_check_requested_ && isRtcSynced()) {
         backlog_check_requested_ = false;
-        pmu_logger.info("Processing deferred backlog check");
+
+        // Take a sensor reading now that RTC is synced
+        pmu_logger.info("RTC synced - taking sensor reading before backlog check");
+        readAndStoreSensorData(to_ms_since_boot(get_absolute_time()));
+
+        pmu_logger.info("Processing backlog check");
         checkAndTransmitBacklog(to_ms_since_boot(get_absolute_time()));
     }
 
@@ -132,6 +138,8 @@ void SensorMode::onLoop() {
     if (sleep_requested_) {
         sleep_requested_ = false;
         if (pmu_available_ && pmu_client_) {
+            // Small delay to ensure STM32 UART RX is ready after sending wake notification
+            sleep_ms(100);
             pmu_logger.info("Signaling ready for sleep (deferred)");
             pmu_client_->getProtocol().readyForSleep([](bool success, PMU::ErrorCode error) {
                 if (success) {
