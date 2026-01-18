@@ -67,6 +67,16 @@ void IrrigationMode::onStart() {
     // Green heartbeat pattern for irrigation nodes
     led_pattern_ = std::make_unique<HeartbeatPattern>(led_, 0, 255, 0);
 
+    // Send initial heartbeat immediately to sync RTC
+    logger.info("Sending initial heartbeat for time sync...");
+    uint32_t uptime = 0;
+    uint8_t battery_level = 85;
+    uint8_t signal_strength = 65;
+    uint8_t active_sensors = CAP_VALVE_CONTROL;
+    uint8_t error_flags = 0;
+    messenger_.sendHeartbeat(HUB_ADDRESS, uptime, battery_level,
+                            signal_strength, active_sensors, error_flags);
+
     // TODO: Re-enable CHECK_UPDATES after registration is working reliably
     // Currently disabled to focus on fixing registration message delivery
     // sleep_ms(500);
