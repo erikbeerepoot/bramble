@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { Node } from './types';
-import { getNodes, checkHealth } from './api/client';
+import type { Node, Zone } from './types';
+import { getNodes, checkHealth, getZones } from './api/client';
 import NodeList from './components/NodeList';
 import NodeDetail from './components/NodeDetail';
 import Settings from './components/Settings';
@@ -9,6 +9,7 @@ type View = 'nodes' | 'settings';
 
 function App() {
   const [nodes, setNodes] = useState<Node[]>([]);
+  const [zones, setZones] = useState<Zone[]>([]);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -29,6 +30,19 @@ function App() {
     }
   }, []);
 
+  const fetchZones = useCallback(async () => {
+    try {
+      const response = await getZones();
+      setZones(response.zones);
+    } catch (err) {
+      console.error('Failed to fetch zones:', err);
+    }
+  }, []);
+
+  const handleZoneCreated = (zone: Zone) => {
+    setZones(prev => [...prev, zone].sort((a, b) => a.name.localeCompare(b.name)));
+  };
+
   const checkConnection = useCallback(async () => {
     try {
       const health = await checkHealth();
@@ -40,6 +54,7 @@ function App() {
 
   useEffect(() => {
     fetchNodes();
+    fetchZones();
     checkConnection();
 
     const interval = setInterval(() => {
@@ -47,7 +62,7 @@ function App() {
     }, 30000);
 
     return () => clearInterval(interval);
-  }, [fetchNodes, checkConnection]);
+  }, [fetchNodes, fetchZones, checkConnection]);
 
   const handleNodeSelect = (node: Node) => {
     setSelectedNode(node);
@@ -104,8 +119,10 @@ function App() {
         ) : selectedNode ? (
           <NodeDetail
             node={selectedNode}
+            zones={zones}
             onBack={handleBackToList}
             onUpdate={handleNodeUpdate}
+            onZoneCreated={handleZoneCreated}
           />
         ) : (
           <>
@@ -127,6 +144,7 @@ function App() {
             ) : (
               <NodeList
                 nodes={nodes}
+                zones={zones}
                 onSelect={handleNodeSelect}
                 onRefresh={fetchNodes}
               />

@@ -44,6 +44,7 @@ class NodeMetadata:
     name: Optional[str] = None
     location: Optional[str] = None
     notes: Optional[str] = None
+    zone_id: Optional[int] = None
     updated_at: Optional[int] = None
 
     def to_dict(self):
@@ -53,7 +54,26 @@ class NodeMetadata:
             'name': self.name,
             'location': self.location,
             'notes': self.notes,
+            'zone_id': self.zone_id,
             'updated_at': self.updated_at
+        }
+
+
+@dataclass
+class Zone:
+    """Represents a zone for grouping nodes."""
+    id: int
+    name: str
+    color: str
+    description: Optional[str] = None
+
+    def to_dict(self):
+        """Convert to dictionary for JSON serialization."""
+        return {
+            'id': self.id,
+            'name': self.name,
+            'color': self.color,
+            'description': self.description
         }
 
 

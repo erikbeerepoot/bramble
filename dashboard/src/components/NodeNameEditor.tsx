@@ -1,24 +1,38 @@
 import { useState } from 'react';
-import type { Node, NodeMetadata } from '../types';
-import { updateNodeMetadata } from '../api/client';
+import type { Node, NodeMetadata, Zone } from '../types';
+import { updateNodeMetadata, setNodeZone } from '../api/client';
+import CreateZoneModal from './CreateZoneModal';
 
 interface NodeNameEditorProps {
   node: Node;
+  zones: Zone[];
   onUpdate: (metadata: NodeMetadata) => void;
+  onZoneCreated: (zone: Zone) => void;
 }
 
-function NodeNameEditor({ node, onUpdate }: NodeNameEditorProps) {
+function NodeNameEditor({ node, zones, onUpdate, onZoneCreated }: NodeNameEditorProps) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(node.metadata?.name || '');
   const [location, setLocation] = useState(node.metadata?.location || '');
   const [notes, setNotes] = useState(node.metadata?.notes || '');
+  const [selectedZoneId, setSelectedZoneId] = useState<number | null>(node.metadata?.zone_id ?? null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showCreateZone, setShowCreateZone] = useState(false);
+
+  const currentZone = zones.find(z => z.id === node.metadata?.zone_id);
 
   const handleSave = async () => {
     setSaving(true);
     setError(null);
     try {
+      // Update zone if changed
+      const currentZoneId = node.metadata?.zone_id ?? null;
+      if (selectedZoneId !== currentZoneId) {
+        await setNodeZone(node.address, selectedZoneId);
+      }
+
+      // Update other metadata
       const updated = await updateNodeMetadata(node.address, {
         name: name || null,
         location: location || null,
@@ -37,8 +51,15 @@ function NodeNameEditor({ node, onUpdate }: NodeNameEditorProps) {
     setName(node.metadata?.name || '');
     setLocation(node.metadata?.location || '');
     setNotes(node.metadata?.notes || '');
+    setSelectedZoneId(node.metadata?.zone_id ?? null);
     setEditing(false);
     setError(null);
+  };
+
+  const handleZoneCreated = (zone: Zone) => {
+    onZoneCreated(zone);
+    setSelectedZoneId(zone.id);
+    setShowCreateZone(false);
   };
 
   if (!editing) {
@@ -57,6 +78,22 @@ function NodeNameEditor({ node, onUpdate }: NodeNameEditorProps) {
           <div>
             <dt className="text-sm text-gray-500">Name</dt>
             <dd className="text-gray-900">{node.metadata?.name || <span className="text-gray-400 italic">Not set</span>}</dd>
+          </div>
+          <div>
+            <dt className="text-sm text-gray-500">Zone</dt>
+            <dd className="text-gray-900">
+              {currentZone ? (
+                <span className="flex items-center space-x-2">
+                  <span
+                    className="w-3 h-3 rounded-full"
+                    style={{ backgroundColor: currentZone.color }}
+                  />
+                  <span>{currentZone.name}</span>
+                </span>
+              ) : (
+                <span className="text-gray-400 italic">Not assigned</span>
+              )}
+            </dd>
           </div>
           <div>
             <dt className="text-sm text-gray-500">Location</dt>
@@ -107,6 +144,44 @@ function NodeNameEditor({ node, onUpdate }: NodeNameEditorProps) {
         </div>
 
         <div>
+          <label htmlFor="zone" className="block text-sm font-medium text-gray-700 mb-1">
+            Zone
+          </label>
+          <div className="flex space-x-2">
+            <select
+              id="zone"
+              value={selectedZoneId ?? ''}
+              onChange={(e) => setSelectedZoneId(e.target.value ? parseInt(e.target.value) : null)}
+              className="input flex-1"
+            >
+              <option value="">No zone</option>
+              {zones.map(zone => (
+                <option key={zone.id} value={zone.id}>
+                  {zone.name}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => setShowCreateZone(true)}
+              className="btn btn-secondary text-sm"
+              title="Create new zone"
+            >
+              + New
+            </button>
+          </div>
+          {selectedZoneId && (
+            <div className="mt-1 flex items-center space-x-2 text-sm text-gray-500">
+              <span
+                className="w-3 h-3 rounded-full"
+                style={{ backgroundColor: zones.find(z => z.id === selectedZoneId)?.color }}
+              />
+              <span>{zones.find(z => z.id === selectedZoneId)?.name}</span>
+            </div>
+          )}
+        </div>
+
+        <div>
           <label htmlFor="location" className="block text-sm font-medium text-gray-700 mb-1">
             Location
           </label>
@@ -151,6 +226,13 @@ function NodeNameEditor({ node, onUpdate }: NodeNameEditorProps) {
           </button>
         </div>
       </div>
+
+      {showCreateZone && (
+        <CreateZoneModal
+          onClose={() => setShowCreateZone(false)}
+          onCreated={handleZoneCreated}
+        />
+      )}
     </div>
   );
 }
