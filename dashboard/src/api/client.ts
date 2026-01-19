@@ -4,6 +4,8 @@ import type {
   NodeMetadata,
   SensorDataResponse,
   NodeStatistics,
+  Zone,
+  ZonesResponse,
 } from '../types';
 
 const API_URL_KEY = 'bramble_api_url';
@@ -94,4 +96,47 @@ export async function checkHealth(): Promise<{
   serial_port: string;
 }> {
   return fetchApi('/api/health');
+}
+
+// Zone API methods
+
+export async function getZones(): Promise<ZonesResponse> {
+  return fetchApi<ZonesResponse>('/api/zones');
+}
+
+export async function createZone(zone: {
+  name: string;
+  color: string;
+  description?: string;
+}): Promise<Zone> {
+  return fetchApi<Zone>('/api/zones', {
+    method: 'POST',
+    body: JSON.stringify(zone),
+  });
+}
+
+export async function updateZone(
+  zoneId: number,
+  updates: Partial<Pick<Zone, 'name' | 'color' | 'description'>>
+): Promise<Zone> {
+  return fetchApi<Zone>(`/api/zones/${zoneId}`, {
+    method: 'PUT',
+    body: JSON.stringify(updates),
+  });
+}
+
+export async function deleteZone(zoneId: number): Promise<void> {
+  await fetchApi<{ message: string }>(`/api/zones/${zoneId}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function setNodeZone(
+  address: number,
+  zoneId: number | null
+): Promise<NodeMetadata> {
+  return fetchApi<NodeMetadata>(`/api/nodes/${address}/zone`, {
+    method: 'PUT',
+    body: JSON.stringify({ zone_id: zoneId }),
+  });
 }

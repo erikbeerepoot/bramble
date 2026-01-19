@@ -1,7 +1,8 @@
-import type { Node } from '../types';
+import type { Node, Zone } from '../types';
 
 interface NodeCardProps {
   node: Node;
+  zone?: Zone;
   onClick: () => void;
 }
 
@@ -12,13 +13,14 @@ function formatLastSeen(seconds: number): string {
   return `${Math.floor(seconds / 86400)}d ago`;
 }
 
-function NodeCard({ node, onClick }: NodeCardProps) {
+function NodeCard({ node, zone, onClick }: NodeCardProps) {
   const displayName = node.metadata?.name || `Node ${node.address}`;
 
   return (
     <div
       onClick={onClick}
-      className="card cursor-pointer hover:shadow-lg transition-shadow border border-gray-200"
+      className="card cursor-pointer hover:shadow-lg transition-shadow border border-gray-200 overflow-hidden"
+      style={zone ? { borderLeftWidth: '4px', borderLeftColor: zone.color } : undefined}
     >
       <div className="flex items-start justify-between">
         <div className="flex-1 min-w-0">
