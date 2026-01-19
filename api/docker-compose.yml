@@ -11,15 +11,45 @@ services:
       - "/dev/ttyAMA0:/dev/ttyAMA0"  # Map serial device into container
     volumes:
       - .:/app  # Mount source code for hot reload in development
+      - bramble-data:/data  # Persistent data (database + command queue)
     environment:
       - DEBUG=True
       - SERIAL_PORT=/dev/ttyAMA0
       - SERIAL_BAUD=115200
       - HOST=0.0.0.0
       - PORT=5000
+      - SENSOR_DB_PATH=/data/sensor_data.duckdb
+      - QUEUE_DB_PATH=/data/queue.db
     restart: unless-stopped
     privileged: false  # Don't need full privileged mode
     # Add user to dialout group for serial access
     # On host: sudo usermod -aG dialout $USER
     group_add:
       - dialout
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: bramble-worker
+    command: uv run huey_consumer command_queue.huey -w 2 -k thread
+    devices:
+      - "/dev/ttyAMA0:/dev/ttyAMA0"  # Worker needs serial access to send commands
+    volumes:
+      - .:/app
+      - bramble-data:/data
+    environment:
+      - DEBUG=True
+      - SERIAL_PORT=/dev/ttyAMA0
+      - SERIAL_BAUD=115200
+      - SENSOR_DB_PATH=/data/sensor_data.duckdb
+      - QUEUE_DB_PATH=/data/queue.db
+    restart: unless-stopped
+    depends_on:
+      - api
+    group_add:
+      - dialout
+
+volumes:
+  bramble-data:

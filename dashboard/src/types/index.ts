@@ -1,8 +1,21 @@
+export interface Zone {
+  id: number;
+  name: string;
+  color: string;
+  description: string | null;
+}
+
+export interface ZonesResponse {
+  count: number;
+  zones: Zone[];
+}
+
 export interface NodeMetadata {
   address: number;
   name: string | null;
   location: string | null;
   notes: string | null;
+  zone_id: number | null;
   updated_at: number | null;
 }
 

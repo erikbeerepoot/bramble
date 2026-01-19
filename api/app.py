@@ -8,7 +8,7 @@ from typing import Optional
 from config import Config
 from serial_interface import SerialInterface
 from database import SensorDatabase
-from models import Node, NodeMetadata, Schedule, QueuedUpdate
+from models import Node, NodeMetadata, Schedule, QueuedUpdate, Zone
 
 
 # Setup logging
@@ -316,7 +316,7 @@ def add_schedule(addr: int):
         }
 
     Returns:
-        JSON response with queue position
+        JSON response with task_id for tracking (202 Accepted)
     """
     try:
         data = request.get_json()
@@ -341,25 +341,27 @@ def add_schedule(addr: int):
         if errors:
             return jsonify({'error': 'Validation failed', 'details': errors}), 400
 
-        # Send to hub
-        serial = get_serial()
-        command = schedule.to_hub_command(addr)
-        responses = serial.send_command(command)
+        # Queue command for delivery
+        from command_queue import queue_set_schedule
 
-        # Parse response: QUEUED SET_SCHEDULE <addr> <position>
-        if responses and responses[0].startswith('QUEUED'):
-            parts = responses[0].split()
-            return jsonify({
-                'status': 'queued',
-                'node_address': addr,
-                'schedule': data,
-                'position': int(parts[3]) if len(parts) > 3 else None
-            }), 201
+        result = queue_set_schedule(
+            node_address=addr,
+            index=data['index'],
+            hour=data['hour'],
+            minute=data['minute'],
+            duration=data['duration'],
+            days=data['days'],
+            valve=data['valve']
+        )
 
-        return jsonify({'error': 'Unexpected response from hub'}), 500
+        return jsonify({
+            'status': 'queued',
+            'task_id': result.id,
+            'node_address': addr,
+            'schedule': data,
+            'message': 'Command queued for delivery'
+        }), 202
 
-    except TimeoutError:
-        return jsonify({'error': 'Hub did not respond'}), 504
     except Exception as e:
         logger.error(f"Error adding schedule for node {addr}: {e}")
         return jsonify({'error': str(e)}), 500
@@ -374,30 +376,25 @@ def remove_schedule(addr: int, index: int):
         index: Schedule index (0-7)
 
     Returns:
-        JSON response with queue position
+        JSON response with task_id for tracking (202 Accepted)
     """
     try:
         if not 0 <= index <= 7:
             return jsonify({'error': 'Schedule index must be 0-7'}), 400
 
-        # Send to hub
-        serial = get_serial()
-        responses = serial.send_command(f'REMOVE_SCHEDULE {addr} {index}')
+        # Queue command for delivery
+        from command_queue import queue_remove_schedule
 
-        # Parse response: QUEUED REMOVE_SCHEDULE <addr> <position>
-        if responses and responses[0].startswith('QUEUED'):
-            parts = responses[0].split()
-            return jsonify({
-                'status': 'queued',
-                'node_address': addr,
-                'schedule_index': index,
-                'position': int(parts[3]) if len(parts) > 3 else None
-            })
+        result = queue_remove_schedule(node_address=addr, index=index)
 
-        return jsonify({'error': 'Unexpected response from hub'}), 500
+        return jsonify({
+            'status': 'queued',
+            'task_id': result.id,
+            'node_address': addr,
+            'schedule_index': index,
+            'message': 'Command queued for delivery'
+        }), 202
 
-    except TimeoutError:
-        return jsonify({'error': 'Hub did not respond'}), 504
     except Exception as e:
         logger.error(f"Error removing schedule {index} for node {addr}: {e}")
         return jsonify({'error': str(e)}), 500
@@ -416,7 +413,7 @@ def set_wake_interval(addr: int):
         }
 
     Returns:
-        JSON response with queue position
+        JSON response with task_id for tracking (202 Accepted)
     """
     try:
         data = request.get_json()
@@ -431,24 +428,19 @@ def set_wake_interval(addr: int):
         if not 10 <= interval <= 3600:
             return jsonify({'error': 'interval_seconds must be 10-3600'}), 400
 
-        # Send to hub
-        serial = get_serial()
-        responses = serial.send_command(f'SET_WAKE_INTERVAL {addr} {interval}')
+        # Queue command for delivery
+        from command_queue import queue_set_wake_interval
 
-        # Parse response: QUEUED SET_WAKE_INTERVAL <addr> <position>
-        if responses and responses[0].startswith('QUEUED'):
-            parts = responses[0].split()
-            return jsonify({
-                'status': 'queued',
-                'node_address': addr,
-                'interval_seconds': interval,
-                'position': int(parts[3]) if len(parts) > 3 else None
-            })
+        result = queue_set_wake_interval(node_address=addr, interval_seconds=interval)
 
-        return jsonify({'error': 'Unexpected response from hub'}), 500
+        return jsonify({
+            'status': 'queued',
+            'task_id': result.id,
+            'node_address': addr,
+            'interval_seconds': interval,
+            'message': 'Command queued for delivery'
+        }), 202
 
-    except TimeoutError:
-        return jsonify({'error': 'Hub did not respond'}), 504
     except Exception as e:
         logger.error(f"Error setting wake interval for node {addr}: {e}")
         return jsonify({'error': str(e)}), 500
@@ -473,7 +465,7 @@ def set_datetime(addr: int):
         }
 
     Returns:
-        JSON response with queue position
+        JSON response with task_id for tracking (202 Accepted)
     """
     try:
         data = request.get_json()
@@ -508,33 +500,36 @@ def set_datetime(addr: int):
         if not (0 <= second <= 59):
             return jsonify({'error': 'second must be 0-59'}), 400
 
-        # Send to hub: SET_DATETIME <addr> <year> <month> <day> <weekday> <hour> <minute> <second>
-        serial = get_serial()
-        cmd = f'SET_DATETIME {addr} {year} {month} {day} {weekday} {hour} {minute} {second}'
-        responses = serial.send_command(cmd)
+        # Queue command for delivery
+        from command_queue import queue_set_datetime
 
-        # Parse response: QUEUED SET_DATETIME <addr> <position>
-        if responses and responses[0].startswith('QUEUED'):
-            parts = responses[0].split()
-            return jsonify({
-                'status': 'queued',
-                'node_address': addr,
-                'datetime': {
-                    'year': year,
-                    'month': month,
-                    'day': day,
-                    'weekday': weekday,
-                    'hour': hour,
-                    'minute': minute,
-                    'second': second
-                },
-                'position': int(parts[3]) if len(parts) > 3 else None
-            })
+        result = queue_set_datetime(
+            node_address=addr,
+            year=year,
+            month=month,
+            day=day,
+            weekday=weekday,
+            hour=hour,
+            minute=minute,
+            second=second
+        )
 
-        return jsonify({'error': 'Unexpected response from hub'}), 500
+        return jsonify({
+            'status': 'queued',
+            'task_id': result.id,
+            'node_address': addr,
+            'datetime': {
+                'year': year,
+                'month': month,
+                'day': day,
+                'weekday': weekday,
+                'hour': hour,
+                'minute': minute,
+                'second': second
+            },
+            'message': 'Command queued for delivery'
+        }), 202
 
-    except TimeoutError:
-        return jsonify({'error': 'Hub did not respond'}), 504
     except Exception as e:
         logger.error(f"Error setting datetime for node {addr}: {e}")
         return jsonify({'error': str(e)}), 500
@@ -731,6 +726,251 @@ def get_node_statistics(addr: int):
 
     except Exception as e:
         logger.error(f"Error getting statistics for node {addr}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ===== Task Status Endpoint =====
+
+@app.route('/api/tasks/<task_id>', methods=['GET'])
+def get_task_status(task_id: str):
+    """Check status of a queued command.
+
+    Args:
+        task_id: The task ID returned when command was queued
+
+    Returns:
+        JSON with task status (pending, completed, or failed)
+    """
+    try:
+        from command_queue import huey
+
+        result = huey.result(task_id)
+
+        if result is None:
+            return jsonify({'status': 'pending', 'task_id': task_id})
+        elif isinstance(result, Exception):
+            return jsonify({
+                'status': 'failed',
+                'task_id': task_id,
+                'error': str(result)
+            })
+        else:
+            return jsonify({
+                'status': 'completed',
+                'task_id': task_id,
+                'result': result
+            })
+
+    except Exception as e:
+        logger.error(f"Error getting task status for {task_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ===== Zone Endpoints =====
+
+@app.route('/api/zones', methods=['GET'])
+def list_zones():
+    """List all zones.
+
+    Returns:
+        JSON array of zone objects
+    """
+    try:
+        db = get_database()
+        zones = db.get_all_zones()
+        return jsonify({
+            'count': len(zones),
+            'zones': zones
+        })
+    except Exception as e:
+        logger.error(f"Error listing zones: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/zones', methods=['POST'])
+def create_zone():
+    """Create a new zone.
+
+    Request body:
+        {
+            "name": "Greenhouse",
+            "color": "#4CAF50",
+            "description": "North greenhouse section"
+        }
+
+    Returns:
+        JSON zone object (201 Created)
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Request body must be JSON'}), 400
+
+        name = data.get('name')
+        color = data.get('color')
+
+        if not name:
+            return jsonify({'error': 'name is required'}), 400
+        if not color:
+            return jsonify({'error': 'color is required'}), 400
+
+        # Validate color format (hex color)
+        if not color.startswith('#') or len(color) != 7:
+            return jsonify({'error': 'color must be a hex color (e.g., #4CAF50)'}), 400
+
+        db = get_database()
+        zone = db.create_zone(
+            name=name,
+            color=color,
+            description=data.get('description')
+        )
+
+        return jsonify(zone), 201
+
+    except Exception as e:
+        logger.error(f"Error creating zone: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/zones/<int:zone_id>', methods=['GET'])
+def get_zone(zone_id: int):
+    """Get a zone by ID.
+
+    Args:
+        zone_id: Zone ID
+
+    Returns:
+        JSON zone object or 404 if not found
+    """
+    try:
+        db = get_database()
+        zone = db.get_zone(zone_id)
+
+        if zone:
+            return jsonify(zone)
+        else:
+            return jsonify({'error': f'Zone {zone_id} not found'}), 404
+
+    except Exception as e:
+        logger.error(f"Error getting zone {zone_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/zones/<int:zone_id>', methods=['PUT'])
+def update_zone(zone_id: int):
+    """Update a zone.
+
+    Args:
+        zone_id: Zone ID
+
+    Request body:
+        {
+            "name": "Updated Name",
+            "color": "#FF5722",
+            "description": "Updated description"
+        }
+
+    Returns:
+        JSON updated zone object or 404 if not found
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Request body must be JSON'}), 400
+
+        # Validate color format if provided
+        color = data.get('color')
+        if color and (not color.startswith('#') or len(color) != 7):
+            return jsonify({'error': 'color must be a hex color (e.g., #4CAF50)'}), 400
+
+        db = get_database()
+        zone = db.update_zone(
+            zone_id=zone_id,
+            name=data.get('name'),
+            color=color,
+            description=data.get('description')
+        )
+
+        if zone:
+            return jsonify(zone)
+        else:
+            return jsonify({'error': f'Zone {zone_id} not found'}), 404
+
+    except Exception as e:
+        logger.error(f"Error updating zone {zone_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/zones/<int:zone_id>', methods=['DELETE'])
+def delete_zone(zone_id: int):
+    """Delete a zone. Nodes in this zone become unzoned.
+
+    Args:
+        zone_id: Zone ID
+
+    Returns:
+        JSON success message or 404 if not found
+    """
+    try:
+        db = get_database()
+        deleted = db.delete_zone(zone_id)
+
+        if deleted:
+            return jsonify({'message': f'Zone {zone_id} deleted'})
+        else:
+            return jsonify({'error': f'Zone {zone_id} not found'}), 404
+
+    except Exception as e:
+        logger.error(f"Error deleting zone {zone_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/nodes/<int:addr>/zone', methods=['PUT'])
+def set_node_zone(addr: int):
+    """Set a node's zone.
+
+    Args:
+        addr: Node address
+
+    Request body:
+        {
+            "zone_id": 1
+        }
+        or
+        {
+            "zone_id": null
+        }
+        to unzone
+
+    Returns:
+        JSON updated node metadata
+    """
+    try:
+        data = request.get_json()
+        if data is None:
+            return jsonify({'error': 'Request body must be JSON'}), 400
+
+        zone_id = data.get('zone_id')
+
+        # Validate zone exists if not null
+        if zone_id is not None:
+            db = get_database()
+            zone = db.get_zone(zone_id)
+            if not zone:
+                return jsonify({'error': f'Zone {zone_id} not found'}), 404
+
+        db = get_database()
+        metadata = db.set_node_zone(addr, zone_id)
+
+        if metadata:
+            return jsonify(metadata)
+        else:
+            # Node metadata doesn't exist yet, create it
+            metadata = db.update_node_metadata(addr, zone_id=zone_id if zone_id else -1)
+            return jsonify(metadata)
+
+    except Exception as e:
+        logger.error(f"Error setting zone for node {addr}: {e}")
         return jsonify({'error': str(e)}), 500
 
 

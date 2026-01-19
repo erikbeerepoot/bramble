@@ -64,7 +64,7 @@ sudo usermod -aG dialout $USER
 cd bramble/api
 
 # Build and run with hot reload
-docker-compose up
+docker compose up
 
 # API runs on http://localhost:5000
 # Code changes trigger automatic reload
@@ -73,7 +73,7 @@ docker-compose up
 **Production mode:**
 ```bash
 # Edit docker-compose.yml: change target to 'production'
-docker-compose up -d
+docker compose up -d
 ```
 
 **Note:**
@@ -136,179 +136,57 @@ Environment variables:
 | `HOST` | `0.0.0.0` | API server host |
 | `PORT` | `5000` | API server port |
 | `DEBUG` | `False` | Enable debug logging |
+| `QUEUE_DB_PATH` | `/data/queue.db` | Path to command queue SQLite database |
+| `QUEUE_IMMEDIATE` | `false` | Run queue synchronously (for testing) |
+| `SENSOR_DB_PATH` | `/data/sensor_data.duckdb` | Path to sensor data database |
 
-## API Endpoints
+## Architecture
 
-### Health Check
+### Command Queue
 
-**GET** `/api/health`
+Commands to nodes (schedules, wake intervals, datetime) are processed through a persistent queue that survives container restarts:
 
-```json
-{
-  "status": "healthy",
-  "serial_connected": true,
-  "serial_port": "/dev/ttyACM0"
-}
+```
+┌─────────────┐     ┌──────────────┐     ┌─────────────────────────┐
+│ Flask API   │     │ huey queue   │     │ huey worker (consumer)  │
+│             │ ──► │ (SQLite)     │ ──► │                         │
+│ POST /...   │     │ /data/queue.db     │ send_hub_command()      │
+│ returns 202 │     │              │     │   ├─ serial.send()      │
+└─────────────┘     └──────────────┘     │   └─ retry on failure   │
+                                         └─────────────────────────┘
 ```
 
-### System Time
+- Commands return immediately with a `task_id` (HTTP 202 Accepted)
+- Worker processes commands asynchronously with retries (3 attempts, 30s delay)
+- Queue persists in SQLite, surviving container restarts
+- Use `/api/tasks/<task_id>` to check command status
 
-**GET** `/api/system/time`
-
-```json
-{
-  "datetime": "2025-01-15T14:30:00",
-  "formatted": "2025-01-15 14:30:00",
-  "weekday": 3,
-  "timestamp": 1736953800
-}
+**Docker Compose** runs both the API and worker containers:
+```bash
+docker compose up  # Starts api + worker
 ```
 
-### List Nodes
-
-**GET** `/api/nodes`
-
-```json
-{
-  "count": 2,
-  "nodes": [
-    {
-      "address": 42,
-      "type": "IRRIGATION",
-      "online": true,
-      "last_seen_seconds": 15
-    }
-  ]
-}
+**Local testing** can use synchronous mode:
+```bash
+QUEUE_IMMEDIATE=true uv run python app.py
 ```
 
-### Get Node
+## API Reference
 
-**GET** `/api/nodes/{addr}`
+See [docs/API.md](docs/API.md) for complete API documentation.
 
-```json
-{
-  "address": 42,
-  "type": "IRRIGATION",
-  "online": true,
-  "last_seen_seconds": 15
-}
-```
-
-### Get Update Queue
-
-**GET** `/api/nodes/{addr}/queue`
-
-```json
-{
-  "node_address": 42,
-  "count": 2,
-  "updates": [
-    {
-      "sequence": 5,
-      "type": "SET_SCHEDULE",
-      "age_seconds": 30
-    }
-  ]
-}
-```
-
-### Add Schedule
-
-**POST** `/api/nodes/{addr}/schedules`
-
-**Request:**
-```json
-{
-  "index": 0,
-  "hour": 14,
-  "minute": 30,
-  "duration": 900,
-  "days": 127,
-  "valve": 0
-}
-```
-
-**Parameters:**
-- `index`: Schedule slot (0-7)
-- `hour`: Hour (0-23)
-- `minute`: Minute (0-59)
-- `duration`: Duration in seconds (0-65535)
-- `days`: Day bitmask (127 = all days, 1 = Sunday, 2 = Monday, etc.)
-- `valve`: Valve ID (0+)
-
-**Response:**
-```json
-{
-  "status": "queued",
-  "node_address": 42,
-  "schedule": { ... },
-  "position": 1
-}
-```
-
-### Remove Schedule
-
-**DELETE** `/api/nodes/{addr}/schedules/{index}`
-
-```json
-{
-  "status": "queued",
-  "node_address": 42,
-  "schedule_index": 0,
-  "position": 2
-}
-```
-
-### Set Wake Interval
-
-**POST** `/api/nodes/{addr}/wake-interval`
-
-**Request:**
-```json
-{
-  "interval_seconds": 60
-}
-```
-
-**Response:**
-```json
-{
-  "status": "queued",
-  "node_address": 42,
-  "interval_seconds": 60,
-  "position": 3
-}
-```
-
-## Usage Examples
-
+**Quick examples:**
 ```bash
 # List all nodes
 curl http://localhost:5000/api/nodes
 
-# Add irrigation schedule (water at 2:30 PM for 15 minutes, all days, valve 0)
+# Add irrigation schedule
 curl -X POST http://localhost:5000/api/nodes/42/schedules \
   -H "Content-Type: application/json" \
-  -d '{
-    "index": 0,
-    "hour": 14,
-    "minute": 30,
-    "duration": 900,
-    "days": 127,
-    "valve": 0
-  }'
+  -d '{"index": 0, "hour": 14, "minute": 30, "duration": 900, "days": 127, "valve": 0}'
 
-# Remove schedule
-curl -X DELETE http://localhost:5000/api/nodes/42/schedules/0
-
-# Set wake interval to 1 minute
-curl -X POST http://localhost:5000/api/nodes/42/wake-interval \
-  -H "Content-Type: application/json" \
-  -d '{"interval_seconds": 60}'
-
-# Check node's update queue
-curl http://localhost:5000/api/nodes/42/queue
+# Check task status
+curl http://localhost:5000/api/tasks/{task_id}
 ```
 
 ## Troubleshooting

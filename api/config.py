@@ -27,3 +27,7 @@ class Config:
     S3_BUCKET = os.getenv('S3_BUCKET', '')
     S3_PREFIX = os.getenv('S3_PREFIX', 'bramble/')
     S3_REGION = os.getenv('S3_REGION', 'us-east-1')
+
+    # Command queue settings (huey with SQLite backend)
+    QUEUE_DB_PATH: str = os.getenv('QUEUE_DB_PATH', '/data/queue.db')
+    QUEUE_IMMEDIATE: bool = os.getenv('QUEUE_IMMEDIATE', 'false').lower() == 'true'
