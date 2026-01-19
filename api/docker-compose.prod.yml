@@ -52,3 +52,4 @@ services:
 
 volumes:
   bramble-data:
+    name: bramble-data  # Explicit name prevents "api_" prefix
