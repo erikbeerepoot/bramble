@@ -362,6 +362,7 @@ Sensor readings are stored in DuckDB with the following schema:
 CREATE TABLE sensor_readings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     node_address INTEGER NOT NULL,
+    device_id UBIGINT,                    -- Hardware unique identifier
     timestamp INTEGER NOT NULL,           -- Unix timestamp
     temperature_centidegrees INTEGER,     -- Temperature in 0.01°C
     humidity_centipercent INTEGER,        -- Humidity in 0.01%
@@ -372,10 +373,27 @@ CREATE TABLE sensor_readings (
 
 CREATE TABLE nodes (
     address INTEGER PRIMARY KEY,
+    device_id UBIGINT UNIQUE,
     node_type TEXT NOT NULL,
     first_seen_at INTEGER NOT NULL,
     last_seen_at INTEGER NOT NULL,
     total_readings INTEGER DEFAULT 0
+);
+
+CREATE TABLE node_metadata (
+    address INTEGER PRIMARY KEY,
+    name VARCHAR,                         -- Friendly name
+    location VARCHAR,                     -- Location description
+    notes VARCHAR,                        -- Additional notes
+    zone_id INTEGER,                      -- FK to zones table
+    updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE zones (
+    id INTEGER PRIMARY KEY,
+    name VARCHAR NOT NULL,                -- Zone name (e.g., "Greenhouse")
+    color VARCHAR(7) NOT NULL,            -- Hex color (e.g., "#4CAF50")
+    description VARCHAR                   -- Optional description
 );
 ```
 
@@ -458,7 +476,12 @@ The web dashboard is a React SPA that connects to the REST API to display sensor
 
 #### Features
 - **Node list view** with online/offline status indicators
-- **Node metadata editing** (friendly names, locations, notes)
+- **Zone management** for organizing nodes into logical groups
+  - Color-coded zone indicators on node cards
+  - Collapsible zone sections in node list
+  - Create zones with custom colors via modal
+  - Assign/unassign nodes to zones
+- **Node metadata editing** (friendly names, locations, notes, zone assignment)
 - **Temperature/humidity charts** using Plotly.js
 - **Time range selection** (1h, 6h, 24h, 7d, 30d)
 - **Statistics display** (min/max/avg values)
