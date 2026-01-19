@@ -1,15 +1,91 @@
-import type { Node } from '../types';
+import { useState, useMemo } from 'react';
+import type { Node, Zone } from '../types';
 import NodeCard from './NodeCard';
 
 interface NodeListProps {
   nodes: Node[];
+  zones: Zone[];
   onSelect: (node: Node) => void;
   onRefresh: () => void;
 }
 
-function NodeList({ nodes, onSelect, onRefresh }: NodeListProps) {
+interface ZoneGroup {
+  zone: Zone | null;
+  nodes: Node[];
+}
+
+function NodeList({ nodes, zones, onSelect, onRefresh }: NodeListProps) {
+  const [collapsedZones, setCollapsedZones] = useState<Set<number | 'unzoned'>>(new Set());
+
   const onlineNodes = nodes.filter(n => n.online);
   const offlineNodes = nodes.filter(n => !n.online);
+
+  // Create a map of zone_id to Zone for quick lookup
+  const zoneMap = useMemo(() => {
+    const map = new Map<number, Zone>();
+    zones.forEach(z => map.set(z.id, z));
+    return map;
+  }, [zones]);
+
+  // Group nodes by zone
+  const groupedNodes = useMemo(() => {
+    const groups: ZoneGroup[] = [];
+    const nodesByZone = new Map<number | null, Node[]>();
+
+    // Group nodes by zone_id
+    nodes.forEach(node => {
+      const zoneId = node.metadata?.zone_id ?? null;
+      if (!nodesByZone.has(zoneId)) {
+        nodesByZone.set(zoneId, []);
+      }
+      nodesByZone.get(zoneId)!.push(node);
+    });
+
+    // Add zoned groups first (sorted by zone name)
+    const zonedEntries: [number, Node[]][] = [];
+    nodesByZone.forEach((nodeList, zoneId) => {
+      if (zoneId !== null) {
+        zonedEntries.push([zoneId, nodeList]);
+      }
+    });
+
+    zonedEntries
+      .sort((a, b) => {
+        const zoneA = zoneMap.get(a[0]);
+        const zoneB = zoneMap.get(b[0]);
+        return (zoneA?.name || '').localeCompare(zoneB?.name || '');
+      })
+      .forEach(([zoneId, nodeList]) => {
+        const zone = zoneMap.get(zoneId);
+        if (zone) {
+          groups.push({ zone, nodes: nodeList });
+        }
+      });
+
+    // Add unzoned nodes at the end
+    const unzonedNodes = nodesByZone.get(null);
+    if (unzonedNodes && unzonedNodes.length > 0) {
+      groups.push({ zone: null, nodes: unzonedNodes });
+    }
+
+    return groups;
+  }, [nodes, zoneMap]);
+
+  const toggleZone = (zoneKey: number | 'unzoned') => {
+    setCollapsedZones(prev => {
+      const next = new Set(prev);
+      if (next.has(zoneKey)) {
+        next.delete(zoneKey);
+      } else {
+        next.add(zoneKey);
+      }
+      return next;
+    });
+  };
+
+  const getZoneKey = (zone: Zone | null): number | 'unzoned' => {
+    return zone?.id ?? 'unzoned';
+  };
 
   return (
     <div>
@@ -42,14 +118,57 @@ function NodeList({ nodes, onSelect, onRefresh }: NodeListProps) {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {nodes.map(node => (
-            <NodeCard
-              key={node.address}
-              node={node}
-              onClick={() => onSelect(node)}
-            />
-          ))}
+        <div className="space-y-6">
+          {groupedNodes.map((group) => {
+            const zoneKey = getZoneKey(group.zone);
+            const isCollapsed = collapsedZones.has(zoneKey);
+            const onlineCount = group.nodes.filter(n => n.online).length;
+
+            return (
+              <div key={zoneKey}>
+                <button
+                  onClick={() => toggleZone(zoneKey)}
+                  className="flex items-center space-x-2 mb-3 group"
+                >
+                  <svg
+                    className={`w-4 h-4 text-gray-400 transition-transform ${isCollapsed ? '' : 'rotate-90'}`}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                  {group.zone ? (
+                    <>
+                      <span
+                        className="w-3 h-3 rounded-full"
+                        style={{ backgroundColor: group.zone.color }}
+                      />
+                      <span className="font-medium text-gray-900">{group.zone.name}</span>
+                    </>
+                  ) : (
+                    <span className="font-medium text-gray-500">Unzoned</span>
+                  )}
+                  <span className="text-sm text-gray-400">
+                    ({group.nodes.length} node{group.nodes.length !== 1 ? 's' : ''}, {onlineCount} online)
+                  </span>
+                </button>
+
+                {!isCollapsed && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {group.nodes.map(node => (
+                      <NodeCard
+                        key={node.address}
+                        node={node}
+                        zone={group.zone ?? undefined}
+                        onClick={() => onSelect(node)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

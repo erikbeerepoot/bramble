@@ -8,7 +8,7 @@ from typing import Optional
 from config import Config
 from serial_interface import SerialInterface
 from database import SensorDatabase
-from models import Node, NodeMetadata, Schedule, QueuedUpdate
+from models import Node, NodeMetadata, Schedule, QueuedUpdate, Zone
 
 
 # Setup logging
@@ -763,6 +763,214 @@ def get_task_status(task_id: str):
 
     except Exception as e:
         logger.error(f"Error getting task status for {task_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ===== Zone Endpoints =====
+
+@app.route('/api/zones', methods=['GET'])
+def list_zones():
+    """List all zones.
+
+    Returns:
+        JSON array of zone objects
+    """
+    try:
+        db = get_database()
+        zones = db.get_all_zones()
+        return jsonify({
+            'count': len(zones),
+            'zones': zones
+        })
+    except Exception as e:
+        logger.error(f"Error listing zones: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/zones', methods=['POST'])
+def create_zone():
+    """Create a new zone.
+
+    Request body:
+        {
+            "name": "Greenhouse",
+            "color": "#4CAF50",
+            "description": "North greenhouse section"
+        }
+
+    Returns:
+        JSON zone object (201 Created)
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Request body must be JSON'}), 400
+
+        name = data.get('name')
+        color = data.get('color')
+
+        if not name:
+            return jsonify({'error': 'name is required'}), 400
+        if not color:
+            return jsonify({'error': 'color is required'}), 400
+
+        # Validate color format (hex color)
+        if not color.startswith('#') or len(color) != 7:
+            return jsonify({'error': 'color must be a hex color (e.g., #4CAF50)'}), 400
+
+        db = get_database()
+        zone = db.create_zone(
+            name=name,
+            color=color,
+            description=data.get('description')
+        )
+
+        return jsonify(zone), 201
+
+    except Exception as e:
+        logger.error(f"Error creating zone: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/zones/<int:zone_id>', methods=['GET'])
+def get_zone(zone_id: int):
+    """Get a zone by ID.
+
+    Args:
+        zone_id: Zone ID
+
+    Returns:
+        JSON zone object or 404 if not found
+    """
+    try:
+        db = get_database()
+        zone = db.get_zone(zone_id)
+
+        if zone:
+            return jsonify(zone)
+        else:
+            return jsonify({'error': f'Zone {zone_id} not found'}), 404
+
+    except Exception as e:
+        logger.error(f"Error getting zone {zone_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/zones/<int:zone_id>', methods=['PUT'])
+def update_zone(zone_id: int):
+    """Update a zone.
+
+    Args:
+        zone_id: Zone ID
+
+    Request body:
+        {
+            "name": "Updated Name",
+            "color": "#FF5722",
+            "description": "Updated description"
+        }
+
+    Returns:
+        JSON updated zone object or 404 if not found
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Request body must be JSON'}), 400
+
+        # Validate color format if provided
+        color = data.get('color')
+        if color and (not color.startswith('#') or len(color) != 7):
+            return jsonify({'error': 'color must be a hex color (e.g., #4CAF50)'}), 400
+
+        db = get_database()
+        zone = db.update_zone(
+            zone_id=zone_id,
+            name=data.get('name'),
+            color=color,
+            description=data.get('description')
+        )
+
+        if zone:
+            return jsonify(zone)
+        else:
+            return jsonify({'error': f'Zone {zone_id} not found'}), 404
+
+    except Exception as e:
+        logger.error(f"Error updating zone {zone_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/zones/<int:zone_id>', methods=['DELETE'])
+def delete_zone(zone_id: int):
+    """Delete a zone. Nodes in this zone become unzoned.
+
+    Args:
+        zone_id: Zone ID
+
+    Returns:
+        JSON success message or 404 if not found
+    """
+    try:
+        db = get_database()
+        deleted = db.delete_zone(zone_id)
+
+        if deleted:
+            return jsonify({'message': f'Zone {zone_id} deleted'})
+        else:
+            return jsonify({'error': f'Zone {zone_id} not found'}), 404
+
+    except Exception as e:
+        logger.error(f"Error deleting zone {zone_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/nodes/<int:addr>/zone', methods=['PUT'])
+def set_node_zone(addr: int):
+    """Set a node's zone.
+
+    Args:
+        addr: Node address
+
+    Request body:
+        {
+            "zone_id": 1
+        }
+        or
+        {
+            "zone_id": null
+        }
+        to unzone
+
+    Returns:
+        JSON updated node metadata
+    """
+    try:
+        data = request.get_json()
+        if data is None:
+            return jsonify({'error': 'Request body must be JSON'}), 400
+
+        zone_id = data.get('zone_id')
+
+        # Validate zone exists if not null
+        if zone_id is not None:
+            db = get_database()
+            zone = db.get_zone(zone_id)
+            if not zone:
+                return jsonify({'error': f'Zone {zone_id} not found'}), 404
+
+        db = get_database()
+        metadata = db.set_node_zone(addr, zone_id)
+
+        if metadata:
+            return jsonify(metadata)
+        else:
+            # Node metadata doesn't exist yet, create it
+            metadata = db.update_node_metadata(addr, zone_id=zone_id if zone_id else -1)
+            return jsonify(metadata)
+
+    except Exception as e:
+        logger.error(f"Error setting zone for node {addr}: {e}")
         return jsonify({'error': str(e)}), 500
 
 

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { Node, NodeStatistics, SensorReading, TimeRange, NodeMetadata, CustomTimeRange } from '../types';
+import type { Node, NodeStatistics, SensorReading, TimeRange, NodeMetadata, CustomTimeRange, Zone } from '../types';
 import { TIME_RANGES } from '../types';
 import { getNodeSensorData, getNodeStatistics } from '../api/client';
 import NodeNameEditor from './NodeNameEditor';
@@ -8,11 +8,13 @@ import TimeRangeSelector from './TimeRangeSelector';
 
 interface NodeDetailProps {
   node: Node;
+  zones: Zone[];
   onBack: () => void;
   onUpdate: (node: Node) => void;
+  onZoneCreated: (zone: Zone) => void;
 }
 
-function NodeDetail({ node, onBack, onUpdate }: NodeDetailProps) {
+function NodeDetail({ node, zones, onBack, onUpdate, onZoneCreated }: NodeDetailProps) {
   const [readings, setReadings] = useState<SensorReading[]>([]);
   const [statistics, setStatistics] = useState<NodeStatistics | null>(null);
   const [timeRange, setTimeRange] = useState<TimeRange>('24h');
@@ -104,7 +106,7 @@ function NodeDetail({ node, onBack, onUpdate }: NodeDetailProps) {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-1 space-y-4">
-          <NodeNameEditor node={node} onUpdate={handleMetadataUpdate} />
+          <NodeNameEditor node={node} zones={zones} onUpdate={handleMetadataUpdate} onZoneCreated={onZoneCreated} />
 
           {statistics && (
             <div className="card">

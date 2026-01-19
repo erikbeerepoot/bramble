@@ -151,7 +151,15 @@ class SensorDatabase:
         name VARCHAR,
         location VARCHAR,
         notes VARCHAR,
+        zone_id INTEGER,
         updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS zones (
+        id INTEGER PRIMARY KEY,
+        name VARCHAR NOT NULL,
+        color VARCHAR(7) NOT NULL,
+        description VARCHAR
     );
     """
 
@@ -202,6 +210,12 @@ class SensorDatabase:
                 if statement:
                     conn.execute(statement)
             self._init_id_counter(conn)
+            # Migration: add zone_id column to node_metadata if it doesn't exist
+            try:
+                conn.execute("ALTER TABLE node_metadata ADD COLUMN zone_id INTEGER")
+                logger.info("Added zone_id column to node_metadata table")
+            except duckdb.Error:
+                pass  # Column already exists
             logger.info(f"Database initialized at {self.db_path}")
 
     def get_write_buffer(self) -> WriteBuffer:
@@ -547,7 +561,7 @@ class SensorDatabase:
         """
         with self._get_connection() as conn:
             result = conn.execute("""
-                SELECT address, name, location, notes, updated_at
+                SELECT address, name, location, notes, zone_id, updated_at
                 FROM node_metadata WHERE address = ?
             """, (address,))
             row = result.fetchone()
@@ -560,7 +574,8 @@ class SensorDatabase:
                 'name': row[1],
                 'location': row[2],
                 'notes': row[3],
-                'updated_at': row[4]
+                'zone_id': row[4],
+                'updated_at': row[5]
             }
 
     def get_all_node_metadata(self) -> dict[int, dict]:
@@ -571,7 +586,7 @@ class SensorDatabase:
         """
         with self._get_connection() as conn:
             result = conn.execute("""
-                SELECT address, name, location, notes, updated_at
+                SELECT address, name, location, notes, zone_id, updated_at
                 FROM node_metadata
             """)
 
@@ -582,7 +597,8 @@ class SensorDatabase:
                     'name': row[1],
                     'location': row[2],
                     'notes': row[3],
-                    'updated_at': row[4]
+                    'zone_id': row[4],
+                    'updated_at': row[5]
                 }
             return metadata
 
@@ -591,7 +607,8 @@ class SensorDatabase:
         address: int,
         name: Optional[str] = None,
         location: Optional[str] = None,
-        notes: Optional[str] = None
+        notes: Optional[str] = None,
+        zone_id: Optional[int] = None
     ) -> dict:
         """Update metadata for a node (upsert).
 
@@ -600,6 +617,7 @@ class SensorDatabase:
             name: Friendly name for the node
             location: Location description
             notes: Additional notes
+            zone_id: Zone ID (use -1 to explicitly unset, None to preserve)
 
         Returns:
             Updated metadata dictionary
@@ -609,7 +627,7 @@ class SensorDatabase:
         with self._get_connection() as conn:
             # Check if metadata exists
             existing = conn.execute(
-                "SELECT name, location, notes FROM node_metadata WHERE address = ?",
+                "SELECT name, location, notes, zone_id FROM node_metadata WHERE address = ?",
                 (address,)
             ).fetchone()
 
@@ -618,18 +636,26 @@ class SensorDatabase:
                 current_name = name if name is not None else existing[0]
                 current_location = location if location is not None else existing[1]
                 current_notes = notes if notes is not None else existing[2]
+                # zone_id: -1 means explicitly unset, None means preserve current
+                if zone_id == -1:
+                    current_zone_id = None
+                elif zone_id is not None:
+                    current_zone_id = zone_id
+                else:
+                    current_zone_id = existing[3]
 
                 conn.execute("""
                     UPDATE node_metadata
-                    SET name = ?, location = ?, notes = ?, updated_at = ?
+                    SET name = ?, location = ?, notes = ?, zone_id = ?, updated_at = ?
                     WHERE address = ?
-                """, (current_name, current_location, current_notes, updated_at, address))
+                """, (current_name, current_location, current_notes, current_zone_id, updated_at, address))
             else:
                 # Insert new
+                actual_zone_id = None if zone_id == -1 else zone_id
                 conn.execute("""
-                    INSERT INTO node_metadata (address, name, location, notes, updated_at)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (address, name, location, notes, updated_at))
+                    INSERT INTO node_metadata (address, name, location, notes, zone_id, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (address, name, location, notes, actual_zone_id, updated_at))
 
         return self.get_node_metadata(address)
 
@@ -669,3 +695,160 @@ class SensorDatabase:
         except Exception as e:
             logger.warning(f"S3 sync failed (non-fatal): {e}")
             return False
+
+    # ===== Zone Management =====
+
+    def create_zone(self, name: str, color: str, description: Optional[str] = None) -> dict:
+        """Create a new zone.
+
+        Args:
+            name: Zone name
+            color: Hex color code (e.g., '#4CAF50')
+            description: Optional description
+
+        Returns:
+            Created zone dictionary
+        """
+        with self._get_connection() as conn:
+            # Get next ID
+            result = conn.execute("SELECT COALESCE(MAX(id), 0) + 1 FROM zones")
+            next_id = result.fetchone()[0]
+
+            conn.execute("""
+                INSERT INTO zones (id, name, color, description)
+                VALUES (?, ?, ?, ?)
+            """, (next_id, name, color, description))
+
+            return self.get_zone(next_id)
+
+    def get_zone(self, zone_id: int) -> Optional[dict]:
+        """Get a zone by ID.
+
+        Args:
+            zone_id: Zone ID
+
+        Returns:
+            Zone dictionary or None if not found
+        """
+        with self._get_connection() as conn:
+            result = conn.execute("""
+                SELECT id, name, color, description
+                FROM zones WHERE id = ?
+            """, (zone_id,))
+            row = result.fetchone()
+
+            if not row:
+                return None
+
+            return {
+                'id': row[0],
+                'name': row[1],
+                'color': row[2],
+                'description': row[3]
+            }
+
+    def get_all_zones(self) -> list[dict]:
+        """Get all zones.
+
+        Returns:
+            List of zone dictionaries
+        """
+        with self._get_connection() as conn:
+            result = conn.execute("""
+                SELECT id, name, color, description
+                FROM zones ORDER BY name
+            """)
+
+            return [
+                {
+                    'id': row[0],
+                    'name': row[1],
+                    'color': row[2],
+                    'description': row[3]
+                }
+                for row in result.fetchall()
+            ]
+
+    def update_zone(
+        self,
+        zone_id: int,
+        name: Optional[str] = None,
+        color: Optional[str] = None,
+        description: Optional[str] = None
+    ) -> Optional[dict]:
+        """Update a zone.
+
+        Args:
+            zone_id: Zone ID
+            name: New name (optional)
+            color: New color (optional)
+            description: New description (optional, use empty string to clear)
+
+        Returns:
+            Updated zone dictionary or None if not found
+        """
+        with self._get_connection() as conn:
+            existing = conn.execute(
+                "SELECT name, color, description FROM zones WHERE id = ?",
+                (zone_id,)
+            ).fetchone()
+
+            if not existing:
+                return None
+
+            current_name = name if name is not None else existing[0]
+            current_color = color if color is not None else existing[1]
+            current_description = description if description is not None else existing[2]
+
+            conn.execute("""
+                UPDATE zones
+                SET name = ?, color = ?, description = ?
+                WHERE id = ?
+            """, (current_name, current_color, current_description, zone_id))
+
+        return self.get_zone(zone_id)
+
+    def delete_zone(self, zone_id: int) -> bool:
+        """Delete a zone. Nodes in this zone become unzoned.
+
+        Args:
+            zone_id: Zone ID
+
+        Returns:
+            True if deleted, False if not found
+        """
+        with self._get_connection() as conn:
+            # Check if zone exists
+            existing = conn.execute(
+                "SELECT id FROM zones WHERE id = ?",
+                (zone_id,)
+            ).fetchone()
+
+            if not existing:
+                return False
+
+            # Unset zone_id for all nodes in this zone
+            conn.execute("""
+                UPDATE node_metadata
+                SET zone_id = NULL
+                WHERE zone_id = ?
+            """, (zone_id,))
+
+            # Delete the zone
+            conn.execute("DELETE FROM zones WHERE id = ?", (zone_id,))
+
+            return True
+
+    def set_node_zone(self, address: int, zone_id: Optional[int]) -> Optional[dict]:
+        """Set a node's zone.
+
+        Args:
+            address: Node address
+            zone_id: Zone ID or None to unzone
+
+        Returns:
+            Updated node metadata or None if node not found
+        """
+        # Use -1 to explicitly unset zone_id in update_node_metadata
+        zone_value = -1 if zone_id is None else zone_id
+        return self.update_node_metadata(address, zone_id=zone_value)
