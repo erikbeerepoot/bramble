@@ -24,6 +24,11 @@ function SensorChart({ readings, dataKey, title, yAxisLabel, color, startTime, e
   const max = validValues.length > 0 ? Math.max(...validValues) : 0;
   const avg = validValues.length > 0 ? validValues.reduce((a, b) => a + b, 0) / validValues.length : 0;
 
+  // Calculate y-axis range with 10% padding
+  const yPadding = (max - min) * 0.1 || 1;  // fallback to 1 if min===max
+  const yMin = min - yPadding;
+  const yMax = max + yPadding;
+
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
@@ -65,11 +70,26 @@ function SensorChart({ readings, dataKey, title, yAxisLabel, color, startTime, e
           yaxis: {
             title: { text: yAxisLabel },
             gridcolor: '#f3f4f6',
+            range: validValues.length > 0 ? [yMin, yMax] : undefined,
           },
           paper_bgcolor: 'transparent',
           plot_bgcolor: 'transparent',
           hovermode: 'x unified',
           showlegend: false,
+          shapes: validValues.length > 0 ? [
+            {
+              type: 'line',
+              x0: startTime ? new Date(startTime * 1000) : timestamps[0],
+              x1: endTime ? new Date(endTime * 1000) : timestamps[timestamps.length - 1],
+              y0: avg,
+              y1: avg,
+              line: {
+                color: color,
+                width: 1.5,
+                dash: 'dash',
+              },
+            },
+          ] : [],
         }}
         config={{
           responsive: true,
