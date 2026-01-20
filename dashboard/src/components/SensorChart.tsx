@@ -7,9 +7,11 @@ interface SensorChartProps {
   title: string;
   yAxisLabel: string;
   color: string;
+  startTime?: number;  // Unix timestamp
+  endTime?: number;    // Unix timestamp
 }
 
-function SensorChart({ readings, dataKey, title, yAxisLabel, color }: SensorChartProps) {
+function SensorChart({ readings, dataKey, title, yAxisLabel, color, startTime, endTime }: SensorChartProps) {
   // Sort readings by timestamp (oldest first for proper line chart)
   const sortedReadings = [...readings].sort((a, b) => a.timestamp - b.timestamp);
 
@@ -56,9 +58,12 @@ function SensorChart({ readings, dataKey, title, yAxisLabel, color }: SensorChar
             type: 'date',
             tickformat: '%H:%M\n%b %d',
             gridcolor: '#f3f4f6',
+            range: startTime && endTime
+              ? [new Date(startTime * 1000), new Date(endTime * 1000)]
+              : undefined,
           },
           yaxis: {
-            title: yAxisLabel,
+            title: { text: yAxisLabel },
             gridcolor: '#f3f4f6',
           },
           paper_bgcolor: 'transparent',

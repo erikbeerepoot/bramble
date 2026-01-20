@@ -27,6 +27,7 @@ function NodeDetail({ node, zones, onBack, onUpdate, onZoneCreated }: NodeDetail
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [timeBounds, setTimeBounds] = useState<{ start: number; end: number } | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -35,13 +36,14 @@ function NodeDetail({ node, zones, onBack, onUpdate, onZoneCreated }: NodeDetail
       let startTime: number | undefined;
       let endTime: number | undefined;
 
+      const now = Math.floor(Date.now() / 1000);
       if (timeRange === 'custom') {
         startTime = customRange.startTime;
         endTime = customRange.endTime;
       } else {
-        const now = Math.floor(Date.now() / 1000);
         const rangeConfig = TIME_RANGES[timeRange];
         startTime = now - rangeConfig.seconds;
+        endTime = now;
       }
 
       const [sensorData, stats] = await Promise.all([
@@ -55,6 +57,7 @@ function NodeDetail({ node, zones, onBack, onUpdate, onZoneCreated }: NodeDetail
 
       setReadings(sensorData.readings);
       setStatistics(stats);
+      setTimeBounds({ start: startTime!, end: endTime! });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch data');
     } finally {
@@ -187,6 +190,8 @@ function NodeDetail({ node, zones, onBack, onUpdate, onZoneCreated }: NodeDetail
                   title="Temperature"
                   yAxisLabel="Celsius"
                   color="#f97316"
+                  startTime={timeBounds?.start}
+                  endTime={timeBounds?.end}
                 />
                 <SensorChart
                   readings={readings}
@@ -194,6 +199,8 @@ function NodeDetail({ node, zones, onBack, onUpdate, onZoneCreated }: NodeDetail
                   title="Humidity"
                   yAxisLabel="Percent"
                   color="#3b82f6"
+                  startTime={timeBounds?.start}
+                  endTime={timeBounds?.end}
                 />
               </div>
             )}
