@@ -214,7 +214,8 @@ Protocol::Protocol(UartSendCallback uartSend)
       wakeIntervalCallback_(nullptr),
       scheduleEntryCallback_(nullptr),
       pendingCommandCallback_(nullptr),
-      ackCallback_(nullptr) {
+      ackCallback_(nullptr),
+      pendingDateTimeCallback_(nullptr) {
 }
 
 void Protocol::processReceivedByte(uint8_t byte) {
@@ -252,6 +253,9 @@ void Protocol::processReceivedByte(uint8_t byte) {
                 break;
             case Response::ScheduleComplete:
                 handleScheduleComplete();
+                break;
+            case Response::DateTimeResponse:
+                handleDateTimeResponse(data, dataLen);
                 break;
             default:
                 // Unknown response, ignore
@@ -345,6 +349,12 @@ void Protocol::readyForSleep(CommandResultCallback callback) {
     sendMessage();
 }
 
+void Protocol::getDateTime(DateTimeCallback callback) {
+    pendingDateTimeCallback_ = callback;
+    builder_.startMessage(Command::GetDateTime);
+    sendMessage();
+}
+
 // Callback setters for unsolicited messages
 
 void Protocol::onWakeNotification(WakeNotificationCallback callback) {
@@ -361,6 +371,10 @@ void Protocol::onWakeInterval(WakeIntervalCallback callback) {
 
 void Protocol::onScheduleEntry(ScheduleEntryCallback callback) {
     scheduleEntryCallback_ = callback;
+}
+
+void Protocol::onDateTime(DateTimeCallback callback) {
+    pendingDateTimeCallback_ = callback;
 }
 
 // Response handlers
@@ -449,6 +463,41 @@ void Protocol::handleWakeNotification(const uint8_t* data, uint8_t length) {
 void Protocol::handleScheduleComplete() {
     if (scheduleCompleteCallback_) {
         scheduleCompleteCallback_();
+    }
+}
+
+void Protocol::handleDateTimeResponse(const uint8_t* data, uint8_t length) {
+    // Expected format: [valid] [year] [month] [day] [weekday] [hour] [min] [sec]
+    if (length < 8) {
+        log.error("DateTimeResponse too short: %d bytes", length);
+        if (pendingDateTimeCallback_) {
+            DateTime empty;
+            auto callback = pendingDateTimeCallback_;
+            pendingDateTimeCallback_ = nullptr;
+            callback(false, empty);
+        }
+        return;
+    }
+
+    bool valid = (data[0] != 0);
+    DateTime datetime(
+        data[1],  // year (offset from 2000)
+        data[2],  // month
+        data[3],  // day
+        data[4],  // weekday
+        data[5],  // hour
+        data[6],  // minute
+        data[7]   // second
+    );
+
+    log.debug("DateTimeResponse: valid=%d, 20%02d-%02d-%02d %02d:%02d:%02d",
+              valid, datetime.year, datetime.month, datetime.day,
+              datetime.hour, datetime.minute, datetime.second);
+
+    if (pendingDateTimeCallback_) {
+        auto callback = pendingDateTimeCallback_;
+        pendingDateTimeCallback_ = nullptr;
+        callback(valid, datetime);
     }
 }
 

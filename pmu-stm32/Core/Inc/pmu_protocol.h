@@ -15,7 +15,8 @@ enum class Command : uint8_t {
     ClearSchedule = 0x14,
     KeepAwake = 0x15,
     SetDateTime = 0x16,  // Set RTC date/time (7 bytes: year, month, day, weekday, hour, minute, second)
-    ReadyForSleep = 0x17  // RP2040 signals work complete, ready for power down
+    ReadyForSleep = 0x17,  // RP2040 signals work complete, ready for power down
+    GetDateTime = 0x18   // Get RTC date/time from PMU (returns DateTimeResponse)
 };
 
 // Response codes (STM32 → RP2040)
@@ -26,7 +27,8 @@ enum class Response : uint8_t {
     ScheduleEntry = 0x83,
     WakeReason = 0x84,
     Status = 0x85,
-    ScheduleComplete = 0x86  // Scheduled watering complete, power down imminent
+    ScheduleComplete = 0x86,  // Scheduled watering complete, power down imminent
+    DateTimeResponse = 0x87   // Response to GetDateTime: valid flag + 7 datetime bytes
 };
 
 // Error codes
@@ -87,6 +89,10 @@ constexpr uint8_t SEQ_STM32_MAX = 254;
 // Deduplication constants
 constexpr uint8_t DEDUP_BUFFER_SIZE = 8;
 constexpr uint32_t DEDUP_WINDOW_MS = 5000;
+
+// Time validity magic value - written to RTC backup register when RTC is synced
+// This allows the PMU to know if its RTC has ever been synchronized
+constexpr uint32_t TIME_VALID_MAGIC = 0xBEEF2025;
 
 // Schedule entry structure
 class ScheduleEntry {
@@ -304,12 +310,15 @@ private:
     void handleKeepAwake(const uint8_t* data, uint8_t length);
     void handleSetDateTime(const uint8_t* data, uint8_t length);
     void handleReadyForSleep();
+    void handleGetDateTime();
 
     // Response senders (with sequence number echo)
     void sendAck();
     void sendNack(ErrorCode error);
     void sendWakeInterval();
     void sendScheduleEntry(uint8_t index);
+    void sendDateTimeResponse(bool valid, uint8_t year, uint8_t month, uint8_t day,
+                              uint8_t weekday, uint8_t hour, uint8_t minute, uint8_t second);
 
     // Helper to send built message
     void sendMessage();

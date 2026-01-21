@@ -509,6 +509,9 @@ void Protocol::processReceivedByte(uint8_t byte) {
                     sendAck();
                 }
                 break;
+            case Command::GetDateTime:
+                handleGetDateTime();
+                break;
             default:
                 sendNack(ErrorCode::InvalidParam);
                 break;
@@ -700,6 +703,10 @@ void Protocol::handleSetDateTime(const uint8_t* data, uint8_t length) {
         return;
     }
 
+    // Write magic value to backup register to indicate time has been synced
+    // This persists as long as the PMU is powered from main battery
+    HAL_RTCEx_BKUPWrite(&::hrtc, RTC_BKP_DR0, TIME_VALID_MAGIC);
+
     sendAck();
 }
 
@@ -711,6 +718,27 @@ void Protocol::handleReadyForSleep() {
     if (readyForSleep_) {
         readyForSleep_();
     }
+}
+
+void Protocol::handleGetDateTime() {
+    // Read current time from RTC
+    RTC_TimeTypeDef time;
+    RTC_DateTypeDef date;
+
+    if (HAL_RTC_GetTime(&::hrtc, &time, RTC_FORMAT_BIN) != HAL_OK ||
+        HAL_RTC_GetDate(&::hrtc, &date, RTC_FORMAT_BIN) != HAL_OK) {
+        // RTC read failed - send invalid response
+        sendDateTimeResponse(false, 0, 1, 1, 0, 0, 0, 0);
+        return;
+    }
+
+    // Check if RTC has been synced by reading backup register
+    uint32_t magic = HAL_RTCEx_BKUPRead(&::hrtc, RTC_BKP_DR0);
+    bool valid = (magic == TIME_VALID_MAGIC);
+
+    // Send response with valid flag and datetime
+    sendDateTimeResponse(valid, date.Year, date.Month, date.Date,
+                         date.WeekDay, time.Hours, time.Minutes, time.Seconds);
 }
 
 // Response senders (echo the command's sequence number)
@@ -746,6 +774,20 @@ void Protocol::sendScheduleEntry(uint8_t index) {
     // Echo the sequence number from the received command
     builder_.startMessage(currentSeqNum_, static_cast<uint8_t>(Response::ScheduleEntry));
     builder_.addScheduleEntry(*entry);
+    sendMessage();
+}
+
+void Protocol::sendDateTimeResponse(bool valid, uint8_t year, uint8_t month, uint8_t day,
+                                    uint8_t weekday, uint8_t hour, uint8_t minute, uint8_t second) {
+    builder_.startMessage(static_cast<uint8_t>(Response::DateTimeResponse));
+    builder_.addByte(valid ? 0x01 : 0x00);
+    builder_.addByte(year);
+    builder_.addByte(month);
+    builder_.addByte(day);
+    builder_.addByte(weekday);
+    builder_.addByte(hour);
+    builder_.addByte(minute);
+    builder_.addByte(second);
     sendMessage();
 }
 

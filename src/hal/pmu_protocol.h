@@ -15,7 +15,8 @@ enum class Command : uint8_t {
     ClearSchedule = 0x14,
     KeepAwake = 0x15,
     SetDateTime = 0x16,  // Set RTC date/time (7 bytes: year, month, day, weekday, hour, minute, second)
-    ReadyForSleep = 0x17  // RP2040 signals work complete, ready for power down
+    ReadyForSleep = 0x17,  // RP2040 signals work complete, ready for power down
+    GetDateTime = 0x18   // Get RTC date/time from PMU (returns DateTimeResponse)
 };
 
 // Response codes (STM32 → RP2040)
@@ -26,7 +27,8 @@ enum class Response : uint8_t {
     ScheduleEntry = 0x83,
     WakeReason = 0x84,
     Status = 0x85,
-    ScheduleComplete = 0x86
+    ScheduleComplete = 0x86,
+    DateTimeResponse = 0x87  // Response to GetDateTime: valid flag + 7 datetime bytes
 };
 
 // Error codes
@@ -200,6 +202,7 @@ using ScheduleCompleteCallback = std::function<void()>;
 using CommandResultCallback = std::function<void(bool success, ErrorCode error)>;
 using WakeIntervalCallback = std::function<void(uint32_t seconds)>;
 using ScheduleEntryCallback = std::function<void(const ScheduleEntry& entry)>;
+using DateTimeCallback = std::function<void(bool valid, const DateTime& datetime)>;
 
 // Callback for ACK with sequence number
 using AckCallback = std::function<void(uint8_t seqNum, bool success, ErrorCode error)>;
@@ -227,12 +230,14 @@ public:
     void keepAwake(uint16_t seconds, CommandResultCallback callback = nullptr);
     void setDateTime(const DateTime& dateTime, CommandResultCallback callback = nullptr);
     void readyForSleep(CommandResultCallback callback = nullptr);  // Signal work complete, ready for power down
+    void getDateTime(DateTimeCallback callback = nullptr);  // Get RTC date/time from PMU
 
     // Set callback handlers for unsolicited responses
     void onWakeNotification(WakeNotificationCallback callback);
     void onScheduleComplete(ScheduleCompleteCallback callback);
     void onWakeInterval(WakeIntervalCallback callback);
     void onScheduleEntry(ScheduleEntryCallback callback);
+    void onDateTime(DateTimeCallback callback);
 
     // Get next sequence number for legacy API
     uint8_t getNextSequenceNumber();
@@ -255,6 +260,9 @@ private:
     // ACK callback with sequence number (for ReliablePmuClient)
     AckCallback ackCallback_;
 
+    // Pending datetime callback (for GetDateTime response)
+    DateTimeCallback pendingDateTimeCallback_;
+
     // Response handlers
     void handleAck(uint8_t seqNum);
     void handleNack(uint8_t seqNum, const uint8_t* data, uint8_t length);
@@ -262,6 +270,7 @@ private:
     void handleScheduleEntry(const uint8_t* data, uint8_t length);
     void handleWakeNotification(const uint8_t* data, uint8_t length);
     void handleScheduleComplete();
+    void handleDateTimeResponse(const uint8_t* data, uint8_t length);
 
     // Helper to send built message
     void sendMessage();
