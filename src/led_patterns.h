@@ -160,10 +160,10 @@ public:
 };
 
 /**
- * @brief Short blink pattern - brief flash with long off period
+ * @brief Short blink pattern - brief flash with off period
  *
  * Power-efficient pattern using single channel at full brightness.
- * Default: 50ms on, 3 seconds off.
+ * Default: 50ms on, 500ms off.
  */
 class ShortBlinkPattern : public LEDPattern {
 private:
@@ -175,7 +175,7 @@ private:
 
 public:
     ShortBlinkPattern(NeoPixel& led, uint8_t r, uint8_t g, uint8_t b,
-                      uint32_t on_ms = 50, uint32_t off_ms = 3000)
+                      uint32_t on_ms = 50, uint32_t off_ms = 500)
         : LEDPattern(led), r_(r), g_(g), b_(b), on_ms_(on_ms), off_ms_(off_ms) {}
 
     void update(uint32_t current_time) override {
