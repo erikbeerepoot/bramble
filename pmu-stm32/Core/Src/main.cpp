@@ -61,6 +61,11 @@ static uint16_t wateringDuration = 0;
 // RTC wakeup flag - set by interrupt, handled in main loop
 static volatile bool rtcWakeupFlag = false;
 
+// UART activity tracking - stay awake while receiving data
+static volatile bool uartActivityFlag = false;
+static volatile uint32_t uartLastActivityTime = 0;
+static constexpr uint32_t UART_ACTIVITY_TIMEOUT_MS = 500;  // Stay awake 500ms after last UART byte
+
 // Periodic wake state tracking
 static bool periodicWakeActive = false;
 static uint32_t periodicWakeStartTime = 0;
@@ -238,6 +243,19 @@ int main(void)
         HAL_Delay(100);
         led.off();
         HAL_Delay(900);  // Check every second
+      }
+    } else if (uartActivityFlag) {
+      // UART activity detected - stay awake to process data
+      uint32_t elapsed = HAL_GetTick() - uartLastActivityTime;
+      if (elapsed >= UART_ACTIVITY_TIMEOUT_MS) {
+        // Timeout - no more UART activity, can go back to sleep
+        uartActivityFlag = false;
+      } else {
+        // Fast blink to show UART processing active
+        led.setColor(LED::GREEN);
+        HAL_Delay(50);
+        led.off();
+        HAL_Delay(50);
       }
     } else {
       // Not watering or periodic wake - normal sleep/wake cycle
@@ -618,6 +636,10 @@ void HAL_RTCEx_WakeUpTimerEventCallback(RTC_HandleTypeDef *hrtc)
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
     if (huart->Instance == LPUART1) {
+        // Mark UART activity to keep MCU awake while receiving data
+        uartActivityFlag = true;
+        uartLastActivityTime = HAL_GetTick();
+
         // Process received byte through protocol
         protocol.processReceivedByte(uartRxByte);
 
