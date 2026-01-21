@@ -90,10 +90,7 @@ void SensorMode::onStart() {
         pmu_client_->getProtocol().onWakeNotification([this](PMU::WakeReason reason, const PMU::ScheduleEntry* entry) {
             this->handlePmuWake(reason, entry);
         });
-
-        // Give PMU time to be ready after boot before requesting time
-        sleep_ms(1000);
-
+        
         // Try to get time from PMU's battery-backed RTC (faster than waiting for hub sync)
         pmu_logger.info("Requesting datetime from PMU...");
         pmu_client_->getProtocol().getDateTime([this](bool valid, const PMU::DateTime& datetime) {
