@@ -78,14 +78,13 @@ void SensorMode::onStart() {
     if (pmu_available_) {
         pmu_logger.info("PMU client initialized successfully");
 
-        // Start PMU processing on Core 1 - allows responses to be handled
-        // even during LoRa TX/RX operations on Core 0
-        pmu_client_->startCore1Processing();
-
         // Set up PMU callback handler
         pmu_client_->getProtocol().onWakeNotification([this](PMU::WakeReason reason, const PMU::ScheduleEntry* entry) {
             this->handlePmuWake(reason, entry);
         });
+
+        // Give PMU time to be ready after boot before requesting time
+        sleep_ms(1000);
 
         // Try to get time from PMU's battery-backed RTC (faster than waiting for hub sync)
         pmu_logger.info("Requesting datetime from PMU...");
@@ -111,20 +110,21 @@ void SensorMode::onStart() {
                                dt.year, dt.month, dt.day, dt.hour, dt.min, dt.sec);
                     // Switch to operational LED pattern immediately
                     switchToOperationalPattern();
+                    // Trigger backlog check flow (same as periodic wake)
+                    backlog_check_requested_ = true;
                 } else {
                     logger.error("Failed to set RTC from PMU time");
                 }
             } else {
-                pmu_logger.info("PMU time not valid (first boot?) - waiting for hub sync");
+                // PMU doesn't have valid time - need to sync from hub
+                pmu_logger.info("PMU time not valid (first boot?) - sending heartbeat for hub sync");
+                sendHeartbeat(0);
             }
         });
     } else {
-        logger.warn("PMU client not available - running without power management");
+        logger.warn("PMU client not available - sending heartbeat for time sync");
+        sendHeartbeat(0);
     }
-
-    // Send initial heartbeat immediately to sync RTC (if PMU didn't have valid time)
-    logger.info("Sending initial heartbeat for time sync...");
-    sendHeartbeat(0);
 
     // Add periodic sensor reading task (stores to flash, no immediate TX)
     task_manager_.addTask(
@@ -155,13 +155,15 @@ void SensorMode::onStart() {
 }
 
 void SensorMode::onLoop() {
-    // Note: PMU message processing now runs on Core 1 via pmu_client_->startCore1Processing()
-    // No need to call pmu_client_->process() here
+    // Process any pending PMU messages (fills flags, minimal work)
+    if (pmu_available_ && pmu_client_) {
+        pmu_client_->process();
+    }
 
     // Handle deferred backlog check (triggered by PMU periodic wake)
     // Wait for RTC sync before processing - we need valid timestamps
-    if (backlog_check_requested_.load() && isRtcSynced()) {
-        backlog_check_requested_.store(false);
+    if (backlog_check_requested_ && isRtcSynced()) {
+        backlog_check_requested_ = false;
 
         // Take a sensor reading now that RTC is synced
         pmu_logger.info("RTC synced - taking sensor reading");
@@ -189,8 +191,8 @@ void SensorMode::onLoop() {
     }
 
     // Handle deferred sleep signal (outside callback chain for stack safety)
-    if (sleep_requested_.load()) {
-        sleep_requested_.store(false);
+    if (sleep_requested_) {
+        sleep_requested_ = false;
         if (pmu_available_ && pmu_client_) {
             // Small delay to ensure STM32 UART RX is ready after sending wake notification
             sleep_ms(100);
@@ -393,7 +395,26 @@ void SensorMode::signalReadyForSleep() {
     // Set flag for deferred processing in onLoop()
     // Don't call PMU protocol directly here - may be inside callback chain
     pmu_logger.debug("Requesting sleep (will send in main loop)");
-    sleep_requested_.store(true);
+    sleep_requested_ = true;
+}
+
+void SensorMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry* entry) {
+    switch (reason) {
+        case PMU::WakeReason::Periodic:
+            pmu_logger.info("Periodic wake - requesting backlog check");
+            // Set flag for deferred processing in onLoop() to avoid deep call stack
+            backlog_check_requested_ = true;
+            break;
+
+        case PMU::WakeReason::Scheduled:
+            // Sensor mode doesn't have scheduled events, but log if received
+            pmu_logger.warn("Unexpected scheduled wake in sensor mode");
+            break;
+
+        case PMU::WakeReason::External:
+            pmu_logger.info("External wake trigger");
+            break;
+    }
 }
 
 void SensorMode::onHeartbeatResponse(const HeartbeatResponsePayload* payload) {
@@ -404,7 +425,7 @@ void SensorMode::onHeartbeatResponse(const HeartbeatResponsePayload* payload) {
     if (pmu_available_ && pmu_client_ && payload) {
         // Convert HeartbeatResponsePayload to PMU::DateTime
         PMU::DateTime datetime(
-            payload->year % 100,  // PMU uses 2-digit year (e.g., 25 for 2025)
+            payload->year % 100,  // PMU uses 2-digit year (e.g., 26 for 2026)
             payload->month,
             payload->day,
             payload->dotw,
@@ -417,7 +438,7 @@ void SensorMode::onHeartbeatResponse(const HeartbeatResponsePayload* payload) {
                        datetime.year, datetime.month, datetime.day,
                        datetime.hour, datetime.minute, datetime.second);
 
-        // Send datetime to PMU - PMU decides if update is needed based on drift
+        // Send datetime to PMU
         pmu_client_->getProtocol().setDateTime(datetime, [](bool success, PMU::ErrorCode error) {
             if (success) {
                 pmu_logger.info("PMU time sync successful");
@@ -425,24 +446,5 @@ void SensorMode::onHeartbeatResponse(const HeartbeatResponsePayload* payload) {
                 pmu_logger.error("PMU time sync failed: error %d", static_cast<int>(error));
             }
         });
-    }
-}
-
-void SensorMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry* entry) {
-    switch (reason) {
-        case PMU::WakeReason::Periodic:
-            pmu_logger.info("Periodic wake - requesting backlog check");
-            // Set flag for deferred processing in onLoop() to avoid deep call stack
-            backlog_check_requested_.store(true);
-            break;
-
-        case PMU::WakeReason::Scheduled:
-            // Sensor mode doesn't have scheduled events, but log if received
-            pmu_logger.warn("Unexpected scheduled wake in sensor mode");
-            break;
-
-        case PMU::WakeReason::External:
-            pmu_logger.info("External wake trigger");
-            break;
     }
 }
