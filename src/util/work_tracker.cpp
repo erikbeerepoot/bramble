@@ -16,6 +16,7 @@ void WorkTracker::addWork(WorkType type) {
     }
 
     active_work_ |= bit;
+    idle_signaled_ = false;  // Reset - we have new work to do
     logger.info("Work added: %s", workTypeName(type));
     logState();
 }
@@ -47,7 +48,8 @@ bool WorkTracker::hasWork(WorkType type) const {
 }
 
 void WorkTracker::checkIdle() {
-    if (isIdle() && on_idle_) {
+    if (isIdle() && on_idle_ && !idle_signaled_) {
+        idle_signaled_ = true;  // Only signal once per idle period
         logger.info("All work complete - signaling idle");
         on_idle_();
     }

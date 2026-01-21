@@ -102,6 +102,7 @@ private:
     // Bitmask for active work (up to 8 work types)
     uint8_t active_work_ = 0;
     IdleCallback on_idle_;
+    bool idle_signaled_ = false;  // Prevents repeated idle callbacks
 
     /**
      * @brief Get human-readable name for work type
