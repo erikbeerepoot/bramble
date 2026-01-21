@@ -4,6 +4,7 @@
 #include "../led_patterns.h"
 #include "../hal/logger.h"
 #include "pico/unique_id.h"
+#include "hardware/rtc.h"
 #include <cstring>
 
 constexpr uint16_t HUB_ADDRESS = ADDRESS_HUB;
@@ -40,6 +41,10 @@ void IrrigationMode::onStart() {
     if (pmu_available_) {
         pmu_logger.info("PMU client initialized successfully");
 
+        // Start PMU processing on Core 1 - allows responses to be handled
+        // even during LoRa TX/RX operations on Core 0
+        pmu_client_->startCore1Processing();
+
         // Set up PMU callback handlers
         auto& protocol = pmu_client_->getProtocol();
 
@@ -49,6 +54,38 @@ void IrrigationMode::onStart() {
 
         protocol.onScheduleComplete([this]() {
             this->handleScheduleComplete();
+        });
+
+        // Try to get time from PMU's battery-backed RTC (faster than waiting for hub sync)
+        pmu_logger.info("Requesting datetime from PMU...");
+        protocol.getDateTime([this](bool valid, const PMU::DateTime& datetime) {
+            if (valid) {
+                pmu_logger.info("PMU has valid time: 20%02d-%02d-%02d %02d:%02d:%02d",
+                               datetime.year, datetime.month, datetime.day,
+                               datetime.hour, datetime.minute, datetime.second);
+
+                // Set RP2040 RTC from PMU time
+                datetime_t dt;
+                dt.year = 2000 + datetime.year;
+                dt.month = datetime.month;
+                dt.day = datetime.day;
+                dt.dotw = datetime.weekday;
+                dt.hour = datetime.hour;
+                dt.min = datetime.minute;
+                dt.sec = datetime.second;
+
+                if (rtc_set_datetime(&dt)) {
+                    rtc_synced_ = true;
+                    logger.info("RTC synced from PMU: %04d-%02d-%02d %02d:%02d:%02d",
+                               dt.year, dt.month, dt.day, dt.hour, dt.min, dt.sec);
+                    // Switch to operational LED pattern immediately
+                    switchToOperationalPattern();
+                } else {
+                    logger.error("Failed to set RTC from PMU time");
+                }
+            } else {
+                pmu_logger.info("PMU time not valid (first boot?) - waiting for hub sync");
+            }
         });
 
         // NOTE: DateTime, wake interval, and schedules are now managed remotely
@@ -70,7 +107,7 @@ void IrrigationMode::onStart() {
     // Blue single channel at full brightness for power efficiency
     operational_pattern_ = std::make_unique<ShortBlinkPattern>(led_, 0, 0, 255);
 
-    // Send initial heartbeat immediately to sync RTC
+    // Send initial heartbeat immediately to sync RTC (if PMU didn't have valid time)
     logger.info("Sending initial heartbeat for time sync...");
     uint32_t uptime = 0;
     uint8_t battery_level = 85;
@@ -149,10 +186,8 @@ void IrrigationMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEn
 }
 
 void IrrigationMode::onLoop() {
-    // Process any pending PMU messages (moved out of IRQ context)
-    if (pmu_available_ && pmu_client_) {
-        pmu_client_->process();
-    }
+    // Note: PMU message processing now runs on Core 1 via pmu_client_->startCore1Processing()
+    // No need to call pmu_client_->process() here
 }
 
 void IrrigationMode::handleScheduleComplete() {

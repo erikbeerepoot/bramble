@@ -122,3 +122,60 @@ void PmuClient::onUartRxIrq() {
         // If buffer full, drop the byte
     }
 }
+
+void PmuClient::startCore1Processing() {
+    if (core1Running_.load()) {
+        pmu_client_log.warn("Core 1 already running");
+        return;
+    }
+
+    core1StopRequested_.store(false);
+
+    // Launch Core 1 - it will retrieve the instance pointer from FIFO
+    multicore_launch_core1(core1Entry);
+
+    // Send instance pointer to Core 1 via FIFO
+    multicore_fifo_push_blocking(reinterpret_cast<uint32_t>(this));
+
+    core1Running_.store(true);
+    pmu_client_log.info("PMU processing started on Core 1");
+}
+
+void PmuClient::stopCore1Processing() {
+    if (!core1Running_.load()) {
+        return;
+    }
+
+    core1StopRequested_.store(true);
+
+    // Give Core 1 time to exit gracefully
+    sleep_ms(10);
+
+    // Reset Core 1
+    multicore_reset_core1();
+
+    core1Running_.store(false);
+    pmu_client_log.info("PMU processing stopped on Core 1");
+}
+
+void PmuClient::core1Entry() {
+    // Retrieve instance pointer from FIFO (sent by Core 0)
+    uint32_t ptr = multicore_fifo_pop_blocking();
+    PmuClient* client = reinterpret_cast<PmuClient*>(ptr);
+
+    if (client) {
+        client->core1Loop();
+    }
+}
+
+void PmuClient::core1Loop() {
+    while (!core1StopRequested_.load()) {
+        // Process bytes from ring buffer
+        // Note: process() handles error flag logging and protocol parsing
+        process();
+
+        // Brief sleep to avoid busy-spinning
+        // 500us is fast enough to catch all bytes at 9600 baud (1 byte every ~1ms)
+        sleep_us(500);
+    }
+}

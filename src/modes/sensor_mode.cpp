@@ -78,15 +78,51 @@ void SensorMode::onStart() {
     if (pmu_available_) {
         pmu_logger.info("PMU client initialized successfully");
 
+        // Start PMU processing on Core 1 - allows responses to be handled
+        // even during LoRa TX/RX operations on Core 0
+        pmu_client_->startCore1Processing();
+
         // Set up PMU callback handler
         pmu_client_->getProtocol().onWakeNotification([this](PMU::WakeReason reason, const PMU::ScheduleEntry* entry) {
             this->handlePmuWake(reason, entry);
+        });
+
+        // Try to get time from PMU's battery-backed RTC (faster than waiting for hub sync)
+        pmu_logger.info("Requesting datetime from PMU...");
+        pmu_client_->getProtocol().getDateTime([this](bool valid, const PMU::DateTime& datetime) {
+            if (valid) {
+                pmu_logger.info("PMU has valid time: 20%02d-%02d-%02d %02d:%02d:%02d",
+                               datetime.year, datetime.month, datetime.day,
+                               datetime.hour, datetime.minute, datetime.second);
+
+                // Set RP2040 RTC from PMU time
+                datetime_t dt;
+                dt.year = 2000 + datetime.year;
+                dt.month = datetime.month;
+                dt.day = datetime.day;
+                dt.dotw = datetime.weekday;
+                dt.hour = datetime.hour;
+                dt.min = datetime.minute;
+                dt.sec = datetime.second;
+
+                if (rtc_set_datetime(&dt)) {
+                    rtc_synced_ = true;
+                    logger.info("RTC synced from PMU: %04d-%02d-%02d %02d:%02d:%02d",
+                               dt.year, dt.month, dt.day, dt.hour, dt.min, dt.sec);
+                    // Switch to operational LED pattern immediately
+                    switchToOperationalPattern();
+                } else {
+                    logger.error("Failed to set RTC from PMU time");
+                }
+            } else {
+                pmu_logger.info("PMU time not valid (first boot?) - waiting for hub sync");
+            }
         });
     } else {
         logger.warn("PMU client not available - running without power management");
     }
 
-    // Send initial heartbeat immediately to sync RTC before first sensor reading
+    // Send initial heartbeat immediately to sync RTC (if PMU didn't have valid time)
     logger.info("Sending initial heartbeat for time sync...");
     sendHeartbeat(0);
 
@@ -119,15 +155,13 @@ void SensorMode::onStart() {
 }
 
 void SensorMode::onLoop() {
-    // Process any pending PMU messages (fills flags, minimal work)
-    if (pmu_available_ && pmu_client_) {
-        pmu_client_->process();
-    }
+    // Note: PMU message processing now runs on Core 1 via pmu_client_->startCore1Processing()
+    // No need to call pmu_client_->process() here
 
     // Handle deferred backlog check (triggered by PMU periodic wake)
     // Wait for RTC sync before processing - we need valid timestamps
-    if (backlog_check_requested_ && isRtcSynced()) {
-        backlog_check_requested_ = false;
+    if (backlog_check_requested_.load() && isRtcSynced()) {
+        backlog_check_requested_.store(false);
 
         // Take a sensor reading now that RTC is synced
         pmu_logger.info("RTC synced - taking sensor reading");
@@ -155,8 +189,8 @@ void SensorMode::onLoop() {
     }
 
     // Handle deferred sleep signal (outside callback chain for stack safety)
-    if (sleep_requested_) {
-        sleep_requested_ = false;
+    if (sleep_requested_.load()) {
+        sleep_requested_.store(false);
         if (pmu_available_ && pmu_client_) {
             // Small delay to ensure STM32 UART RX is ready after sending wake notification
             sleep_ms(100);
@@ -359,7 +393,39 @@ void SensorMode::signalReadyForSleep() {
     // Set flag for deferred processing in onLoop()
     // Don't call PMU protocol directly here - may be inside callback chain
     pmu_logger.debug("Requesting sleep (will send in main loop)");
-    sleep_requested_ = true;
+    sleep_requested_.store(true);
+}
+
+void SensorMode::onHeartbeatResponse(const HeartbeatResponsePayload* payload) {
+    // Call base class implementation to update RP2040 RTC
+    ApplicationMode::onHeartbeatResponse(payload);
+
+    // Also sync time to PMU if available
+    if (pmu_available_ && pmu_client_ && payload) {
+        // Convert HeartbeatResponsePayload to PMU::DateTime
+        PMU::DateTime datetime(
+            payload->year % 100,  // PMU uses 2-digit year (e.g., 25 for 2025)
+            payload->month,
+            payload->day,
+            payload->dotw,
+            payload->hour,
+            payload->min,
+            payload->sec
+        );
+
+        pmu_logger.info("Syncing time to PMU: 20%02d-%02d-%02d %02d:%02d:%02d",
+                       datetime.year, datetime.month, datetime.day,
+                       datetime.hour, datetime.minute, datetime.second);
+
+        // Send datetime to PMU - PMU decides if update is needed based on drift
+        pmu_client_->getProtocol().setDateTime(datetime, [](bool success, PMU::ErrorCode error) {
+            if (success) {
+                pmu_logger.info("PMU time sync successful");
+            } else {
+                pmu_logger.error("PMU time sync failed: error %d", static_cast<int>(error));
+            }
+        });
+    }
 }
 
 void SensorMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry* entry) {
@@ -367,7 +433,7 @@ void SensorMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry*
         case PMU::WakeReason::Periodic:
             pmu_logger.info("Periodic wake - requesting backlog check");
             // Set flag for deferred processing in onLoop() to avoid deep call stack
-            backlog_check_requested_ = true;
+            backlog_check_requested_.store(true);
             break;
 
         case PMU::WakeReason::Scheduled:
