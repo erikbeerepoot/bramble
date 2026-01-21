@@ -33,7 +33,8 @@ void WorkTracker::completeWork(WorkType type) {
     logger.info("Work completed: %s", workTypeName(type));
     logState();
 
-    checkIdle();
+    // Note: checkIdle() is NOT called here automatically.
+    // Caller should call checkIdle() explicitly when ready.
 }
 
 bool WorkTracker::hasWork() const {

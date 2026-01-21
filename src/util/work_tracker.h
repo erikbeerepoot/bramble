@@ -24,9 +24,9 @@ enum class WorkType : uint8_t {
 /**
  * @brief Tracks pending work and signals when idle
  *
- * Provides a centralized way to track what work is pending and automatically
- * call a callback when all work completes. This replaces scattered manual
- * signalReadyForSleep() calls with a single idle callback.
+ * Provides a centralized way to track what work is pending. The idle callback
+ * is only invoked when explicitly checked via checkIdle(), giving the caller
+ * full control over when idle is evaluated.
  *
  * Usage:
  *   WorkTracker tracker;
@@ -34,7 +34,10 @@ enum class WorkType : uint8_t {
  *
  *   tracker.addWork(WorkType::RtcSync);
  *   // ... RTC syncs ...
- *   tracker.completeWork(WorkType::RtcSync);  // Idle callback fires if no other work
+ *   tracker.completeWork(WorkType::RtcSync);
+ *
+ *   // In main loop - check if idle and fire callback
+ *   tracker.checkIdle();
  */
 class WorkTracker {
 public:
@@ -58,7 +61,8 @@ public:
      * @brief Complete work of the given type
      * @param type The type of work that completed
      *
-     * If all work is now complete, the idle callback is invoked.
+     * Note: This does NOT automatically fire the idle callback.
+     * Call checkIdle() explicitly when ready to evaluate idle state.
      */
     void completeWork(WorkType type);
 
@@ -86,15 +90,18 @@ public:
      */
     void logState() const;
 
+    /**
+     * @brief Check if idle and invoke callback if so
+     *
+     * Call this from the main loop after all event processing is done.
+     * Only fires the callback if isIdle() returns true.
+     */
+    void checkIdle();
+
 private:
     // Bitmask for active work (up to 8 work types)
     uint8_t active_work_ = 0;
     IdleCallback on_idle_;
-
-    /**
-     * @brief Check if idle and invoke callback if so
-     */
-    void checkIdle();
 
     /**
      * @brief Get human-readable name for work type

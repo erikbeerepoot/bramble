@@ -208,6 +208,10 @@ void IrrigationMode::onLoop() {
     if (pmu_available_ && pmu_client_) {
         pmu_client_->process();
     }
+
+    // Check if all work is complete and fire idle callback if so
+    // This is done at the end of the loop to ensure all events have settled
+    work_tracker_.checkIdle();
 }
 
 void IrrigationMode::handleScheduleComplete() {

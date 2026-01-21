@@ -183,6 +183,10 @@ void SensorMode::onLoop() {
             });
         }
     }
+
+    // Check if all work is complete and fire idle callback if so
+    // This is done at the end of the loop to ensure all events have settled
+    work_tracker_.checkIdle();
 }
 
 void SensorMode::readAndStoreSensorData(uint32_t current_time) {
