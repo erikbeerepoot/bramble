@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document defines the architecture for reliable serial communication between the STM32 PMU (Power Management Unit) and the RP2040 microcontroller.
+This document defines the architecture for reliable serial communication between the STM32 PMU (Power Management Unit) and the RP2040 microcontroller. All commands are treated as critical and will retry until acknowledged.
 
 ## Current State Analysis
 
@@ -37,10 +37,9 @@ This document defines the architecture for reliable serial communication between
 
 ### Design Principles
 
-1. **Layer on existing protocol** - Don't change wire format significantly (backward compatible)
-2. **Adapt proven patterns** - Follow ReliableMessenger design from LoRa stack
-3. **Criticality-based delivery** - Not all commands need the same reliability
-4. **Bidirectional reliability** - Both RP2040→STM32 and STM32→RP2040
+1. **All messages are critical** - Retry until success
+2. **Simple and robust** - Minimal complexity
+3. **Bidirectional reliability** - Both RP2040→STM32 and STM32→RP2040
 
 ### Architecture Layers
 
@@ -53,7 +52,6 @@ This document defines the architecture for reliable serial communication between
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
 │               ReliablePmuClient (NEW)                       │
-│   - Criticality-based delivery                              │
 │   - Sequence numbering & deduplication                      │
 │   - Timeout detection & automatic retry                     │
 │   - ACK tracking & callbacks                                │
@@ -65,7 +63,6 @@ This document defines the architecture for reliable serial communication between
 │               PMU Protocol (ENHANCED)                       │
 │   - Add sequence number to frame header                     │
 │   - Enhanced ACK with sequence echo                         │
-│   - Timeout watchdog                                        │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -93,91 +90,57 @@ PROPOSED: [START][LENGTH][SEQ][CMD][DATA...][CHECKSUM][END]
 **Sequence Number Rules:**
 - RP2040 uses range: 1-127
 - STM32 uses range: 128-254
-- 0 and 255 reserved (0 = no-seq/legacy, 255 = broadcast)
 - Wrap around within each range
 
 **Enhanced ACK Response:**
 ```
 CURRENT ACK:  [START][01][0x80][CHECKSUM][END]  (no context)
-PROPOSED ACK: [START][02][0x80][SEQ_ECHO][CHECKSUM][END]
-                                ^^^^^^^^
-                          Echo the command's sequence number
+PROPOSED ACK: [START][02][SEQ_ECHO][0x80][CHECKSUM][END]
+                          ^^^^^^^^
+                    Echo the command's sequence number
 ```
 
 This allows the sender to know which command was acknowledged.
 
-### 2. Criticality Levels
+### 2. Retry Policy
 
-Adapt the LoRa criticality model for PMU operations:
-
-```cpp
-enum class PmuCriticality {
-    BEST_EFFORT = 0,   // No retry (status queries)
-    RELIABLE = 1,      // 3 retries, 500ms/1s/2s backoff (normal commands)
-    CRITICAL = 2       // Persistent retry (power-critical operations)
-};
-```
-
-**Command Criticality Mapping:**
-
-| Command | Criticality | Rationale |
-|---------|-------------|-----------|
-| `GetWakeInterval` | BEST_EFFORT | Informational, can retry manually |
-| `GetSchedule` | BEST_EFFORT | Informational |
-| `SetWakeInterval` | RELIABLE | Important but not time-critical |
-| `SetSchedule` | RELIABLE | Important configuration |
-| `SetDateTime` | RELIABLE | Time sync is important |
-| `ClearSchedule` | RELIABLE | Configuration change |
-| `KeepAwake` | CRITICAL | Power-critical, must not miss |
-| `ReadyForSleep` | CRITICAL | Power-critical, must complete |
-
-### 3. Retry Policy
+All commands retry with exponential backoff until acknowledged:
 
 ```cpp
-struct PmuRetryPolicy {
-    static constexpr uint32_t BEST_EFFORT_TIMEOUT_MS = 0;      // No timeout
-    static constexpr uint32_t RELIABLE_BASE_TIMEOUT_MS = 500;  // Fast for UART
-    static constexpr uint32_t RELIABLE_MAX_TIMEOUT_MS = 2000;
-    static constexpr uint8_t  RELIABLE_MAX_ATTEMPTS = 3;
-    static constexpr uint32_t CRITICAL_BASE_TIMEOUT_MS = 500;
-    static constexpr uint32_t CRITICAL_MAX_TIMEOUT_MS = 5000;
-    static constexpr uint8_t  CRITICAL_MAX_ATTEMPTS = 10;
-    static constexpr bool     CRITICAL_INFINITE_RETRY = true;
-};
+namespace PmuReliability {
+    constexpr uint32_t BASE_TIMEOUT_MS = 500;
+    constexpr uint32_t MAX_TIMEOUT_MS = 5000;
+    constexpr float BACKOFF_MULTIPLIER = 2.0f;
+}
 ```
 
-### 4. ReliablePmuClient Class
+**Timeout Calculation:**
+```
+Attempt 1: 500ms
+Attempt 2: 1000ms
+Attempt 3: 2000ms
+Attempt 4+: 5000ms (capped)
+```
+
+### 3. ReliablePmuClient Class
 
 ```cpp
 class ReliablePmuClient {
 public:
-    // Callback types
     using CommandCallback = std::function<void(bool success, PMU::ErrorCode error)>;
     using WakeCallback = std::function<void(PMU::WakeReason reason, const PMU::ScheduleEntry* entry)>;
 
     ReliablePmuClient(PmuClient* client);
 
-    // High-level reliable commands
-    bool setWakeInterval(uint32_t seconds,
-                         PmuCriticality criticality = PmuCriticality::RELIABLE,
-                         CommandCallback callback = nullptr);
+    // Reliable commands (all retry until success)
+    bool setWakeInterval(uint32_t seconds, CommandCallback callback = nullptr);
+    bool setSchedule(const PMU::ScheduleEntry& entry, CommandCallback callback = nullptr);
+    bool setDateTime(const PMU::DateTime& dt, CommandCallback callback = nullptr);
+    bool clearSchedule(CommandCallback callback = nullptr);
+    bool keepAwake(uint16_t seconds, CommandCallback callback = nullptr);
+    bool readyForSleep(CommandCallback callback = nullptr);
 
-    bool setSchedule(const PMU::ScheduleEntry& entry,
-                     PmuCriticality criticality = PmuCriticality::RELIABLE,
-                     CommandCallback callback = nullptr);
-
-    bool setDateTime(const PMU::DateTime& dt,
-                     PmuCriticality criticality = PmuCriticality::RELIABLE,
-                     CommandCallback callback = nullptr);
-
-    bool keepAwake(uint16_t seconds,
-                   PmuCriticality criticality = PmuCriticality::CRITICAL,
-                   CommandCallback callback = nullptr);
-
-    bool readyForSleep(PmuCriticality criticality = PmuCriticality::CRITICAL,
-                       CommandCallback callback = nullptr);
-
-    // Query commands (no reliability needed)
+    // Query commands (also reliable)
     bool getWakeInterval(PMU::WakeIntervalCallback callback);
     bool getSchedule(uint8_t index, PMU::ScheduleEntryCallback callback);
 
@@ -188,10 +151,9 @@ public:
     // Must be called regularly from main loop
     void update();
 
-    // Statistics
+    // Status
     size_t getPendingCount() const;
-    uint32_t getRetryCount() const;
-    uint32_t getFailureCount() const;
+    bool hasPendingCommands() const;
 
 private:
     struct PendingCommand {
@@ -201,59 +163,48 @@ private:
         uint8_t data_length;
         uint32_t send_time;
         uint8_t attempts;
-        PmuCriticality criticality;
         CommandCallback callback;
     };
 
     PmuClient* client_;
-    uint8_t next_seq_num_;
-    std::map<uint8_t, PendingCommand> pending_;
+    uint8_t next_seq_num_;  // Range: 1-127
 
-    // Deduplication (for STM32→RP2040 messages)
+    // Command queue (one in-flight at a time)
+    std::queue<PendingCommand> command_queue_;
+    std::optional<PendingCommand> in_flight_;
+
+    // Deduplication for STM32→RP2040 messages
     struct SeenMessage {
         uint8_t seq_num;
         uint32_t timestamp;
     };
-    SeenMessage seen_[8];  // Small ring buffer
+    SeenMessage seen_[8];
     size_t seen_index_;
 
-    // Statistics
-    uint32_t retry_count_;
-    uint32_t failure_count_;
-
     uint8_t getNextSeqNum();
+    uint32_t getTimeout(uint8_t attempts);
     void handleAck(uint8_t seq_num, PMU::ErrorCode error);
-    void checkTimeouts();
-    void retryCommand(PendingCommand& cmd);
+    void retryCommand();
+    void sendNextQueued();
     bool wasRecentlySeen(uint8_t seq_num);
     void markAsSeen(uint8_t seq_num);
 };
 ```
 
-### 5. Command Queue Management
-
-Unlike LoRa (which can have many pending messages in flight), the PMU serial link is simpler:
+### 4. Command Queue Management
 
 **Queue Strategy:**
-- Only **one command in flight** at a time (simplifies STM32 implementation)
-- Queue additional commands, send next when ACK received or timeout
+- Only **one command in flight** at a time
+- Queue additional commands, send next when ACK received
 - Maximum queue depth: 8 commands
-- Oldest commands dropped if queue full (with error callback)
+- If queue full: block caller (return false)
 
 ```cpp
 std::queue<PendingCommand> command_queue_;
 std::optional<PendingCommand> in_flight_;
 ```
 
-### 6. Timeout and Watchdog
-
-**Per-Command Timeout:**
-- Start timer when command sent
-- On timeout: retry (if attempts remaining) or fail (call callback with error)
-
-**Protocol Watchdog:**
-- If no valid response within 10 seconds of any transmission, reset parser
-- This handles corruption-induced desync
+### 5. Update Loop
 
 ```cpp
 void ReliablePmuClient::update() {
@@ -262,70 +213,77 @@ void ReliablePmuClient::update() {
     // Check for in-flight timeout
     if (in_flight_) {
         uint32_t elapsed = now - in_flight_->send_time;
-        uint32_t timeout = getTimeout(in_flight_->criticality, in_flight_->attempts);
+        uint32_t timeout = getTimeout(in_flight_->attempts);
 
         if (elapsed > timeout) {
-            if (shouldRetry(in_flight_->criticality, in_flight_->attempts)) {
-                retryCommand(*in_flight_);
-            } else {
-                // Max retries exceeded
-                if (in_flight_->callback) {
-                    in_flight_->callback(false, PMU::ErrorCode::Timeout);
-                }
-                failure_count_++;
-                in_flight_.reset();
-                sendNextQueued();
-            }
+            retryCommand();
         }
     }
 
-    // Process received bytes (delegates to PmuClient)
+    // Process received bytes
     client_->process();
+}
+
+void ReliablePmuClient::retryCommand() {
+    in_flight_->attempts++;
+    in_flight_->send_time = to_ms_since_boot(get_absolute_time());
+
+    // Re-send the command
+    client_->sendRaw(in_flight_->seq_num, in_flight_->command,
+                     in_flight_->data.get(), in_flight_->data_length);
+}
+
+uint32_t ReliablePmuClient::getTimeout(uint8_t attempts) {
+    uint32_t timeout = BASE_TIMEOUT_MS;
+    for (uint8_t i = 1; i < attempts && timeout < MAX_TIMEOUT_MS; i++) {
+        timeout *= BACKOFF_MULTIPLIER;
+    }
+    return std::min(timeout, MAX_TIMEOUT_MS);
 }
 ```
 
-### 7. Deduplication (STM32 Side)
+### 6. Deduplication (STM32 Side)
 
-The STM32 must also implement deduplication to handle RP2040 retries:
+The STM32 must implement deduplication to handle RP2040 retries:
 
 ```cpp
-// On STM32 side (pmu_protocol.cpp in pmu-stm32/)
+// On STM32 side (pmu_protocol.cpp)
+static constexpr size_t SEEN_BUFFER_SIZE = 8;
+static constexpr uint32_t DEDUP_WINDOW_MS = 5000;
+
+struct SeenMessage {
+    uint8_t seq_num;
+    uint32_t timestamp;
+};
+static SeenMessage seen_buffer[SEEN_BUFFER_SIZE];
+static size_t seen_index = 0;
+
 bool was_recently_seen(uint8_t seq_num) {
-    for (int i = 0; i < SEEN_BUFFER_SIZE; i++) {
+    uint32_t now = HAL_GetTick();
+    for (size_t i = 0; i < SEEN_BUFFER_SIZE; i++) {
         if (seen_buffer[i].seq_num == seq_num &&
-            (HAL_GetTick() - seen_buffer[i].timestamp) < DEDUP_WINDOW_MS) {
+            (now - seen_buffer[i].timestamp) < DEDUP_WINDOW_MS) {
             return true;
         }
     }
     return false;
 }
 
+void mark_as_seen(uint8_t seq_num) {
+    seen_buffer[seen_index].seq_num = seq_num;
+    seen_buffer[seen_index].timestamp = HAL_GetTick();
+    seen_index = (seen_index + 1) % SEEN_BUFFER_SIZE;
+}
+
 void process_command(uint8_t seq_num, Command cmd, const uint8_t* data, uint8_t len) {
     // Always send ACK (even for duplicates)
     send_ack(seq_num);
 
-    // But only execute if not a duplicate
+    // Only execute if not a duplicate
     if (!was_recently_seen(seq_num)) {
         mark_as_seen(seq_num);
         execute_command(cmd, data, len);
     }
-}
-```
-
-### 8. Backward Compatibility
-
-To support gradual migration:
-
-1. **Legacy Detection**: If `seq_num == 0`, treat as legacy (no-seq) message
-2. **Version Negotiation**: Optional handshake on startup to detect capabilities
-3. **Fallback Mode**: If STM32 doesn't echo seq in ACK, disable reliability features
-
-```cpp
-bool ReliablePmuClient::detectCapabilities() {
-    // Send a probe command with seq_num
-    // If ACK echoes seq_num: full reliability supported
-    // If ACK doesn't echo: legacy mode, disable dedup
-    return probe_result_;
 }
 ```
 
@@ -340,20 +298,20 @@ bool ReliablePmuClient::detectCapabilities() {
                   │ (slot available)
                   ▼
            ┌──────────────┐
-    ┌─────▶│   IN_FLIGHT  │◀────────┐
-    │      └──────┬───────┘         │
-    │             │                 │
-    │    ┌────────┴────────┐        │
-    │    ▼                 ▼        │
-    │  ┌─────┐         ┌───────┐    │ (retry)
-    │  │ ACK │         │TIMEOUT│────┘
-    │  └──┬──┘         └───┬───┘
-    │     │                │ (max retries)
-    │     ▼                ▼
-    │ ┌────────┐      ┌────────┐
-    └─│SUCCESS │      │ FAILED │
-      │callback│      │callback│
-      └────────┘      └────────┘
+           │   IN_FLIGHT  │◀───────┐
+           └──────┬───────┘        │
+                  │                │
+         ┌────────┴────────┐       │
+         ▼                 ▼       │
+       ┌─────┐         ┌───────┐   │ (retry forever)
+       │ ACK │         │TIMEOUT│───┘
+       └──┬──┘         └───────┘
+          │
+          ▼
+      ┌────────┐
+      │SUCCESS │
+      │callback│
+      └────────┘
 ```
 
 ### Parser State Machine (Enhanced)
@@ -418,7 +376,6 @@ bool ReliablePmuClient::detectCapabilities() {
 2. Implement command queueing
 3. Add timeout detection and retry logic
 4. Add deduplication for incoming messages
-5. Implement statistics tracking
 
 ### Phase 3: STM32 Deduplication
 
@@ -431,43 +388,31 @@ bool ReliablePmuClient::detectCapabilities() {
 
 1. Unit tests for reliability layer
 2. Integration tests with simulated failures
-3. Stress testing with high retry rates
-4. Power-cycle recovery testing
+3. Power-cycle recovery testing
 
 ## Error Handling
-
-### Recoverable Errors
 
 | Error | Recovery |
 |-------|----------|
 | Checksum mismatch | Discard frame, wait for retry |
 | Timeout | Automatic retry with backoff |
-| Queue full | Drop oldest, callback with error |
+| Queue full | Return false to caller |
 | UART framing error | Log, continue (PmuClient handles) |
-
-### Non-Recoverable Errors
-
-| Error | Action |
-|-------|--------|
-| Max retries exceeded | Callback with failure, log warning |
-| STM32 NACK with error | Callback with error code, don't retry |
-| Protocol desync | Watchdog reset, re-init |
+| STM32 NACK with error | Callback with error code, retry anyway |
 
 ## Configuration Constants
 
 ```cpp
 namespace PmuReliability {
     // Timeouts
-    constexpr uint32_t RELIABLE_BASE_TIMEOUT_MS = 500;
-    constexpr uint32_t CRITICAL_BASE_TIMEOUT_MS = 500;
-    constexpr uint32_t WATCHDOG_TIMEOUT_MS = 10000;
-
-    // Retries
-    constexpr uint8_t RELIABLE_MAX_ATTEMPTS = 3;
-    constexpr uint8_t CRITICAL_MAX_ATTEMPTS = 10;
+    constexpr uint32_t BASE_TIMEOUT_MS = 500;
+    constexpr uint32_t MAX_TIMEOUT_MS = 5000;
+    constexpr float BACKOFF_MULTIPLIER = 2.0f;
 
     // Queue
     constexpr size_t MAX_QUEUE_DEPTH = 8;
+
+    // Deduplication
     constexpr size_t DEDUP_BUFFER_SIZE = 8;
     constexpr uint32_t DEDUP_WINDOW_MS = 5000;
 
@@ -476,8 +421,6 @@ namespace PmuReliability {
     constexpr uint8_t SEQ_RP2040_MAX = 127;
     constexpr uint8_t SEQ_STM32_MIN = 128;
     constexpr uint8_t SEQ_STM32_MAX = 254;
-    constexpr uint8_t SEQ_LEGACY = 0;
-    constexpr uint8_t SEQ_BROADCAST = 255;
 }
 ```
 
@@ -500,24 +443,7 @@ bramble/
 
 ## Success Criteria
 
-1. Commands with RELIABLE criticality achieve 99%+ delivery
-2. CRITICAL commands eventually succeed (infinite retry)
-3. No duplicate command execution on STM32
-4. Graceful degradation in high-error conditions
-5. < 50 bytes additional RAM overhead on STM32
-6. < 500 bytes additional RAM overhead on RP2040
-7. Backward compatible with existing protocol (legacy mode)
-
-## Open Questions
-
-1. **Queue priority**: Should CRITICAL commands jump the queue?
-   - Recommendation: Yes, CRITICAL goes to front of queue
-
-2. **Concurrent commands**: Allow multiple in-flight for independent operations?
-   - Recommendation: No, keep it simple with one-at-a-time
-
-3. **STM32 resource constraints**: How much RAM/flash available for dedup buffer?
-   - Need to verify: STM32L0 has limited resources
-
-4. **Power implications**: Do retries significantly impact sleep timing?
-   - Analysis needed: Retry delays vs. wake schedule
+1. All commands eventually succeed (infinite retry)
+2. No duplicate command execution on STM32
+3. < 50 bytes additional RAM overhead on STM32
+4. < 500 bytes additional RAM overhead on RP2040
