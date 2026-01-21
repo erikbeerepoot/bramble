@@ -1,9 +1,7 @@
 #ifndef PMU_CLIENT_H
 #define PMU_CLIENT_H
 
-#include <atomic>
 #include "pico/stdlib.h"
-#include "pico/multicore.h"
 #include "hardware/uart.h"
 #include "hardware/irq.h"
 #include "hardware/structs/uart.h"
@@ -55,22 +53,6 @@ public:
      */
     bool isInitialized() const { return initialized_; }
 
-    /**
-     * @brief Start PMU processing on Core 1
-     *
-     * Launches a background loop on Core 1 that continuously processes
-     * received bytes from the ring buffer. This allows PMU responses to
-     * be handled independently of Core 0's main loop (e.g., during LoRa TX/RX).
-     */
-    void startCore1Processing();
-
-    /**
-     * @brief Stop Core 1 processing
-     *
-     * Signals the Core 1 loop to stop and resets the core.
-     */
-    void stopCore1Processing();
-
 private:
     uart_inst_t* uart_;
     uint txPin_;
@@ -96,16 +78,6 @@ private:
 
     // Static instance for IRQ callback
     static PmuClient* instance_;
-
-    // Core 1 processing state
-    std::atomic<bool> core1Running_{false};
-    std::atomic<bool> core1StopRequested_{false};
-
-    // Core 1 entry point (static for multicore_launch_core1)
-    static void core1Entry();
-
-    // Core 1 processing loop
-    void core1Loop();
 };
 
 #endif // PMU_CLIENT_H
