@@ -279,9 +279,10 @@ void SystemClock_Config(void)
     Error_Handler();
   }
   PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_LPUART1|RCC_PERIPHCLK_RTC;
-  // Use PCLK1 (2.097 MHz from MSI) for LPUART - HAL will calculate correct BRR
-  // This avoids HSI clock source issues and provides a known working configuration
-  PeriphClkInit.Lpuart1ClockSelection = RCC_LPUART1CLKSOURCE_PCLK1;
+  // Use HSI (16 MHz) for LPUART - more accurate than MSI-derived PCLK1
+  // HSI is factory-calibrated with ±1% accuracy over temperature range
+  // MSI has wider tolerance which caused baud rate to be ~7.5% off (2218 instead of 2400)
+  PeriphClkInit.Lpuart1ClockSelection = RCC_LPUART1CLKSOURCE_HSI;
   PeriphClkInit.RTCClockSelection = RCC_RTCCLKSOURCE_LSI;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
   {
@@ -305,7 +306,7 @@ static void MX_LPUART1_UART_Init(void)
 
   /* USER CODE END LPUART1_Init 1 */
   hlpuart1.Instance = LPUART1;
-  hlpuart1.Init.BaudRate = 2400;  // Slower rate for better stability
+  hlpuart1.Init.BaudRate = 9600;  // Standard rate, requires HSI (16 MHz) clock source
   hlpuart1.Init.WordLength = UART_WORDLENGTH_8B;
   hlpuart1.Init.StopBits = UART_STOPBITS_2;  // 2 stop bits for better timing margin
   hlpuart1.Init.Parity = UART_PARITY_NONE;
