@@ -469,9 +469,6 @@ void SensorMode::onHeartbeatResponse(const HeartbeatResponsePayload* payload) {
 }
 
 void SensorMode::onRtcSynced() {
-    // Complete RTC sync work
-    work_tracker_.completeWork(WorkType::RtcSync);
-
     // Switch to operational LED pattern if not already done
     switchToOperationalPattern();
 
@@ -480,6 +477,8 @@ void SensorMode::onRtcSynced() {
     readAndStoreSensorData(to_ms_since_boot(get_absolute_time()));
 
     // Check if it's time to transmit (based on TRANSMIT_INTERVAL_S)
+    // IMPORTANT: Add BacklogTransmit work BEFORE completing RtcSync to prevent
+    // premature idle callback (which would signal sleep too early)
     uint32_t now = getUnixTimestamp();
     SensorFlashMetadata stats;
     uint32_t last_sync = 0;
@@ -488,15 +487,22 @@ void SensorMode::onRtcSynced() {
     }
     uint32_t elapsed = now - last_sync;
 
-    if (elapsed >= TRANSMIT_INTERVAL_S || last_sync == 0) {
+    bool needs_transmit = (elapsed >= TRANSMIT_INTERVAL_S || last_sync == 0);
+
+    if (needs_transmit) {
         pmu_logger.info("Transmit interval reached (%lu s) - checking backlog", elapsed);
-        // Add backlog work and start transmission
+        // Add backlog work BEFORE completing RtcSync
         work_tracker_.addWork(WorkType::BacklogTransmit);
-        checkAndTransmitBacklog(to_ms_since_boot(get_absolute_time()));
     } else {
         pmu_logger.info("Not time to transmit yet (%lu s / %lu s)",
                       elapsed, TRANSMIT_INTERVAL_S);
-        // No backlog work needed - idle callback will handle sleep signal
-        // (RtcSync work was just completed, so if no other work, we'll go idle)
+    }
+
+    // Now complete RtcSync - idle callback only fires if no BacklogTransmit work
+    work_tracker_.completeWork(WorkType::RtcSync);
+
+    // Start backlog transmission if needed
+    if (needs_transmit) {
+        checkAndTransmitBacklog(to_ms_since_boot(get_absolute_time()));
     }
 }
