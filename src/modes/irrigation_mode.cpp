@@ -519,6 +519,9 @@ void IrrigationMode::signalReadyForSleep() {
         return;
     }
 
+    // Send wake preamble - STM32 may have gone back to STOP mode
+    // after the UART activity timeout (500ms)
+    pmu_client_->sendWakePreamble();
     pmu_logger.info("Signaling ready for sleep");
     pmu_client_->getProtocol().readyForSleep([](bool success, PMU::ErrorCode error) {
         if (success) {
