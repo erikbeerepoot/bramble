@@ -606,8 +606,8 @@ static void handleRTCWakeup(void) {
         // Normal periodic wake - enable DC/DC to power up RP2040
         dcdc.enable();
 
-        // Small delay to allow RP2040 to power up and boot
-        HAL_Delay(5000);
+        // Short delay to allow RP2040 to initialize UART (~400ms from boot log)
+        HAL_Delay(500);
 
         // Send periodic wake notification
         protocol.sendWakeNotification(PMU::WakeReason::Periodic);
