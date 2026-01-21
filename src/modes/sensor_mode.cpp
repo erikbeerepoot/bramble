@@ -22,7 +22,7 @@ void SensorMode::onStart() {
     logger.info("=== SENSOR MODE ACTIVE ===");
     logger.info("- Temperature/humidity data logger");
     logger.info("- 30 second reading interval");
-    logger.info("- Orange LED blink (init) -> Purple breathing (operational)");
+    logger.info("- Orange LED blink (init) -> Red short blink (operational)");
 
     // Initialize external flash for sensor data storage
     // Flash shares SPI1 with LoRa (MISO=GPIO8, SCK=GPIO14, MOSI=GPIO15)
@@ -67,8 +67,9 @@ void SensorMode::onStart() {
 
     // Start with orange blinking pattern while waiting for RTC sync
     led_pattern_ = std::make_unique<BlinkingPattern>(led_, 255, 165, 0, 250, 250);
-    // Store operational pattern (purple breathing) for after RTC sync
-    operational_pattern_ = std::make_unique<BreathingPattern>(led_, 128, 0, 255);
+    // Store operational pattern (red short blink) for after RTC sync
+    // Red single channel at full brightness for power efficiency
+    operational_pattern_ = std::make_unique<ShortBlinkPattern>(led_, 255, 0, 0);
 
     // Initialize PMU client at 2200 baud (measured actual STM32 rate from logic analyzer)
     pmu_client_ = new PmuClient(PMU_UART_ID, PMU_UART_TX_PIN, PMU_UART_RX_PIN, 2200);

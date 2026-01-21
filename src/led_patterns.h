@@ -158,3 +158,71 @@ public:
         }
     }
 };
+
+/**
+ * @brief Short blink pattern - brief flash with off period
+ *
+ * Power-efficient pattern using single channel at full brightness.
+ * Default: 50ms on, 500ms off.
+ */
+class ShortBlinkPattern : public LEDPattern {
+private:
+    uint8_t r_, g_, b_;
+    uint32_t on_ms_;
+    uint32_t off_ms_;
+    uint32_t last_toggle_ = 0;
+    bool is_on_ = false;
+
+public:
+    ShortBlinkPattern(NeoPixel& led, uint8_t r, uint8_t g, uint8_t b,
+                      uint32_t on_ms = 50, uint32_t off_ms = 500)
+        : LEDPattern(led), r_(r), g_(g), b_(b), on_ms_(on_ms), off_ms_(off_ms) {}
+
+    void update(uint32_t current_time) override {
+        uint32_t interval = is_on_ ? on_ms_ : off_ms_;
+
+        if (current_time - last_toggle_ >= interval) {
+            last_toggle_ = current_time;
+            is_on_ = !is_on_;
+
+            if (is_on_) {
+                led_.setPixel(0, r_, g_, b_);
+            } else {
+                led_.setPixel(0, 0, 0, 0);
+            }
+            led_.show();
+        }
+    }
+};
+
+/**
+ * @brief Transmit pattern - rapid flashing during TX
+ *
+ * White rapid blink to indicate transmission activity.
+ * Auto-reverts to previous pattern after duration expires.
+ */
+class TransmitPattern : public LEDPattern {
+private:
+    uint32_t flash_interval_ms_;
+    uint32_t last_toggle_ = 0;
+    bool is_on_ = false;
+
+public:
+    explicit TransmitPattern(NeoPixel& led, uint32_t flash_interval_ms = 30)
+        : LEDPattern(led), flash_interval_ms_(flash_interval_ms) {}
+
+    void update(uint32_t current_time) override {
+        if (current_time - last_toggle_ >= flash_interval_ms_) {
+            last_toggle_ = current_time;
+            is_on_ = !is_on_;
+
+            if (is_on_) {
+                // White flash at moderate brightness
+                led_.setPixel(0, 128, 128, 128);
+            } else {
+                led_.setPixel(0, 0, 0, 0);
+            }
+            led_.show();
+        }
+    }
+};

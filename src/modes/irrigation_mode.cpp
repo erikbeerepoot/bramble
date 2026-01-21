@@ -21,7 +21,7 @@ void IrrigationMode::onStart() {
     logger.info("=== IRRIGATION MODE ACTIVE ===");
     logger.info("- 2 valve irrigation node");
     logger.info("- PMU power management integration");
-    logger.info("- Orange LED blink (init) -> Green heartbeat (operational)");
+    logger.info("- Orange LED blink (init) -> Blue short blink (operational)");
 
     // Check if we need to register (no saved address)
     needs_registration_ = (messenger_.getNodeAddress() == ADDRESS_UNREGISTERED);
@@ -66,8 +66,9 @@ void IrrigationMode::onStart() {
 
     // Start with orange blinking pattern while waiting for RTC sync
     led_pattern_ = std::make_unique<BlinkingPattern>(led_, 255, 165, 0, 250, 250);
-    // Store operational pattern (green heartbeat) for after RTC sync
-    operational_pattern_ = std::make_unique<HeartbeatPattern>(led_, 0, 255, 0);
+    // Store operational pattern (blue short blink) for after RTC sync
+    // Blue single channel at full brightness for power efficiency
+    operational_pattern_ = std::make_unique<ShortBlinkPattern>(led_, 0, 0, 255);
 
     // Send initial heartbeat immediately to sync RTC
     logger.info("Sending initial heartbeat for time sync...");
