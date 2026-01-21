@@ -5,6 +5,7 @@
 #include "../hal/external_flash.h"
 #include "../hal/pmu_client.h"
 #include "../storage/sensor_flash_buffer.h"
+#include "../util/work_tracker.h"
 #include <memory>
 
 /**
@@ -30,7 +31,7 @@ private:
     PmuClient* pmu_client_ = nullptr;
     bool pmu_available_ = false;
     volatile bool sleep_requested_ = false;   // Deferred sleep signal flag
-    volatile bool backlog_check_requested_ = false;  // Deferred backlog check flag
+    WorkTracker work_tracker_;                // Tracks pending work, signals when idle
 
     // I2C pin configuration for CHT832X sensor
     static constexpr uint PIN_I2C_SDA = 26;  // GPIO26 (A0)
@@ -86,4 +87,12 @@ private:
      * @param payload Heartbeat response with timestamp from hub
      */
     void onHeartbeatResponse(const HeartbeatResponsePayload* payload) override;
+
+    /**
+     * @brief Handle RTC synchronization completion
+     * Centralizes the flow after RTC sync (from PMU or hub heartbeat):
+     * - Completes RtcSync work
+     * - Triggers backlog check flow
+     */
+    void onRtcSynced();
 };

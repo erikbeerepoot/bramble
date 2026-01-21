@@ -3,23 +3,21 @@
 #include "application_mode.h"
 #include "../hal/valve_controller.h"
 #include "../hal/pmu_client.h"
+#include "../util/work_tracker.h"
 
 /**
  * @brief Update pull state tracking
+ *
+ * Tracks sequence numbers and message state for update processing.
+ * Sleep signaling is handled by WorkTracker.
  */
 struct UpdatePullState {
     uint8_t current_sequence;        // Node's current sequence number
-    uint32_t last_keepawake_ms;      // Last keep-awake call time
-    bool processing;                 // Whether actively processing an update
-    uint32_t timeout_ms;             // Timeout for update processing (5 seconds)
     uint8_t pending_check_seq;       // Sequence number of pending CHECK_UPDATES message
 
-    UpdatePullState() : current_sequence(0), last_keepawake_ms(0),
-                       processing(false), timeout_ms(5000), pending_check_seq(0) {}
+    UpdatePullState() : current_sequence(0), pending_check_seq(0) {}
 
     void reset() {
-        processing = false;
-        last_keepawake_ms = 0;
         pending_check_seq = 0;
     }
 };
@@ -36,7 +34,8 @@ private:
     PmuClient* pmu_client_;
     bool pmu_available_;
     UpdatePullState update_state_;
-    bool needs_registration_;  // True if we need to register with hub
+    WorkTracker work_tracker_;        // Tracks pending work, signals when idle
+    bool needs_registration_;         // True if we need to register with hub
 
     // PMU callback handlers
     void handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry* entry);

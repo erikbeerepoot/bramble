@@ -34,16 +34,25 @@ void IrrigationMode::onStart() {
     // TODO: Re-enable after UART debug testing - GPIO24 conflict
     // valve_controller_.initialize();
 
+    // Set up work tracker - signals ready for sleep when all work completes
+    work_tracker_.setIdleCallback([this]() {
+        signalReadyForSleep();
+    });
+
+    // Start with RTC sync work pending
+    work_tracker_.addWork(WorkType::RtcSync);
+
+    // Add registration work if needed
+    if (needs_registration_) {
+        work_tracker_.addWork(WorkType::Registration);
+    }
+
     // Initialize PMU client at 9600 baud to match STM32 LPUART configuration
     pmu_client_ = new PmuClient(PMU_UART_ID, PMU_UART_TX_PIN, PMU_UART_RX_PIN, 9600);
     pmu_available_ = pmu_client_->init();
 
     if (pmu_available_) {
         pmu_logger.info("PMU client initialized successfully");
-
-        // Start PMU processing on Core 1 - allows responses to be handled
-        // even during LoRa TX/RX operations on Core 0
-        pmu_client_->startCore1Processing();
 
         // Set up PMU callback handlers
         auto& protocol = pmu_client_->getProtocol();
@@ -80,6 +89,8 @@ void IrrigationMode::onStart() {
                                dt.year, dt.month, dt.day, dt.hour, dt.min, dt.sec);
                     // Switch to operational LED pattern immediately
                     switchToOperationalPattern();
+                    // Complete RTC sync work
+                    work_tracker_.completeWork(WorkType::RtcSync);
                 } else {
                     logger.error("Failed to set RTC from PMU time");
                 }
@@ -154,7 +165,8 @@ void IrrigationMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEn
     switch (reason) {
         case PMU::WakeReason::Periodic:
             pmu_logger.info("Periodic wake - checking for updates");
-            // Send CHECK_UPDATES to pull any pending configuration changes
+            // Add update pull work and send CHECK_UPDATES
+            work_tracker_.addWork(WorkType::UpdatePull);
             sendCheckUpdates();
             break;
 
@@ -180,14 +192,20 @@ void IrrigationMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEn
             if (needs_registration_) {
                 logger.info("External wake + no address - attempting registration");
                 attemptDeferredRegistration();
+            } else {
+                // No registration needed - check for updates
+                work_tracker_.addWork(WorkType::UpdatePull);
+                sendCheckUpdates();
             }
             break;
     }
 }
 
 void IrrigationMode::onLoop() {
-    // Note: PMU message processing now runs on Core 1 via pmu_client_->startCore1Processing()
-    // No need to call pmu_client_->process() here
+    // Process any pending PMU messages
+    if (pmu_available_ && pmu_client_) {
+        pmu_client_->process();
+    }
 }
 
 void IrrigationMode::handleScheduleComplete() {
@@ -262,13 +280,18 @@ void IrrigationMode::onHeartbeatResponse(const HeartbeatResponsePayload* payload
                        datetime.hour, datetime.minute, datetime.second);
 
         // Send datetime to PMU - PMU decides if update is needed based on drift
-        pmu_client_->getProtocol().setDateTime(datetime, [](bool success, PMU::ErrorCode error) {
+        pmu_client_->getProtocol().setDateTime(datetime, [this](bool success, PMU::ErrorCode error) {
             if (success) {
                 pmu_logger.info("PMU time sync successful");
             } else {
                 pmu_logger.error("PMU time sync failed: error %d", static_cast<int>(error));
             }
+            // Complete RTC sync work regardless of PMU result - RP2040 RTC was synced by base class
+            work_tracker_.completeWork(WorkType::RtcSync);
         });
+    } else if (payload) {
+        // No PMU available, but RTC was synced by base class
+        work_tracker_.completeWork(WorkType::RtcSync);
     }
 }
 
@@ -282,16 +305,14 @@ void IrrigationMode::sendCheckUpdates() {
         // Store the sequence number so we can cancel it when we receive UPDATE_AVAILABLE
         update_state_.pending_check_seq = seq_num;
 
-        // Mark that we're processing updates and need to stay awake
-        update_state_.processing = true;
-        update_state_.last_keepawake_ms = to_ms_since_boot(get_absolute_time());
-
         // Tell PMU to stay awake while we process updates
         if (pmu_available_ && pmu_client_) {
             pmu_client_->getProtocol().keepAwake(10);  // Keep awake for 10 seconds
         }
     } else {
         logger.error("Failed to send CHECK_UPDATES");
+        // Complete update pull work on failure
+        work_tracker_.completeWork(WorkType::UpdatePull);
     }
 }
 
@@ -299,6 +320,7 @@ void IrrigationMode::onUpdateAvailable(const UpdateAvailablePayload* payload) {
     if (!payload) {
         logger.error("NULL update payload");
         update_state_.reset();
+        work_tracker_.completeWork(WorkType::UpdatePull);
         return;
     }
 
@@ -310,16 +332,16 @@ void IrrigationMode::onUpdateAvailable(const UpdateAvailablePayload* payload) {
     }
 
     // Keep awake while processing
-    update_state_.last_keepawake_ms = to_ms_since_boot(get_absolute_time());
     if (pmu_available_ && pmu_client_) {
         pmu_client_->getProtocol().keepAwake(10);  // Keep awake for 10 seconds
     }
 
     // Check if there are no more updates
     if (payload->has_update == 0) {
-        logger.info("No more updates - signaling ready for sleep");
+        logger.info("No more updates");
         update_state_.reset();
-        signalReadyForSleep();
+        // Complete update pull work - idle callback will signal sleep if no other work
+        work_tracker_.completeWork(WorkType::UpdatePull);
         return;
     }
 
@@ -371,6 +393,7 @@ void IrrigationMode::onUpdateAvailable(const UpdateAvailablePayload* payload) {
                     logger.error("  Failed to apply schedule: error %d", static_cast<int>(error));
                     // For errors, we just don't update sequence and stop pulling updates
                     update_state_.reset();
+                    work_tracker_.completeWork(WorkType::UpdatePull);
                 }
             });
             break;
@@ -388,6 +411,7 @@ void IrrigationMode::onUpdateAvailable(const UpdateAvailablePayload* payload) {
                 } else {
                     logger.error("  Failed to remove schedule: error %d", static_cast<int>(error));
                     update_state_.reset();
+                    work_tracker_.completeWork(WorkType::UpdatePull);
                 }
             });
             break;
@@ -418,6 +442,7 @@ void IrrigationMode::onUpdateAvailable(const UpdateAvailablePayload* payload) {
                 } else {
                     logger.error("  Failed to set datetime: error %d", static_cast<int>(error));
                     update_state_.reset();
+                    work_tracker_.completeWork(WorkType::UpdatePull);
                 }
             });
             break;
@@ -436,6 +461,7 @@ void IrrigationMode::onUpdateAvailable(const UpdateAvailablePayload* payload) {
                 } else {
                     logger.error("  Failed to set wake interval: error %d", static_cast<int>(error));
                     update_state_.reset();
+                    work_tracker_.completeWork(WorkType::UpdatePull);
                 }
             });
             break;
@@ -444,6 +470,7 @@ void IrrigationMode::onUpdateAvailable(const UpdateAvailablePayload* payload) {
         default:
             logger.error("Unknown update type %d", payload->update_type);
             update_state_.reset();
+            work_tracker_.completeWork(WorkType::UpdatePull);
             break;
     }
 }
@@ -469,10 +496,14 @@ void IrrigationMode::attemptDeferredRegistration() {
     if (registration_seq != 0) {
         logger.info("Registration request sent (seq=%d)", registration_seq);
         needs_registration_ = false;  // Clear flag - we've attempted registration
+        // Complete registration work - messenger handles response
+        work_tracker_.completeWork(WorkType::Registration);
         // We'll get the response via normal message processing
         // When REG_RESPONSE arrives, messenger will update our address
     } else {
         logger.error("Failed to send registration request");
+        // Complete registration work on failure too
+        work_tracker_.completeWork(WorkType::Registration);
     }
 }
 
