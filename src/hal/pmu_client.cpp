@@ -73,6 +73,22 @@ void PmuClient::uartSend(const uint8_t* data, uint8_t length) {
     uart_write_blocking(uart_, data, length);
 }
 
+void PmuClient::sendWakePreamble() {
+    if (!initialized_) {
+        return;
+    }
+
+    // Send dummy bytes to wake STM32 from STOP mode
+    // These will be ignored by the protocol parser (not 0xAA start byte)
+    // but will trigger LPUART wakeup interrupt
+    const uint8_t wake_bytes[] = {0x00, 0x00, 0x00};
+    uart_write_blocking(uart_, wake_bytes, sizeof(wake_bytes));
+
+    // Wait for STM32 to wake up, reconfigure clocks, and re-enable UART RX
+    // SystemClock_Config() + HAL_UART_Receive_IT() takes ~50-100ms
+    sleep_ms(100);
+}
+
 void PmuClient::process() {
     // Check for UART errors
     if (lastErrorFlags_ != 0) {

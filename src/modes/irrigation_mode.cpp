@@ -66,6 +66,8 @@ void IrrigationMode::onStart() {
         });
 
         // Try to get time from PMU's battery-backed RTC (faster than waiting for hub sync)
+        // Send wake preamble first - STM32 may be in STOP mode and needs time to wake
+        pmu_client_->sendWakePreamble();
         pmu_logger.info("Requesting datetime from PMU...");
         protocol.getDateTime([this](bool valid, const PMU::DateTime& datetime) {
             if (valid) {

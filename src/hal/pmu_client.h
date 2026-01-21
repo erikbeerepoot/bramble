@@ -53,6 +53,15 @@ public:
      */
     bool isInitialized() const { return initialized_; }
 
+    /**
+     * @brief Send wake preamble to wake STM32 from STOP mode
+     *
+     * Sends dummy bytes to trigger LPUART wakeup, then waits for
+     * the STM32 to reconfigure clocks and re-enable UART interrupt.
+     * Call this before sending commands when STM32 may be sleeping.
+     */
+    void sendWakePreamble();
+
 private:
     uart_inst_t* uart_;
     uint txPin_;
