@@ -682,12 +682,17 @@ static void keepAwakeCallback(uint16_t seconds)
  */
 static void readyForSleepCallback()
 {
+    // RP2040 is done with its work - power it down
+    dcdc.disable();
+
+    // Clear any active wake state
     if (periodicWakeActive) {
-        // RP2040 is done with its work - power it down
-        dcdc.disable();
         periodicWakeActive = false;
         periodicWakeStartTime = 0;
     }
+
+    // Clear UART activity flag so we can go to sleep
+    uartActivityFlag = false;
 }
 
 /* USER CODE END 4 */
