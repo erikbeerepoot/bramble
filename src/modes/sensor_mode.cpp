@@ -92,8 +92,8 @@ void SensorMode::onStart() {
         });
 
         // Try to get time from PMU's battery-backed RTC (faster than waiting for hub sync)
-        // Send wake preamble first - STM32 may be in STOP mode and needs time to wake
-        pmu_client_->sendWakePreamble();
+        // Note: Don't send wake preamble (null bytes) - it can corrupt protocol state machine.
+        // If STM32 is in STOP mode, first attempt may fail but we'll fall back to hub sync.
         pmu_logger.info("Requesting datetime from PMU...");
         pmu_client_->getProtocol().getDateTime([this](bool valid, const PMU::DateTime& datetime) {
             if (valid) {
@@ -177,16 +177,14 @@ void SensorMode::onLoop() {
             static constexpr int POLL_INTERVAL_MS = 50;
 
             for (int attempt = 0; attempt < MAX_RETRIES; attempt++) {
-                // Send wake preamble - STM32 may have gone back to STOP mode
-                pmu_logger.info("ReadyForSleep attempt %d/%d - sending wake preamble...",
-                               attempt + 1, MAX_RETRIES);
-                pmu_client_->sendWakePreamble();
-
                 // Track if we got a response
                 volatile bool got_response = false;
                 volatile bool sleep_acked = false;
 
-                pmu_logger.info("Sending ReadyForSleep command");
+                // First attempt may fail if STM32 is in STOP mode and loses first bytes,
+                // but it will wake the STM32 so subsequent attempts succeed.
+                // Don't send wake preamble (null bytes) as it may confuse protocol state machine.
+                pmu_logger.info("ReadyForSleep attempt %d/%d", attempt + 1, MAX_RETRIES);
                 pmu_client_->getProtocol().readyForSleep([&got_response, &sleep_acked](bool success, PMU::ErrorCode error) {
                     got_response = true;
                     sleep_acked = success;
@@ -211,6 +209,9 @@ void SensorMode::onLoop() {
                 }
 
                 pmu_logger.warn("No response to ReadyForSleep (attempt %d/%d)", attempt + 1, MAX_RETRIES);
+
+                // Small delay before retry - the failed attempt woke the STM32
+                sleep_ms(100);
             }
         }
     }

@@ -66,8 +66,8 @@ void IrrigationMode::onStart() {
         });
 
         // Try to get time from PMU's battery-backed RTC (faster than waiting for hub sync)
-        // Send wake preamble first - STM32 may be in STOP mode and needs time to wake
-        pmu_client_->sendWakePreamble();
+        // Note: Don't send wake preamble (null bytes) - it can corrupt protocol state machine.
+        // If STM32 is in STOP mode, first attempt may fail but we'll fall back to hub sync.
         pmu_logger.info("Requesting datetime from PMU...");
         protocol.getDateTime([this](bool valid, const PMU::DateTime& datetime) {
             if (valid) {
@@ -519,15 +519,43 @@ void IrrigationMode::signalReadyForSleep() {
         return;
     }
 
-    // Send wake preamble - STM32 may have gone back to STOP mode
-    // after the UART activity timeout (500ms)
-    pmu_client_->sendWakePreamble();
-    pmu_logger.info("Signaling ready for sleep");
-    pmu_client_->getProtocol().readyForSleep([](bool success, PMU::ErrorCode error) {
-        if (success) {
-            pmu_logger.info("Ready for sleep acknowledged");
-        } else {
-            pmu_logger.error("Ready for sleep failed: error %d", static_cast<int>(error));
+    // Retry loop - STM32 may need multiple attempts to receive command
+    // First attempt wakes STM32 from STOP mode (even if command fails),
+    // subsequent attempts should succeed.
+    // Don't send wake preamble (null bytes) as it may corrupt protocol state machine.
+    static constexpr int MAX_RETRIES = 3;
+    static constexpr int RESPONSE_WAIT_MS = 500;
+    static constexpr int POLL_INTERVAL_MS = 50;
+
+    for (int attempt = 0; attempt < MAX_RETRIES; attempt++) {
+        volatile bool got_response = false;
+        volatile bool sleep_acked = false;
+
+        pmu_logger.info("ReadyForSleep attempt %d/%d", attempt + 1, MAX_RETRIES);
+        pmu_client_->getProtocol().readyForSleep([&got_response, &sleep_acked](bool success, PMU::ErrorCode error) {
+            got_response = true;
+            sleep_acked = success;
+            if (success) {
+                pmu_logger.info("Ready for sleep acknowledged");
+            } else {
+                pmu_logger.error("Ready for sleep failed: error %d", static_cast<int>(error));
+            }
+        });
+
+        // Wait for response with polling
+        for (int wait = 0; wait < RESPONSE_WAIT_MS / POLL_INTERVAL_MS && !got_response; wait++) {
+            sleep_ms(POLL_INTERVAL_MS);
+            pmu_client_->process();
         }
-    });
+
+        if (got_response) {
+            if (sleep_acked) {
+                pmu_logger.info("Sleep signal successful on attempt %d", attempt + 1);
+            }
+            break;
+        }
+
+        pmu_logger.warn("No response to ReadyForSleep (attempt %d/%d)", attempt + 1, MAX_RETRIES);
+        sleep_ms(100);  // Small delay before retry
+    }
 }
