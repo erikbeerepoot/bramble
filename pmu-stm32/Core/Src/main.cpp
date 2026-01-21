@@ -66,6 +66,21 @@ static bool periodicWakeActive = false;
 static uint32_t periodicWakeStartTime = 0;
 static constexpr uint32_t PERIODIC_WAKE_TIMEOUT_MS = 120000;  // 2 minutes
 
+// Boot animation parameters
+namespace BootAnimationConfig {
+    constexpr int TOTAL_FLICKERS = 5;       // 5 flickers = 1 second total
+    constexpr uint32_t FLICKER_ON_MS = 100;
+    constexpr uint32_t FLICKER_OFF_MS = 100;
+}
+
+// Boot animation runtime state (non-blocking)
+static struct {
+    bool active;
+    uint32_t lastToggleTime;
+    bool ledOn;
+    int flickerCount;
+} bootAnimationState = {false, 0, false, 0};
+
 // Protocol callbacks
 static void uartSendCallback(const uint8_t* data, uint8_t length);
 static void setWakeIntervalCallback(uint32_t seconds);
@@ -82,11 +97,11 @@ static void MX_GPIO_Init(void);
 static void MX_LPUART1_UART_Init(void);
 static void MX_RTC_Init(void);
 /* USER CODE BEGIN PFP */
-static void flicker(LED& led, LED::Color color, uint32_t duration_ms);
 static void configureRTCWakeup(uint32_t seconds);
 static void enterStopMode(void);
 static void wakeupFromStopMode(void);
 static void handleRTCWakeup(void);
+static bool updateBootAnimation(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -136,6 +151,10 @@ int main(void)
   MX_RTC_Init();
 
   /* USER CODE BEGIN 2 */
+  // Start UART receive interrupt IMMEDIATELY after UART init
+  // This ensures PMU is ready to receive commands as early as possible
+  HAL_UART_Receive_IT(&hlpuart1, &uartRxByte, 1);
+
   led.init();
   led.off();
 
@@ -143,14 +162,16 @@ int main(void)
   dcdc.init();
   dcdc.enable();
 
-  // Boot indication - flicker green LED
-  flicker(led, LED::GREEN, 1000);
+  // Start non-blocking boot animation (green LED flicker)
+  // This runs in the main loop while UART remains responsive
+  bootAnimationState.active = true;
+  bootAnimationState.lastToggleTime = HAL_GetTick();
+  bootAnimationState.ledOn = true;
+  bootAnimationState.flickerCount = 0;
+  led.setColor(LED::GREEN);
 
   // Configure RTC wakeup timer with default wake interval (300 seconds)
   configureRTCWakeup(protocol.getWakeInterval());
-  
-  // Start UART receive interrupt
-  HAL_UART_Receive_IT(&hlpuart1, &uartRxByte, 1);
 
   /* USER CODE END 2 */
 
@@ -162,6 +183,11 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+
+    // Handle non-blocking boot animation (returns true while still animating)
+    if (updateBootAnimation()) {
+      continue;  // Don't enter sleep mode while boot animation is running
+    }
 
     // Check if RTC wakeup flag is set and handle it
     if (rtcWakeupFlag) {
@@ -396,17 +422,38 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 
 /**
- * @brief Flicker LED during boot for visual feedback
+ * @brief Update non-blocking boot animation
+ * @return true if animation is still running, false when complete
  */
-static void flicker(LED& led, LED::Color color, uint32_t duration_ms) {
-    const int flickers = duration_ms / 200;
-    for (int i = 0; i < flickers; i++) {
-        led.setColor(color);
-        HAL_Delay(100);
-        led.off();
-        HAL_Delay(100);
+static bool updateBootAnimation(void) {
+    if (!bootAnimationState.active) {
+        return false;
     }
-    led.off();
+
+    uint32_t now = HAL_GetTick();
+    uint32_t elapsed = now - bootAnimationState.lastToggleTime;
+
+    if (bootAnimationState.ledOn && elapsed >= BootAnimationConfig::FLICKER_ON_MS) {
+        // Turn off
+        led.off();
+        bootAnimationState.ledOn = false;
+        bootAnimationState.lastToggleTime = now;
+    } else if (!bootAnimationState.ledOn && elapsed >= BootAnimationConfig::FLICKER_OFF_MS) {
+        // Turn on or finish
+        bootAnimationState.flickerCount++;
+        if (bootAnimationState.flickerCount >= BootAnimationConfig::TOTAL_FLICKERS) {
+            // Animation complete
+            bootAnimationState.active = false;
+            led.off();
+            return false;
+        } else {
+            led.setColor(LED::GREEN);
+            bootAnimationState.ledOn = true;
+            bootAnimationState.lastToggleTime = now;
+        }
+    }
+
+    return true;
 }
 
 /**
