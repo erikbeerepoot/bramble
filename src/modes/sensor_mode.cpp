@@ -71,8 +71,8 @@ void SensorMode::onStart() {
     // Red single channel at full brightness for power efficiency
     operational_pattern_ = std::make_unique<ShortBlinkPattern>(led_, 255, 0, 0);
 
-    // Initialize PMU client at 2200 baud (measured actual STM32 rate from logic analyzer)
-    pmu_client_ = new PmuClient(PMU_UART_ID, PMU_UART_TX_PIN, PMU_UART_RX_PIN, 2200);
+    // Initialize PMU client at 9600 baud to match STM32 LPUART configuration
+    pmu_client_ = new PmuClient(PMU_UART_ID, PMU_UART_TX_PIN, PMU_UART_RX_PIN, 9600);
     pmu_available_ = pmu_client_->init();
 
     if (pmu_available_) {

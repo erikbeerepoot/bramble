@@ -33,7 +33,7 @@ void IrrigationMode::onStart() {
     // TODO: Re-enable after UART debug testing - GPIO24 conflict
     // valve_controller_.initialize();
 
-    // Initialize PMU client
+    // Initialize PMU client at 9600 baud to match STM32 LPUART configuration
     pmu_client_ = new PmuClient(PMU_UART_ID, PMU_UART_TX_PIN, PMU_UART_RX_PIN, 9600);
     pmu_available_ = pmu_client_->init();
 
