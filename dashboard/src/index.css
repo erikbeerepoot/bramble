@@ -25,3 +25,9 @@ body {
 .input {
   @apply border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-bramble-500 focus:border-transparent;
 }
+
+/* Plotly hover tooltip styling - semi-opaque background */
+.hoverlayer .hovertext path {
+  fill: rgba(255, 255, 255, 0.95) !important;
+  stroke: #e5e7eb !important;
+}
