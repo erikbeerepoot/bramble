@@ -77,6 +77,12 @@ constexpr uint8_t END_BYTE = 0x55;
 constexpr uint8_t MAX_MESSAGE_SIZE = 64;
 constexpr uint8_t SCHEDULE_ENTRY_SIZE = 7;
 
+// Sequence number ranges (for deduplication)
+constexpr uint8_t SEQ_RP2040_MIN = 1;
+constexpr uint8_t SEQ_RP2040_MAX = 127;
+constexpr uint8_t SEQ_STM32_MIN = 128;
+constexpr uint8_t SEQ_STM32_MAX = 254;
+
 // Date/Time structure for setting RTC
 struct DateTime {
     uint8_t year;      // Years since 2000 (0-99)
@@ -117,6 +123,9 @@ public:
     // Check if a complete valid message is ready
     bool isComplete() const;
 
+    // Get the sequence number from completed message
+    uint8_t getSequenceNumber() const;
+
     // Get the response type from completed message
     Response getResponse() const;
 
@@ -133,6 +142,7 @@ private:
     enum class State {
         WaitStart,
         ReadLength,
+        ReadSequence,
         ReadResponse,
         ReadData,
         ReadChecksum,
@@ -144,6 +154,7 @@ private:
     uint8_t bytesRead_;
     uint8_t expectedLength_;
     uint8_t calculatedChecksum_;
+    uint8_t sequenceNumber_;
     bool complete_;
 
     uint8_t calculateChecksum() const;
@@ -154,8 +165,8 @@ class MessageBuilder {
 public:
     MessageBuilder();
 
-    // Start building a new message
-    void startMessage(Command command);
+    // Start building a new message with sequence number
+    void startMessage(uint8_t sequenceNumber, Command command);
 
     // Add data to message
     void addByte(uint8_t data);
@@ -170,10 +181,14 @@ public:
     // Get total message length (including framing)
     uint8_t getLength() const;
 
+    // Get the sequence number used in this message
+    uint8_t getSequenceNumber() const { return sequenceNumber_; }
+
 private:
     uint8_t buffer_[MAX_MESSAGE_SIZE];
-    uint8_t dataLength_;  // Length of command + data (for LENGTH field)
+    uint8_t dataLength_;  // Length of seq + command + data (for LENGTH field)
     uint8_t totalLength_; // Total message length including framing
+    uint8_t sequenceNumber_;
 
     uint8_t calculateChecksum() const;
 };
@@ -186,6 +201,9 @@ using CommandResultCallback = std::function<void(bool success, ErrorCode error)>
 using WakeIntervalCallback = std::function<void(uint32_t seconds)>;
 using ScheduleEntryCallback = std::function<void(const ScheduleEntry& entry)>;
 
+// Callback for ACK with sequence number
+using AckCallback = std::function<void(uint8_t seqNum, bool success, ErrorCode error)>;
+
 // Main protocol handler
 class Protocol {
 public:
@@ -194,7 +212,13 @@ public:
     // Process received byte from UART
     void processReceivedByte(uint8_t byte);
 
-    // Commands to send to STM32 (non-blocking, callback receives result)
+    // Low-level send with explicit sequence number (used by ReliablePmuClient)
+    void sendCommand(uint8_t seqNum, Command command, const uint8_t* data, uint8_t dataLength);
+
+    // Set callback for ACK/NACK with sequence number
+    void setAckCallback(AckCallback callback);
+
+    // Legacy commands (use internal sequence numbering, not recommended)
     void setWakeInterval(uint32_t seconds, CommandResultCallback callback = nullptr);
     void getWakeInterval(CommandResultCallback callback = nullptr);
     void setSchedule(const ScheduleEntry& entry, CommandResultCallback callback = nullptr);
@@ -210,10 +234,14 @@ public:
     void onWakeInterval(WakeIntervalCallback callback);
     void onScheduleEntry(ScheduleEntryCallback callback);
 
+    // Get next sequence number for legacy API
+    uint8_t getNextSequenceNumber();
+
 private:
     MessageParser parser_;
     MessageBuilder builder_;
     UartSendCallback uartSend_;
+    uint8_t nextSeqNum_;
 
     // Response callbacks for unsolicited messages
     WakeNotificationCallback wakeNotificationCallback_;
@@ -221,12 +249,15 @@ private:
     WakeIntervalCallback wakeIntervalCallback_;
     ScheduleEntryCallback scheduleEntryCallback_;
 
-    // Pending command callback (for ACK/NACK responses)
+    // Pending command callback (for ACK/NACK responses - legacy)
     CommandResultCallback pendingCommandCallback_;
 
+    // ACK callback with sequence number (for ReliablePmuClient)
+    AckCallback ackCallback_;
+
     // Response handlers
-    void handleAck();
-    void handleNack(const uint8_t* data, uint8_t length);
+    void handleAck(uint8_t seqNum);
+    void handleNack(uint8_t seqNum, const uint8_t* data, uint8_t length);
     void handleWakeInterval(const uint8_t* data, uint8_t length);
     void handleScheduleEntry(const uint8_t* data, uint8_t length);
     void handleWakeNotification(const uint8_t* data, uint8_t length);

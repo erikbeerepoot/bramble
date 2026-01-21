@@ -78,6 +78,16 @@ constexpr uint8_t MAX_SCHEDULE_ENTRIES = 2;  // Reduced to 2 to fit in 2KB RAM
 constexpr uint8_t MAX_MESSAGE_SIZE = 32;     // Reduced from 64 to save RAM
 constexpr uint8_t SCHEDULE_ENTRY_SIZE = 7;
 
+// Sequence number ranges (for deduplication)
+constexpr uint8_t SEQ_RP2040_MIN = 1;
+constexpr uint8_t SEQ_RP2040_MAX = 127;
+constexpr uint8_t SEQ_STM32_MIN = 128;
+constexpr uint8_t SEQ_STM32_MAX = 254;
+
+// Deduplication constants
+constexpr uint8_t DEDUP_BUFFER_SIZE = 8;
+constexpr uint32_t DEDUP_WINDOW_MS = 5000;
+
 // Schedule entry structure
 class ScheduleEntry {
 public:
@@ -160,6 +170,9 @@ public:
     // Check if a complete valid message is ready
     bool isComplete() const;
 
+    // Get the sequence number from completed message
+    uint8_t getSequenceNumber() const;
+
     // Get the command from completed message
     Command getCommand() const;
 
@@ -176,6 +189,7 @@ private:
     enum class State {
         WaitStart,
         ReadLength,
+        ReadSequence,
         ReadCommand,
         ReadData,
         ReadChecksum,
@@ -187,6 +201,7 @@ private:
     uint8_t bytesRead_;
     uint8_t expectedLength_;
     uint8_t calculatedChecksum_;
+    uint8_t sequenceNumber_;
     bool complete_;
 
     uint8_t calculateChecksum() const;
@@ -197,8 +212,8 @@ class MessageBuilder {
 public:
     MessageBuilder();
 
-    // Start building a new message
-    void startMessage(uint8_t command);
+    // Start building a new message with sequence number
+    void startMessage(uint8_t sequenceNumber, uint8_t response);
 
     // Add data to message
     void addByte(uint8_t data);
@@ -215,10 +230,16 @@ public:
 
 private:
     uint8_t buffer_[MAX_MESSAGE_SIZE];
-    uint8_t dataLength_;  // Length of command + data (for LENGTH field)
+    uint8_t dataLength_;  // Length of seq + response + data (for LENGTH field)
     uint8_t totalLength_; // Total message length including framing
 
     uint8_t calculateChecksum() const;
+};
+
+// Deduplication entry
+struct SeenMessage {
+    uint8_t seqNum;
+    uint32_t timestamp;
 };
 
 // Main protocol handler
@@ -229,9 +250,10 @@ public:
     using SetWakeCallback = void(*)(uint32_t seconds);
     using KeepAwakeCallback = void(*)(uint16_t seconds);
     using ReadyForSleepCallback = void(*)();
+    using GetTickCallback = uint32_t(*)();
 
     Protocol(UartSendCallback uartSend, SetWakeCallback setWake, KeepAwakeCallback keepAwake,
-             ReadyForSleepCallback readyForSleep = nullptr);
+             ReadyForSleepCallback readyForSleep = nullptr, GetTickCallback getTick = nullptr);
 
     // Process received byte from UART
     void processReceivedByte(uint8_t byte);
@@ -256,11 +278,22 @@ private:
     MessageBuilder builder_;
     WateringSchedule schedule_;
     uint32_t wakeInterval_;
+    uint8_t nextSeqNum_;
+    uint8_t currentSeqNum_;  // Sequence number of current command being processed
 
     UartSendCallback uartSend_;
     SetWakeCallback setWake_;
     KeepAwakeCallback keepAwake_;
     ReadyForSleepCallback readyForSleep_;
+    GetTickCallback getTick_;
+
+    // Deduplication buffer
+    SeenMessage seenBuffer_[DEDUP_BUFFER_SIZE];
+    uint8_t seenIndex_;
+
+    // Deduplication helpers
+    bool wasRecentlySeen(uint8_t seqNum);
+    void markAsSeen(uint8_t seqNum);
 
     // Command handlers
     void handleSetWakeInterval(const uint8_t* data, uint8_t length);
@@ -272,7 +305,7 @@ private:
     void handleSetDateTime(const uint8_t* data, uint8_t length);
     void handleReadyForSleep();
 
-    // Response senders
+    // Response senders (with sequence number echo)
     void sendAck();
     void sendNack(ErrorCode error);
     void sendWakeInterval();
@@ -280,6 +313,9 @@ private:
 
     // Helper to send built message
     void sendMessage();
+
+    // Get next sequence number for unsolicited messages
+    uint8_t getNextSeqNum();
 };
 
 }  // namespace PMU

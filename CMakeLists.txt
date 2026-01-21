@@ -112,6 +112,7 @@ else()
         src/hal/gpio_interrupt_manager.cpp
         src/hal/pmu_protocol.cpp
         src/hal/pmu_client.cpp
+        src/hal/pmu_reliability.cpp
         src/config/config_base.cpp
         src/config/node_config.cpp
         src/config/hub_config.cpp

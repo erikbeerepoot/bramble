@@ -210,7 +210,7 @@ bool WateringSchedule::hasOverlap(const ScheduleEntry& entry, uint8_t excludeInd
 
 MessageParser::MessageParser()
     : state_(State::WaitStart), bytesRead_(0), expectedLength_(0),
-      calculatedChecksum_(0), complete_(false) {
+      calculatedChecksum_(0), sequenceNumber_(0), complete_(false) {
 }
 
 bool MessageParser::processByte(uint8_t byte) {
@@ -219,6 +219,7 @@ bool MessageParser::processByte(uint8_t byte) {
             if (byte == START_BYTE) {
                 bytesRead_ = 0;
                 complete_ = false;
+                sequenceNumber_ = 0;
                 state_ = State::ReadLength;
             }
             break;
@@ -227,14 +228,23 @@ bool MessageParser::processByte(uint8_t byte) {
             expectedLength_ = byte;
             buffer_[bytesRead_++] = byte;
             calculatedChecksum_ = byte;
+            state_ = State::ReadSequence;
+            break;
+
+        case State::ReadSequence:
+            sequenceNumber_ = byte;
+            buffer_[bytesRead_++] = byte;
+            calculatedChecksum_ ^= byte;
             state_ = State::ReadCommand;
             break;
 
         case State::ReadCommand:
             buffer_[bytesRead_++] = byte;
             calculatedChecksum_ ^= byte;
-            if (expectedLength_ == 1) {
-                // No data bytes, go straight to checksum
+            // Length field includes: seq + command + data
+            // We've read: length(1) + seq(1) + command(1) = 3 bytes
+            // If expectedLength_ == 2 (seq + command only), no data
+            if (expectedLength_ == 2) {
                 state_ = State::ReadChecksum;
             } else {
                 state_ = State::ReadData;
@@ -244,7 +254,9 @@ bool MessageParser::processByte(uint8_t byte) {
         case State::ReadData:
             buffer_[bytesRead_++] = byte;
             calculatedChecksum_ ^= byte;
-            // Check if we've read all data bytes (length includes command byte)
+            // Check if we've read all data bytes
+            // bytesRead_ includes: length(1) + seq(1) + command(1) + data(n)
+            // expectedLength_ = seq(1) + command(1) + data(n) = 2 + n
             if (bytesRead_ >= expectedLength_ + 1) {
                 state_ = State::ReadChecksum;
             }
@@ -276,19 +288,27 @@ bool MessageParser::isComplete() const {
     return complete_;
 }
 
+uint8_t MessageParser::getSequenceNumber() const {
+    return sequenceNumber_;
+}
+
 Command MessageParser::getCommand() const {
-    if (bytesRead_ < 2) return static_cast<Command>(0);
-    return static_cast<Command>(buffer_[1]);
+    // buffer_[0] = length, buffer_[1] = seq, buffer_[2] = command
+    if (bytesRead_ < 3) return static_cast<Command>(0);
+    return static_cast<Command>(buffer_[2]);
 }
 
 const uint8_t* MessageParser::getData() const {
-    if (bytesRead_ < 2) return nullptr;
-    return &buffer_[2];
+    // Data starts after length(1) + seq(1) + command(1)
+    if (bytesRead_ < 3) return nullptr;
+    return &buffer_[3];
 }
 
 uint8_t MessageParser::getDataLength() const {
-    if (bytesRead_ < 2) return 0;
-    return expectedLength_ - 1;  // Subtract command byte
+    if (bytesRead_ < 3) return 0;
+    // expectedLength_ = seq(1) + command(1) + data(n)
+    // dataLength = expectedLength_ - 2
+    return (expectedLength_ > 2) ? (expectedLength_ - 2) : 0;
 }
 
 void MessageParser::reset() {
@@ -296,6 +316,7 @@ void MessageParser::reset() {
     bytesRead_ = 0;
     expectedLength_ = 0;
     calculatedChecksum_ = 0;
+    sequenceNumber_ = 0;
     complete_ = false;
 }
 
@@ -314,11 +335,13 @@ uint8_t MessageParser::calculateChecksum() const {
 MessageBuilder::MessageBuilder() : dataLength_(0), totalLength_(0) {
 }
 
-void MessageBuilder::startMessage(uint8_t command) {
+void MessageBuilder::startMessage(uint8_t sequenceNumber, uint8_t response) {
     buffer_[0] = START_BYTE;
-    buffer_[2] = command;
-    dataLength_ = 1;  // Just command for now
-    totalLength_ = 3; // START + LENGTH + COMMAND
+    // buffer_[1] = length (set in finalize)
+    buffer_[2] = sequenceNumber;
+    buffer_[3] = response;
+    dataLength_ = 2;  // seq + response
+    totalLength_ = 4; // START + LENGTH + SEQ + RESPONSE
 }
 
 void MessageBuilder::addByte(uint8_t data) {
@@ -380,60 +403,142 @@ uint8_t MessageBuilder::calculateChecksum() const {
 // ============================================================================
 
 Protocol::Protocol(UartSendCallback uartSend, SetWakeCallback setWake,
-                   KeepAwakeCallback keepAwake, ReadyForSleepCallback readyForSleep)
-    : wakeInterval_(60), uartSend_(uartSend), setWake_(setWake),
-      keepAwake_(keepAwake), readyForSleep_(readyForSleep) {
+                   KeepAwakeCallback keepAwake, ReadyForSleepCallback readyForSleep,
+                   GetTickCallback getTick)
+    : wakeInterval_(60), nextSeqNum_(SEQ_STM32_MIN), currentSeqNum_(0),
+      uartSend_(uartSend), setWake_(setWake),
+      keepAwake_(keepAwake), readyForSleep_(readyForSleep), getTick_(getTick),
+      seenIndex_(0) {
+    // Initialize deduplication buffer
+    for (auto& entry : seenBuffer_) {
+        entry.seqNum = 0;
+        entry.timestamp = 0;
+    }
+}
+
+bool Protocol::wasRecentlySeen(uint8_t seqNum) {
+    if (!getTick_) return false;  // No tick function, skip dedup
+
+    uint32_t now = getTick_();
+    for (uint8_t i = 0; i < DEDUP_BUFFER_SIZE; i++) {
+        if (seenBuffer_[i].seqNum == seqNum &&
+            (now - seenBuffer_[i].timestamp) < DEDUP_WINDOW_MS) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void Protocol::markAsSeen(uint8_t seqNum) {
+    if (!getTick_) return;  // No tick function, skip dedup
+
+    seenBuffer_[seenIndex_].seqNum = seqNum;
+    seenBuffer_[seenIndex_].timestamp = getTick_();
+    seenIndex_ = (seenIndex_ + 1) % DEDUP_BUFFER_SIZE;
 }
 
 void Protocol::processReceivedByte(uint8_t byte) {
     if (parser_.processByte(byte)) {
         // Complete message received
+        uint8_t seqNum = parser_.getSequenceNumber();
         Command cmd = parser_.getCommand();
         const uint8_t* data = parser_.getData();
         uint8_t dataLen = parser_.getDataLength();
 
+        // Store current sequence number for ACK/NACK responses
+        currentSeqNum_ = seqNum;
+
+        // Check for duplicate (but always send ACK)
+        bool isDuplicate = wasRecentlySeen(seqNum);
+
+        // Always send response (ACK/NACK), but only execute if not duplicate
         switch (cmd) {
             case Command::SetWakeInterval:
-                handleSetWakeInterval(data, dataLen);
+                if (!isDuplicate) {
+                    handleSetWakeInterval(data, dataLen);
+                } else {
+                    sendAck();  // Resend ACK for duplicate
+                }
                 break;
             case Command::GetWakeInterval:
-                handleGetWakeInterval();
+                if (!isDuplicate) {
+                    handleGetWakeInterval();
+                } else {
+                    sendAck();
+                }
                 break;
             case Command::SetSchedule:
-                handleSetSchedule(data, dataLen);
+                if (!isDuplicate) {
+                    handleSetSchedule(data, dataLen);
+                } else {
+                    sendAck();
+                }
                 break;
             case Command::GetSchedule:
-                handleGetSchedule(data, dataLen);
+                if (!isDuplicate) {
+                    handleGetSchedule(data, dataLen);
+                } else {
+                    sendAck();
+                }
                 break;
             case Command::ClearSchedule:
-                handleClearSchedule(data, dataLen);
+                if (!isDuplicate) {
+                    handleClearSchedule(data, dataLen);
+                } else {
+                    sendAck();
+                }
                 break;
             case Command::KeepAwake:
-                handleKeepAwake(data, dataLen);
+                if (!isDuplicate) {
+                    handleKeepAwake(data, dataLen);
+                } else {
+                    sendAck();
+                }
                 break;
             case Command::SetDateTime:
-                handleSetDateTime(data, dataLen);
+                if (!isDuplicate) {
+                    handleSetDateTime(data, dataLen);
+                } else {
+                    sendAck();
+                }
                 break;
             case Command::ReadyForSleep:
-                handleReadyForSleep();
+                if (!isDuplicate) {
+                    handleReadyForSleep();
+                } else {
+                    sendAck();
+                }
                 break;
             default:
                 sendNack(ErrorCode::InvalidParam);
                 break;
         }
 
+        // Mark as seen after processing (only for valid commands)
+        if (cmd != static_cast<Command>(0)) {
+            markAsSeen(seqNum);
+        }
+
         parser_.reset();
     }
 }
 
+uint8_t Protocol::getNextSeqNum() {
+    uint8_t seq = nextSeqNum_++;
+    if (nextSeqNum_ > SEQ_STM32_MAX) {
+        nextSeqNum_ = SEQ_STM32_MIN;
+    }
+    return seq;
+}
+
 void Protocol::sendWakeNotification(WakeReason reason) {
-    builder_.startMessage(static_cast<uint8_t>(Response::WakeReason));
+    builder_.startMessage(getNextSeqNum(), static_cast<uint8_t>(Response::WakeReason));
     builder_.addByte(static_cast<uint8_t>(reason));
     sendMessage();
 }
 
 void Protocol::sendWakeNotificationWithSchedule(WakeReason reason, const ScheduleEntry* entry) {
-    builder_.startMessage(static_cast<uint8_t>(Response::WakeReason));
+    builder_.startMessage(getNextSeqNum(), static_cast<uint8_t>(Response::WakeReason));
     builder_.addByte(static_cast<uint8_t>(reason));
     if (entry) {
         builder_.addScheduleEntry(*entry);
@@ -442,7 +547,7 @@ void Protocol::sendWakeNotificationWithSchedule(WakeReason reason, const Schedul
 }
 
 void Protocol::sendScheduleComplete() {
-    builder_.startMessage(static_cast<uint8_t>(Response::ScheduleComplete));
+    builder_.startMessage(getNextSeqNum(), static_cast<uint8_t>(Response::ScheduleComplete));
     sendMessage();
 }
 
@@ -608,21 +713,24 @@ void Protocol::handleReadyForSleep() {
     }
 }
 
-// Response senders
+// Response senders (echo the command's sequence number)
 
 void Protocol::sendAck() {
-    builder_.startMessage(static_cast<uint8_t>(Response::Ack));
+    // Echo the sequence number from the received command
+    builder_.startMessage(currentSeqNum_, static_cast<uint8_t>(Response::Ack));
     sendMessage();
 }
 
 void Protocol::sendNack(ErrorCode error) {
-    builder_.startMessage(static_cast<uint8_t>(Response::Nack));
+    // Echo the sequence number from the received command
+    builder_.startMessage(currentSeqNum_, static_cast<uint8_t>(Response::Nack));
     builder_.addByte(static_cast<uint8_t>(error));
     sendMessage();
 }
 
 void Protocol::sendWakeInterval() {
-    builder_.startMessage(static_cast<uint8_t>(Response::WakeInterval));
+    // Echo the sequence number from the received command
+    builder_.startMessage(currentSeqNum_, static_cast<uint8_t>(Response::WakeInterval));
     builder_.addUint32(wakeInterval_);
     sendMessage();
 }
@@ -635,7 +743,8 @@ void Protocol::sendScheduleEntry(uint8_t index) {
         return;
     }
 
-    builder_.startMessage(static_cast<uint8_t>(Response::ScheduleEntry));
+    // Echo the sequence number from the received command
+    builder_.startMessage(currentSeqNum_, static_cast<uint8_t>(Response::ScheduleEntry));
     builder_.addScheduleEntry(*entry);
     sendMessage();
 }
