@@ -18,30 +18,7 @@ TaskQueue::TaskQueue() : next_id_(1) {
 }
 
 uint16_t TaskQueue::post(TaskFunction func, void* context, TaskPriority priority) {
-    if (!func) {
-        logger.warn("Attempted to post null task function");
-        return INVALID_ID;
-    }
-
-    Task* slot = findEmptySlot();
-    if (!slot) {
-        logger.warn("Task queue full, cannot post task");
-        return INVALID_ID;
-    }
-
-    uint16_t id = getNextId();
-
-    slot->function = func;
-    slot->context = context;
-    slot->run_after = 0;  // Run immediately
-    slot->id = id;
-    slot->depends_on = INVALID_ID;
-    slot->priority = priority;
-    slot->state = TaskState::Pending;
-
-    logger.debug("Posted task %u (priority=%u)", id, static_cast<uint8_t>(priority));
-
-    return id;
+    return postDelayed(func, context, 0, 0, priority);
 }
 
 uint16_t TaskQueue::postDelayed(TaskFunction func, void* context,
