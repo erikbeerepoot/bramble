@@ -14,7 +14,8 @@ ReliablePmuClient::ReliablePmuClient(PmuClient* client)
       wakeCallback_(nullptr),
       scheduleCompleteCallback_(nullptr),
       wakeIntervalCallback_(nullptr),
-      scheduleEntryCallback_(nullptr) {
+      scheduleEntryCallback_(nullptr),
+      pendingDateTimeCallback_(nullptr) {
     // Initialize deduplication buffer
     for (auto& entry : seenBuffer_) {
         entry.seqNum = 0;
@@ -83,7 +84,8 @@ void ReliablePmuClient::update() {
         uint32_t timeout = getTimeout(inFlight_->attempts);
 
         if (elapsed > timeout) {
-            log.debug("Timeout on seq %d, attempt %d", inFlight_->seqNum, inFlight_->attempts);
+            log.info("Timeout on seq %d, attempt %d (elapsed=%lu, timeout=%lu)",
+                     inFlight_->seqNum, inFlight_->attempts, elapsed, timeout);
             retryCommand();
         }
     }
@@ -114,12 +116,12 @@ uint32_t ReliablePmuClient::getTimeout(uint8_t attempts) const {
 void ReliablePmuClient::handleAck(uint8_t seqNum, bool success, ErrorCode error) {
     // Check if this ACK matches our in-flight command
     if (!inFlight_ || inFlight_->seqNum != seqNum) {
-        log.debug("ACK for unknown seq %d (expected %d)",
+        log.info("ACK for unknown seq %d (expected %d)",
                   seqNum, inFlight_ ? inFlight_->seqNum : 0);
         return;
     }
 
-    log.debug("ACK received for seq %d, success=%d", seqNum, success);
+    log.info("ACK received for seq %d, success=%d", seqNum, success);
 
     // Call the callback if set
     if (inFlight_->callback) {
@@ -272,6 +274,29 @@ bool ReliablePmuClient::getWakeInterval(CommandCallback callback) {
 
 bool ReliablePmuClient::getSchedule(uint8_t index, CommandCallback callback) {
     return queueCommand(Command::GetSchedule, &index, 1, callback);
+}
+
+bool ReliablePmuClient::getDateTime(DateTimeCallback callback) {
+    // Store callback for when DateTimeResponse arrives
+    pendingDateTimeCallback_ = callback;
+
+    // Set up the Protocol's callback to forward to our stored callback
+    // This must be done each time since handleDateTimeResponse clears it after use
+    client_->getProtocol().onDateTime(
+        [this](bool valid, const DateTime& datetime) {
+            if (pendingDateTimeCallback_) {
+                auto cb = pendingDateTimeCallback_;
+                pendingDateTimeCallback_ = nullptr;
+                cb(valid, datetime);
+            }
+        });
+
+    // Queue command - ACK confirms delivery, DateTimeResponse handled via onDateTime
+    return queueCommand(Command::GetDateTime, nullptr, 0,
+        [](bool success, ErrorCode error) {
+            // ACK received - DateTimeResponse will follow
+            // If NACK, the DateTimeCallback won't be called (already cleared)
+        });
 }
 
 // ============================================================================

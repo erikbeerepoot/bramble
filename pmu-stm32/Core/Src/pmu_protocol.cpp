@@ -510,7 +510,11 @@ void Protocol::processReceivedByte(uint8_t byte) {
                 }
                 break;
             case Command::GetDateTime:
-                handleGetDateTime();
+                if (!isDuplicate) {
+                    handleGetDateTime();
+                } else {
+                    sendAck();
+                }
                 break;
             default:
                 sendNack(ErrorCode::InvalidParam);
@@ -721,6 +725,9 @@ void Protocol::handleReadyForSleep() {
 }
 
 void Protocol::handleGetDateTime() {
+    // Send ACK first (confirms command received, enables retry on RP2040)
+    sendAck();
+
     // Read current time from RTC
     RTC_TimeTypeDef time;
     RTC_DateTypeDef date;
@@ -779,7 +786,8 @@ void Protocol::sendScheduleEntry(uint8_t index) {
 
 void Protocol::sendDateTimeResponse(bool valid, uint8_t year, uint8_t month, uint8_t day,
                                     uint8_t weekday, uint8_t hour, uint8_t minute, uint8_t second) {
-    builder_.startMessage(static_cast<uint8_t>(Response::DateTimeResponse));
+    // Echo the sequence number from the received command
+    builder_.startMessage(currentSeqNum_, static_cast<uint8_t>(Response::DateTimeResponse));
     builder_.addByte(valid ? 0x01 : 0x00);
     builder_.addByte(year);
     builder_.addByte(month);

@@ -133,6 +133,23 @@ public:
      */
     bool getSchedule(uint8_t index, CommandCallback callback = nullptr);
 
+    /**
+     * @brief Get the current date/time from PMU's RTC
+     * @param callback Called when datetime response is received
+     * @return true if command queued successfully
+     *
+     * The command is sent through the reliable queue - STM32 sends ACK
+     * followed by DateTimeResponse.
+     */
+    bool getDateTime(DateTimeCallback callback);
+
+    /**
+     * @brief Get access to the underlying PmuClient
+     * Useful for accessing the protocol directly for operations
+     * not covered by the reliable client.
+     */
+    PmuClient* getClient() { return client_; }
+
     // ========================================================================
     // Event callbacks
     // ========================================================================
@@ -214,6 +231,7 @@ private:
     ScheduleCompleteCallback scheduleCompleteCallback_;
     WakeIntervalCallback wakeIntervalCallback_;
     ScheduleEntryCallback scheduleEntryCallback_;
+    DateTimeCallback pendingDateTimeCallback_;
 
     // Internal helpers
     uint8_t getNextSeqNum();

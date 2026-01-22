@@ -351,7 +351,7 @@ void Protocol::readyForSleep(CommandResultCallback callback) {
 
 void Protocol::getDateTime(DateTimeCallback callback) {
     pendingDateTimeCallback_ = callback;
-    builder_.startMessage(Command::GetDateTime);
+    builder_.startMessage(getNextSequenceNumber(), Command::GetDateTime);
     sendMessage();
 }
 
