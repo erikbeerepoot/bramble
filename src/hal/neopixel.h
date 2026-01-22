@@ -1,17 +1,18 @@
 #pragma once
 
-#include <vector>
-#include <cstdint>
 #include <algorithm>
-#include "hardware/pio.h"
+#include <cstdint>
+#include <vector>
+
 #include "hardware/clocks.h"
+#include "hardware/pio.h"
+
 #include "ws2812.pio.h"
 
 /**
  * @brief Simple RGB color structure
  */
-struct neopixel_color_t
-{
+struct neopixel_color_t {
     uint8_t r;
     uint8_t g;
     uint8_t b;
@@ -23,8 +24,7 @@ struct neopixel_color_t
  * This class provides a simple interface to control a strip of WS2812 RGB LEDs
  * using the RP2040's PIO (Programmable I/O) peripheral for precise timing.
  */
-class NeoPixel
-{
+class NeoPixel {
 public:
     /**
      * @brief Construct a new NeoPixel controller
@@ -94,13 +94,10 @@ public:
      * @param b Blue value (0-255)
      * @return RGB color structure
      */
-    static neopixel_color_t color(uint8_t r, uint8_t g, uint8_t b)
-    {
-        return {r, g, b};
-    }
+    static neopixel_color_t color(uint8_t r, uint8_t g, uint8_t b) { return {r, g, b}; }
 
 private:
-    static constexpr uint32_t WS2812_FREQ = 800000; // 800kHz for WS2812
+    static constexpr uint32_t WS2812_FREQ = 800000;  // 800kHz for WS2812
 
     uint pio_pin;
     PIO pio;
@@ -108,7 +105,7 @@ private:
     uint offset;
 
     std::vector<neopixel_color_t> pixels;
-    uint8_t global_brightness = 255; // Store brightness separately
+    uint8_t global_brightness = 255;  // Store brightness separately
 
     bool initialized = false;
 };

@@ -2,9 +2,11 @@
 #define PMU_CLIENT_H
 
 #include "pico/stdlib.h"
-#include "hardware/uart.h"
+
 #include "hardware/irq.h"
 #include "hardware/structs/uart.h"
+#include "hardware/uart.h"
+
 #include "pmu_protocol.h"
 
 /**
@@ -23,7 +25,7 @@ public:
      * @param rx_pin GPIO pin for RX
      * @param baudrate Baud rate (default 9600 to match STM32)
      */
-    PmuClient(uart_inst_t* uart_inst, uint tx_pin, uint rx_pin, uint baudrate = 9600);
+    PmuClient(uart_inst_t *uart_inst, uint tx_pin, uint rx_pin, uint baudrate = 9600);
 
     /**
      * @brief Initialize the UART hardware and protocol
@@ -43,7 +45,7 @@ public:
      *
      * @return PMU::Protocol& Reference to the protocol handler
      */
-    PMU::Protocol& getProtocol() { return protocol_; }
+    PMU::Protocol &getProtocol() { return protocol_; }
 
     /**
      * @brief Check if UART is initialized
@@ -63,7 +65,7 @@ public:
     void sendWakePreamble();
 
 private:
-    uart_inst_t* uart_;
+    uart_inst_t *uart_;
     uint txPin_;
     uint rxPin_;
     uint baudrate_;
@@ -80,13 +82,13 @@ private:
     volatile uint8_t lastErrorFlags_;
 
     // UART send function (captured by lambda in protocol)
-    void uartSend(const uint8_t* data, uint8_t length);
+    void uartSend(const uint8_t *data, uint8_t length);
 
     // UART RX interrupt handler
     static void onUartRxIrq();
 
     // Static instance for IRQ callback
-    static PmuClient* instance_;
+    static PmuClient *instance_;
 };
 
-#endif // PMU_CLIENT_H
+#endif  // PMU_CLIENT_H

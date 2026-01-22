@@ -1,10 +1,12 @@
 #include "sensor_mode.h"
+
+#include "hardware/i2c.h"
+
 #include "../hal/cht832x.h"
 #include "../hal/logger.h"
-#include "../lora/reliable_messenger.h"
-#include "../lora/message.h"
 #include "../led_patterns.h"
-#include "hardware/i2c.h"
+#include "../lora/message.h"
+#include "../lora/reliable_messenger.h"
 
 constexpr uint16_t HUB_ADDRESS = ADDRESS_HUB;
 
@@ -18,7 +20,8 @@ static Logger pmu_logger("PMU");
 
 SensorMode::~SensorMode() = default;
 
-void SensorMode::onStart() {
+void SensorMode::onStart()
+{
     logger.info("=== SENSOR MODE ACTIVE ===");
     logger.info("- Temperature/humidity data logger");
     logger.info("- 30 second reading interval");
@@ -37,8 +40,7 @@ void SensorMode::onStart() {
             SensorFlashMetadata stats;
             flash_buffer_->getStatistics(stats);
             logger.info("Flash buffer initialized: %lu records (%lu untransmitted)",
-                       stats.total_records,
-                       flash_buffer_->getUntransmittedCount());
+                        stats.total_records, flash_buffer_->getUntransmittedCount());
         } else {
             logger.error("Failed to initialize flash buffer!");
         }
@@ -50,19 +52,18 @@ void SensorMode::onStart() {
     sensor_ = std::make_unique<CHT832X>(i2c1, PIN_I2C_SDA, PIN_I2C_SCL);
 
     if (sensor_->init()) {
-        logger.info("CHT832X sensor initialized on I2C1 (SDA=%d, SCL=%d)",
-                   PIN_I2C_SDA, PIN_I2C_SCL);
+        logger.info("CHT832X sensor initialized on I2C1 (SDA=%d, SCL=%d)", PIN_I2C_SDA,
+                    PIN_I2C_SCL);
 
         // Take an initial reading to verify sensor is working
         auto reading = sensor_->read();
         if (reading.valid) {
-            logger.info("Initial reading: %.2fC, %.2f%%RH",
-                       reading.temperature, reading.humidity);
+            logger.info("Initial reading: %.2fC, %.2f%%RH", reading.temperature, reading.humidity);
         }
     } else {
         logger.error("Failed to initialize CHT832X sensor!");
-        logger.error("Check wiring: Red=3.3V, Black=GND, Green=GPIO%d, Yellow=GPIO%d",
-                    PIN_I2C_SCL, PIN_I2C_SDA);
+        logger.error("Check wiring: Red=3.3V, Black=GND, Green=GPIO%d, Yellow=GPIO%d", PIN_I2C_SCL,
+                     PIN_I2C_SDA);
     }
 
     // Start with orange blinking pattern while waiting for RTC sync
@@ -82,9 +83,7 @@ void SensorMode::onStart() {
     }
 
     // Set up work tracker - signals ready for sleep when all work completes
-    work_tracker_.setIdleCallback([this]() {
-        signalReadyForSleep();
-    });
+    work_tracker_.setIdleCallback([this]() { signalReadyForSleep(); });
 
     // Start with RTC sync work pending
     work_tracker_.addWork(WorkType::RtcSync);
@@ -93,7 +92,7 @@ void SensorMode::onStart() {
         pmu_logger.info("PMU client initialized successfully");
 
         // Set up PMU callback handler
-        reliable_pmu_->onWake([this](PMU::WakeReason reason, const PMU::ScheduleEntry* entry) {
+        reliable_pmu_->onWake([this](PMU::WakeReason reason, const PMU::ScheduleEntry *entry) {
             this->handlePmuWake(reason, entry);
         });
 
@@ -101,11 +100,11 @@ void SensorMode::onStart() {
         // Note: Don't send wake preamble (null bytes) - it can corrupt protocol state machine.
         // If STM32 is in STOP mode, first attempt may fail but we'll fall back to hub sync.
         pmu_logger.info("Requesting datetime from PMU...");
-        reliable_pmu_->getDateTime([this](bool valid, const PMU::DateTime& datetime) {
+        reliable_pmu_->getDateTime([this](bool valid, const PMU::DateTime &datetime) {
             if (valid) {
                 pmu_logger.info("PMU has valid time: 20%02d-%02d-%02d %02d:%02d:%02d",
-                               datetime.year, datetime.month, datetime.day,
-                               datetime.hour, datetime.minute, datetime.second);
+                                datetime.year, datetime.month, datetime.day, datetime.hour,
+                                datetime.minute, datetime.second);
 
                 // Set RP2040 RTC from PMU time
                 datetime_t dt;
@@ -119,8 +118,9 @@ void SensorMode::onStart() {
 
                 if (rtc_set_datetime(&dt)) {
                     // Don't mark as synced yet - need hub confirmation
-                    logger.info("RTC set from PMU (pending hub sync): %04d-%02d-%02d %02d:%02d:%02d",
-                               dt.year, dt.month, dt.day, dt.hour, dt.min, dt.sec);
+                    logger.info(
+                        "RTC set from PMU (pending hub sync): %04d-%02d-%02d %02d:%02d:%02d",
+                        dt.year, dt.month, dt.day, dt.hour, dt.min, dt.sec);
                     switchToOperationalPattern();
                     // Always sync from hub to correct PMU drift
                     pmu_logger.info("Sending heartbeat for hub sync");
@@ -131,7 +131,8 @@ void SensorMode::onStart() {
                 }
             } else {
                 // PMU doesn't have valid time - need to sync from hub
-                pmu_logger.info("PMU time not valid (first boot?) - sending heartbeat for hub sync");
+                pmu_logger.info(
+                    "PMU time not valid (first boot?) - sending heartbeat for hub sync");
                 sendHeartbeat(0);
             }
         });
@@ -141,34 +142,20 @@ void SensorMode::onStart() {
     }
 
     // Add periodic sensor reading task (stores to flash, no immediate TX)
-    task_manager_.addTask(
-        [this](uint32_t time) {
-            readAndStoreSensorData(time);
-        },
-        SENSOR_READ_INTERVAL_MS,
-        "Sensor Read"
-    );
+    task_manager_.addTask([this](uint32_t time) { readAndStoreSensorData(time); },
+                          SENSOR_READ_INTERVAL_MS, "Sensor Read");
 
     // Add heartbeat task
-    task_manager_.addTask(
-        [this](uint32_t time) {
-            sendHeartbeat(time);
-        },
-        HEARTBEAT_INTERVAL_MS,
-        "Heartbeat"
-    );
+    task_manager_.addTask([this](uint32_t time) { sendHeartbeat(time); }, HEARTBEAT_INTERVAL_MS,
+                          "Heartbeat");
 
     // Add backlog transmission task
-    task_manager_.addTask(
-        [this](uint32_t time) {
-            checkAndTransmitBacklog(time);
-        },
-        BACKLOG_TX_INTERVAL_MS,
-        "Backlog Transmission"
-    );
+    task_manager_.addTask([this](uint32_t time) { checkAndTransmitBacklog(time); },
+                          BACKLOG_TX_INTERVAL_MS, "Backlog Transmission");
 }
 
-void SensorMode::onLoop() {
+void SensorMode::onLoop()
+{
     // Process any pending PMU messages and handle retries
     if (pmu_available_ && reliable_pmu_) {
         reliable_pmu_->update();
@@ -206,7 +193,8 @@ void SensorMode::onLoop() {
     work_tracker_.checkIdle();
 }
 
-void SensorMode::readAndStoreSensorData(uint32_t current_time) {
+void SensorMode::readAndStoreSensorData(uint32_t current_time)
+{
     (void)current_time;  // No longer used - we use RTC Unix timestamp
 
     if (!sensor_) {
@@ -234,7 +222,8 @@ void SensorMode::readAndStoreSensorData(uint32_t current_time) {
         return;
     }
 
-    logger.info("Sensor reading: %.2fC, %.2f%%RH (ts=%lu)", reading.temperature, reading.humidity, unix_timestamp);
+    logger.info("Sensor reading: %.2fC, %.2f%%RH (ts=%lu)", reading.temperature, reading.humidity,
+                unix_timestamp);
 
     // Convert to fixed-point format
     // Temperature: int16_t in 0.01C units (e.g., 2350 = 23.50C)
@@ -250,7 +239,7 @@ void SensorMode::readAndStoreSensorData(uint32_t current_time) {
             .humidity = hum_fixed,
             .flags = 0,  // Not transmitted yet
             .reserved = 0,
-            .crc16 = 0   // Will be calculated by writeRecord()
+            .crc16 = 0  // Will be calculated by writeRecord()
         };
 
         if (!flash_buffer_->writeRecord(record)) {
@@ -261,20 +250,22 @@ void SensorMode::readAndStoreSensorData(uint32_t current_time) {
     }
 }
 
-void SensorMode::sendHeartbeat(uint32_t current_time) {
+void SensorMode::sendHeartbeat(uint32_t current_time)
+{
     uint32_t uptime = current_time / 1000;  // Convert to seconds
     uint8_t battery_level = 255;            // External power (no battery monitoring yet)
     uint8_t signal_strength = 70;           // TODO: Get actual RSSI from LoRa
     uint8_t active_sensors = CAP_TEMPERATURE | CAP_HUMIDITY;
-    uint8_t error_flags = 0;                // No errors
+    uint8_t error_flags = 0;  // No errors
 
     logger.debug("Sending heartbeat (uptime=%lu s)", uptime);
 
-    messenger_.sendHeartbeat(HUB_ADDRESS, uptime, battery_level,
-                            signal_strength, active_sensors, error_flags);
+    messenger_.sendHeartbeat(HUB_ADDRESS, uptime, battery_level, signal_strength, active_sensors,
+                             error_flags);
 }
 
-void SensorMode::checkAndTransmitBacklog(uint32_t current_time) {
+void SensorMode::checkAndTransmitBacklog(uint32_t current_time)
+{
     (void)current_time;
 
     if (!flash_buffer_) {
@@ -318,7 +309,8 @@ void SensorMode::checkAndTransmitBacklog(uint32_t current_time) {
     SensorDataRecord records[SensorFlashBuffer::BATCH_SIZE];
     size_t actual_count = 0;
 
-    if (!flash_buffer_->readUntransmittedRecords(records, SensorFlashBuffer::BATCH_SIZE, actual_count)) {
+    if (!flash_buffer_->readUntransmittedRecords(records, SensorFlashBuffer::BATCH_SIZE,
+                                                 actual_count)) {
         logger.error("Failed to read untransmitted records");
         // Complete work on error - we'll retry next wake cycle
         work_tracker_.completeWork(WorkType::BacklogTransmit);
@@ -326,7 +318,8 @@ void SensorMode::checkAndTransmitBacklog(uint32_t current_time) {
     }
 
     if (actual_count == 0) {
-        logger.warn("No valid records to transmit - skipping %lu corrupt records", untransmitted_count);
+        logger.warn("No valid records to transmit - skipping %lu corrupt records",
+                    untransmitted_count);
         // All remaining records are corrupt - advance past them so we don't get stuck
         flash_buffer_->advanceReadIndex(static_cast<uint32_t>(untransmitted_count));
         work_tracker_.completeWork(WorkType::BacklogTransmit);
@@ -347,7 +340,8 @@ void SensorMode::checkAndTransmitBacklog(uint32_t current_time) {
     }
 }
 
-bool SensorMode::transmitBatch(const SensorDataRecord* records, size_t count) {
+bool SensorMode::transmitBatch(const SensorDataRecord *records, size_t count)
+{
     if (!records || count == 0 || !flash_buffer_) {
         return false;
     }
@@ -372,14 +366,13 @@ bool SensorMode::transmitBatch(const SensorDataRecord* records, size_t count) {
     // Note: We don't mark individual records as transmitted - timestamps allow
     // deduplication during USB recovery if needed. This avoids flash wear.
     uint8_t seq = messenger_.sendSensorDataBatchWithCallback(
-        HUB_ADDRESS, start_index,
-        batch_records, static_cast<uint8_t>(count), RELIABLE,
+        HUB_ADDRESS, start_index, batch_records, static_cast<uint8_t>(count), RELIABLE,
         [this, count](uint8_t seq_num, uint8_t ack_status, uint64_t context) {
             if (ack_status == 0 && flash_buffer_) {
                 // ACK received - advance read index past transmitted records
                 if (flash_buffer_->advanceReadIndex(static_cast<uint32_t>(count))) {
-                    logger.info("Batch ACK received (seq=%d): %zu records transmitted",
-                               seq_num, count);
+                    logger.info("Batch ACK received (seq=%d): %zu records transmitted", seq_num,
+                                count);
 
                     // Check if we've cleared all backlog
                     if (flash_buffer_->getUntransmittedCount() == 0) {
@@ -389,8 +382,8 @@ bool SensorMode::transmitBatch(const SensorDataRecord* records, size_t count) {
                     }
                 }
             } else {
-                logger.warn("Batch transmission failed (seq=%d, status=%d), will retry",
-                           seq_num, ack_status);
+                logger.warn("Batch transmission failed (seq=%d, status=%d), will retry", seq_num,
+                            ack_status);
                 // Complete work on failure - we'll retry next wake cycle
                 work_tracker_.completeWork(WorkType::BacklogTransmit);
             }
@@ -407,7 +400,8 @@ bool SensorMode::transmitBatch(const SensorDataRecord* records, size_t count) {
     return true;
 }
 
-void SensorMode::signalReadyForSleep() {
+void SensorMode::signalReadyForSleep()
+{
     if (!pmu_available_ || !reliable_pmu_) {
         logger.debug("PMU not available, skipping ready for sleep signal");
         return;
@@ -425,7 +419,8 @@ void SensorMode::signalReadyForSleep() {
     sleep_requested_ = true;
 }
 
-void SensorMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry* entry) {
+void SensorMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry *entry)
+{
     (void)entry;
 
     switch (reason) {
@@ -451,26 +446,21 @@ void SensorMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry*
     }
 }
 
-void SensorMode::onHeartbeatResponse(const HeartbeatResponsePayload* payload) {
+void SensorMode::onHeartbeatResponse(const HeartbeatResponsePayload *payload)
+{
     // Call base class implementation to update RP2040 RTC
     ApplicationMode::onHeartbeatResponse(payload);
 
     // Also sync time to PMU if available
     if (pmu_available_ && reliable_pmu_ && payload) {
         // Convert HeartbeatResponsePayload to PMU::DateTime
-        PMU::DateTime datetime(
-            payload->year % 100,  // PMU uses 2-digit year (e.g., 26 for 2026)
-            payload->month,
-            payload->day,
-            payload->dotw,
-            payload->hour,
-            payload->min,
-            payload->sec
-        );
+        PMU::DateTime datetime(payload->year % 100,  // PMU uses 2-digit year (e.g., 26 for 2026)
+                               payload->month, payload->day, payload->dotw, payload->hour,
+                               payload->min, payload->sec);
 
-        pmu_logger.info("Syncing time to PMU: 20%02d-%02d-%02d %02d:%02d:%02d",
-                       datetime.year, datetime.month, datetime.day,
-                       datetime.hour, datetime.minute, datetime.second);
+        pmu_logger.info("Syncing time to PMU: 20%02d-%02d-%02d %02d:%02d:%02d", datetime.year,
+                        datetime.month, datetime.day, datetime.hour, datetime.minute,
+                        datetime.second);
 
         // Send datetime to PMU, then trigger RTC synced flow
         reliable_pmu_->setDateTime(datetime, [this](bool success, PMU::ErrorCode error) {
@@ -489,7 +479,8 @@ void SensorMode::onHeartbeatResponse(const HeartbeatResponsePayload* payload) {
     }
 }
 
-void SensorMode::onRtcSynced() {
+void SensorMode::onRtcSynced()
+{
     // Switch to operational LED pattern if not already done
     switchToOperationalPattern();
 

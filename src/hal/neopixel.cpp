@@ -1,19 +1,18 @@
 #include "neopixel.h"
+
 #include <cstring>
 
 NeoPixel::NeoPixel(uint pin, uint num_pixels) : pio_pin(pin)
 {
-    pixels.resize(num_pixels, {0, 0, 0}); // Initialize all pixels to black
+    pixels.resize(num_pixels, {0, 0, 0});  // Initialize all pixels to black
 
     // Determine which PIO and state machine to use
     bool pio0_available = false;
     bool pio1_available = false;
 
     // Check for available state machines
-    for (int i = 0; i < 4; i++)
-    {
-        if (!pio_sm_is_claimed(pio0, i))
-        {
+    for (int i = 0; i < 4; i++) {
+        if (!pio_sm_is_claimed(pio0, i)) {
             pio = pio0;
             sm = i;
             pio0_available = true;
@@ -21,12 +20,9 @@ NeoPixel::NeoPixel(uint pin, uint num_pixels) : pio_pin(pin)
         }
     }
 
-    if (!pio0_available)
-    {
-        for (int i = 0; i < 4; i++)
-        {
-            if (!pio_sm_is_claimed(pio1, i))
-            {
+    if (!pio0_available) {
+        for (int i = 0; i < 4; i++) {
+            if (!pio_sm_is_claimed(pio1, i)) {
                 pio = pio1;
                 sm = i;
                 pio1_available = true;
@@ -35,8 +31,7 @@ NeoPixel::NeoPixel(uint pin, uint num_pixels) : pio_pin(pin)
         }
     }
 
-    if (!pio0_available && !pio1_available)
-    {
+    if (!pio0_available && !pio1_available) {
         // No state machines available
         return;
     }
@@ -53,8 +48,7 @@ NeoPixel::NeoPixel(uint pin, uint num_pixels) : pio_pin(pin)
 
 NeoPixel::~NeoPixel()
 {
-    if (initialized)
-    {
+    if (initialized) {
         clear();
         show();
         pio_sm_set_enabled(pio, sm, false);
@@ -65,16 +59,14 @@ NeoPixel::~NeoPixel()
 
 void NeoPixel::setPixel(uint index, uint8_t r, uint8_t g, uint8_t b)
 {
-    if (index < pixels.size())
-    {
+    if (index < pixels.size()) {
         pixels[index] = {r, g, b};
     }
 }
 
 void NeoPixel::setPixel(uint index, neopixel_color_t color)
 {
-    if (index < pixels.size())
-    {
+    if (index < pixels.size()) {
         pixels[index] = color;
     }
 }
@@ -89,8 +81,7 @@ void NeoPixel::show()
     if (!initialized)
         return;
 
-    for (const auto &pixel : pixels)
-    {
+    for (const auto &pixel : pixels) {
         // Apply brightness scaling during output
         uint8_t r = (pixel.r * global_brightness) / 255;
         uint8_t g = (pixel.g * global_brightness) / 255;
@@ -118,32 +109,30 @@ neopixel_color_t NeoPixel::colorHSV(uint16_t h, uint8_t s, uint8_t v)
     // Scale hue to 0-255 range for simpler calculation
     uint8_t hue = h >> 8;
 
-    if (s == 0)
-    {
+    if (s == 0) {
         // Grayscale
         return {v, v, v};
     }
 
-    uint8_t region = hue / 43; // 256 / 6 regions
+    uint8_t region = hue / 43;  // 256 / 6 regions
     uint8_t remainder = (hue - (region * 43)) * 6;
 
     uint8_t p = (v * (255 - s)) >> 8;
     uint8_t q = (v * (255 - ((s * remainder) >> 8))) >> 8;
     uint8_t t = (v * (255 - ((s * (255 - remainder)) >> 8))) >> 8;
 
-    switch (region)
-    {
-    case 0:
-        return {v, t, p};
-    case 1:
-        return {q, v, p};
-    case 2:
-        return {p, v, t};
-    case 3:
-        return {p, q, v};
-    case 4:
-        return {t, p, v};
-    default:
-        return {v, p, q};
+    switch (region) {
+        case 0:
+            return {v, t, p};
+        case 1:
+            return {q, v, p};
+        case 2:
+            return {p, v, t};
+        case 3:
+            return {p, q, v};
+        case 4:
+            return {t, p, v};
+        default:
+            return {v, p, q};
     }
 }

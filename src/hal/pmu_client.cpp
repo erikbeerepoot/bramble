@@ -1,29 +1,23 @@
 #include "pmu_client.h"
+
 #include "hal/logger.h"
 
 static Logger pmu_client_log("PMU_RX");
 
 // Static instance for IRQ callback
-PmuClient* PmuClient::instance_ = nullptr;
+PmuClient *PmuClient::instance_ = nullptr;
 
-PmuClient::PmuClient(uart_inst_t* uart_inst, uint tx_pin, uint rx_pin, uint baudrate)
-    : uart_(uart_inst),
-      txPin_(tx_pin),
-      rxPin_(rx_pin),
-      baudrate_(baudrate),
-      initialized_(false),
-      protocol_([this](const uint8_t* data, uint8_t length) {
-          this->uartSend(data, length);
-      }),
-      rxHead_(0),
-      rxTail_(0),
-      lastErrorFlags_(0) {
-
+PmuClient::PmuClient(uart_inst_t *uart_inst, uint tx_pin, uint rx_pin, uint baudrate)
+    : uart_(uart_inst), txPin_(tx_pin), rxPin_(rx_pin), baudrate_(baudrate), initialized_(false),
+      protocol_([this](const uint8_t *data, uint8_t length) { this->uartSend(data, length); }),
+      rxHead_(0), rxTail_(0), lastErrorFlags_(0)
+{
     // Set static instance for IRQ handling
     instance_ = this;
 }
 
-bool PmuClient::init() {
+bool PmuClient::init()
+{
     if (initialized_) {
         return true;
     }
@@ -64,7 +58,8 @@ bool PmuClient::init() {
     return true;
 }
 
-void PmuClient::uartSend(const uint8_t* data, uint8_t length) {
+void PmuClient::uartSend(const uint8_t *data, uint8_t length)
+{
     if (!initialized_ || !data || length == 0) {
         return;
     }
@@ -73,7 +68,8 @@ void PmuClient::uartSend(const uint8_t* data, uint8_t length) {
     uart_write_blocking(uart_, data, length);
 }
 
-void PmuClient::sendWakePreamble() {
+void PmuClient::sendWakePreamble()
+{
     if (!initialized_) {
         return;
     }
@@ -98,14 +94,13 @@ void PmuClient::sendWakePreamble() {
     sleep_ms(150);
 }
 
-void PmuClient::process() {
+void PmuClient::process()
+{
     // Check for UART errors
     if (lastErrorFlags_ != 0) {
-        pmu_client_log.warn("UART errors: FE=%d PE=%d BE=%d OE=%d",
-            (lastErrorFlags_ & 1) ? 1 : 0,
-            (lastErrorFlags_ & 2) ? 1 : 0,
-            (lastErrorFlags_ & 4) ? 1 : 0,
-            (lastErrorFlags_ & 8) ? 1 : 0);
+        pmu_client_log.warn("UART errors: FE=%d PE=%d BE=%d OE=%d", (lastErrorFlags_ & 1) ? 1 : 0,
+                            (lastErrorFlags_ & 2) ? 1 : 0, (lastErrorFlags_ & 4) ? 1 : 0,
+                            (lastErrorFlags_ & 8) ? 1 : 0);
         lastErrorFlags_ = 0;
     }
 
@@ -117,7 +112,8 @@ void PmuClient::process() {
     }
 }
 
-void PmuClient::onUartRxIrq() {
+void PmuClient::onUartRxIrq()
+{
     if (!instance_ || !instance_->uart_) {
         return;
     }

@@ -1,7 +1,8 @@
 #pragma once
 
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
+
 #include "logger.h"
 
 /**
@@ -24,25 +25,23 @@ constexpr size_t FLASH_BLOCK_SIZE = 65536;
 /**
  * @brief Flash operation result codes
  */
-enum class FlashResult : uint8_t
-{
-    Success = 0,                // Operation successful
-    ErrorInvalidParam,          // Invalid parameters
-    ErrorAlignment,             // Alignment error
-    ErrorBounds,                // Out of bounds access
-    ErrorWriteProtected,        // Write to protected area
-    ErrorVerifyFailed,          // Write verification failed
-    ErrorEraseFailed,           // Erase operation failed
-    ErrorTimeout,               // Operation timed out
-    ErrorHardware,              // Hardware failure
-    ErrorUnknown = 255          // Unknown error -- default error case
+enum class FlashResult : uint8_t {
+    Success = 0,          // Operation successful
+    ErrorInvalidParam,    // Invalid parameters
+    ErrorAlignment,       // Alignment error
+    ErrorBounds,          // Out of bounds access
+    ErrorWriteProtected,  // Write to protected area
+    ErrorVerifyFailed,    // Write verification failed
+    ErrorEraseFailed,     // Erase operation failed
+    ErrorTimeout,         // Operation timed out
+    ErrorHardware,        // Hardware failure
+    ErrorUnknown = 255    // Unknown error -- default error case
 };
 
 /**
  * @brief Flash operation statistics
  */
-struct FlashStats
-{
+struct FlashStats {
     uint32_t reads_attempted;
     uint32_t reads_successful;
     uint32_t writes_attempted;
@@ -56,8 +55,7 @@ struct FlashStats
 /**
  * @brief Low-level flash memory interface with comprehensive error handling
  */
-class Flash
-{
+class Flash {
 public:
     Flash();
 
@@ -88,7 +86,8 @@ public:
      * @note This operation will disable interrupts during write
      * @note Automatically verifies write and retries on failure
      */
-    FlashResult write(uint32_t offset, const uint8_t *data, size_t length, uint32_t max_retries = 3);
+    FlashResult write(uint32_t offset, const uint8_t *data, size_t length,
+                      uint32_t max_retries = 3);
 
     /**
      * @brief Erase flash sectors with verification and retry
@@ -115,10 +114,7 @@ public:
     }
 
     // Convenience methods using the generic template
-    inline bool isPageAligned(uint32_t offset) const
-    {
-        return isAligned<FLASH_PAGE_SIZE>(offset);
-    }
+    inline bool isPageAligned(uint32_t offset) const { return isAligned<FLASH_PAGE_SIZE>(offset); }
 
     inline bool isSectorAligned(uint32_t offset) const
     {
@@ -139,10 +135,7 @@ public:
      * @brief Get offset of last sector (useful for storing configuration)
      * @return Offset of last sector in flash
      */
-    uint32_t getLastSectorOffset() const
-    {
-        return getFlashSize() - FLASH_SECTOR_SIZE;
-    }
+    uint32_t getLastSectorOffset() const { return getFlashSize() - FLASH_SECTOR_SIZE; }
 
     /**
      * @brief Verify data integrity after write/erase
@@ -180,9 +173,9 @@ public:
     bool isSectorErased(uint32_t offset, size_t length);
 
 private:
-    uint32_t flash_size_; // Total flash size in bytes
-    FlashStats stats_;    // Operation statistics
-    Logger logger_;       // Module logger
+    uint32_t flash_size_;  // Total flash size in bytes
+    FlashStats stats_;     // Operation statistics
+    Logger logger_;        // Module logger
 
     /**
      * @brief Generic retry logic for flash operations
@@ -197,18 +190,15 @@ private:
     {
         FlashResult result = FlashResult::ErrorUnknown;
 
-        for (uint32_t attempt = 0; attempt <= max_retries; attempt++)
-        {
-            if (attempt > 0)
-            {
+        for (uint32_t attempt = 0; attempt <= max_retries; attempt++) {
+            if (attempt > 0) {
                 stats_.retry_count++;
                 logger_.warn("%s retry %lu/%lu", op_name, attempt, max_retries);
             }
 
             result = op();
 
-            if (result == FlashResult::Success)
-            {
+            if (result == FlashResult::Success) {
                 return FlashResult::Success;
             }
 
@@ -250,7 +240,6 @@ private:
      * @param require_sector_align Require sector alignment
      * @return FlashResult indicating validation result
      */
-    FlashResult validateParams(uint32_t offset, size_t length,
-                               bool require_page_align = false,
+    FlashResult validateParams(uint32_t offset, size_t length, bool require_page_align = false,
                                bool require_sector_align = false);
 };

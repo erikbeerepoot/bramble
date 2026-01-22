@@ -1,24 +1,26 @@
 #pragma once
 
-#include "pmu_client.h"
-#include "pmu_protocol.h"
-#include "pico/stdlib.h"
-#include <queue>
-#include <optional>
 #include <functional>
 #include <memory>
+#include <optional>
+#include <queue>
+
+#include "pico/stdlib.h"
+
+#include "pmu_client.h"
+#include "pmu_protocol.h"
 
 namespace PMU {
 
 // Reliability configuration
 namespace Reliability {
-    constexpr uint32_t BASE_TIMEOUT_MS = 500;
-    constexpr uint32_t MAX_TIMEOUT_MS = 5000;
-    constexpr float BACKOFF_MULTIPLIER = 2.0f;
-    constexpr size_t MAX_QUEUE_DEPTH = 8;
-    constexpr size_t DEDUP_BUFFER_SIZE = 8;
-    constexpr uint32_t DEDUP_WINDOW_MS = 5000;
-}
+constexpr uint32_t BASE_TIMEOUT_MS = 500;
+constexpr uint32_t MAX_TIMEOUT_MS = 5000;
+constexpr float BACKOFF_MULTIPLIER = 2.0f;
+constexpr size_t MAX_QUEUE_DEPTH = 8;
+constexpr size_t DEDUP_BUFFER_SIZE = 8;
+constexpr uint32_t DEDUP_WINDOW_MS = 5000;
+}  // namespace Reliability
 
 /**
  * @brief Callback for command completion
@@ -32,7 +34,7 @@ using CommandCallback = std::function<void(bool success, ErrorCode error)>;
  * @param reason Why the device was woken
  * @param entry Schedule entry if wake was scheduled (may be nullptr)
  */
-using WakeCallback = std::function<void(WakeReason reason, const ScheduleEntry* entry)>;
+using WakeCallback = std::function<void(WakeReason reason, const ScheduleEntry *entry)>;
 
 /**
  * @brief Reliable PMU client with automatic retry
@@ -49,7 +51,7 @@ public:
      * @brief Construct a reliable PMU client
      * @param client Pointer to underlying PmuClient (must remain valid)
      */
-    explicit ReliablePmuClient(PmuClient* client);
+    explicit ReliablePmuClient(PmuClient *client);
 
     /**
      * @brief Initialize the reliable client
@@ -85,7 +87,7 @@ public:
      * @param callback Called when command completes (optional)
      * @return true if command queued successfully
      */
-    bool setSchedule(const ScheduleEntry& entry, CommandCallback callback = nullptr);
+    bool setSchedule(const ScheduleEntry &entry, CommandCallback callback = nullptr);
 
     /**
      * @brief Set the RTC date/time
@@ -93,7 +95,7 @@ public:
      * @param callback Called when command completes (optional)
      * @return true if command queued successfully
      */
-    bool setDateTime(const DateTime& dateTime, CommandCallback callback = nullptr);
+    bool setDateTime(const DateTime &dateTime, CommandCallback callback = nullptr);
 
     /**
      * @brief Clear a schedule entry (or all entries)
@@ -148,7 +150,7 @@ public:
      * Useful for accessing the protocol directly for operations
      * not covered by the reliable client.
      */
-    PmuClient* getClient() { return client_; }
+    PmuClient *getClient() { return client_; }
 
     // ========================================================================
     // Event callbacks
@@ -215,7 +217,7 @@ private:
         uint32_t timestamp;
     };
 
-    PmuClient* client_;
+    PmuClient *client_;
     uint8_t nextSeqNum_;
 
     // Command queue (one in-flight at a time)
@@ -241,8 +243,8 @@ private:
     void sendNextQueued();
     bool wasRecentlySeen(uint8_t seqNum) const;
     void markAsSeen(uint8_t seqNum);
-    bool queueCommand(Command cmd, const uint8_t* data, uint8_t dataLen, CommandCallback callback);
-    void sendCommand(PendingCommand& cmd);
+    bool queueCommand(Command cmd, const uint8_t *data, uint8_t dataLen, CommandCallback callback);
+    void sendCommand(PendingCommand &cmd);
 };
 
 }  // namespace PMU

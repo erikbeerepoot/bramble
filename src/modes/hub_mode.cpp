@@ -1,14 +1,18 @@
 #include "hub_mode.h"
-#include "hal/logger.h"
+
 #include <cstring>
+
+#include "pico/stdlib.h"
+
+#include "hardware/uart.h"
+
+#include "hal/flash.h"
+#include "hal/logger.h"
+#include "hal/pmu_protocol.h"
 #include "lora/address_manager.h"
 #include "lora/hub_router.h"
 #include "lora/network_stats.h"
 #include "lora/sx1276.h"
-#include "hal/flash.h"
-#include "hal/pmu_protocol.h"
-#include "pico/stdlib.h"
-#include "hardware/uart.h"
 
 static Logger logger("HubMode");
 
@@ -19,16 +23,18 @@ static Logger logger("HubMode");
 #define API_UART_RX_PIN 25  // D25 - RX1 on RFM module header
 #define API_UART_BAUD 115200
 
-constexpr uint32_t STATS_INTERVAL_MS = 30000;      // 30 seconds
-constexpr uint32_t MAINTENANCE_INTERVAL_MS = 300000; // 5 minutes
-constexpr uint32_t DATETIME_QUERY_INTERVAL_MS = 3600000; // 1 hour
+constexpr uint32_t STATS_INTERVAL_MS = 30000;             // 30 seconds
+constexpr uint32_t MAINTENANCE_INTERVAL_MS = 300000;      // 5 minutes
+constexpr uint32_t DATETIME_QUERY_INTERVAL_MS = 3600000;  // 1 hour
 
-void HubMode::onStart() {
+void HubMode::onStart()
+{
     logger.info("=== HUB MODE ACTIVE ===");
     logger.info("- Managing node registrations");
     logger.info("- Routing node-to-node messages");
     logger.info("- Blue LED indicates hub status");
-    logger.info("- API UART on pins %d/%d @ %d baud", API_UART_TX_PIN, API_UART_RX_PIN, API_UART_BAUD);
+    logger.info("- API UART on pins %d/%d @ %d baud", API_UART_TX_PIN, API_UART_RX_PIN,
+                API_UART_BAUD);
 
     // Initialize serial input buffer
     serial_input_pos_ = 0;
@@ -54,32 +60,29 @@ void HubMode::onStart() {
 
     // Hub always uses blue breathing pattern
     led_pattern_ = std::make_unique<BreathingPattern>(led_, 0, 0, 255);
-    
+
     // Add periodic stats reporting
     task_manager_.addTask(
         [this](uint32_t time) {
             uint32_t routed, queued, dropped;
             hub_router_->getRoutingStats(routed, queued, dropped);
-            logger.info("Hub stats - Routed: %lu, Queued: %lu, Dropped: %lu",
-                   routed, queued, dropped);
+            logger.info("Hub stats - Routed: %lu, Queued: %lu, Dropped: %lu", routed, queued,
+                        dropped);
 
             logger.info("Registered nodes: %u", address_manager_->getRegisteredNodeCount());
-            
+
             // Print network statistics if available
             if (network_stats_) {
                 // Update node counts
-                network_stats_->updateNodeCounts(
-                    address_manager_->getRegisteredNodeCount(),
-                    address_manager_->getActiveNodeCount(),
-                    address_manager_->getRegisteredNodeCount() - address_manager_->getActiveNodeCount()
-                );
+                network_stats_->updateNodeCounts(address_manager_->getRegisteredNodeCount(),
+                                                 address_manager_->getActiveNodeCount(),
+                                                 address_manager_->getRegisteredNodeCount() -
+                                                     address_manager_->getActiveNodeCount());
                 network_stats_->printSummary();
             }
         },
-        STATS_INTERVAL_MS,
-        "Stats Reporting"
-    );
-    
+        STATS_INTERVAL_MS, "Stats Reporting");
+
     // Add periodic maintenance
     task_manager_.addTask(
         [this](uint32_t time) {
@@ -96,16 +99,14 @@ void HubMode::onStart() {
             // Deregister nodes that have been inactive for extended period
             uint32_t deregistered_count = address_manager_->deregisterInactiveNodes(time);
             if (deregistered_count > 0) {
-                logger.info("Deregistered %lu nodes (inactive > %lu hours)",
-                       deregistered_count, 86400000UL / 3600000UL);
+                logger.info("Deregistered %lu nodes (inactive > %lu hours)", deregistered_count,
+                            86400000UL / 3600000UL);
                 // Persist the updated registry to flash
                 Flash flash_hal;
                 address_manager_->persist(flash_hal);
             }
         },
-        MAINTENANCE_INTERVAL_MS,
-        "Hub Maintenance"
-    );
+        MAINTENANCE_INTERVAL_MS, "Hub Maintenance");
 
     // Add hourly time sync task
     task_manager_.addTask(
@@ -113,31 +114,28 @@ void HubMode::onStart() {
             (void)current_time;  // Unused
             syncTimeFromRaspberryPi();
         },
-        DATETIME_QUERY_INTERVAL_MS,
-        "Time Sync"
-    );
+        DATETIME_QUERY_INTERVAL_MS, "Time Sync");
 }
 
-void HubMode::onLoop() {
+void HubMode::onLoop()
+{
     // Process serial input from Raspberry Pi
     processSerialInput();
 }
 
-void HubMode::processIncomingMessage(uint8_t* rx_buffer, int rx_len, uint32_t current_time) {
-    logger.debug("Hub received message (len=%d, RSSI=%d dBm)",
-           rx_len, lora_.getRssi());
+void HubMode::processIncomingMessage(uint8_t *rx_buffer, int rx_len, uint32_t current_time)
+{
+    logger.debug("Hub received message (len=%d, RSSI=%d dBm)", rx_len, lora_.getRssi());
 
     // Handle special message types
     if (rx_len >= static_cast<int>(sizeof(MessageHeader))) {
-        const MessageHeader* header = reinterpret_cast<const MessageHeader*>(rx_buffer);
+        const MessageHeader *header = reinterpret_cast<const MessageHeader *>(rx_buffer);
 
         // Check if message is from an unregistered node (not a registration request)
         // and request re-registration if needed
-        if (header->src_addr >= ADDRESS_MIN_NODE &&
-            header->src_addr <= ADDRESS_MAX_NODE &&
+        if (header->src_addr >= ADDRESS_MIN_NODE && header->src_addr <= ADDRESS_MAX_NODE &&
             header->type != MSG_TYPE_REGISTRATION) {
-
-            const NodeInfo* node = address_manager_->getNodeInfo(header->src_addr);
+            const NodeInfo *node = address_manager_->getNodeInfo(header->src_addr);
             if (!node) {
                 // Node is not registered - check if we should send reregister request
                 auto it = last_reregister_request_time_.find(header->src_addr);
@@ -148,14 +146,15 @@ void HubMode::processIncomingMessage(uint8_t* rx_buffer, int rx_len, uint32_t cu
                     printf("Unknown node 0x%04X - sending reregister request\n", header->src_addr);
 
                     // Send REG_RESPONSE with REG_REREGISTER_REQUIRED status
-                    // device_id=0 since we don't know it, assigned_addr=0 to indicate no valid address
+                    // device_id=0 since we don't know it, assigned_addr=0 to indicate no valid
+                    // address
                     messenger_.sendRegistrationResponse(
                         header->src_addr,  // Send to the unknown node
                         0,                 // device_id unknown
                         0,                 // No assigned address
                         REG_REREGISTER_REQUIRED,
-                        30,                // Retry interval in seconds
-                        current_time       // Network time
+                        30,           // Retry interval in seconds
+                        current_time  // Network time
                     );
 
                     last_reregister_request_time_[header->src_addr] = current_time;
@@ -167,14 +166,13 @@ void HubMode::processIncomingMessage(uint8_t* rx_buffer, int rx_len, uint32_t cu
         }
 
         if (header->type == MSG_TYPE_HEARTBEAT) {
-            const HeartbeatPayload* heartbeat =
-                reinterpret_cast<const HeartbeatPayload*>(rx_buffer + sizeof(MessageHeader));
+            const HeartbeatPayload *heartbeat =
+                reinterpret_cast<const HeartbeatPayload *>(rx_buffer + sizeof(MessageHeader));
             handleHeartbeat(header->src_addr, heartbeat);
             // Fall through to base class for common processing
-        }
-        else if (header->type == MSG_TYPE_CHECK_UPDATES) {
-            const CheckUpdatesPayload* check =
-                reinterpret_cast<const CheckUpdatesPayload*>(rx_buffer + sizeof(MessageHeader));
+        } else if (header->type == MSG_TYPE_CHECK_UPDATES) {
+            const CheckUpdatesPayload *check =
+                reinterpret_cast<const CheckUpdatesPayload *>(rx_buffer + sizeof(MessageHeader));
 
             // IMPORTANT: Must call messenger to handle ACK before hub_router
             // The messenger will send ACK for this RELIABLE message
@@ -191,18 +189,16 @@ void HubMode::processIncomingMessage(uint8_t* rx_buffer, int rx_len, uint32_t cu
             // Don't call base class - would cause double handling of CHECK_UPDATES
             // (base class calls global processIncomingMessage which also calls hub_router)
             return;
-        }
-        else if (header->type == MSG_TYPE_SENSOR_DATA) {
+        } else if (header->type == MSG_TYPE_SENSOR_DATA) {
             // Forward individual sensor readings to Raspberry Pi
-            const SensorPayload* sensor =
-                reinterpret_cast<const SensorPayload*>(rx_buffer + sizeof(MessageHeader));
+            const SensorPayload *sensor =
+                reinterpret_cast<const SensorPayload *>(rx_buffer + sizeof(MessageHeader));
             handleSensorData(header->src_addr, sensor);
             // Fall through to base class for ACK handling if needed
-        }
-        else if (header->type == MSG_TYPE_SENSOR_DATA_BATCH) {
+        } else if (header->type == MSG_TYPE_SENSOR_DATA_BATCH) {
             // Forward batch sensor data to Raspberry Pi
-            const SensorDataBatchPayload* batch =
-                reinterpret_cast<const SensorDataBatchPayload*>(rx_buffer + sizeof(MessageHeader));
+            const SensorDataBatchPayload *batch =
+                reinterpret_cast<const SensorDataBatchPayload *>(rx_buffer + sizeof(MessageHeader));
 
             // Process via messenger first (handles ACK for RELIABLE messages)
             messenger_.processIncomingMessage(rx_buffer, rx_len);
@@ -228,7 +224,8 @@ void HubMode::processIncomingMessage(uint8_t* rx_buffer, int rx_len, uint32_t cu
 
 // ===== Serial Command Processing =====
 
-void HubMode::processSerialInput() {
+void HubMode::processSerialInput()
+{
     // Read available characters from UART
     while (uart_is_readable(API_UART_ID)) {
         char c = uart_getc(API_UART_ID);
@@ -245,7 +242,8 @@ void HubMode::processSerialInput() {
     }
 }
 
-void HubMode::handleSerialCommand(const char* cmd) {
+void HubMode::handleSerialCommand(const char *cmd)
+{
     // Skip empty lines
     if (!cmd || cmd[0] == '\0') {
         return;
@@ -285,7 +283,8 @@ void HubMode::handleSerialCommand(const char* cmd) {
     }
 }
 
-void HubMode::handleListNodes() {
+void HubMode::handleListNodes()
+{
     // Get node count
     uint32_t count = address_manager_->getRegisteredNodeCount();
 
@@ -297,10 +296,10 @@ void HubMode::handleListNodes() {
 
     // Iterate all registered nodes
     for (uint16_t addr = ADDRESS_MIN_NODE; addr <= ADDRESS_MAX_NODE; addr++) {
-        const NodeInfo* node = address_manager_->getNodeInfo(addr);
+        const NodeInfo *node = address_manager_->getNodeInfo(addr);
         if (node) {
             // Determine node type
-            const char* type = "UNKNOWN";
+            const char *type = "UNKNOWN";
             if (node->capabilities & CAP_VALVE_CONTROL) {
                 type = "IRRIGATION";
             } else if (node->capabilities & CAP_TEMPERATURE) {
@@ -312,16 +311,15 @@ void HubMode::handleListNodes() {
             uint32_t last_seen_sec = (now - node->last_seen_time) / 1000;
 
             // Send node info (include device_id for hardware identification)
-            snprintf(response, sizeof(response), "NODE %u %llu %s %d %lu\n",
-                   addr, node->device_id, type,
-                   node->is_active ? 1 : 0,
-                   last_seen_sec);
+            snprintf(response, sizeof(response), "NODE %u %llu %s %d %lu\n", addr, node->device_id,
+                     type, node->is_active ? 1 : 0, last_seen_sec);
             uart_puts(API_UART_ID, response);
         }
     }
 }
 
-void HubMode::handleGetQueue(const char* args) {
+void HubMode::handleGetQueue(const char *args)
+{
     // Parse node address
     uint16_t node_addr = atoi(args);
 
@@ -347,7 +345,7 @@ void HubMode::handleGetQueue(const char* args) {
             uint32_t age_sec = (current_time - update.queued_at_ms) / 1000;
 
             // Map UpdateType enum to string
-            const char* type_str;
+            const char *type_str;
             switch (update.type) {
                 case UpdateType::SET_SCHEDULE:
                     type_str = "SET_SCHEDULE";
@@ -367,20 +365,20 @@ void HubMode::handleGetQueue(const char* args) {
             }
 
             // Format: UPDATE <seq> <type> <age_sec>
-            snprintf(response, sizeof(response), "UPDATE %u %s %lu\n",
-                     update.sequence, type_str, age_sec);
+            snprintf(response, sizeof(response), "UPDATE %u %s %lu\n", update.sequence, type_str,
+                     age_sec);
             uart_puts(API_UART_ID, response);
         }
     }
 }
 
-void HubMode::handleSetSchedule(const char* args) {
+void HubMode::handleSetSchedule(const char *args)
+{
     // Parse: <addr> <index> <hour>:<min> <duration> <days> <valve>
     uint16_t node_addr, duration;
     uint8_t index, hour, minute, days, valve;
 
-    if (!parseScheduleArgs(args, node_addr, index, hour, minute,
-                          duration, days, valve)) {
+    if (!parseScheduleArgs(args, node_addr, index, hour, minute, duration, days, valve)) {
         uart_puts(API_UART_ID, "ERROR Invalid SET_SCHEDULE syntax\n");
         return;
     }
@@ -398,15 +396,15 @@ void HubMode::handleSetSchedule(const char* args) {
     if (hub_router_->queueScheduleUpdate(node_addr, index, entry)) {
         size_t position = hub_router_->getPendingUpdateCount(node_addr);
         char response[128];
-        snprintf(response, sizeof(response), "QUEUED SET_SCHEDULE %u %zu\n",
-                node_addr, position);
+        snprintf(response, sizeof(response), "QUEUED SET_SCHEDULE %u %zu\n", node_addr, position);
         uart_puts(API_UART_ID, response);
     } else {
         uart_puts(API_UART_ID, "ERROR Failed to queue update\n");
     }
 }
 
-void HubMode::handleRemoveSchedule(const char* args) {
+void HubMode::handleRemoveSchedule(const char *args)
+{
     // Parse: <addr> <index>
     uint16_t node_addr;
     uint8_t index;
@@ -420,15 +418,16 @@ void HubMode::handleRemoveSchedule(const char* args) {
     if (hub_router_->queueRemoveSchedule(node_addr, index)) {
         size_t position = hub_router_->getPendingUpdateCount(node_addr);
         char response[128];
-        snprintf(response, sizeof(response), "QUEUED REMOVE_SCHEDULE %u %zu\n",
-                node_addr, position);
+        snprintf(response, sizeof(response), "QUEUED REMOVE_SCHEDULE %u %zu\n", node_addr,
+                 position);
         uart_puts(API_UART_ID, response);
     } else {
         uart_puts(API_UART_ID, "ERROR Failed to queue removal\n");
     }
 }
 
-void HubMode::handleSetWakeInterval(const char* args) {
+void HubMode::handleSetWakeInterval(const char *args)
+{
     // Parse: <addr> <seconds>
     uint16_t node_addr, interval;
 
@@ -441,21 +440,22 @@ void HubMode::handleSetWakeInterval(const char* args) {
     if (hub_router_->queueWakeIntervalUpdate(node_addr, interval)) {
         size_t position = hub_router_->getPendingUpdateCount(node_addr);
         char response[128];
-        snprintf(response, sizeof(response), "QUEUED SET_WAKE_INTERVAL %u %zu\n",
-                node_addr, position);
+        snprintf(response, sizeof(response), "QUEUED SET_WAKE_INTERVAL %u %zu\n", node_addr,
+                 position);
         uart_puts(API_UART_ID, response);
     } else {
         uart_puts(API_UART_ID, "ERROR Failed to queue update\n");
     }
 }
 
-void HubMode::handleSetDateTime(const char* args) {
+void HubMode::handleSetDateTime(const char *args)
+{
     // Parse: <addr> <year> <month> <day> <weekday> <hour> <minute> <second>
     uint16_t node_addr;
     int year, month, day, weekday, hour, minute, second;
 
-    if (sscanf(args, "%hu %d %d %d %d %d %d %d",
-               &node_addr, &year, &month, &day, &weekday, &hour, &minute, &second) != 8) {
+    if (sscanf(args, "%hu %d %d %d %d %d %d %d", &node_addr, &year, &month, &day, &weekday, &hour,
+               &minute, &second) != 8) {
         uart_puts(API_UART_ID, "ERROR Invalid SET_DATETIME syntax\n");
         return;
     }
@@ -467,19 +467,19 @@ void HubMode::handleSetDateTime(const char* args) {
     if (hub_router_->queueDateTimeUpdate(node_addr, datetime)) {
         size_t position = hub_router_->getPendingUpdateCount(node_addr);
         char response[128];
-        snprintf(response, sizeof(response), "QUEUED SET_DATETIME %u %zu\n",
-                node_addr, position);
+        snprintf(response, sizeof(response), "QUEUED SET_DATETIME %u %zu\n", node_addr, position);
         uart_puts(API_UART_ID, response);
     } else {
         uart_puts(API_UART_ID, "ERROR Failed to queue update\n");
     }
 }
 
-void HubMode::handleDateTimeResponse(const char* args) {
+void HubMode::handleDateTimeResponse(const char *args)
+{
     // Parse: DATETIME YYYY-MM-DD HH:MM:SS DOW (ISO 8601 + day of week)
     int year, month, day, hour, minute, second, weekday;
-    if (sscanf(args, "%d-%d-%d %d:%d:%d %d",
-               &year, &month, &day, &hour, &minute, &second, &weekday) != 7) {
+    if (sscanf(args, "%d-%d-%d %d:%d:%d %d", &year, &month, &day, &hour, &minute, &second,
+               &weekday) != 7) {
         logger.error("Invalid DATETIME response format: %s", args);
         return;
     }
@@ -495,23 +495,22 @@ void HubMode::handleDateTimeResponse(const char* args) {
     dt.sec = second;
 
     if (rtc_set_datetime(&dt)) {
-        logger.info("RTC set to: %04d-%02d-%02d %02d:%02d:%02d (dow=%d)",
-               year, month, day, hour, minute, second, weekday);
+        logger.info("RTC set to: %04d-%02d-%02d %02d:%02d:%02d (dow=%d)", year, month, day, hour,
+                    minute, second, weekday);
     } else {
         logger.error("Failed to set RTC");
     }
 }
 
-bool HubMode::parseScheduleArgs(const char* args, uint16_t& node_addr,
-                               uint8_t& index, uint8_t& hour,
-                               uint8_t& minute, uint16_t& duration,
-                               uint8_t& days, uint8_t& valve) {
+bool HubMode::parseScheduleArgs(const char *args, uint16_t &node_addr, uint8_t &index,
+                                uint8_t &hour, uint8_t &minute, uint16_t &duration, uint8_t &days,
+                                uint8_t &valve)
+{
     // Parse: <addr> <index> <hour>:<min> <duration> <days> <valve>
     // Example: 42 0 14:30 900 127 0
 
     int addr, idx, h, m, dur, d, v;
-    if (sscanf(args, "%d %d %d:%d %d %d %d",
-               &addr, &idx, &h, &m, &dur, &d, &v) != 7) {
+    if (sscanf(args, "%d %d %d:%d %d %d %d", &addr, &idx, &h, &m, &dur, &d, &v) != 7) {
         return false;
     }
 
@@ -526,20 +525,23 @@ bool HubMode::parseScheduleArgs(const char* args, uint16_t& node_addr,
     return true;
 }
 
-void HubMode::syncTimeFromRaspberryPi() {
+void HubMode::syncTimeFromRaspberryPi()
+{
     // Send request for datetime
     uart_puts(API_UART_ID, "GET_DATETIME\n");
     last_datetime_sync_ms_ = to_ms_since_boot(get_absolute_time());
     logger.debug("Requesting datetime from RasPi");
 }
 
-void HubMode::handleGetDateTime() {
+void HubMode::handleGetDateTime()
+{
     // Parse response: DATETIME YYYY MM DD DOW HH MM SS
     // This will be called when RasPi responds with datetime
     // The response is handled in handleSerialCommand via handleDateTimeResponse
 }
 
-void HubMode::handleHeartbeat(uint16_t source_addr, const HeartbeatPayload* payload) {
+void HubMode::handleHeartbeat(uint16_t source_addr, const HeartbeatPayload *payload)
+{
     // Get current datetime from RTC
     datetime_t dt;
     if (!rtc_get_datetime(&dt)) {
@@ -548,23 +550,24 @@ void HubMode::handleHeartbeat(uint16_t source_addr, const HeartbeatPayload* payl
     }
 
     // Send heartbeat response with current time
-    messenger_.sendHeartbeatResponse(source_addr, dt.year, dt.month, dt.day,
-                                     dt.dotw, dt.hour, dt.min, dt.sec);
+    messenger_.sendHeartbeatResponse(source_addr, dt.year, dt.month, dt.day, dt.dotw, dt.hour,
+                                     dt.min, dt.sec);
 
-    logger.debug("Sent time to node 0x%04X: %04d-%02d-%02d %02d:%02d:%02d",
-           source_addr, dt.year, dt.month, dt.day, dt.hour, dt.min, dt.sec);
+    logger.debug("Sent time to node 0x%04X: %04d-%02d-%02d %02d:%02d:%02d", source_addr, dt.year,
+                 dt.month, dt.day, dt.hour, dt.min, dt.sec);
 }
 
 // ===== Sensor Data Forwarding =====
 
-void HubMode::handleSensorData(uint16_t source_addr, const SensorPayload* payload) {
+void HubMode::handleSensorData(uint16_t source_addr, const SensorPayload *payload)
+{
     if (!payload) {
         return;
     }
 
     // Look up device_id from address manager
     uint64_t device_id = 0;
-    const NodeInfo* node = address_manager_->getNodeInfo(source_addr);
+    const NodeInfo *node = address_manager_->getNodeInfo(source_addr);
     if (node) {
         device_id = node->device_id;
     }
@@ -577,16 +580,17 @@ void HubMode::handleSensorData(uint16_t source_addr, const SensorPayload* payloa
     if (payload->sensor_type == SENSOR_TEMPERATURE || payload->sensor_type == SENSOR_HUMIDITY) {
         if (payload->data_length >= 2) {
             int16_t value = static_cast<int16_t>(payload->data[0] | (payload->data[1] << 8));
-            const char* type_str = (payload->sensor_type == SENSOR_TEMPERATURE) ? "TEMP" : "HUM";
-            snprintf(response, sizeof(response), "SENSOR_DATA %u %llu %s %d\n",
-                     source_addr, device_id, type_str, value);
+            const char *type_str = (payload->sensor_type == SENSOR_TEMPERATURE) ? "TEMP" : "HUM";
+            snprintf(response, sizeof(response), "SENSOR_DATA %u %llu %s %d\n", source_addr,
+                     device_id, type_str, value);
             uart_puts(API_UART_ID, response);
             logger.debug("Forwarded sensor data: node=%u, device_id=%llu, type=%s, value=%d",
-                   source_addr, device_id, type_str, value);
+                         source_addr, device_id, type_str, value);
         }
     } else {
         // Generic sensor data (hex encoded)
-        snprintf(response, sizeof(response), "SENSOR_DATA %u %llu %u ", source_addr, device_id, payload->sensor_type);
+        snprintf(response, sizeof(response), "SENSOR_DATA %u %llu %u ", source_addr, device_id,
+                 payload->sensor_type);
         uart_puts(API_UART_ID, response);
 
         // Send data as hex
@@ -599,7 +603,8 @@ void HubMode::handleSensorData(uint16_t source_addr, const SensorPayload* payloa
     }
 }
 
-void HubMode::handleSensorDataBatch(uint16_t source_addr, const SensorDataBatchPayload* payload) {
+void HubMode::handleSensorDataBatch(uint16_t source_addr, const SensorDataBatchPayload *payload)
+{
     if (!payload || payload->record_count == 0 || payload->record_count > MAX_BATCH_RECORDS) {
         logger.warn("Invalid batch payload from node 0x%04X", source_addr);
         return;
@@ -607,38 +612,33 @@ void HubMode::handleSensorDataBatch(uint16_t source_addr, const SensorDataBatchP
 
     // Look up device_id from address manager
     uint64_t device_id = 0;
-    const NodeInfo* node = address_manager_->getNodeInfo(source_addr);
+    const NodeInfo *node = address_manager_->getNodeInfo(source_addr);
     if (node) {
         device_id = node->device_id;
     }
 
     logger.debug("Received batch from node 0x%04X (device_id=%llu): %u records (start_idx=%lu)",
-           source_addr, device_id, payload->record_count, payload->start_index);
+                 source_addr, device_id, payload->record_count, payload->start_index);
 
     // Send batch start marker to Raspberry Pi
     char response[128];
-    snprintf(response, sizeof(response), "SENSOR_BATCH %u %llu %u\n",
-             source_addr, device_id, payload->record_count);
+    snprintf(response, sizeof(response), "SENSOR_BATCH %u %llu %u\n", source_addr, device_id,
+             payload->record_count);
     uart_puts(API_UART_ID, response);
 
     // Forward each record
     for (uint8_t i = 0; i < payload->record_count; i++) {
-        const BatchSensorRecord& record = payload->records[i];
+        const BatchSensorRecord &record = payload->records[i];
 
         // Format: SENSOR_RECORD <node_addr> <device_id> <timestamp> <temp> <humidity> <flags>
-        snprintf(response, sizeof(response), "SENSOR_RECORD %u %llu %lu %d %u %u\n",
-                 source_addr,
-                 device_id,
-                 record.timestamp,
-                 record.temperature,
-                 record.humidity,
-                 record.flags);
+        snprintf(response, sizeof(response), "SENSOR_RECORD %u %llu %lu %d %u %u\n", source_addr,
+                 device_id, record.timestamp, record.temperature, record.humidity, record.flags);
         uart_puts(API_UART_ID, response);
     }
 
     // Send batch complete marker
-    snprintf(response, sizeof(response), "BATCH_COMPLETE %u %llu %u\n",
-             source_addr, device_id, payload->record_count);
+    snprintf(response, sizeof(response), "BATCH_COMPLETE %u %llu %u\n", source_addr, device_id,
+             payload->record_count);
     uart_puts(API_UART_ID, response);
 
     logger.debug("Forwarded batch to RasPi: %u records", payload->record_count);
@@ -648,10 +648,12 @@ void HubMode::handleSensorDataBatch(uint16_t source_addr, const SensorDataBatchP
     // The Raspberry Pi can send BATCH_ACK response which we'll forward back
 }
 
-void HubMode::sendBatchAck(uint16_t dest_addr, uint8_t seq_num, uint8_t status, uint8_t records_received) {
+void HubMode::sendBatchAck(uint16_t dest_addr, uint8_t seq_num, uint8_t status,
+                           uint8_t records_received)
+{
     // Create and send BATCH_ACK message
     uint8_t buffer[MESSAGE_MAX_SIZE];
-    Message* message = reinterpret_cast<Message*>(buffer);
+    Message *message = reinterpret_cast<Message *>(buffer);
 
     message->header.magic = MESSAGE_MAGIC;
     message->header.type = MSG_TYPE_BATCH_ACK;
@@ -660,7 +662,7 @@ void HubMode::sendBatchAck(uint16_t dest_addr, uint8_t seq_num, uint8_t status, 
     message->header.dst_addr = dest_addr;
     message->header.seq_num = seq_num;
 
-    BatchAckPayload* ack = reinterpret_cast<BatchAckPayload*>(message->payload);
+    BatchAckPayload *ack = reinterpret_cast<BatchAckPayload *>(message->payload);
     ack->ack_seq_num = seq_num;
     ack->status = status;
     ack->records_received = records_received;
@@ -668,14 +670,15 @@ void HubMode::sendBatchAck(uint16_t dest_addr, uint8_t seq_num, uint8_t status, 
     size_t message_size = MESSAGE_HEADER_SIZE + sizeof(BatchAckPayload);
 
     if (messenger_.send(buffer, message_size, BEST_EFFORT)) {
-        logger.debug("Sent BATCH_ACK to 0x%04X: seq=%u, status=%u, records=%u",
-               dest_addr, seq_num, status, records_received);
+        logger.debug("Sent BATCH_ACK to 0x%04X: seq=%u, status=%u, records=%u", dest_addr, seq_num,
+                     status, records_received);
     } else {
         logger.error("Failed to send BATCH_ACK to 0x%04X", dest_addr);
     }
 }
 
-void HubMode::handleBatchAckResponse(const char* args) {
+void HubMode::handleBatchAckResponse(const char *args)
+{
     // Parse: BATCH_ACK <node_addr> <count> <status>
     uint16_t node_addr;
     int count, status;
@@ -695,8 +698,8 @@ void HubMode::handleBatchAckResponse(const char* args) {
         logger.warn("No pending batch seq_num for node 0x%04X, using 0", node_addr);
     }
 
-    logger.debug("RasPi confirmed batch: node=0x%04X, count=%d, status=%d, seq=%d",
-           node_addr, count, status, seq_num);
+    logger.debug("RasPi confirmed batch: node=0x%04X, count=%d, status=%d, seq=%d", node_addr,
+                 count, status, seq_num);
 
     // Forward BATCH_ACK to sensor node with correct seq_num
     sendBatchAck(node_addr, seq_num, static_cast<uint8_t>(status), static_cast<uint8_t>(count));

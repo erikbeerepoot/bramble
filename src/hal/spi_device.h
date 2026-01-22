@@ -1,8 +1,10 @@
 #pragma once
 
 #include "pico/stdlib.h"
-#include "hardware/spi.h"
+
 #include "hardware/gpio.h"
+#include "hardware/spi.h"
+
 #include "logger.h"
 
 // SPI Error codes
@@ -15,7 +17,7 @@ enum SPIError {
 
 /**
  * @brief Simple SPI device wrapper
- * 
+ *
  * Provides a clean SPI interface with:
  * - CS pin management
  * - Input validation
@@ -29,8 +31,8 @@ public:
      * @param spi_port SPI instance (spi0 or spi1)
      * @param cs_pin Chip select GPIO pin
      */
-    SPIDevice(spi_inst_t* spi_port, uint cs_pin);
-    
+    SPIDevice(spi_inst_t *spi_port, uint cs_pin);
+
     /**
      * @brief Write to a register with error handling
      * @param reg Register address
@@ -39,15 +41,15 @@ public:
      * @return SPIError code
      */
     SPIError writeRegister(uint8_t reg, uint8_t value, bool verify = false);
-    
+
     /**
      * @brief Read from a register with error handling
      * @param reg Register address
      * @param value Output value pointer
      * @return SPIError code
      */
-    SPIError readRegister(uint8_t reg, uint8_t* value);
-    
+    SPIError readRegister(uint8_t reg, uint8_t *value);
+
     /**
      * @brief Write multiple bytes (caller provides buffer)
      * @param reg Starting register address
@@ -56,8 +58,8 @@ public:
      * @param tx_buf Caller-provided buffer (must be at least length+1 bytes)
      * @return SPIError code
      */
-    SPIError writeBuffer(uint8_t reg, const uint8_t* data, size_t length, uint8_t* tx_buf);
-    
+    SPIError writeBuffer(uint8_t reg, const uint8_t *data, size_t length, uint8_t *tx_buf);
+
     /**
      * @brief Read multiple bytes (caller provides buffers)
      * @param reg Starting register address
@@ -67,8 +69,9 @@ public:
      * @param rx_buf Caller-provided RX buffer (must be at least length+1 bytes)
      * @return SPIError code
      */
-    SPIError readBuffer(uint8_t reg, uint8_t* data, size_t length, uint8_t* tx_buf, uint8_t* rx_buf);
-    
+    SPIError readBuffer(uint8_t reg, uint8_t *data, size_t length, uint8_t *tx_buf,
+                        uint8_t *rx_buf);
+
     /**
      * @brief Perform raw SPI transfer
      * @param tx_buf Transmit buffer
@@ -76,17 +79,17 @@ public:
      * @param length Transfer length
      * @return SPIError code
      */
-    SPIError transfer(const uint8_t* tx_buf, uint8_t* rx_buf, size_t length);
-    
+    SPIError transfer(const uint8_t *tx_buf, uint8_t *rx_buf, size_t length);
+
     /**
      * @brief Set custom read/write bit masks
      * @param read_mask Mask to apply for read operations (default: clear MSB)
      * @param write_mask Mask to apply for write operations (default: set MSB)
      */
     void setRegisterMasks(uint8_t read_mask, uint8_t write_mask);
-    
+
 private:
-    spi_inst_t* spi_;
+    spi_inst_t *spi_;
     uint cs_pin_;
     uint8_t read_mask_;
     uint8_t write_mask_;

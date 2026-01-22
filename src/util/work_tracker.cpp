@@ -1,13 +1,16 @@
 #include "work_tracker.h"
+
 #include "../hal/logger.h"
 
 static Logger logger("WORK");
 
-void WorkTracker::setIdleCallback(IdleCallback callback) {
+void WorkTracker::setIdleCallback(IdleCallback callback)
+{
     on_idle_ = callback;
 }
 
-void WorkTracker::addWork(WorkType type) {
+void WorkTracker::addWork(WorkType type)
+{
     uint8_t bit = 1 << static_cast<uint8_t>(type);
 
     if (active_work_ & bit) {
@@ -21,7 +24,8 @@ void WorkTracker::addWork(WorkType type) {
     logState();
 }
 
-void WorkTracker::completeWork(WorkType type) {
+void WorkTracker::completeWork(WorkType type)
+{
     uint8_t bit = 1 << static_cast<uint8_t>(type);
 
     if (!(active_work_ & bit)) {
@@ -38,16 +42,19 @@ void WorkTracker::completeWork(WorkType type) {
     // Caller should call checkIdle() explicitly when ready.
 }
 
-bool WorkTracker::hasWork() const {
+bool WorkTracker::hasWork() const
+{
     return active_work_ != 0;
 }
 
-bool WorkTracker::hasWork(WorkType type) const {
+bool WorkTracker::hasWork(WorkType type) const
+{
     uint8_t bit = 1 << static_cast<uint8_t>(type);
     return (active_work_ & bit) != 0;
 }
 
-void WorkTracker::checkIdle() {
+void WorkTracker::checkIdle()
+{
     if (isIdle() && on_idle_ && !idle_signaled_) {
         idle_signaled_ = true;  // Only signal once per idle period
         logger.info("All work complete - signaling idle");
@@ -55,7 +62,8 @@ void WorkTracker::checkIdle() {
     }
 }
 
-void WorkTracker::logState() const {
+void WorkTracker::logState() const
+{
     if (active_work_ == 0) {
         logger.debug("Work state: idle");
         return;
@@ -81,12 +89,18 @@ void WorkTracker::logState() const {
     logger.debug("Work state: %s", buffer);
 }
 
-const char* WorkTracker::workTypeName(WorkType type) {
+const char *WorkTracker::workTypeName(WorkType type)
+{
     switch (type) {
-        case WorkType::RtcSync: return "RtcSync";
-        case WorkType::BacklogTransmit: return "BacklogTransmit";
-        case WorkType::UpdatePull: return "UpdatePull";
-        case WorkType::Registration: return "Registration";
-        default: return "Unknown";
+        case WorkType::RtcSync:
+            return "RtcSync";
+        case WorkType::BacklogTransmit:
+            return "BacklogTransmit";
+        case WorkType::UpdatePull:
+            return "UpdatePull";
+        case WorkType::Registration:
+            return "Registration";
+        default:
+            return "Unknown";
     }
 }

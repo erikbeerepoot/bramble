@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+
 #include "hardware/i2c.h"
 
 /**
@@ -30,7 +31,7 @@ public:
      * @param sda_pin GPIO pin for SDA
      * @param scl_pin GPIO pin for SCL
      */
-    CHT832X(i2c_inst_t* i2c, uint sda_pin, uint scl_pin);
+    CHT832X(i2c_inst_t *i2c, uint sda_pin, uint scl_pin);
 
     /**
      * @brief Initialize the sensor
@@ -51,12 +52,12 @@ public:
     bool isConnected();
 
 private:
-    i2c_inst_t* i2c_;
+    i2c_inst_t *i2c_;
     uint sda_pin_;
     uint scl_pin_;
     bool initialized_;
 
-    static constexpr uint32_t I2C_BAUDRATE = 100000;  // 100kHz
+    static constexpr uint32_t I2C_BAUDRATE = 100000;      // 100kHz
     static constexpr uint32_t MEASUREMENT_DELAY_MS = 60;  // Wait for measurement
 
     // CHT832X commands

@@ -1,7 +1,9 @@
 #pragma once
-#include "application_mode.h"
-#include "hardware/rtc.h"
 #include <map>
+
+#include "hardware/rtc.h"
+
+#include "application_mode.h"
 
 // Minimum interval between reregister requests to same node (ms)
 constexpr uint32_t REREGISTER_REQUEST_INTERVAL_MS = 30000;
@@ -23,26 +25,26 @@ private:
     std::map<uint16_t, uint8_t> pending_batch_seq_num_;
 
     void processSerialInput();
-    void handleSerialCommand(const char* cmd);
+    void handleSerialCommand(const char *cmd);
     void handleListNodes();
-    void handleGetQueue(const char* args);
-    void handleSetSchedule(const char* args);
-    void handleRemoveSchedule(const char* args);
-    void handleSetWakeInterval(const char* args);
-    void handleSetDateTime(const char* args);
-    void handleDateTimeResponse(const char* args);
+    void handleGetQueue(const char *args);
+    void handleSetSchedule(const char *args);
+    void handleRemoveSchedule(const char *args);
+    void handleSetWakeInterval(const char *args);
+    void handleSetDateTime(const char *args);
+    void handleDateTimeResponse(const char *args);
     void handleGetDateTime();  // Request datetime from RasPi
-    bool parseScheduleArgs(const char* args, uint16_t& node_addr, uint8_t& index,
-                          uint8_t& hour, uint8_t& minute, uint16_t& duration,
-                          uint8_t& days, uint8_t& valve);
+    bool parseScheduleArgs(const char *args, uint16_t &node_addr, uint8_t &index, uint8_t &hour,
+                           uint8_t &minute, uint16_t &duration, uint8_t &days, uint8_t &valve);
 
     void syncTimeFromRaspberryPi();  // Initiate time sync
 
     // Sensor data forwarding to Raspberry Pi
-    void handleSensorData(uint16_t source_addr, const SensorPayload* payload);
-    void handleSensorDataBatch(uint16_t source_addr, const SensorDataBatchPayload* payload);
-    void sendBatchAck(uint16_t dest_addr, uint8_t seq_num, uint8_t status, uint8_t records_received);
-    void handleBatchAckResponse(const char* args);  // Parse RasPi BATCH_ACK and forward to node
+    void handleSensorData(uint16_t source_addr, const SensorPayload *payload);
+    void handleSensorDataBatch(uint16_t source_addr, const SensorDataBatchPayload *payload);
+    void sendBatchAck(uint16_t dest_addr, uint8_t seq_num, uint8_t status,
+                      uint8_t records_received);
+    void handleBatchAckResponse(const char *args);  // Parse RasPi BATCH_ACK and forward to node
 
 public:
     using ApplicationMode::ApplicationMode;
@@ -52,10 +54,10 @@ public:
      * @param source_addr Node address
      * @param payload Heartbeat payload
      */
-    void handleHeartbeat(uint16_t source_addr, const HeartbeatPayload* payload);
+    void handleHeartbeat(uint16_t source_addr, const HeartbeatPayload *payload);
 
 protected:
     void onStart() override;
     void onLoop() override;
-    void processIncomingMessage(uint8_t* rx_buffer, int rx_len, uint32_t current_time) override;
+    void processIncomingMessage(uint8_t *rx_buffer, int rx_len, uint32_t current_time) override;
 };

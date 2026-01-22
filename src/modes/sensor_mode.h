@@ -1,13 +1,14 @@
 #pragma once
 
-#include "application_mode.h"
+#include <memory>
+
 #include "../hal/cht832x.h"
 #include "../hal/external_flash.h"
 #include "../hal/pmu_client.h"
 #include "../hal/pmu_reliability.h"
 #include "../storage/sensor_flash_buffer.h"
 #include "../util/work_tracker.h"
-#include <memory>
+#include "application_mode.h"
 
 /**
  * @brief Data logger sensor mode for temperature/humidity monitoring
@@ -29,25 +30,26 @@ private:
     std::unique_ptr<CHT832X> sensor_;
     std::unique_ptr<ExternalFlash> external_flash_;
     std::unique_ptr<SensorFlashBuffer> flash_buffer_;
-    PmuClient* pmu_client_ = nullptr;
-    PMU::ReliablePmuClient* reliable_pmu_ = nullptr;
+    PmuClient *pmu_client_ = nullptr;
+    PMU::ReliablePmuClient *reliable_pmu_ = nullptr;
     bool pmu_available_ = false;
-    volatile bool sleep_requested_ = false;   // Deferred sleep signal flag
-    WorkTracker work_tracker_;                // Tracks pending work, signals when idle
+    volatile bool sleep_requested_ = false;  // Deferred sleep signal flag
+    WorkTracker work_tracker_;               // Tracks pending work, signals when idle
 
     // Hub sync timeout tracking - used to proceed with PMU time if hub doesn't respond
     uint32_t heartbeat_request_time_ = 0;
-    static constexpr uint32_t HEARTBEAT_TIMEOUT_MS = 250;  // Aggressive timeout for low-power operation
+    static constexpr uint32_t HEARTBEAT_TIMEOUT_MS =
+        250;  // Aggressive timeout for low-power operation
 
     // I2C pin configuration for CHT832X sensor
     static constexpr uint PIN_I2C_SDA = 26;  // GPIO26 (A0)
     static constexpr uint PIN_I2C_SCL = 27;  // GPIO27 (A1)
 
     // Timing configuration
-    static constexpr uint32_t SENSOR_READ_INTERVAL_MS = 30000;   // 30 seconds
-    static constexpr uint32_t HEARTBEAT_INTERVAL_MS = 60000;     // 60 seconds
-    static constexpr uint32_t BACKLOG_TX_INTERVAL_MS = 120000;   // 2 minutes
-    static constexpr uint32_t TRANSMIT_INTERVAL_S = 600;         // 10 minutes between transmissions
+    static constexpr uint32_t SENSOR_READ_INTERVAL_MS = 30000;  // 30 seconds
+    static constexpr uint32_t HEARTBEAT_INTERVAL_MS = 60000;    // 60 seconds
+    static constexpr uint32_t BACKLOG_TX_INTERVAL_MS = 120000;  // 2 minutes
+    static constexpr uint32_t TRANSMIT_INTERVAL_S = 600;        // 10 minutes between transmissions
 
     /**
      * @brief Read sensor and store data to flash (no immediate TX)
@@ -73,7 +75,7 @@ private:
      * @param count Number of records in batch
      * @return true if transmission successful
      */
-    bool transmitBatch(const SensorDataRecord* records, size_t count);
+    bool transmitBatch(const SensorDataRecord *records, size_t count);
 
     /**
      * @brief Signal to PMU that RP2040 is ready for sleep
@@ -86,13 +88,13 @@ private:
      * @param reason Wake reason from PMU
      * @param entry Schedule entry (if scheduled wake)
      */
-    void handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry* entry);
+    void handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry *entry);
 
     /**
      * @brief Handle heartbeat response - sync time to PMU
      * @param payload Heartbeat response with timestamp from hub
      */
-    void onHeartbeatResponse(const HeartbeatResponsePayload* payload) override;
+    void onHeartbeatResponse(const HeartbeatResponsePayload *payload) override;
 
     /**
      * @brief Handle RTC synchronization completion

@@ -14,9 +14,10 @@ enum class Command : uint8_t {
     GetSchedule = 0x13,
     ClearSchedule = 0x14,
     KeepAwake = 0x15,
-    SetDateTime = 0x16,  // Set RTC date/time (7 bytes: year, month, day, weekday, hour, minute, second)
+    SetDateTime =
+        0x16,  // Set RTC date/time (7 bytes: year, month, day, weekday, hour, minute, second)
     ReadyForSleep = 0x17,  // RP2040 signals work complete, ready for power down
-    GetDateTime = 0x18   // Get RTC date/time from PMU (returns DateTimeResponse)
+    GetDateTime = 0x18     // Get RTC date/time from PMU (returns DateTimeResponse)
 };
 
 // Response codes (STM32 → RP2040)
@@ -61,15 +62,18 @@ enum class DayOfWeek : uint8_t {
 };
 
 // Bitwise operators for DayOfWeek
-inline DayOfWeek operator|(DayOfWeek a, DayOfWeek b) {
+inline DayOfWeek operator|(DayOfWeek a, DayOfWeek b)
+{
     return static_cast<DayOfWeek>(static_cast<uint8_t>(a) | static_cast<uint8_t>(b));
 }
 
-inline DayOfWeek operator&(DayOfWeek a, DayOfWeek b) {
+inline DayOfWeek operator&(DayOfWeek a, DayOfWeek b)
+{
     return static_cast<DayOfWeek>(static_cast<uint8_t>(a) & static_cast<uint8_t>(b));
 }
 
-inline bool operator!(DayOfWeek a) {
+inline bool operator!(DayOfWeek a)
+{
     return static_cast<uint8_t>(a) == 0;
 }
 
@@ -87,31 +91,36 @@ constexpr uint8_t SEQ_STM32_MAX = 254;
 
 // Date/Time structure for setting RTC
 struct DateTime {
-    uint8_t year;      // Years since 2000 (0-99)
-    uint8_t month;     // 1-12
-    uint8_t day;       // 1-31
-    uint8_t weekday;   // 0=Sunday, 1=Monday, ..., 6=Saturday
-    uint8_t hour;      // 0-23
-    uint8_t minute;    // 0-59
-    uint8_t second;    // 0-59
+    uint8_t year;     // Years since 2000 (0-99)
+    uint8_t month;    // 1-12
+    uint8_t day;      // 1-31
+    uint8_t weekday;  // 0=Sunday, 1=Monday, ..., 6=Saturday
+    uint8_t hour;     // 0-23
+    uint8_t minute;   // 0-59
+    uint8_t second;   // 0-59
 
     DateTime() : year(0), month(1), day(1), weekday(0), hour(0), minute(0), second(0) {}
 
     DateTime(uint8_t y, uint8_t mon, uint8_t d, uint8_t wd, uint8_t h, uint8_t min, uint8_t s)
-        : year(y), month(mon), day(d), weekday(wd), hour(h), minute(min), second(s) {}
+        : year(y), month(mon), day(d), weekday(wd), hour(h), minute(min), second(s)
+    {
+    }
 };
 
 // Schedule entry structure
 struct ScheduleEntry {
-    uint8_t hour;        // 0-23
-    uint8_t minute;      // 0-59
-    uint16_t duration;   // Duration in seconds
+    uint8_t hour;       // 0-23
+    uint8_t minute;     // 0-59
+    uint16_t duration;  // Duration in seconds
     DayOfWeek daysMask;
     uint8_t valveId;
     bool enabled;
 
-    ScheduleEntry() : hour(0), minute(0), duration(0),
-                     daysMask(static_cast<DayOfWeek>(0)), valveId(0), enabled(false) {}
+    ScheduleEntry()
+        : hour(0), minute(0), duration(0), daysMask(static_cast<DayOfWeek>(0)), valveId(0),
+          enabled(false)
+    {
+    }
 };
 
 // Message parser (state machine for robust parsing)
@@ -132,7 +141,7 @@ public:
     Response getResponse() const;
 
     // Get pointer to data payload
-    const uint8_t* getData() const;
+    const uint8_t *getData() const;
 
     // Get length of data payload
     uint8_t getDataLength() const;
@@ -174,11 +183,11 @@ public:
     void addByte(uint8_t data);
     void addUint16(uint16_t data);
     void addUint32(uint32_t data);
-    void addScheduleEntry(const ScheduleEntry& entry);
+    void addScheduleEntry(const ScheduleEntry &entry);
 
     // Finalize message (adds checksum and end byte)
     // Returns pointer to complete message buffer
-    const uint8_t* finalize();
+    const uint8_t *finalize();
 
     // Get total message length (including framing)
     uint8_t getLength() const;
@@ -188,21 +197,21 @@ public:
 
 private:
     uint8_t buffer_[MAX_MESSAGE_SIZE];
-    uint8_t dataLength_;  // Length of seq + command + data (for LENGTH field)
-    uint8_t totalLength_; // Total message length including framing
+    uint8_t dataLength_;   // Length of seq + command + data (for LENGTH field)
+    uint8_t totalLength_;  // Total message length including framing
     uint8_t sequenceNumber_;
 
     uint8_t calculateChecksum() const;
 };
 
 // Callback types
-using UartSendCallback = std::function<void(const uint8_t* data, uint8_t length)>;
-using WakeNotificationCallback = std::function<void(WakeReason reason, const ScheduleEntry* entry)>;
+using UartSendCallback = std::function<void(const uint8_t *data, uint8_t length)>;
+using WakeNotificationCallback = std::function<void(WakeReason reason, const ScheduleEntry *entry)>;
 using ScheduleCompleteCallback = std::function<void()>;
 using CommandResultCallback = std::function<void(bool success, ErrorCode error)>;
 using WakeIntervalCallback = std::function<void(uint32_t seconds)>;
-using ScheduleEntryCallback = std::function<void(const ScheduleEntry& entry)>;
-using DateTimeCallback = std::function<void(bool valid, const DateTime& datetime)>;
+using ScheduleEntryCallback = std::function<void(const ScheduleEntry &entry)>;
+using DateTimeCallback = std::function<void(bool valid, const DateTime &datetime)>;
 
 // Callback for ACK with sequence number
 using AckCallback = std::function<void(uint8_t seqNum, bool success, ErrorCode error)>;
@@ -216,7 +225,7 @@ public:
     void processReceivedByte(uint8_t byte);
 
     // Low-level send with explicit sequence number (used by ReliablePmuClient)
-    void sendCommand(uint8_t seqNum, Command command, const uint8_t* data, uint8_t dataLength);
+    void sendCommand(uint8_t seqNum, Command command, const uint8_t *data, uint8_t dataLength);
 
     // Set callback for ACK/NACK with sequence number
     void setAckCallback(AckCallback callback);
@@ -224,12 +233,14 @@ public:
     // Legacy commands (use internal sequence numbering, not recommended)
     void setWakeInterval(uint32_t seconds, CommandResultCallback callback = nullptr);
     void getWakeInterval(CommandResultCallback callback = nullptr);
-    void setSchedule(const ScheduleEntry& entry, CommandResultCallback callback = nullptr);
+    void setSchedule(const ScheduleEntry &entry, CommandResultCallback callback = nullptr);
     void getSchedule(uint8_t index, CommandResultCallback callback = nullptr);
-    void clearSchedule(uint8_t index, CommandResultCallback callback = nullptr);  // 0xFF to clear all
+    void clearSchedule(uint8_t index,
+                       CommandResultCallback callback = nullptr);  // 0xFF to clear all
     void keepAwake(uint16_t seconds, CommandResultCallback callback = nullptr);
-    void setDateTime(const DateTime& dateTime, CommandResultCallback callback = nullptr);
-    void readyForSleep(CommandResultCallback callback = nullptr);  // Signal work complete, ready for power down
+    void setDateTime(const DateTime &dateTime, CommandResultCallback callback = nullptr);
+    void readyForSleep(
+        CommandResultCallback callback = nullptr);  // Signal work complete, ready for power down
     void getDateTime(DateTimeCallback callback = nullptr);  // Get RTC date/time from PMU
 
     // Set callback handlers for unsolicited responses
@@ -265,12 +276,12 @@ private:
 
     // Response handlers
     void handleAck(uint8_t seqNum);
-    void handleNack(uint8_t seqNum, const uint8_t* data, uint8_t length);
-    void handleWakeInterval(const uint8_t* data, uint8_t length);
-    void handleScheduleEntry(const uint8_t* data, uint8_t length);
-    void handleWakeNotification(const uint8_t* data, uint8_t length);
+    void handleNack(uint8_t seqNum, const uint8_t *data, uint8_t length);
+    void handleWakeInterval(const uint8_t *data, uint8_t length);
+    void handleScheduleEntry(const uint8_t *data, uint8_t length);
+    void handleWakeNotification(const uint8_t *data, uint8_t length);
     void handleScheduleComplete();
-    void handleDateTimeResponse(const uint8_t* data, uint8_t length);
+    void handleDateTimeResponse(const uint8_t *data, uint8_t length);
 
     // Helper to send built message
     void sendMessage();
@@ -278,4 +289,4 @@ private:
 
 }  // namespace PMU
 
-#endif // PMU_PROTOCOL_H
+#endif  // PMU_PROTOCOL_H

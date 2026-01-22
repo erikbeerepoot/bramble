@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+
 #include "pico/stdlib.h"
 
 /**
@@ -20,7 +21,7 @@ public:
     /**
      * Get the singleton instance of the interrupt manager
      */
-    static GpioInterruptManager& getInstance();
+    static GpioInterruptManager &getInstance();
 
     /**
      * Register a handler for a specific GPIO pin
@@ -41,8 +42,8 @@ private:
     ~GpioInterruptManager() = default;
 
     // Prevent copying
-    GpioInterruptManager(const GpioInterruptManager&) = delete;
-    GpioInterruptManager& operator=(const GpioInterruptManager&) = delete;
+    GpioInterruptManager(const GpioInterruptManager &) = delete;
+    GpioInterruptManager &operator=(const GpioInterruptManager &) = delete;
 
     // Static callback function for the Pico SDK
     static void globalInterruptHandler(uint gpio, uint32_t events);
@@ -54,4 +55,4 @@ private:
     bool global_handler_registered_ = false;
 };
 
-#endif // GPIO_INTERRUPT_MANAGER_H
+#endif  // GPIO_INTERRUPT_MANAGER_H

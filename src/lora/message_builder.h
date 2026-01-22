@@ -1,9 +1,10 @@
 #pragma once
 
-#include "message.h"
-#include <cstring>
 #include <cstdio>
+#include <cstring>
 #include <type_traits>
+
+#include "message.h"
 
 /**
  * @brief Template-based message builder for simplified message creation
@@ -22,20 +23,22 @@ public:
      * @param buffer Output buffer
      * @return Size of created message, 0 on error
      */
-    template<typename PayloadType>
-    static size_t createMessage(uint8_t type, uint8_t flags, uint16_t src_addr, 
-                               uint16_t dst_addr, uint8_t seq_num,
-                               const PayloadType& payload_data, uint8_t* buffer) {
-        static_assert(std::is_trivially_copyable<PayloadType>::value, 
-                     "Payload type must be trivially copyable");
-        
-        if (!buffer) return 0;
-        
+    template <typename PayloadType>
+    static size_t createMessage(uint8_t type, uint8_t flags, uint16_t src_addr, uint16_t dst_addr,
+                                uint8_t seq_num, const PayloadType &payload_data, uint8_t *buffer)
+    {
+        static_assert(std::is_trivially_copyable<PayloadType>::value,
+                      "Payload type must be trivially copyable");
+
+        if (!buffer)
+            return 0;
+
         // Validate message will fit
         size_t total_size = MESSAGE_HEADER_SIZE + sizeof(PayloadType);
-        if (total_size > MESSAGE_MAX_SIZE) return 0;
-        
-        Message* message = reinterpret_cast<Message*>(buffer);
+        if (total_size > MESSAGE_MAX_SIZE)
+            return 0;
+
+        Message *message = reinterpret_cast<Message *>(buffer);
 
         // Create header
         message->header.magic = MESSAGE_MAGIC;
@@ -55,17 +58,19 @@ public:
      * @brief Create a variable-length message (for sensor/actuator data)
      */
     static size_t createVariableMessage(uint8_t type, uint8_t flags, uint16_t src_addr,
-                                       uint16_t dst_addr, uint8_t seq_num,
-                                       const void* header_data, size_t header_size,
-                                       const void* variable_data, size_t variable_size,
-                                       uint8_t* buffer) {
-        if (!buffer) return 0;
-        
+                                        uint16_t dst_addr, uint8_t seq_num, const void *header_data,
+                                        size_t header_size, const void *variable_data,
+                                        size_t variable_size, uint8_t *buffer)
+    {
+        if (!buffer)
+            return 0;
+
         size_t total_payload = header_size + variable_size;
         size_t total_size = MESSAGE_HEADER_SIZE + total_payload;
-        if (total_size > MESSAGE_MAX_SIZE) return 0;
-        
-        Message* message = reinterpret_cast<Message*>(buffer);
+        if (total_size > MESSAGE_MAX_SIZE)
+            return 0;
+
+        Message *message = reinterpret_cast<Message *>(buffer);
 
         // Create header
         message->header.magic = MESSAGE_MAGIC;
@@ -87,39 +92,41 @@ public:
 
         return total_size;
     }
-    
+
     /**
      * @brief Simplified sensor message creation
      */
     static size_t createSensorMessage(uint16_t src_addr, uint16_t dst_addr, uint8_t seq_num,
-                                     uint8_t sensor_type, const uint8_t* data, uint8_t data_length,
-                                     uint8_t flags, uint8_t* buffer) {
+                                      uint8_t sensor_type, const uint8_t *data, uint8_t data_length,
+                                      uint8_t flags, uint8_t *buffer)
+    {
         struct SensorHeader {
             uint8_t sensor_type;
             uint8_t data_length;
-        } header = { sensor_type, data_length };
-        
+        } header = {sensor_type, data_length};
+
         return createVariableMessage(MSG_TYPE_SENSOR_DATA, flags, src_addr, dst_addr, seq_num,
-                                   &header, sizeof(header), data, data_length, buffer);
+                                     &header, sizeof(header), data, data_length, buffer);
     }
-    
+
     /**
      * @brief Simplified actuator message creation
      */
     static size_t createActuatorMessage(uint16_t src_addr, uint16_t dst_addr, uint8_t seq_num,
-                                       uint8_t actuator_type, uint8_t command,
-                                       const uint8_t* params, uint8_t param_length,
-                                       uint8_t flags, uint8_t* buffer) {
+                                        uint8_t actuator_type, uint8_t command,
+                                        const uint8_t *params, uint8_t param_length, uint8_t flags,
+                                        uint8_t *buffer)
+    {
         struct ActuatorHeader {
             uint8_t actuator_type;
             uint8_t command;
             uint8_t param_length;
-        } header = { actuator_type, command, param_length };
+        } header = {actuator_type, command, param_length};
 
         return createVariableMessage(MSG_TYPE_ACTUATOR_CMD, flags, src_addr, dst_addr, seq_num,
-                                   &header, sizeof(header), params, param_length, buffer);
+                                     &header, sizeof(header), params, param_length, buffer);
     }
-    
+
     /**
      * @brief Create a sensor data batch message for backlog transmission
      * @param src_addr Source node address
@@ -132,10 +139,11 @@ public:
      * @param buffer Output buffer (must be at least MESSAGE_MAX_SIZE bytes)
      * @return Size of created message, 0 on error
      */
-    static size_t createSensorDataBatchMessage(uint16_t src_addr, uint16_t dst_addr, uint8_t seq_num,
-                                               uint32_t start_index,
-                                               const BatchSensorRecord* records, uint8_t record_count,
-                                               uint8_t flags, uint8_t* buffer) {
+    static size_t createSensorDataBatchMessage(uint16_t src_addr, uint16_t dst_addr,
+                                               uint8_t seq_num, uint32_t start_index,
+                                               const BatchSensorRecord *records,
+                                               uint8_t record_count, uint8_t flags, uint8_t *buffer)
+    {
         if (!buffer || !records || record_count == 0 || record_count > MAX_BATCH_RECORDS) {
             return 0;
         }
@@ -148,7 +156,7 @@ public:
             return 0;
         }
 
-        Message* message = reinterpret_cast<Message*>(buffer);
+        Message *message = reinterpret_cast<Message *>(buffer);
 
         // Create header
         message->header.magic = MESSAGE_MAGIC;
@@ -159,7 +167,8 @@ public:
         message->header.seq_num = seq_num;
 
         // Create batch payload
-        SensorDataBatchPayload* batch = reinterpret_cast<SensorDataBatchPayload*>(message->payload);
+        SensorDataBatchPayload *batch =
+            reinterpret_cast<SensorDataBatchPayload *>(message->payload);
         batch->node_addr = src_addr;
         batch->start_index = start_index;
         batch->record_count = record_count;
@@ -173,12 +182,17 @@ public:
     /**
      * @brief Convert criticality to message flags
      */
-    static uint8_t criticalityToFlags(DeliveryCriticality criticality) {
+    static uint8_t criticalityToFlags(DeliveryCriticality criticality)
+    {
         switch (criticality) {
-            case BEST_EFFORT: return 0;
-            case RELIABLE:    return MSG_FLAG_RELIABLE;
-            case CRITICAL:    return MSG_FLAG_RELIABLE | MSG_FLAG_CRITICAL;
-            default:          return 0;
+            case BEST_EFFORT:
+                return 0;
+            case RELIABLE:
+                return MSG_FLAG_RELIABLE;
+            case CRITICAL:
+                return MSG_FLAG_RELIABLE | MSG_FLAG_CRITICAL;
+            default:
+                return 0;
         }
     }
 };
