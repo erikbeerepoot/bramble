@@ -180,7 +180,6 @@ private:
     ExternalFlash& flash_;
     SensorFlashMetadata metadata_;
     bool initialized_;
-    bool first_write_since_boot_;  // Track if we need to erase on first write
     Logger logger_;
 
     // Sector buffer for read-modify-write operations
