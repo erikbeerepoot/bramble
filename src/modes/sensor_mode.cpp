@@ -20,18 +20,11 @@ SensorMode::~SensorMode() = default;
 
 void SensorMode::onStart() {
     logger.info("=== SENSOR MODE ACTIVE ===");
-    logger.info("- Temperature/humidity data logger");
-    logger.info("- 30 second reading interval");
     logger.info("- Orange LED blink (init) -> Red short blink (operational)");
 
-    // Initialize external flash for sensor data storage
-    // Flash shares SPI1 with LoRa (MISO=GPIO8, SCK=GPIO14, MOSI=GPIO15)
-    // Flash has its own CS (GPIO6) and RESET (GPIO7)
+    // Initialize external flash for sensor data storage    
     external_flash_ = std::make_unique<ExternalFlash>();
-    if (external_flash_->init()) {
-        logger.info("External flash initialized");
-
-        // Initialize flash buffer
+    if (external_flash_->init()) {        
         flash_buffer_ = std::make_unique<SensorFlashBuffer>(*external_flash_);
         if (flash_buffer_->init()) {
             SensorFlashMetadata stats;
@@ -50,9 +43,6 @@ void SensorMode::onStart() {
     sensor_ = std::make_unique<CHT832X>(i2c1, PIN_I2C_SDA, PIN_I2C_SCL);
 
     if (sensor_->init()) {
-        logger.info("CHT832X sensor initialized on I2C1 (SDA=%d, SCL=%d)",
-                   PIN_I2C_SDA, PIN_I2C_SCL);
-
         // Take an initial reading to verify sensor is working
         auto reading = sensor_->read();
         if (reading.valid) {
@@ -65,11 +55,9 @@ void SensorMode::onStart() {
                     PIN_I2C_SCL, PIN_I2C_SDA);
     }
 
-    // Start with orange blinking pattern while waiting for RTC sync
-    led_pattern_ = std::make_unique<BlinkingPattern>(led_, 255, 165, 0, 250, 250);
-    // Store operational pattern (red short blink) for after RTC sync
-    // Red single channel at full brightness for power efficiency
-    operational_pattern_ = std::make_unique<ShortBlinkPattern>(led_, 255, 0, 0);
+    // define led patterns
+    init_pattern_ = std::make_unique<BlinkingPattern>(led_, 255, 165, 0, 250, 250);
+    operational_pattern_ = std::make_unique<ShortBlinkPattern>(led_, 125, 0, 0);
 
     // Initialize PMU client at 9600 baud to match STM32 LPUART configuration
     pmu_client_ = new PmuClient(PMU_UART_ID, PMU_UART_TX_PIN, PMU_UART_RX_PIN, 9600);
@@ -83,7 +71,6 @@ void SensorMode::onStart() {
 
     // Note: Task queue is used to coordinate RTC sync -> backlog -> sleep flow
     // Tasks are posted dynamically as work becomes available
-
     if (pmu_available_ && reliable_pmu_) {
         pmu_logger.info("PMU client initialized successfully");
 
@@ -92,9 +79,7 @@ void SensorMode::onStart() {
             this->handlePmuWake(reason, entry);
         });
 
-        // Try to get time from PMU's battery-backed RTC (faster than waiting for hub sync)
-        // Note: Don't send wake preamble (null bytes) - it can corrupt protocol state machine.
-        // If STM32 is in STOP mode, first attempt may fail but we'll fall back to hub sync.
+        // Try to get time from PMU's battery-backed RTC (faster than waiting for hub sync)        
         pmu_logger.info("Requesting datetime from PMU...");
         reliable_pmu_->getDateTime([this](bool valid, const PMU::DateTime& datetime) {
             if (valid) {
@@ -281,7 +266,6 @@ void SensorMode::checkAndTransmitBacklog(uint32_t current_time) {
     logger.info("Transmit interval reached (%lu s) - checking backlog", elapsed);
 
     uint32_t untransmitted_count = flash_buffer_->getUntransmittedCount();
-
     if (untransmitted_count == 0) {
         logger.debug("No backlog to transmit");
         // Update last sync timestamp in flash - nothing to send counts as success
