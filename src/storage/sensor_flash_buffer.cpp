@@ -55,7 +55,7 @@ uint16_t CRC16::calculateRecordCRC(const SensorDataRecord& record) {
 // SensorFlashBuffer implementation
 
 SensorFlashBuffer::SensorFlashBuffer(ExternalFlash& flash)
-    : flash_(flash), initialized_(false), logger_("SensorFlashBuffer") {
+    : flash_(flash), initialized_(false), first_write_since_boot_(true), logger_("SensorFlashBuffer") {
     memset(&metadata_, 0, sizeof(metadata_));
 }
 
@@ -103,19 +103,59 @@ bool SensorFlashBuffer::writeRecord(const SensorDataRecord& record) {
     // Calculate flash address
     uint32_t address = getRecordAddress(metadata_.write_index);
 
-    // Check if we need to erase the sector
-    // For MT25QL, we need to erase before writing
-    uint32_t sector_start = (address / ExternalFlash::SECTOR_SIZE) * ExternalFlash::SECTOR_SIZE;
-    uint32_t record_offset_in_sector = address % ExternalFlash::SECTOR_SIZE;
+    // Check if we need to erase the sector(s) this record will occupy
+    // For MT25QL, we need to erase before writing (NOR flash can only flip 1s to 0s)
+    //
+    // Records (12 bytes) don't align with sector boundaries (4096 bytes), so we must
+    // erase a sector when we're about to write the first byte into it, not just when
+    // a record starts at offset 0.
+    uint32_t sector_start = (address / SECTOR_SIZE) * SECTOR_SIZE;
+    uint32_t record_end = address + sizeof(SensorDataRecord) - 1;
+    uint32_t end_sector_start = (record_end / SECTOR_SIZE) * SECTOR_SIZE;
 
-    // Only erase if we're at the start of a new sector
-    if (record_offset_in_sector == 0) {
+    // On first write after boot, always erase the target sector(s).
+    // This handles the case where metadata points to a partially-written sector
+    // from a previous session that wasn't properly erased (e.g., due to power loss
+    // before metadata was saved, or due to the previous sector alignment bug).
+    bool need_erase_start_sector = first_write_since_boot_;
+    bool need_erase_end_sector = first_write_since_boot_ && (end_sector_start != sector_start);
+
+    if (!first_write_since_boot_) {
+        // Determine if we're entering a new sector by checking where the previous record ended
+        uint32_t prev_record_end_sector;
+        if (metadata_.write_index == 0) {
+            // First record ever - must erase the first data sector
+            prev_record_end_sector = DATA_START_OFFSET - 1;  // Force sector mismatch
+        } else {
+            uint32_t prev_record_end = getRecordAddress(metadata_.write_index - 1) + sizeof(SensorDataRecord) - 1;
+            prev_record_end_sector = (prev_record_end / SECTOR_SIZE) * SECTOR_SIZE;
+        }
+
+        // Erase the sector if this record starts in a different sector than where previous record ended
+        need_erase_start_sector = (sector_start != prev_record_end_sector);
+
+        // If record spans two sectors, also erase the second sector
+        need_erase_end_sector = (end_sector_start != sector_start) && (end_sector_start != prev_record_end_sector);
+    }
+
+    if (need_erase_start_sector) {
         ExternalFlashResult result = flash_.eraseSector(sector_start);
         if (result != ExternalFlashResult::Success) {
             logger_.error("Failed to erase sector at 0x%08X", sector_start);
             return false;
         }
     }
+
+    if (need_erase_end_sector) {
+        ExternalFlashResult result = flash_.eraseSector(end_sector_start);
+        if (result != ExternalFlashResult::Success) {
+            logger_.error("Failed to erase sector at 0x%08X", end_sector_start);
+            return false;
+        }
+    }
+
+    // Clear the first-write flag after erasing
+    first_write_since_boot_ = false;
 
     // Write the record
     ExternalFlashResult result = flash_.write(address,
