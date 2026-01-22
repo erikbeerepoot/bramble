@@ -43,12 +43,12 @@ bool PmuClient::init() {
     // UART idle state is high, pull-up helps prevent noise
     gpio_pull_up(rxPin_);
 
-    // Set UART format: 8 data bits, 2 stop bits, no parity
-    // Must match STM32 LPUART configuration (UART_STOPBITS_2)
-    uart_set_format(uart_, 8, 2, UART_PARITY_NONE);
-
-    // Enable FIFO
+    // Enable FIFO first
     uart_set_fifo_enabled(uart_, true);
+
+    // Set UART format: 8 data bits, 2 stop bits, no parity
+    // Must match STM32 LPUART configuration (set after FIFO to ensure it sticks)
+    uart_set_format(uart_, 8, 2, UART_PARITY_NONE);
 
     // Get the IRQ number for this UART
     int uart_irq = uart_ == uart0 ? UART0_IRQ : UART1_IRQ;
@@ -71,6 +71,31 @@ void PmuClient::uartSend(const uint8_t* data, uint8_t length) {
 
     // Blocking transmit
     uart_write_blocking(uart_, data, length);
+}
+
+void PmuClient::sendWakePreamble() {
+    if (!initialized_) {
+        return;
+    }
+
+    // Send dummy bytes to wake STM32 from STOP mode
+    // These will be ignored by the protocol parser (not 0xAA start byte)
+    // but will trigger LPUART wakeup interrupt
+    //
+    // The STM32 wakes on first byte, runs wakeupFromStopMode() to reconfigure
+    // clocks, does a quick LED pulse, then may go back to STOP mode.
+    // We need to keep it awake long enough to receive our actual command.
+    //
+    // Send multiple wake pulses with delays to ensure STM32 stays awake
+    // through its main loop cycle and is ready when we send the real command.
+    for (int i = 0; i < 3; i++) {
+        const uint8_t wake_byte = 0x00;
+        uart_write_blocking(uart_, &wake_byte, 1);
+        sleep_ms(50);  // Small delay between bytes
+    }
+
+    // Final delay to ensure STM32 has completed its wake cycle
+    sleep_ms(150);
 }
 
 void PmuClient::process() {

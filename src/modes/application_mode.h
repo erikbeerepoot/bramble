@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include "lora/message.h"
@@ -30,7 +31,7 @@ protected:
     std::unique_ptr<LEDPattern> led_pattern_;
     std::unique_ptr<LEDPattern> operational_pattern_;  // Pattern to switch to after RTC sync
     PeriodicTaskManager task_manager_;
-    bool rtc_synced_ = false;  // True after receiving heartbeat response with time
+    std::atomic<bool> rtc_synced_{false};  // True after receiving heartbeat response with time
     
 public:
     ApplicationMode(ReliableMessenger& messenger, SX1276& lora, NeoPixel& led,
@@ -108,7 +109,7 @@ protected:
      * @brief Check if RTC has been synchronized via heartbeat response
      * @return true if RTC contains valid time from hub
      */
-    bool isRtcSynced() const { return rtc_synced_; }
+    bool isRtcSynced() const { return rtc_synced_.load(); }
 
     /**
      * @brief Get current Unix timestamp from RTC

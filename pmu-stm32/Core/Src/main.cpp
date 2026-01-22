@@ -61,10 +61,30 @@ static uint16_t wateringDuration = 0;
 // RTC wakeup flag - set by interrupt, handled in main loop
 static volatile bool rtcWakeupFlag = false;
 
+// UART activity tracking - stay awake while receiving data
+static volatile bool uartActivityFlag = false;
+static volatile uint32_t uartLastActivityTime = 0;
+static constexpr uint32_t UART_ACTIVITY_TIMEOUT_MS = 500;  // Stay awake 500ms after last UART byte
+
 // Periodic wake state tracking
 static bool periodicWakeActive = false;
 static uint32_t periodicWakeStartTime = 0;
 static constexpr uint32_t PERIODIC_WAKE_TIMEOUT_MS = 120000;  // 2 minutes
+
+// Boot animation parameters
+namespace BootAnimationConfig {
+    constexpr int TOTAL_FLICKERS = 5;       // 5 flickers = 1 second total
+    constexpr uint32_t FLICKER_ON_MS = 100;
+    constexpr uint32_t FLICKER_OFF_MS = 100;
+}
+
+// Boot animation runtime state (non-blocking)
+static struct {
+    bool active;
+    uint32_t lastToggleTime;
+    bool ledOn;
+    int flickerCount;
+} bootAnimationState = {false, 0, false, 0};
 
 // Protocol callbacks
 static void uartSendCallback(const uint8_t* data, uint8_t length);
@@ -82,11 +102,11 @@ static void MX_GPIO_Init(void);
 static void MX_LPUART1_UART_Init(void);
 static void MX_RTC_Init(void);
 /* USER CODE BEGIN PFP */
-static void flicker(LED& led, LED::Color color, uint32_t duration_ms);
 static void configureRTCWakeup(uint32_t seconds);
 static void enterStopMode(void);
 static void wakeupFromStopMode(void);
 static void handleRTCWakeup(void);
+static bool updateBootAnimation(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -136,6 +156,10 @@ int main(void)
   MX_RTC_Init();
 
   /* USER CODE BEGIN 2 */
+  // Start UART receive interrupt IMMEDIATELY after UART init
+  // This ensures PMU is ready to receive commands as early as possible
+  HAL_UART_Receive_IT(&hlpuart1, &uartRxByte, 1);
+
   led.init();
   led.off();
 
@@ -143,14 +167,16 @@ int main(void)
   dcdc.init();
   dcdc.enable();
 
-  // Boot indication - flicker green LED
-  flicker(led, LED::GREEN, 1000);
+  // Start non-blocking boot animation (green LED flicker)
+  // This runs in the main loop while UART remains responsive
+  bootAnimationState.active = true;
+  bootAnimationState.lastToggleTime = HAL_GetTick();
+  bootAnimationState.ledOn = true;
+  bootAnimationState.flickerCount = 0;
+  led.setColor(LED::GREEN);
 
   // Configure RTC wakeup timer with default wake interval (300 seconds)
   configureRTCWakeup(protocol.getWakeInterval());
-  
-  // Start UART receive interrupt
-  HAL_UART_Receive_IT(&hlpuart1, &uartRxByte, 1);
 
   /* USER CODE END 2 */
 
@@ -162,6 +188,11 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+
+    // Handle non-blocking boot animation (returns true while still animating)
+    if (updateBootAnimation()) {
+      continue;  // Don't enter sleep mode while boot animation is running
+    }
 
     // Check if RTC wakeup flag is set and handle it
     if (rtcWakeupFlag) {
@@ -212,6 +243,19 @@ int main(void)
         HAL_Delay(100);
         led.off();
         HAL_Delay(900);  // Check every second
+      }
+    } else if (uartActivityFlag) {
+      // UART activity detected - stay awake to process data
+      uint32_t elapsed = HAL_GetTick() - uartLastActivityTime;
+      if (elapsed >= UART_ACTIVITY_TIMEOUT_MS) {
+        // Timeout - no more UART activity, can go back to sleep
+        uartActivityFlag = false;
+      } else {
+        // Fast blink to show UART processing active
+        led.setColor(LED::GREEN);
+        HAL_Delay(50);
+        led.off();
+        HAL_Delay(50);
       }
     } else {
       // Not watering or periodic wake - normal sleep/wake cycle
@@ -279,9 +323,10 @@ void SystemClock_Config(void)
     Error_Handler();
   }
   PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_LPUART1|RCC_PERIPHCLK_RTC;
-  // Use PCLK1 (2.097 MHz from MSI) for LPUART - HAL will calculate correct BRR
-  // This avoids HSI clock source issues and provides a known working configuration
-  PeriphClkInit.Lpuart1ClockSelection = RCC_LPUART1CLKSOURCE_PCLK1;
+  // Use HSI (16 MHz) for LPUART - more accurate than MSI-derived PCLK1
+  // HSI is factory-calibrated with ±1% accuracy over temperature range
+  // MSI has wider tolerance which caused baud rate to be ~7.5% off (2218 instead of 2400)
+  PeriphClkInit.Lpuart1ClockSelection = RCC_LPUART1CLKSOURCE_HSI;
   PeriphClkInit.RTCClockSelection = RCC_RTCCLKSOURCE_LSI;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
   {
@@ -305,7 +350,7 @@ static void MX_LPUART1_UART_Init(void)
 
   /* USER CODE END LPUART1_Init 1 */
   hlpuart1.Instance = LPUART1;
-  hlpuart1.Init.BaudRate = 2400;  // Slower rate for better stability
+  hlpuart1.Init.BaudRate = 9600;  // Standard rate, requires HSI (16 MHz) clock source
   hlpuart1.Init.WordLength = UART_WORDLENGTH_8B;
   hlpuart1.Init.StopBits = UART_STOPBITS_2;  // 2 stop bits for better timing margin
   hlpuart1.Init.Parity = UART_PARITY_NONE;
@@ -395,17 +440,38 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 
 /**
- * @brief Flicker LED during boot for visual feedback
+ * @brief Update non-blocking boot animation
+ * @return true if animation is still running, false when complete
  */
-static void flicker(LED& led, LED::Color color, uint32_t duration_ms) {
-    const int flickers = duration_ms / 200;
-    for (int i = 0; i < flickers; i++) {
-        led.setColor(color);
-        HAL_Delay(100);
-        led.off();
-        HAL_Delay(100);
+static bool updateBootAnimation(void) {
+    if (!bootAnimationState.active) {
+        return false;
     }
-    led.off();
+
+    uint32_t now = HAL_GetTick();
+    uint32_t elapsed = now - bootAnimationState.lastToggleTime;
+
+    if (bootAnimationState.ledOn && elapsed >= BootAnimationConfig::FLICKER_ON_MS) {
+        // Turn off
+        led.off();
+        bootAnimationState.ledOn = false;
+        bootAnimationState.lastToggleTime = now;
+    } else if (!bootAnimationState.ledOn && elapsed >= BootAnimationConfig::FLICKER_OFF_MS) {
+        // Turn on or finish
+        bootAnimationState.flickerCount++;
+        if (bootAnimationState.flickerCount >= BootAnimationConfig::TOTAL_FLICKERS) {
+            // Animation complete
+            bootAnimationState.active = false;
+            led.off();
+            return false;
+        } else {
+            led.setColor(LED::GREEN);
+            bootAnimationState.ledOn = true;
+            bootAnimationState.lastToggleTime = now;
+        }
+    }
+
+    return true;
 }
 
 /**
@@ -540,8 +606,8 @@ static void handleRTCWakeup(void) {
         // Normal periodic wake - enable DC/DC to power up RP2040
         dcdc.enable();
 
-        // Small delay to allow RP2040 to power up and boot
-        HAL_Delay(5000);
+        // Short delay to allow RP2040 to initialize UART (~400ms from boot log)
+        HAL_Delay(500);
 
         // Send periodic wake notification
         protocol.sendWakeNotification(PMU::WakeReason::Periodic);
@@ -570,6 +636,10 @@ void HAL_RTCEx_WakeUpTimerEventCallback(RTC_HandleTypeDef *hrtc)
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
     if (huart->Instance == LPUART1) {
+        // Mark UART activity to keep MCU awake while receiving data
+        uartActivityFlag = true;
+        uartLastActivityTime = HAL_GetTick();
+
         // Process received byte through protocol
         protocol.processReceivedByte(uartRxByte);
 
@@ -612,12 +682,17 @@ static void keepAwakeCallback(uint16_t seconds)
  */
 static void readyForSleepCallback()
 {
+    // RP2040 is done with its work - power it down
+    dcdc.disable();
+
+    // Clear any active wake state
     if (periodicWakeActive) {
-        // RP2040 is done with its work - power it down
-        dcdc.disable();
         periodicWakeActive = false;
         periodicWakeStartTime = 0;
     }
+
+    // Clear UART activity flag so we can go to sleep
+    uartActivityFlag = false;
 }
 
 /* USER CODE END 4 */

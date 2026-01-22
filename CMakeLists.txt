@@ -112,10 +112,12 @@ else()
         src/hal/gpio_interrupt_manager.cpp
         src/hal/pmu_protocol.cpp
         src/hal/pmu_client.cpp
+        src/hal/pmu_reliability.cpp
         src/config/config_base.cpp
         src/config/node_config.cpp
         src/config/hub_config.cpp
         src/storage/sensor_flash_buffer.cpp
+        src/util/work_tracker.cpp
         src/modes/application_mode.cpp
         src/modes/hub_mode.cpp
     )

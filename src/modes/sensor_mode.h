@@ -4,7 +4,9 @@
 #include "../hal/cht832x.h"
 #include "../hal/external_flash.h"
 #include "../hal/pmu_client.h"
+#include "../hal/pmu_reliability.h"
 #include "../storage/sensor_flash_buffer.h"
+#include "../util/work_tracker.h"
 #include <memory>
 
 /**
@@ -28,9 +30,10 @@ private:
     std::unique_ptr<ExternalFlash> external_flash_;
     std::unique_ptr<SensorFlashBuffer> flash_buffer_;
     PmuClient* pmu_client_ = nullptr;
+    PMU::ReliablePmuClient* reliable_pmu_ = nullptr;
     bool pmu_available_ = false;
     volatile bool sleep_requested_ = false;   // Deferred sleep signal flag
-    volatile bool backlog_check_requested_ = false;  // Deferred backlog check flag
+    WorkTracker work_tracker_;                // Tracks pending work, signals when idle
 
     // I2C pin configuration for CHT832X sensor
     static constexpr uint PIN_I2C_SDA = 26;  // GPIO26 (A0)
@@ -80,4 +83,18 @@ private:
      * @param entry Schedule entry (if scheduled wake)
      */
     void handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry* entry);
+
+    /**
+     * @brief Handle heartbeat response - sync time to PMU
+     * @param payload Heartbeat response with timestamp from hub
+     */
+    void onHeartbeatResponse(const HeartbeatResponsePayload* payload) override;
+
+    /**
+     * @brief Handle RTC synchronization completion
+     * Centralizes the flow after RTC sync (from PMU or hub heartbeat):
+     * - Completes RtcSync work
+     * - Triggers backlog check flow
+     */
+    void onRtcSynced();
 };

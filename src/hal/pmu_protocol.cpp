@@ -12,7 +12,7 @@ namespace PMU {
 
 MessageParser::MessageParser()
     : state_(State::WaitStart), bytesRead_(0), expectedLength_(0),
-      calculatedChecksum_(0), complete_(false) {
+      calculatedChecksum_(0), sequenceNumber_(0), complete_(false) {
 }
 
 bool MessageParser::processByte(uint8_t byte) {
@@ -21,6 +21,7 @@ bool MessageParser::processByte(uint8_t byte) {
             if (byte == START_BYTE) {
                 bytesRead_ = 0;
                 complete_ = false;
+                sequenceNumber_ = 0;
                 state_ = State::ReadLength;
             }
             // Silently ignore non-start bytes (normal during idle)
@@ -30,14 +31,23 @@ bool MessageParser::processByte(uint8_t byte) {
             expectedLength_ = byte;
             buffer_[bytesRead_++] = byte;
             calculatedChecksum_ = byte;
+            state_ = State::ReadSequence;
+            break;
+
+        case State::ReadSequence:
+            sequenceNumber_ = byte;
+            buffer_[bytesRead_++] = byte;
+            calculatedChecksum_ ^= byte;
             state_ = State::ReadResponse;
             break;
 
         case State::ReadResponse:
             buffer_[bytesRead_++] = byte;
             calculatedChecksum_ ^= byte;
-            if (expectedLength_ == 1) {
-                // No data bytes, go straight to checksum
+            // Length field includes: seq + response + data
+            // We've read: length(1) + seq(1) + response(1) = 3 bytes
+            // If expectedLength_ == 2 (seq + response only), no data
+            if (expectedLength_ == 2) {
                 state_ = State::ReadChecksum;
             } else {
                 state_ = State::ReadData;
@@ -47,7 +57,9 @@ bool MessageParser::processByte(uint8_t byte) {
         case State::ReadData:
             buffer_[bytesRead_++] = byte;
             calculatedChecksum_ ^= byte;
-            // Check if we've read all data bytes (length includes response byte)
+            // Check if we've read all data bytes
+            // bytesRead_ includes: length(1) + seq(1) + response(1) + data(n)
+            // expectedLength_ = seq(1) + response(1) + data(n) = 2 + n
             if (bytesRead_ >= expectedLength_ + 1) {
                 state_ = State::ReadChecksum;
             }
@@ -79,19 +91,27 @@ bool MessageParser::isComplete() const {
     return complete_;
 }
 
+uint8_t MessageParser::getSequenceNumber() const {
+    return sequenceNumber_;
+}
+
 Response MessageParser::getResponse() const {
-    if (bytesRead_ < 2) return static_cast<Response>(0);
-    return static_cast<Response>(buffer_[1]);
+    // buffer_[0] = length, buffer_[1] = seq, buffer_[2] = response
+    if (bytesRead_ < 3) return static_cast<Response>(0);
+    return static_cast<Response>(buffer_[2]);
 }
 
 const uint8_t* MessageParser::getData() const {
-    if (bytesRead_ < 2) return nullptr;
-    return &buffer_[2];
+    // Data starts after length(1) + seq(1) + response(1)
+    if (bytesRead_ < 3) return nullptr;
+    return &buffer_[3];
 }
 
 uint8_t MessageParser::getDataLength() const {
-    if (bytesRead_ < 2) return 0;
-    return expectedLength_ - 1;  // Subtract response byte
+    if (bytesRead_ < 3) return 0;
+    // expectedLength_ = seq(1) + response(1) + data(n)
+    // dataLength = expectedLength_ - 2
+    return (expectedLength_ > 2) ? (expectedLength_ - 2) : 0;
 }
 
 void MessageParser::reset() {
@@ -99,6 +119,7 @@ void MessageParser::reset() {
     bytesRead_ = 0;
     expectedLength_ = 0;
     calculatedChecksum_ = 0;
+    sequenceNumber_ = 0;
     complete_ = false;
 }
 
@@ -114,14 +135,17 @@ uint8_t MessageParser::calculateChecksum() const {
 // MessageBuilder Implementation
 // ============================================================================
 
-MessageBuilder::MessageBuilder() : dataLength_(0), totalLength_(0) {
+MessageBuilder::MessageBuilder() : dataLength_(0), totalLength_(0), sequenceNumber_(0) {
 }
 
-void MessageBuilder::startMessage(Command command) {
+void MessageBuilder::startMessage(uint8_t sequenceNumber, Command command) {
     buffer_[0] = START_BYTE;
-    buffer_[2] = static_cast<uint8_t>(command);
-    dataLength_ = 1;  // Just command for now
-    totalLength_ = 3; // START + LENGTH + COMMAND
+    // buffer_[1] = length (set in finalize)
+    buffer_[2] = sequenceNumber;
+    buffer_[3] = static_cast<uint8_t>(command);
+    sequenceNumber_ = sequenceNumber;
+    dataLength_ = 2;  // seq + command
+    totalLength_ = 4; // START + LENGTH + SEQ + COMMAND
 }
 
 void MessageBuilder::addByte(uint8_t data) {
@@ -184,11 +208,14 @@ uint8_t MessageBuilder::calculateChecksum() const {
 
 Protocol::Protocol(UartSendCallback uartSend)
     : uartSend_(uartSend),
+      nextSeqNum_(SEQ_RP2040_MIN),
       wakeNotificationCallback_(nullptr),
       scheduleCompleteCallback_(nullptr),
       wakeIntervalCallback_(nullptr),
       scheduleEntryCallback_(nullptr),
-      pendingCommandCallback_(nullptr) {
+      pendingCommandCallback_(nullptr),
+      ackCallback_(nullptr),
+      pendingDateTimeCallback_(nullptr) {
 }
 
 void Protocol::processReceivedByte(uint8_t byte) {
@@ -203,16 +230,17 @@ void Protocol::processReceivedByte(uint8_t byte) {
         processing = true;
 
         // Complete message received
+        uint8_t seqNum = parser_.getSequenceNumber();
         Response resp = parser_.getResponse();
         const uint8_t* data = parser_.getData();
         uint8_t dataLen = parser_.getDataLength();
 
         switch (resp) {
             case Response::Ack:
-                handleAck();
+                handleAck(seqNum);
                 break;
             case Response::Nack:
-                handleNack(data, dataLen);
+                handleNack(seqNum, data, dataLen);
                 break;
             case Response::WakeInterval:
                 handleWakeInterval(data, dataLen);
@@ -226,6 +254,9 @@ void Protocol::processReceivedByte(uint8_t byte) {
             case Response::ScheduleComplete:
                 handleScheduleComplete();
                 break;
+            case Response::DateTimeResponse:
+                handleDateTimeResponse(data, dataLen);
+                break;
             default:
                 // Unknown response, ignore
                 break;
@@ -238,50 +269,70 @@ void Protocol::processReceivedByte(uint8_t byte) {
 
 // Command senders
 
+uint8_t Protocol::getNextSequenceNumber() {
+    uint8_t seq = nextSeqNum_++;
+    if (nextSeqNum_ > SEQ_RP2040_MAX) {
+        nextSeqNum_ = SEQ_RP2040_MIN;
+    }
+    return seq;
+}
+
+void Protocol::setAckCallback(AckCallback callback) {
+    ackCallback_ = callback;
+}
+
+void Protocol::sendCommand(uint8_t seqNum, Command command, const uint8_t* data, uint8_t dataLength) {
+    builder_.startMessage(seqNum, command);
+    for (uint8_t i = 0; i < dataLength; i++) {
+        builder_.addByte(data[i]);
+    }
+    sendMessage();
+}
+
 void Protocol::setWakeInterval(uint32_t seconds, CommandResultCallback callback) {
     pendingCommandCallback_ = callback;
-    builder_.startMessage(Command::SetWakeInterval);
+    builder_.startMessage(getNextSequenceNumber(), Command::SetWakeInterval);
     builder_.addUint32(seconds);
     sendMessage();
 }
 
 void Protocol::getWakeInterval(CommandResultCallback callback) {
     pendingCommandCallback_ = callback;
-    builder_.startMessage(Command::GetWakeInterval);
+    builder_.startMessage(getNextSequenceNumber(), Command::GetWakeInterval);
     sendMessage();
 }
 
 void Protocol::setSchedule(const ScheduleEntry& entry, CommandResultCallback callback) {
     pendingCommandCallback_ = callback;
-    builder_.startMessage(Command::SetSchedule);
+    builder_.startMessage(getNextSequenceNumber(), Command::SetSchedule);
     builder_.addScheduleEntry(entry);
     sendMessage();
 }
 
 void Protocol::getSchedule(uint8_t index, CommandResultCallback callback) {
     pendingCommandCallback_ = callback;
-    builder_.startMessage(Command::GetSchedule);
+    builder_.startMessage(getNextSequenceNumber(), Command::GetSchedule);
     builder_.addByte(index);
     sendMessage();
 }
 
 void Protocol::clearSchedule(uint8_t index, CommandResultCallback callback) {
     pendingCommandCallback_ = callback;
-    builder_.startMessage(Command::ClearSchedule);
+    builder_.startMessage(getNextSequenceNumber(), Command::ClearSchedule);
     builder_.addByte(index);
     sendMessage();
 }
 
 void Protocol::keepAwake(uint16_t seconds, CommandResultCallback callback) {
     pendingCommandCallback_ = callback;
-    builder_.startMessage(Command::KeepAwake);
+    builder_.startMessage(getNextSequenceNumber(), Command::KeepAwake);
     builder_.addUint16(seconds);
     sendMessage();
 }
 
 void Protocol::setDateTime(const DateTime& dateTime, CommandResultCallback callback) {
     pendingCommandCallback_ = callback;
-    builder_.startMessage(Command::SetDateTime);
+    builder_.startMessage(getNextSequenceNumber(), Command::SetDateTime);
     builder_.addByte(dateTime.year);
     builder_.addByte(dateTime.month);
     builder_.addByte(dateTime.day);
@@ -294,7 +345,13 @@ void Protocol::setDateTime(const DateTime& dateTime, CommandResultCallback callb
 
 void Protocol::readyForSleep(CommandResultCallback callback) {
     pendingCommandCallback_ = callback;
-    builder_.startMessage(Command::ReadyForSleep);
+    builder_.startMessage(getNextSequenceNumber(), Command::ReadyForSleep);
+    sendMessage();
+}
+
+void Protocol::getDateTime(DateTimeCallback callback) {
+    pendingDateTimeCallback_ = callback;
+    builder_.startMessage(getNextSequenceNumber(), Command::GetDateTime);
     sendMessage();
 }
 
@@ -316,9 +373,19 @@ void Protocol::onScheduleEntry(ScheduleEntryCallback callback) {
     scheduleEntryCallback_ = callback;
 }
 
+void Protocol::onDateTime(DateTimeCallback callback) {
+    pendingDateTimeCallback_ = callback;
+}
+
 // Response handlers
 
-void Protocol::handleAck() {
+void Protocol::handleAck(uint8_t seqNum) {
+    // Call the sequence-aware callback first (for ReliablePmuClient)
+    if (ackCallback_) {
+        ackCallback_(seqNum, true, ErrorCode::NoError);
+    }
+
+    // Also call legacy callback for backward compatibility
     if (pendingCommandCallback_) {
         auto callback = pendingCommandCallback_;
         pendingCommandCallback_ = nullptr;  // Clear before calling to allow new commands
@@ -326,12 +393,18 @@ void Protocol::handleAck() {
     }
 }
 
-void Protocol::handleNack(const uint8_t* data, uint8_t length) {
+void Protocol::handleNack(uint8_t seqNum, const uint8_t* data, uint8_t length) {
     ErrorCode error = ErrorCode::NoError;
     if (length >= 1) {
         error = static_cast<ErrorCode>(data[0]);
     }
 
+    // Call the sequence-aware callback first (for ReliablePmuClient)
+    if (ackCallback_) {
+        ackCallback_(seqNum, false, error);
+    }
+
+    // Also call legacy callback for backward compatibility
     if (pendingCommandCallback_) {
         auto callback = pendingCommandCallback_;
         pendingCommandCallback_ = nullptr;  // Clear before calling to allow new commands
@@ -390,6 +463,41 @@ void Protocol::handleWakeNotification(const uint8_t* data, uint8_t length) {
 void Protocol::handleScheduleComplete() {
     if (scheduleCompleteCallback_) {
         scheduleCompleteCallback_();
+    }
+}
+
+void Protocol::handleDateTimeResponse(const uint8_t* data, uint8_t length) {
+    // Expected format: [valid] [year] [month] [day] [weekday] [hour] [min] [sec]
+    if (length < 8) {
+        log.error("DateTimeResponse too short: %d bytes", length);
+        if (pendingDateTimeCallback_) {
+            DateTime empty;
+            auto callback = pendingDateTimeCallback_;
+            pendingDateTimeCallback_ = nullptr;
+            callback(false, empty);
+        }
+        return;
+    }
+
+    bool valid = (data[0] != 0);
+    DateTime datetime(
+        data[1],  // year (offset from 2000)
+        data[2],  // month
+        data[3],  // day
+        data[4],  // weekday
+        data[5],  // hour
+        data[6],  // minute
+        data[7]   // second
+    );
+
+    log.debug("DateTimeResponse: valid=%d, 20%02d-%02d-%02d %02d:%02d:%02d",
+              valid, datetime.year, datetime.month, datetime.day,
+              datetime.hour, datetime.minute, datetime.second);
+
+    if (pendingDateTimeCallback_) {
+        auto callback = pendingDateTimeCallback_;
+        pendingDateTimeCallback_ = nullptr;
+        callback(valid, datetime);
     }
 }
 
