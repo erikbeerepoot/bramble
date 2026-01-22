@@ -92,9 +92,10 @@ void SensorMode::onStart() {
     if (pmu_available_ && reliable_pmu_) {
         pmu_logger.info("PMU client initialized successfully");
 
-        // Set up PMU callback handler
-        reliable_pmu_->onWake([this](PMU::WakeReason reason, const PMU::ScheduleEntry* entry) {
-            this->handlePmuWake(reason, entry);
+        // Set up PMU callback handler for periodic/external wakes only
+        // SensorMode doesn't use scheduled wakes (those are for irrigation)
+        reliable_pmu_->onPeriodicWake([this](PMU::WakeReason reason) {
+            this->handlePmuWake(reason);
         });
 
         // Try to get time from PMU's battery-backed RTC (faster than waiting for hub sync)
@@ -425,9 +426,7 @@ void SensorMode::signalReadyForSleep() {
     sleep_requested_ = true;
 }
 
-void SensorMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry* entry) {
-    (void)entry;
-
+void SensorMode::handlePmuWake(PMU::WakeReason reason) {
     switch (reason) {
         case PMU::WakeReason::Periodic:
             pmu_logger.info("Periodic wake - checking backlog");
@@ -440,13 +439,14 @@ void SensorMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry*
             checkAndTransmitBacklog(to_ms_since_boot(get_absolute_time()));
             break;
 
-        case PMU::WakeReason::Scheduled:
-            // Sensor mode doesn't have scheduled events, but log if received
-            pmu_logger.warn("Unexpected scheduled wake in sensor mode");
-            break;
-
         case PMU::WakeReason::External:
             pmu_logger.info("External wake trigger");
+            break;
+
+        default:
+            // Scheduled wakes shouldn't reach sensor mode via onPeriodicWake
+            pmu_logger.warn("Unexpected wake reason in sensor mode: %d",
+                           static_cast<int>(reason));
             break;
     }
 }

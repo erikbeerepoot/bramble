@@ -82,11 +82,12 @@ private:
     void signalReadyForSleep();
 
     /**
-     * @brief Handle PMU wake notification
-     * @param reason Wake reason from PMU
-     * @param entry Schedule entry (if scheduled wake)
+     * @brief Handle PMU wake notification (periodic/external only)
+     * @param reason Wake reason from PMU (Periodic or External)
+     *
+     * Scheduled wakes are handled by IrrigationMode, not SensorMode.
      */
-    void handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry* entry);
+    void handlePmuWake(PMU::WakeReason reason);
 
     /**
      * @brief Handle heartbeat response - sync time to PMU

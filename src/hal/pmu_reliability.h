@@ -28,11 +28,28 @@ namespace Reliability {
 using CommandCallback = std::function<void(bool success, ErrorCode error)>;
 
 /**
- * @brief Callback for wake notifications from PMU
+ * @brief Callback for wake notifications from PMU (legacy, includes schedule entry)
  * @param reason Why the device was woken
  * @param entry Schedule entry if wake was scheduled (may be nullptr)
+ * @deprecated Use onPeriodicWake() or onScheduledWake() instead for cleaner separation
  */
 using WakeCallback = std::function<void(WakeReason reason, const ScheduleEntry* entry)>;
+
+/**
+ * @brief Callback for periodic/external wake events (no irrigation-specific data)
+ * @param reason Why the device was woken (Periodic or External)
+ *
+ * Use this for sensor modes that don't need schedule/valve information.
+ */
+using PeriodicWakeCallback = std::function<void(WakeReason reason)>;
+
+/**
+ * @brief Callback for scheduled wake events (irrigation-specific)
+ * @param entry Schedule entry containing valve ID, duration, etc.
+ *
+ * Use this for irrigation modes that need to act on scheduled watering events.
+ */
+using ScheduledWakeCallback = std::function<void(const ScheduleEntry& entry)>;
 
 /**
  * @brief Reliable PMU client with automatic retry
@@ -155,10 +172,27 @@ public:
     // ========================================================================
 
     /**
-     * @brief Set callback for wake notifications
+     * @brief Set callback for wake notifications (legacy)
      * @param callback Called when PMU sends wake notification
+     * @deprecated Use onPeriodicWake() and/or onScheduledWake() instead
      */
     void onWake(WakeCallback callback);
+
+    /**
+     * @brief Set callback for periodic/external wake events
+     * @param callback Called for Periodic or External wake reasons
+     *
+     * For sensor modes that don't need irrigation schedule data.
+     */
+    void onPeriodicWake(PeriodicWakeCallback callback);
+
+    /**
+     * @brief Set callback for scheduled wake events (irrigation)
+     * @param callback Called for Scheduled wake reason with entry data
+     *
+     * For irrigation modes that need valve/duration information.
+     */
+    void onScheduledWake(ScheduledWakeCallback callback);
 
     /**
      * @brief Set callback for schedule complete notifications
@@ -227,7 +261,9 @@ private:
     size_t seenIndex_;
 
     // Event callbacks
-    WakeCallback wakeCallback_;
+    WakeCallback wakeCallback_;                         // Legacy combined callback
+    PeriodicWakeCallback periodicWakeCallback_;         // For periodic/external wakes
+    ScheduledWakeCallback scheduledWakeCallback_;       // For scheduled (irrigation) wakes
     ScheduleCompleteCallback scheduleCompleteCallback_;
     WakeIntervalCallback wakeIntervalCallback_;
     ScheduleEntryCallback scheduleEntryCallback_;

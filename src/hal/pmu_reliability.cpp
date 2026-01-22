@@ -12,6 +12,8 @@ ReliablePmuClient::ReliablePmuClient(PmuClient* client)
       nextSeqNum_(SEQ_RP2040_MIN),
       seenIndex_(0),
       wakeCallback_(nullptr),
+      periodicWakeCallback_(nullptr),
+      scheduledWakeCallback_(nullptr),
       scheduleCompleteCallback_(nullptr),
       wakeIntervalCallback_(nullptr),
       scheduleEntryCallback_(nullptr),
@@ -42,10 +44,25 @@ bool ReliablePmuClient::init() {
         });
 
     // Forward event callbacks to protocol
+    // Routes wake notifications to the appropriate callback based on wake reason
     client_->getProtocol().onWakeNotification(
         [this](WakeReason reason, const ScheduleEntry* entry) {
+            // Legacy callback gets all wake events
             if (wakeCallback_) {
                 wakeCallback_(reason, entry);
+            }
+
+            // Route to type-specific callbacks for cleaner separation
+            if (reason == WakeReason::Scheduled && entry) {
+                // Scheduled wake with entry data - for irrigation modes
+                if (scheduledWakeCallback_) {
+                    scheduledWakeCallback_(*entry);
+                }
+            } else {
+                // Periodic or External wake - for sensor/generic modes
+                if (periodicWakeCallback_) {
+                    periodicWakeCallback_(reason);
+                }
             }
         });
 
@@ -305,6 +322,14 @@ bool ReliablePmuClient::getDateTime(DateTimeCallback callback) {
 
 void ReliablePmuClient::onWake(WakeCallback callback) {
     wakeCallback_ = callback;
+}
+
+void ReliablePmuClient::onPeriodicWake(PeriodicWakeCallback callback) {
+    periodicWakeCallback_ = callback;
+}
+
+void ReliablePmuClient::onScheduledWake(ScheduledWakeCallback callback) {
+    scheduledWakeCallback_ = callback;
 }
 
 void ReliablePmuClient::onScheduleComplete(ScheduleCompleteCallback callback) {
