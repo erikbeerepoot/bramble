@@ -96,9 +96,8 @@ public:
      * @param timeout_ms Timeout in milliseconds for considering node inactive
      * @return Number of nodes marked as inactive
      */
-    uint32_t checkForInactiveNodes(uint32_t current_time,
-                                   uint32_t timeout_ms = 300000);  // 5 minutes default
-
+    uint32_t checkForInactiveNodes(uint32_t current_time, uint32_t timeout_ms = 1200000); // 20 minutes default
+    
     /**
      * @brief Deregister nodes that have been inactive for extended period
      * @param current_time Current time in milliseconds
