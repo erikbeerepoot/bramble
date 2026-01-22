@@ -43,12 +43,12 @@ bool PmuClient::init() {
     // UART idle state is high, pull-up helps prevent noise
     gpio_pull_up(rxPin_);
 
-    // Set UART format: 8 data bits, 2 stop bits, no parity
-    // Must match STM32 LPUART configuration (UART_STOPBITS_2)
-    uart_set_format(uart_, 8, 2, UART_PARITY_NONE);
-
-    // Enable FIFO
+    // Enable FIFO first
     uart_set_fifo_enabled(uart_, true);
+
+    // Set UART format: 8 data bits, 2 stop bits, no parity
+    // Must match STM32 LPUART configuration (set after FIFO to ensure it sticks)
+    uart_set_format(uart_, 8, 2, UART_PARITY_NONE);
 
     // Get the IRQ number for this UART
     int uart_irq = uart_ == uart0 ? UART0_IRQ : UART1_IRQ;

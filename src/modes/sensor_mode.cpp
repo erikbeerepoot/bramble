@@ -75,6 +75,12 @@ void SensorMode::onStart() {
     pmu_client_ = new PmuClient(PMU_UART_ID, PMU_UART_TX_PIN, PMU_UART_RX_PIN, 9600);
     pmu_available_ = pmu_client_->init();
 
+    // Create reliable PMU client wrapper for automatic retry
+    if (pmu_available_) {
+        reliable_pmu_ = new PMU::ReliablePmuClient(pmu_client_);
+        reliable_pmu_->init();
+    }
+
     // Set up work tracker - signals ready for sleep when all work completes
     work_tracker_.setIdleCallback([this]() {
         signalReadyForSleep();
@@ -83,11 +89,11 @@ void SensorMode::onStart() {
     // Start with RTC sync work pending
     work_tracker_.addWork(WorkType::RtcSync);
 
-    if (pmu_available_) {
+    if (pmu_available_ && reliable_pmu_) {
         pmu_logger.info("PMU client initialized successfully");
 
         // Set up PMU callback handler
-        pmu_client_->getProtocol().onWakeNotification([this](PMU::WakeReason reason, const PMU::ScheduleEntry* entry) {
+        reliable_pmu_->onWake([this](PMU::WakeReason reason, const PMU::ScheduleEntry* entry) {
             this->handlePmuWake(reason, entry);
         });
 
@@ -95,7 +101,7 @@ void SensorMode::onStart() {
         // Note: Don't send wake preamble (null bytes) - it can corrupt protocol state machine.
         // If STM32 is in STOP mode, first attempt may fail but we'll fall back to hub sync.
         pmu_logger.info("Requesting datetime from PMU...");
-        pmu_client_->getProtocol().getDateTime([this](bool valid, const PMU::DateTime& datetime) {
+        reliable_pmu_->getDateTime([this](bool valid, const PMU::DateTime& datetime) {
             if (valid) {
                 pmu_logger.info("PMU has valid time: 20%02d-%02d-%02d %02d:%02d:%02d",
                                datetime.year, datetime.month, datetime.day,
@@ -162,57 +168,24 @@ void SensorMode::onStart() {
 }
 
 void SensorMode::onLoop() {
-    // Process any pending PMU messages (fills flags, minimal work)
-    if (pmu_available_ && pmu_client_) {
-        pmu_client_->process();
+    // Process any pending PMU messages and handle retries
+    if (pmu_available_ && reliable_pmu_) {
+        reliable_pmu_->update();
     }
 
     // Handle deferred sleep signal (outside callback chain for stack safety)
     if (sleep_requested_) {
         sleep_requested_ = false;
-        if (pmu_available_ && pmu_client_) {
-            // Retry loop - STM32 may need multiple attempts to receive command
-            static constexpr int MAX_RETRIES = 3;
-            static constexpr int RESPONSE_WAIT_MS = 500;
-            static constexpr int POLL_INTERVAL_MS = 50;
-
-            for (int attempt = 0; attempt < MAX_RETRIES; attempt++) {
-                // Track if we got a response
-                volatile bool got_response = false;
-                volatile bool sleep_acked = false;
-
-                // First attempt may fail if STM32 is in STOP mode and loses first bytes,
-                // but it will wake the STM32 so subsequent attempts succeed.
-                // Don't send wake preamble (null bytes) as it may confuse protocol state machine.
-                pmu_logger.info("ReadyForSleep attempt %d/%d", attempt + 1, MAX_RETRIES);
-                pmu_client_->getProtocol().readyForSleep([&got_response, &sleep_acked](bool success, PMU::ErrorCode error) {
-                    got_response = true;
-                    sleep_acked = success;
-                    if (success) {
-                        pmu_logger.info("Ready for sleep acknowledged");
-                    } else {
-                        pmu_logger.error("Ready for sleep failed: error %d", static_cast<int>(error));
-                    }
-                });
-
-                // Wait for response with polling
-                for (int wait = 0; wait < RESPONSE_WAIT_MS / POLL_INTERVAL_MS && !got_response; wait++) {
-                    sleep_ms(POLL_INTERVAL_MS);
-                    pmu_client_->process();
+        if (pmu_available_ && reliable_pmu_) {
+            // Use ReliablePmuClient which handles retries automatically
+            pmu_logger.info("Sending ReadyForSleep via reliable client");
+            reliable_pmu_->readyForSleep([](bool success, PMU::ErrorCode error) {
+                if (success) {
+                    pmu_logger.info("Ready for sleep acknowledged");
+                } else {
+                    pmu_logger.error("Ready for sleep failed: error %d", static_cast<int>(error));
                 }
-
-                if (got_response) {
-                    if (sleep_acked) {
-                        pmu_logger.info("Sleep signal successful on attempt %d", attempt + 1);
-                    }
-                    break;  // Got a response, stop retrying
-                }
-
-                pmu_logger.warn("No response to ReadyForSleep (attempt %d/%d)", attempt + 1, MAX_RETRIES);
-
-                // Small delay before retry - the failed attempt woke the STM32
-                sleep_ms(100);
-            }
+            });
         }
     }
 
@@ -405,7 +378,7 @@ bool SensorMode::transmitBatch(const SensorDataRecord* records, size_t count) {
 }
 
 void SensorMode::signalReadyForSleep() {
-    if (!pmu_available_ || !pmu_client_) {
+    if (!pmu_available_ || !reliable_pmu_) {
         logger.debug("PMU not available, skipping ready for sleep signal");
         return;
     }
@@ -471,7 +444,7 @@ void SensorMode::onHeartbeatResponse(const HeartbeatResponsePayload* payload) {
     ApplicationMode::onHeartbeatResponse(payload);
 
     // Also sync time to PMU if available
-    if (pmu_available_ && pmu_client_ && payload) {
+    if (pmu_available_ && reliable_pmu_ && payload) {
         // Convert HeartbeatResponsePayload to PMU::DateTime
         PMU::DateTime datetime(
             payload->year % 100,  // PMU uses 2-digit year (e.g., 26 for 2026)
@@ -488,7 +461,7 @@ void SensorMode::onHeartbeatResponse(const HeartbeatResponsePayload* payload) {
                        datetime.hour, datetime.minute, datetime.second);
 
         // Send datetime to PMU, then trigger RTC synced flow
-        pmu_client_->getProtocol().setDateTime(datetime, [this](bool success, PMU::ErrorCode error) {
+        reliable_pmu_->setDateTime(datetime, [this](bool success, PMU::ErrorCode error) {
             if (success) {
                 pmu_logger.info("PMU time sync successful");
             } else {
