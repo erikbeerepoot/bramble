@@ -45,7 +45,9 @@ services:
     container_name: watchtower
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - ~/.docker/config.json:/config.json:ro
     environment:
+      - DOCKER_CONFIG=/
       - WATCHTOWER_CLEANUP=true
       - WATCHTOWER_POLL_INTERVAL=300  # Check every 5 minutes
     restart: unless-stopped
