@@ -114,3 +114,26 @@ Each variant includes only the code needed for that hardware type.
 * Clearly seperate concerns (especially "hardware hiding" -- the HAL should be separate from the domain logic)
 * Use full words not abbreviations (e.g address vs addr)
 * Ensure you keep README.md updated.
+
+## STM32 PMU Build System
+
+The `pmu-stm32/` directory contains the STM32L010 PMU (Power Management Unit) firmware.
+
+**IMPORTANT**: Do not try to run STM32 build/flash commands directly. Instead, give the user instructions to run them manually.
+
+### STM32 Build Instructions (for user)
+```bash
+# Build from VS Code: Cmd+Shift+B or use CMake Tools extension
+# Or from command line in pmu-stm32 directory:
+cube-cmake --build build/Debug
+```
+
+### STM32 Flash Instructions (for user)
+Flash using STM32CubeIDE, ST-Link, or your preferred programmer.
+
+## Claude Code Behavior
+
+**Do not attempt to run build/flash commands for embedded targets.** These require specific toolchains and hardware connections. Instead:
+1. Make the code changes
+2. Provide the user with instructions to build and flash
+3. Wait for user to report results
