@@ -481,6 +481,17 @@ void SensorMode::onRtcSynced() {
     // Switch to operational LED pattern if not already done
     switchToOperationalPattern();
 
+    // Initialize last_sync_timestamp if this is first boot
+    // This gives a valid baseline for the transmission interval check
+    if (flash_buffer_) {
+        SensorFlashMetadata stats;
+        if (flash_buffer_->getStatistics(stats) && stats.last_sync_timestamp == 0) {
+            uint32_t now = getUnixTimestamp();
+            flash_buffer_->updateLastSync(now);
+            logger.info("Initialized last_sync_timestamp to %lu", now);
+        }
+    }
+
     // Take a sensor reading now that RTC is synced
     pmu_logger.info("RTC synced - taking sensor reading");
     readAndStoreSensorData(to_ms_since_boot(get_absolute_time()));
