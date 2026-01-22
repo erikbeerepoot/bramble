@@ -118,6 +118,7 @@ else()
         src/config/hub_config.cpp
         src/storage/sensor_flash_buffer.cpp
         src/util/work_tracker.cpp
+        src/util/task_queue.cpp
         src/modes/application_mode.cpp
         src/modes/hub_mode.cpp
     )
