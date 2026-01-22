@@ -246,4 +246,17 @@ private:
      * @return New task ID (never returns 0)
      */
     uint16_t getNextId();
+
+    /**
+     * @brief Internal task posting with all parameters
+     * @param func Task function
+     * @param context User context
+     * @param run_after Absolute time to run (0 = immediate)
+     * @param depends_on Task ID dependency (INVALID_ID = none)
+     * @param priority Task priority
+     * @return Task ID, or INVALID_ID if queue is full
+     */
+    uint16_t postInternal(TaskFunction func, void* context,
+                          uint32_t run_after, uint16_t depends_on,
+                          TaskPriority priority);
 };

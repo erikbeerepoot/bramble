@@ -18,12 +18,23 @@ TaskQueue::TaskQueue() : next_id_(1) {
 }
 
 uint16_t TaskQueue::post(TaskFunction func, void* context, TaskPriority priority) {
-    return postDelayed(func, context, 0, 0, priority);
+    return postInternal(func, context, 0, INVALID_ID, priority);
 }
 
 uint16_t TaskQueue::postDelayed(TaskFunction func, void* context,
                                  uint32_t current_time, uint32_t delay_ms,
                                  TaskPriority priority) {
+    return postInternal(func, context, current_time + delay_ms, INVALID_ID, priority);
+}
+
+uint16_t TaskQueue::postAfter(TaskFunction func, void* context,
+                               uint16_t depends_on, TaskPriority priority) {
+    return postInternal(func, context, 0, depends_on, priority);
+}
+
+uint16_t TaskQueue::postInternal(TaskFunction func, void* context,
+                                  uint32_t run_after, uint16_t depends_on,
+                                  TaskPriority priority) {
     if (!func) {
         logger.warn("Attempted to post null task function");
         return INVALID_ID;
@@ -39,42 +50,20 @@ uint16_t TaskQueue::postDelayed(TaskFunction func, void* context,
 
     slot->function = func;
     slot->context = context;
-    slot->run_after = current_time + delay_ms;  // Absolute time to run
-    slot->id = id;
-    slot->depends_on = INVALID_ID;
-    slot->priority = priority;
-    slot->state = TaskState::Pending;
-
-    logger.debug("Posted task %u (priority=%u, run_after=%ums)",
-                 id, static_cast<uint8_t>(priority), slot->run_after);
-
-    return id;
-}
-
-uint16_t TaskQueue::postAfter(TaskFunction func, void* context,
-                               uint16_t depends_on, TaskPriority priority) {
-    if (!func) {
-        logger.warn("Attempted to post null task function");
-        return INVALID_ID;
-    }
-
-    Task* slot = findEmptySlot();
-    if (!slot) {
-        logger.warn("Task queue full, cannot post dependent task");
-        return INVALID_ID;
-    }
-
-    uint16_t id = getNextId();
-
-    slot->function = func;
-    slot->context = context;
-    slot->run_after = 0;  // No time delay, just dependency
+    slot->run_after = run_after;
     slot->id = id;
     slot->depends_on = depends_on;
     slot->priority = priority;
     slot->state = TaskState::Pending;
 
-    logger.debug("Posted task %u depending on %u", id, depends_on);
+    if (depends_on != INVALID_ID) {
+        logger.debug("Posted task %u depending on %u", id, depends_on);
+    } else if (run_after > 0) {
+        logger.debug("Posted task %u (priority=%u, run_after=%ums)",
+                     id, static_cast<uint8_t>(priority), run_after);
+    } else {
+        logger.debug("Posted task %u (priority=%u)", id, static_cast<uint8_t>(priority));
+    }
 
     return id;
 }
