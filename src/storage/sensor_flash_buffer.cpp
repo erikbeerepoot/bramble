@@ -55,7 +55,7 @@ uint16_t CRC16::calculateRecordCRC(const SensorDataRecord& record) {
 // SensorFlashBuffer implementation
 
 SensorFlashBuffer::SensorFlashBuffer(ExternalFlash& flash)
-    : flash_(flash), initialized_(false), first_write_since_boot_(true), logger_("SensorFlashBuffer") {
+    : flash_(flash), initialized_(false), logger_("SensorFlashBuffer") {
     memset(&metadata_, 0, sizeof(metadata_));
 }
 
@@ -113,32 +113,24 @@ bool SensorFlashBuffer::writeRecord(const SensorDataRecord& record) {
     uint32_t record_end = address + sizeof(SensorDataRecord) - 1;
     uint32_t end_sector_start = (record_end / SECTOR_SIZE) * SECTOR_SIZE;
 
-    // On first write after boot, always erase the target sector(s).
-    // This handles the case where metadata points to a partially-written sector
-    // from a previous session that wasn't properly erased (e.g., due to power loss
-    // before metadata was saved, or due to the previous sector alignment bug).
-    bool need_erase_start_sector = first_write_since_boot_;
-    bool need_erase_end_sector = first_write_since_boot_ && (end_sector_start != sector_start);
-
-    if (!first_write_since_boot_) {
-        // Determine if we're entering a new sector by checking where the previous record ended
-        uint32_t prev_record_end_sector;
-        if (metadata_.write_index == 0) {
-            // First record ever - must erase the first data sector
-            prev_record_end_sector = DATA_START_OFFSET - 1;  // Force sector mismatch
-        } else {
-            uint32_t prev_record_end = getRecordAddress(metadata_.write_index - 1) + sizeof(SensorDataRecord) - 1;
-            prev_record_end_sector = (prev_record_end / SECTOR_SIZE) * SECTOR_SIZE;
-        }
-
-        // Erase the sector if this record starts in a different sector than where previous record ended
-        need_erase_start_sector = (sector_start != prev_record_end_sector);
-
-        // If record spans two sectors, also erase the second sector
-        need_erase_end_sector = (end_sector_start != sector_start) && (end_sector_start != prev_record_end_sector);
+    // Determine if we're entering a new sector by checking where the previous record ended
+    uint32_t prev_record_end_sector;
+    if (metadata_.write_index == 0) {
+        // First record ever - must erase the first data sector
+        prev_record_end_sector = DATA_START_OFFSET - 1;  // Force sector mismatch
+    } else {
+        uint32_t prev_record_end = getRecordAddress(metadata_.write_index - 1) + sizeof(SensorDataRecord) - 1;
+        prev_record_end_sector = (prev_record_end / SECTOR_SIZE) * SECTOR_SIZE;
     }
 
+    // Erase the sector if this record starts in a different sector than where previous record ended
+    bool need_erase_start_sector = (sector_start != prev_record_end_sector);
+
+    // If record spans two sectors, also erase the second sector
+    bool need_erase_end_sector = (end_sector_start != sector_start) && (end_sector_start != prev_record_end_sector);
+
     if (need_erase_start_sector) {
+        logger_.info("Erasing sector 0x%08X for write_index %lu", sector_start, metadata_.write_index);
         ExternalFlashResult result = flash_.eraseSector(sector_start);
         if (result != ExternalFlashResult::Success) {
             logger_.error("Failed to erase sector at 0x%08X", sector_start);
@@ -147,6 +139,7 @@ bool SensorFlashBuffer::writeRecord(const SensorDataRecord& record) {
     }
 
     if (need_erase_end_sector) {
+        logger_.info("Erasing end sector 0x%08X", end_sector_start);
         ExternalFlashResult result = flash_.eraseSector(end_sector_start);
         if (result != ExternalFlashResult::Success) {
             logger_.error("Failed to erase sector at 0x%08X", end_sector_start);
@@ -154,16 +147,26 @@ bool SensorFlashBuffer::writeRecord(const SensorDataRecord& record) {
         }
     }
 
-    // Clear the first-write flag after erasing
-    first_write_since_boot_ = false;
-
     // Write the record
+    logger_.info("Writing record at index %lu, addr 0x%08X, CRC=0x%04X",
+                 metadata_.write_index, address, record_with_crc.crc16);
     ExternalFlashResult result = flash_.write(address,
                                               reinterpret_cast<const uint8_t*>(&record_with_crc),
                                               sizeof(record_with_crc));
     if (result != ExternalFlashResult::Success) {
         logger_.error("Failed to write record at index %lu", metadata_.write_index);
         return false;
+    }
+
+    // Verify write by reading back and checking CRC
+    SensorDataRecord verify_record;
+    result = flash_.read(address, reinterpret_cast<uint8_t*>(&verify_record), sizeof(verify_record));
+    if (result == ExternalFlashResult::Success) {
+        uint16_t verify_crc = CRC16::calculateRecordCRC(verify_record);
+        if (verify_crc != verify_record.crc16) {
+            logger_.error("Write verify FAILED at index %lu: expected CRC 0x%04X, got 0x%04X",
+                         metadata_.write_index, verify_record.crc16, verify_crc);
+        }
     }
 
     // Check if we're about to overwrite an untransmitted record
