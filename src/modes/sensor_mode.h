@@ -6,7 +6,7 @@
 #include "../hal/pmu_client.h"
 #include "../hal/pmu_reliability.h"
 #include "../storage/sensor_flash_buffer.h"
-#include "../util/work_tracker.h"
+#include "../util/task_queue.h"
 #include <memory>
 
 /**
@@ -32,8 +32,7 @@ private:
     PmuClient* pmu_client_ = nullptr;
     PMU::ReliablePmuClient* reliable_pmu_ = nullptr;
     bool pmu_available_ = false;
-    volatile bool sleep_requested_ = false;   // Deferred sleep signal flag
-    WorkTracker work_tracker_;                // Tracks pending work, signals when idle
+    TaskQueue task_queue_;                    // Unified task coordination
 
     // Hub sync timeout tracking - used to proceed with PMU time if hub doesn't respond
     uint32_t heartbeat_request_time_ = 0;
