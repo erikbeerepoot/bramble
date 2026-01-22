@@ -35,6 +35,10 @@ private:
     volatile bool sleep_requested_ = false;   // Deferred sleep signal flag
     WorkTracker work_tracker_;                // Tracks pending work, signals when idle
 
+    // Hub sync timeout tracking - used to proceed with PMU time if hub doesn't respond
+    uint32_t heartbeat_request_time_ = 0;
+    static constexpr uint32_t HEARTBEAT_TIMEOUT_MS = 250;  // Aggressive timeout for low-power operation
+
     // I2C pin configuration for CHT832X sensor
     static constexpr uint PIN_I2C_SDA = 26;  // GPIO26 (A0)
     static constexpr uint PIN_I2C_SCL = 27;  // GPIO27 (A1)

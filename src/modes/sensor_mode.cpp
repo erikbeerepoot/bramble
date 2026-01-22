@@ -118,13 +118,14 @@ void SensorMode::onStart() {
                 dt.sec = datetime.second;
 
                 if (rtc_set_datetime(&dt)) {
-                    rtc_synced_ = true;
-                    logger.info("RTC synced from PMU: %04d-%02d-%02d %02d:%02d:%02d",
+                    // Don't mark as synced yet - need hub confirmation
+                    logger.info("RTC set from PMU (pending hub sync): %04d-%02d-%02d %02d:%02d:%02d",
                                dt.year, dt.month, dt.day, dt.hour, dt.min, dt.sec);
-                    // Switch to operational LED pattern immediately
                     switchToOperationalPattern();
-                    // Trigger backlog check flow via work tracker
-                    onRtcSynced();
+                    // Always sync from hub to correct PMU drift
+                    pmu_logger.info("Sending heartbeat for hub sync");
+                    heartbeat_request_time_ = to_ms_since_boot(get_absolute_time());
+                    sendHeartbeat(0);
                 } else {
                     logger.error("Failed to set RTC from PMU time");
                 }
@@ -171,6 +172,17 @@ void SensorMode::onLoop() {
     // Process any pending PMU messages and handle retries
     if (pmu_available_ && reliable_pmu_) {
         reliable_pmu_->update();
+    }
+
+    // Check for heartbeat timeout - proceed with PMU time if hub doesn't respond
+    if (!rtc_synced_ && heartbeat_request_time_ > 0) {
+        uint32_t elapsed = to_ms_since_boot(get_absolute_time()) - heartbeat_request_time_;
+        if (elapsed >= HEARTBEAT_TIMEOUT_MS) {
+            logger.warn("Hub sync timeout (%lu ms) - proceeding with PMU time", elapsed);
+            heartbeat_request_time_ = 0;  // Clear to prevent repeated timeout
+            rtc_synced_ = true;
+            onRtcSynced();
+        }
     }
 
     // Handle deferred sleep signal (outside callback chain for stack safety)
