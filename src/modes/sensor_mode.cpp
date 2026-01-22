@@ -271,6 +271,24 @@ void SensorMode::checkAndTransmitBacklog(uint32_t current_time) {
         return;
     }
 
+    // Check if it's time to transmit (based on TRANSMIT_INTERVAL_S)
+    // This ensures ALL transmission paths respect the 10-minute interval
+    uint32_t now = getUnixTimestamp();
+    SensorFlashMetadata stats;
+    uint32_t last_sync = 0;
+    if (flash_buffer_->getStatistics(stats)) {
+        last_sync = stats.last_sync_timestamp;
+    }
+    uint32_t elapsed = now - last_sync;
+
+    if (elapsed < TRANSMIT_INTERVAL_S && last_sync != 0) {
+        logger.info("Not time to transmit yet (%lu s / %lu s)", elapsed, TRANSMIT_INTERVAL_S);
+        work_tracker_.completeWork(WorkType::BacklogTransmit);
+        return;
+    }
+
+    logger.info("Transmit interval reached (%lu s) - checking backlog", elapsed);
+
     uint32_t untransmitted_count = flash_buffer_->getUntransmittedCount();
 
     if (untransmitted_count == 0) {
@@ -404,28 +422,10 @@ void SensorMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry*
             // Take a sensor reading now
             readAndStoreSensorData(to_ms_since_boot(get_absolute_time()));
 
-            // Check if it's time to transmit (based on TRANSMIT_INTERVAL_S)
-            {
-                uint32_t now = getUnixTimestamp();
-                SensorFlashMetadata stats;
-                uint32_t last_sync = 0;
-                if (flash_buffer_ && flash_buffer_->getStatistics(stats)) {
-                    last_sync = stats.last_sync_timestamp;
-                }
-                uint32_t elapsed = now - last_sync;
-
-                if (elapsed >= TRANSMIT_INTERVAL_S || last_sync == 0) {
-                    pmu_logger.info("Transmit interval reached (%lu s) - checking backlog", elapsed);
-                    // Add backlog work and start transmission
-                    work_tracker_.addWork(WorkType::BacklogTransmit);
-                    checkAndTransmitBacklog(to_ms_since_boot(get_absolute_time()));
-                } else {
-                    pmu_logger.info("Not time to transmit yet (%lu s / %lu s) - going to sleep",
-                                  elapsed, TRANSMIT_INTERVAL_S);
-                    // No work to do - just signal idle directly
-                    signalReadyForSleep();
-                }
-            }
+            // Add backlog work and check transmission
+            // checkAndTransmitBacklog() handles the 10-minute interval check internally
+            work_tracker_.addWork(WorkType::BacklogTransmit);
+            checkAndTransmitBacklog(to_ms_since_boot(get_absolute_time()));
             break;
 
         case PMU::WakeReason::Scheduled:
@@ -485,33 +485,13 @@ void SensorMode::onRtcSynced() {
     pmu_logger.info("RTC synced - taking sensor reading");
     readAndStoreSensorData(to_ms_since_boot(get_absolute_time()));
 
-    // Check if it's time to transmit (based on TRANSMIT_INTERVAL_S)
-    // IMPORTANT: Add BacklogTransmit work BEFORE completing RtcSync to prevent
-    // premature idle callback (which would signal sleep too early)
-    uint32_t now = getUnixTimestamp();
-    SensorFlashMetadata stats;
-    uint32_t last_sync = 0;
-    if (flash_buffer_ && flash_buffer_->getStatistics(stats)) {
-        last_sync = stats.last_sync_timestamp;
-    }
-    uint32_t elapsed = now - last_sync;
+    // Add backlog work BEFORE completing RtcSync to prevent premature idle callback
+    // checkAndTransmitBacklog() handles the 10-minute interval check internally
+    work_tracker_.addWork(WorkType::BacklogTransmit);
 
-    bool needs_transmit = (elapsed >= TRANSMIT_INTERVAL_S || last_sync == 0);
-
-    if (needs_transmit) {
-        pmu_logger.info("Transmit interval reached (%lu s) - checking backlog", elapsed);
-        // Add backlog work BEFORE completing RtcSync
-        work_tracker_.addWork(WorkType::BacklogTransmit);
-    } else {
-        pmu_logger.info("Not time to transmit yet (%lu s / %lu s)",
-                      elapsed, TRANSMIT_INTERVAL_S);
-    }
-
-    // Now complete RtcSync - idle callback only fires if no BacklogTransmit work
+    // Complete RtcSync - idle callback only fires if BacklogTransmit also completes
     work_tracker_.completeWork(WorkType::RtcSync);
 
-    // Start backlog transmission if needed
-    if (needs_transmit) {
-        checkAndTransmitBacklog(to_ms_since_boot(get_absolute_time()));
-    }
+    // Check and transmit backlog (interval check is done inside this function)
+    checkAndTransmitBacklog(to_ms_since_boot(get_absolute_time()));
 }
