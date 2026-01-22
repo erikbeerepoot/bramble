@@ -56,7 +56,7 @@ void SensorMode::onStart() {
     }
 
     // define led patterns
-    init_pattern_ = std::make_unique<BlinkingPattern>(led_, 255, 165, 0, 250, 250);
+    led_pattern_ = std::make_unique<BlinkingPattern>(led_, 255, 165, 0, 250, 250);
     operational_pattern_ = std::make_unique<ShortBlinkPattern>(led_, 125, 0, 0);
 
     // Initialize PMU client at 9600 baud to match STM32 LPUART configuration
