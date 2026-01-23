@@ -1,6 +1,7 @@
 """Bramble REST API - Flask application."""
 from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
+from flask_compress import Compress
 import logging
 import time
 from typing import Optional
@@ -24,6 +25,9 @@ app.config.from_object(Config)
 
 # Enable CORS for all /api/* routes
 CORS(app, resources={r"/api/*": {"origins": "*"}})
+
+# Enable gzip compression for responses
+Compress(app)
 
 # Initialize database
 sensor_db: Optional[SensorDatabase] = None
@@ -649,9 +653,10 @@ def get_node_sensor_data(addr: int):
         addr: Node address
 
     Query parameters:
-        start_time: Start timestamp (optional)
-        end_time: End timestamp (optional)
-        limit: Maximum records to return (default 100)
+        start_time: Start timestamp (optional, required for downsampling)
+        end_time: End timestamp (optional, required for downsampling)
+        limit: Maximum records to return (default 100, ignored when downsampling)
+        downsample: Max data points for chart display (optional, enables bucket averaging)
 
     Returns:
         JSON array of sensor readings for this node
@@ -662,7 +667,24 @@ def get_node_sensor_data(addr: int):
         start_time = request.args.get('start_time', type=int)
         end_time = request.args.get('end_time', type=int)
         limit = request.args.get('limit', default=100, type=int)
+        downsample = request.args.get('downsample', type=int)
 
+        # Use downsampled query for chart display
+        if downsample and start_time and end_time:
+            readings = db.query_readings_downsampled(
+                node_address=addr,
+                start_time=start_time,
+                end_time=end_time,
+                max_points=min(downsample, 2000)  # Cap at 2000 points
+            )
+            return jsonify({
+                'node_address': addr,
+                'count': len(readings),
+                'downsampled': True,
+                'readings': readings  # Already in chart format
+            })
+
+        # Standard query for full data
         readings = db.query_readings(
             node_address=addr,
             start_time=start_time,
@@ -673,7 +695,7 @@ def get_node_sensor_data(addr: int):
         return jsonify({
             'node_address': addr,
             'count': len(readings),
-            'readings': [r.to_dict() for r in readings]
+            'readings': [r.to_chart_dict() for r in readings]
         })
 
     except Exception as e:
@@ -712,12 +734,20 @@ def get_node_statistics(addr: int):
     Args:
         addr: Node address
 
+    Query parameters:
+        start_time: Start timestamp for stats calculation (optional)
+        end_time: End timestamp for stats calculation (optional)
+
     Returns:
         JSON object with node statistics
     """
     try:
         db = get_database()
-        stats = db.get_node_statistics(addr)
+
+        start_time = request.args.get('start_time', type=int)
+        end_time = request.args.get('end_time', type=int)
+
+        stats = db.get_node_statistics(addr, start_time=start_time, end_time=end_time)
 
         if stats:
             return jsonify(stats)

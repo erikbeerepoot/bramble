@@ -34,20 +34,23 @@ export interface NodesResponse {
 }
 
 export interface SensorReading {
-  node_address: number;
-  device_id: number | null;
   timestamp: number;
   temperature_celsius: number;
   humidity_percent: number;
-  temperature_raw: number;
-  humidity_raw: number;
-  flags: number;
-  received_at: number;
+  // Optional fields (not included in compact/downsampled responses)
+  node_address?: number;
+  device_id?: number | null;
+  temperature_raw?: number;
+  humidity_raw?: number;
+  flags?: number;
+  received_at?: number;
+  sample_count?: number;  // Present in downsampled responses
 }
 
 export interface SensorDataResponse {
   node_address: number;
   count: number;
+  downsampled?: boolean;
   readings: SensorReading[];
 }
 
@@ -58,6 +61,7 @@ export interface NodeStatistics {
   first_seen_at: number;
   last_seen_at: number;
   total_readings: number;
+  reading_count?: number;  // Count of readings in the queried time range
   temperature: {
     min_celsius: number | null;
     max_celsius: number | null;

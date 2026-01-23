@@ -50,9 +50,12 @@ function NodeDetail({ node, zones, onBack, onUpdate, onZoneCreated }: NodeDetail
         getNodeSensorData(node.address, {
           startTime,
           endTime,
-          limit: 5000,
+          downsample: 500,  // Bucket-average to ~500 points for charts
         }),
-        getNodeStatistics(node.address),
+        getNodeStatistics(node.address, {
+          startTime,
+          endTime,
+        }),
       ]);
 
       setReadings(sensorData.readings);
