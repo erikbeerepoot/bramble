@@ -11,14 +11,14 @@
  */
 enum class WorkType : uint8_t {
     // Common
-    RtcSync = 0,           // Waiting for RTC synchronization
+    RtcSync = 0,  // Waiting for RTC synchronization
 
     // SensorMode
-    BacklogTransmit = 1,   // Transmitting sensor data backlog
+    BacklogTransmit = 1,  // Transmitting sensor data backlog
 
     // IrrigationMode
-    UpdatePull = 2,        // Pulling updates from hub
-    Registration = 3,      // Registering with hub
+    UpdatePull = 2,    // Pulling updates from hub
+    Registration = 3,  // Registering with hub
 };
 
 /**
@@ -107,5 +107,5 @@ private:
     /**
      * @brief Get human-readable name for work type
      */
-    static const char* workTypeName(WorkType type);
+    static const char *workTypeName(WorkType type);
 };

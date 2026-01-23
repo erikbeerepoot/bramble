@@ -1,58 +1,56 @@
 #include "application_mode.h"
+
 #include "pico/stdlib.h"
-#include "lora/sx1276.h"
-#include "lora/reliable_messenger.h"
+
+#include "hal/logger.h"
 #include "lora/address_manager.h"
 #include "lora/hub_router.h"
 #include "lora/network_stats.h"
-#include "hal/logger.h"
+#include "lora/reliable_messenger.h"
+#include "lora/sx1276.h"
 
 static Logger logger("AppMode");
 
 // Forward declaration of common message processing function
-extern void processIncomingMessage(uint8_t* rx_buffer, int rx_len, ReliableMessenger& messenger,
-                                  AddressManager* address_manager, HubRouter* hub_router, 
-                                  uint32_t current_time, NetworkStats* network_stats, SX1276* lora);
+extern void processIncomingMessage(uint8_t *rx_buffer, int rx_len, ReliableMessenger &messenger,
+                                   AddressManager *address_manager, HubRouter *hub_router,
+                                   uint32_t current_time, NetworkStats *network_stats,
+                                   SX1276 *lora);
 
-
-void ApplicationMode::run() {
+void ApplicationMode::run()
+{
     // Initialize RTC for all nodes
     rtc_init();
     logger.info("RTC initialized");
 
     // Set up actuator command callback
-    messenger_.setActuatorCallback([this](const ActuatorPayload* payload) {
-        onActuatorCommand(payload);
-    });
+    messenger_.setActuatorCallback(
+        [this](const ActuatorPayload *payload) { onActuatorCommand(payload); });
 
     // Set up update available callback
-    messenger_.setUpdateCallback([this](const UpdateAvailablePayload* payload) {
-        onUpdateAvailable(payload);
-    });
+    messenger_.setUpdateCallback(
+        [this](const UpdateAvailablePayload *payload) { onUpdateAvailable(payload); });
 
     // Set up heartbeat response callback
-    messenger_.setHeartbeatResponseCallback([this](const HeartbeatResponsePayload* payload) {
-        onHeartbeatResponse(payload);
-    });
+    messenger_.setHeartbeatResponseCallback(
+        [this](const HeartbeatResponsePayload *payload) { onHeartbeatResponse(payload); });
 
     // Note: Reregistration callback should be set up by main.cpp which has access
     // to the ConfigurationManager needed to clear the saved address before rebooting.
 
     // Call startup hook
     onStart();
-    
+
     // If using multicore, start the task manager on Core 1
     task_manager_.start();
-    
+
     // Add LED update task if pattern exists
     if (led_pattern_) {
-        task_manager_.addTask(
-            [this](uint32_t time) { updateLED(time); },
-            10,  // Update every 10ms for smooth animation
-            "LED Update"
-        );
+        task_manager_.addTask([this](uint32_t time) { updateLED(time); },
+                              10,  // Update every 10ms for smooth animation
+                              "LED Update");
     }
-    
+
     // Main loop
     while (true) {
         uint32_t current_time = to_ms_since_boot(get_absolute_time());
@@ -67,27 +65,27 @@ void ApplicationMode::run() {
         if (lora_.isInterruptPending()) {
             lora_.handleInterrupt();
         }
-        
+
         // Check for incoming messages
         if (lora_.isMessageReady()) {
             uint8_t rx_buffer[MESSAGE_MAX_SIZE];
             int rx_len = lora_.receive(rx_buffer, sizeof(rx_buffer));
-            
+
             if (rx_len > 0) {
                 processIncomingMessage(rx_buffer, rx_len, current_time);
             } else if (rx_len < 0) {
                 lora_.startReceive();
             }
         }
-        
+
         // Update retry timers for reliable message delivery
         messenger_.update();
-        
+
         // Update hub router if in hub mode
         if (hub_router_) {
             hub_router_->processQueuedMessages();
         }
-        
+
         // Brief sleep between iterations
         if (shouldSleep() && !lora_.isInterruptPending()) {
             sleep_ms(10);
@@ -95,14 +93,17 @@ void ApplicationMode::run() {
     }
 }
 
-void ApplicationMode::processIncomingMessage(uint8_t* rx_buffer, int rx_len, uint32_t current_time) {
+void ApplicationMode::processIncomingMessage(uint8_t *rx_buffer, int rx_len, uint32_t current_time)
+{
     // Use the common message processing function
-    ::processIncomingMessage(rx_buffer, rx_len, messenger_, address_manager_,
-                           hub_router_, current_time, network_stats_, &lora_);
+    ::processIncomingMessage(rx_buffer, rx_len, messenger_, address_manager_, hub_router_,
+                             current_time, network_stats_, &lora_);
 }
 
-void ApplicationMode::onHeartbeatResponse(const HeartbeatResponsePayload* payload) {
-    if (!payload) return;
+void ApplicationMode::onHeartbeatResponse(const HeartbeatResponsePayload *payload)
+{
+    if (!payload)
+        return;
 
     // Convert HeartbeatResponsePayload to datetime_t
     datetime_t dt;
@@ -117,8 +118,8 @@ void ApplicationMode::onHeartbeatResponse(const HeartbeatResponsePayload* payloa
     // Set RP2040 RTC
     if (rtc_set_datetime(&dt)) {
         rtc_synced_ = true;
-        logger.info("RTC synchronized: %04d-%02d-%02d %02d:%02d:%02d (dow=%d)",
-               dt.year, dt.month, dt.day, dt.hour, dt.min, dt.sec, dt.dotw);
+        logger.info("RTC synchronized: %04d-%02d-%02d %02d:%02d:%02d (dow=%d)", dt.year, dt.month,
+                    dt.day, dt.hour, dt.min, dt.sec, dt.dotw);
 
         // Switch to operational LED pattern now that we're initialized
         switchToOperationalPattern();
@@ -127,7 +128,8 @@ void ApplicationMode::onHeartbeatResponse(const HeartbeatResponsePayload* payloa
     }
 }
 
-uint32_t ApplicationMode::getUnixTimestamp() const {
+uint32_t ApplicationMode::getUnixTimestamp() const
+{
     if (!rtc_synced_ || !rtc_running()) {
         return 0;
     }
@@ -145,7 +147,8 @@ uint32_t ApplicationMode::getUnixTimestamp() const {
     }
 
     // Days from months in current year
-    static const uint16_t days_before_month[] = {0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334};
+    static const uint16_t days_before_month[] = {0,   31,  59,  90,  120, 151,
+                                                 181, 212, 243, 273, 304, 334};
     days += days_before_month[dt.month - 1];
 
     // Add leap day if applicable
@@ -160,7 +163,8 @@ uint32_t ApplicationMode::getUnixTimestamp() const {
     return days * 86400UL + dt.hour * 3600UL + dt.min * 60UL + dt.sec;
 }
 
-void ApplicationMode::switchToOperationalPattern() {
+void ApplicationMode::switchToOperationalPattern()
+{
     if (operational_pattern_) {
         led_pattern_ = std::move(operational_pattern_);
         logger.info("Switched to operational LED pattern");

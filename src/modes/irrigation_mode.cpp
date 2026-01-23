@@ -1,14 +1,18 @@
 #include "irrigation_mode.h"
-#include "../lora/message.h"
-#include "../lora/reliable_messenger.h"
-#include "../led_patterns.h"
-#include "../hal/logger.h"
-#include "pico/unique_id.h"
-#include "hardware/rtc.h"
+
 #include <cstring>
 
+#include "pico/unique_id.h"
+
+#include "hardware/rtc.h"
+
+#include "../hal/logger.h"
+#include "../led_patterns.h"
+#include "../lora/message.h"
+#include "../lora/reliable_messenger.h"
+
 constexpr uint16_t HUB_ADDRESS = ADDRESS_HUB;
-constexpr uint32_t HEARTBEAT_INTERVAL_MS = 60000;   // 60 seconds
+constexpr uint32_t HEARTBEAT_INTERVAL_MS = 60000;  // 60 seconds
 
 // PMU UART configuration - adjust pins based on your hardware
 #define PMU_UART_ID uart0
@@ -18,7 +22,8 @@ constexpr uint32_t HEARTBEAT_INTERVAL_MS = 60000;   // 60 seconds
 static Logger logger("IRRIG");
 static Logger pmu_logger("PMU");
 
-void IrrigationMode::onStart() {
+void IrrigationMode::onStart()
+{
     logger.info("=== IRRIGATION MODE ACTIVE ===");
     logger.info("- 2 valve irrigation node");
     logger.info("- PMU power management integration");
@@ -35,9 +40,7 @@ void IrrigationMode::onStart() {
     // valve_controller_.initialize();
 
     // Set up work tracker - signals ready for sleep when all work completes
-    work_tracker_.setIdleCallback([this]() {
-        signalReadyForSleep();
-    });
+    work_tracker_.setIdleCallback([this]() { signalReadyForSleep(); });
 
     // Start with RTC sync work pending
     work_tracker_.addWork(WorkType::RtcSync);
@@ -55,25 +58,24 @@ void IrrigationMode::onStart() {
         pmu_logger.info("PMU client initialized successfully");
 
         // Set up PMU callback handlers
-        auto& protocol = pmu_client_->getProtocol();
+        auto &protocol = pmu_client_->getProtocol();
 
-        protocol.onWakeNotification([this](PMU::WakeReason reason, const PMU::ScheduleEntry* entry) {
-            this->handlePmuWake(reason, entry);
-        });
+        protocol.onWakeNotification(
+            [this](PMU::WakeReason reason, const PMU::ScheduleEntry *entry) {
+                this->handlePmuWake(reason, entry);
+            });
 
-        protocol.onScheduleComplete([this]() {
-            this->handleScheduleComplete();
-        });
+        protocol.onScheduleComplete([this]() { this->handleScheduleComplete(); });
 
         // Try to get time from PMU's battery-backed RTC (faster than waiting for hub sync)
         // Note: Don't send wake preamble (null bytes) - it can corrupt protocol state machine.
         // If STM32 is in STOP mode, first attempt may fail but we'll fall back to hub sync.
         pmu_logger.info("Requesting datetime from PMU...");
-        protocol.getDateTime([this](bool valid, const PMU::DateTime& datetime) {
+        protocol.getDateTime([this](bool valid, const PMU::DateTime &datetime) {
             if (valid) {
                 pmu_logger.info("PMU has valid time: 20%02d-%02d-%02d %02d:%02d:%02d",
-                               datetime.year, datetime.month, datetime.day,
-                               datetime.hour, datetime.minute, datetime.second);
+                                datetime.year, datetime.month, datetime.day, datetime.hour,
+                                datetime.minute, datetime.second);
 
                 // Set RP2040 RTC from PMU time
                 datetime_t dt;
@@ -87,8 +89,8 @@ void IrrigationMode::onStart() {
 
                 if (rtc_set_datetime(&dt)) {
                     rtc_synced_ = true;
-                    logger.info("RTC synced from PMU: %04d-%02d-%02d %02d:%02d:%02d",
-                               dt.year, dt.month, dt.day, dt.hour, dt.min, dt.sec);
+                    logger.info("RTC synced from PMU: %04d-%02d-%02d %02d:%02d:%02d", dt.year,
+                                dt.month, dt.day, dt.hour, dt.min, dt.sec);
                     // Switch to operational LED pattern immediately
                     switchToOperationalPattern();
                     // Complete RTC sync work
@@ -127,8 +129,8 @@ void IrrigationMode::onStart() {
     uint8_t signal_strength = 65;
     uint8_t active_sensors = CAP_VALVE_CONTROL;
     uint8_t error_flags = 0;
-    messenger_.sendHeartbeat(HUB_ADDRESS, uptime, battery_level,
-                            signal_strength, active_sensors, error_flags);
+    messenger_.sendHeartbeat(HUB_ADDRESS, uptime, battery_level, signal_strength, active_sensors,
+                             error_flags);
 
     // TODO: Re-enable CHECK_UPDATES after registration is working reliably
     // Currently disabled to focus on fixing registration message delivery
@@ -155,15 +157,14 @@ void IrrigationMode::onStart() {
                 logger.info("Active valves: 0x%02X", valve_mask);
             }
 
-            messenger_.sendHeartbeat(HUB_ADDRESS, uptime, battery_level,
-                                  signal_strength, active_sensors, error_flags);
+            messenger_.sendHeartbeat(HUB_ADDRESS, uptime, battery_level, signal_strength,
+                                     active_sensors, error_flags);
         },
-        HEARTBEAT_INTERVAL_MS,
-        "Heartbeat"
-    );
+        HEARTBEAT_INTERVAL_MS, "Heartbeat");
 }
 
-void IrrigationMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry* entry) {
+void IrrigationMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry *entry)
+{
     switch (reason) {
         case PMU::WakeReason::Periodic:
             pmu_logger.info("Periodic wake - checking for updates");
@@ -174,8 +175,8 @@ void IrrigationMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEn
 
         case PMU::WakeReason::Scheduled:
             if (entry) {
-                logger.info("Scheduled wake - valve %d for %d seconds",
-                           entry->valveId, entry->duration);
+                logger.info("Scheduled wake - valve %d for %d seconds", entry->valveId,
+                            entry->duration);
 
                 if (entry->valveId < ValveController::NUM_VALVES) {
                     valve_controller_.openValve(entry->valveId);
@@ -203,7 +204,8 @@ void IrrigationMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEn
     }
 }
 
-void IrrigationMode::onLoop() {
+void IrrigationMode::onLoop()
+{
     // Process any pending PMU messages
     if (pmu_available_ && pmu_client_) {
         pmu_client_->process();
@@ -214,7 +216,8 @@ void IrrigationMode::onLoop() {
     work_tracker_.checkIdle();
 }
 
-void IrrigationMode::handleScheduleComplete() {
+void IrrigationMode::handleScheduleComplete()
+{
     pmu_logger.warn("Schedule complete - power down imminent!");
     logger.info("Closing all valves before shutdown...");
 
@@ -229,7 +232,8 @@ void IrrigationMode::handleScheduleComplete() {
     pmu_logger.info("Ready for power down");
 }
 
-void IrrigationMode::onActuatorCommand(const ActuatorPayload* payload) {
+void IrrigationMode::onActuatorCommand(const ActuatorPayload *payload)
+{
     if (!payload) {
         logger.error("NULL actuator payload");
         return;
@@ -264,44 +268,42 @@ void IrrigationMode::onActuatorCommand(const ActuatorPayload* payload) {
     }
 }
 
-void IrrigationMode::onHeartbeatResponse(const HeartbeatResponsePayload* payload) {
+void IrrigationMode::onHeartbeatResponse(const HeartbeatResponsePayload *payload)
+{
     // Call base class implementation to update RP2040 RTC
     ApplicationMode::onHeartbeatResponse(payload);
 
     // Also sync time to PMU if available
     if (pmu_available_ && pmu_client_ && payload) {
         // Convert HeartbeatResponsePayload to PMU::DateTime
-        PMU::DateTime datetime(
-            payload->year % 100,  // PMU uses 2-digit year (e.g., 25 for 2025)
-            payload->month,
-            payload->day,
-            payload->dotw,
-            payload->hour,
-            payload->min,
-            payload->sec
-        );
+        PMU::DateTime datetime(payload->year % 100,  // PMU uses 2-digit year (e.g., 25 for 2025)
+                               payload->month, payload->day, payload->dotw, payload->hour,
+                               payload->min, payload->sec);
 
-        pmu_logger.info("Syncing time to PMU: 20%02d-%02d-%02d %02d:%02d:%02d",
-                       datetime.year, datetime.month, datetime.day,
-                       datetime.hour, datetime.minute, datetime.second);
+        pmu_logger.info("Syncing time to PMU: 20%02d-%02d-%02d %02d:%02d:%02d", datetime.year,
+                        datetime.month, datetime.day, datetime.hour, datetime.minute,
+                        datetime.second);
 
         // Send datetime to PMU - PMU decides if update is needed based on drift
-        pmu_client_->getProtocol().setDateTime(datetime, [this](bool success, PMU::ErrorCode error) {
-            if (success) {
-                pmu_logger.info("PMU time sync successful");
-            } else {
-                pmu_logger.error("PMU time sync failed: error %d", static_cast<int>(error));
-            }
-            // Complete RTC sync work regardless of PMU result - RP2040 RTC was synced by base class
-            work_tracker_.completeWork(WorkType::RtcSync);
-        });
+        pmu_client_->getProtocol().setDateTime(
+            datetime, [this](bool success, PMU::ErrorCode error) {
+                if (success) {
+                    pmu_logger.info("PMU time sync successful");
+                } else {
+                    pmu_logger.error("PMU time sync failed: error %d", static_cast<int>(error));
+                }
+                // Complete RTC sync work regardless of PMU result - RP2040 RTC was synced by base
+                // class
+                work_tracker_.completeWork(WorkType::RtcSync);
+            });
     } else if (payload) {
         // No PMU available, but RTC was synced by base class
         work_tracker_.completeWork(WorkType::RtcSync);
     }
 }
 
-void IrrigationMode::sendCheckUpdates() {
+void IrrigationMode::sendCheckUpdates()
+{
     logger.info("Sending CHECK_UPDATES (seq=%d)", update_state_.current_sequence);
 
     // Send using messenger helper and store sequence number
@@ -322,7 +324,8 @@ void IrrigationMode::sendCheckUpdates() {
     }
 }
 
-void IrrigationMode::onUpdateAvailable(const UpdateAvailablePayload* payload) {
+void IrrigationMode::onUpdateAvailable(const UpdateAvailablePayload *payload)
+{
     if (!payload) {
         logger.error("NULL update payload");
         update_state_.reset();
@@ -359,19 +362,19 @@ void IrrigationMode::onUpdateAvailable(const UpdateAvailablePayload* payload) {
 
     // Check if we've already processed this update (messages crossing in flight)
     if (hub_sequence <= update_state_.current_sequence) {
-        logger.info("  Already processed seq=%d (current=%d), sending CHECK_UPDATES",
-                   hub_sequence, update_state_.current_sequence);
+        logger.info("  Already processed seq=%d (current=%d), sending CHECK_UPDATES", hub_sequence,
+                    update_state_.current_sequence);
         sendCheckUpdates();
         return;
     }
 
     // Get PMU protocol for applying updates
-    auto& protocol = pmu_client_->getProtocol();
+    auto &protocol = pmu_client_->getProtocol();
 
     switch (update_type) {
         case UpdateType::SET_SCHEDULE: {
             // Parse schedule data (8 bytes)
-            const uint8_t* data = payload->payload_data;
+            const uint8_t *data = payload->payload_data;
             uint8_t index = data[0];
             PMU::ScheduleEntry entry;
             entry.hour = data[1];
@@ -381,8 +384,9 @@ void IrrigationMode::onUpdateAvailable(const UpdateAvailablePayload* payload) {
             entry.valveId = data[6];
             entry.enabled = (data[7] != 0);
 
-            logger.info("  SET_SCHEDULE[%d]: %02d:%02d, valve=%d, duration=%ds, days=0x%02X",
-                       index, entry.hour, entry.minute, entry.valveId, entry.duration, static_cast<uint8_t>(entry.daysMask));
+            logger.info("  SET_SCHEDULE[%d]: %02d:%02d, valve=%d, duration=%ds, days=0x%02X", index,
+                        entry.hour, entry.minute, entry.valveId, entry.duration,
+                        static_cast<uint8_t>(entry.daysMask));
 
             // Apply to PMU
             protocol.setSchedule(entry, [this, hub_sequence](bool success, PMU::ErrorCode error) {
@@ -425,32 +429,32 @@ void IrrigationMode::onUpdateAvailable(const UpdateAvailablePayload* payload) {
 
         case UpdateType::SET_DATETIME: {
             // Parse datetime (7 bytes)
-            const uint8_t* data = payload->payload_data;
-            PMU::DateTime datetime(
-                data[0],  // year
-                data[1],  // month
-                data[2],  // day
-                data[3],  // weekday
-                data[4],  // hour
-                data[5],  // minute
-                data[6]   // second
+            const uint8_t *data = payload->payload_data;
+            PMU::DateTime datetime(data[0],  // year
+                                   data[1],  // month
+                                   data[2],  // day
+                                   data[3],  // weekday
+                                   data[4],  // hour
+                                   data[5],  // minute
+                                   data[6]   // second
             );
 
-            logger.info("  SET_DATETIME: 20%02d-%02d-%02d %02d:%02d:%02d",
-                       datetime.year, datetime.month, datetime.day,
-                       datetime.hour, datetime.minute, datetime.second);
+            logger.info("  SET_DATETIME: 20%02d-%02d-%02d %02d:%02d:%02d", datetime.year,
+                        datetime.month, datetime.day, datetime.hour, datetime.minute,
+                        datetime.second);
 
-            protocol.setDateTime(datetime, [this, hub_sequence](bool success, PMU::ErrorCode error) {
-                if (success) {
-                    logger.info("  DateTime set successfully");
-                    update_state_.current_sequence = hub_sequence;
-                    sendCheckUpdates();
-                } else {
-                    logger.error("  Failed to set datetime: error %d", static_cast<int>(error));
-                    update_state_.reset();
-                    work_tracker_.completeWork(WorkType::UpdatePull);
-                }
-            });
+            protocol.setDateTime(
+                datetime, [this, hub_sequence](bool success, PMU::ErrorCode error) {
+                    if (success) {
+                        logger.info("  DateTime set successfully");
+                        update_state_.current_sequence = hub_sequence;
+                        sendCheckUpdates();
+                    } else {
+                        logger.error("  Failed to set datetime: error %d", static_cast<int>(error));
+                        update_state_.reset();
+                        work_tracker_.completeWork(WorkType::UpdatePull);
+                    }
+                });
             break;
         }
 
@@ -459,17 +463,19 @@ void IrrigationMode::onUpdateAvailable(const UpdateAvailablePayload* payload) {
             uint16_t interval_seconds = payload->payload_data[0] | (payload->payload_data[1] << 8);
             logger.info("  SET_WAKE_INTERVAL: %d seconds", interval_seconds);
 
-            protocol.setWakeInterval(interval_seconds, [this, hub_sequence](bool success, PMU::ErrorCode error) {
-                if (success) {
-                    logger.info("  Wake interval set successfully");
-                    update_state_.current_sequence = hub_sequence;
-                    sendCheckUpdates();
-                } else {
-                    logger.error("  Failed to set wake interval: error %d", static_cast<int>(error));
-                    update_state_.reset();
-                    work_tracker_.completeWork(WorkType::UpdatePull);
-                }
-            });
+            protocol.setWakeInterval(interval_seconds,
+                                     [this, hub_sequence](bool success, PMU::ErrorCode error) {
+                                         if (success) {
+                                             logger.info("  Wake interval set successfully");
+                                             update_state_.current_sequence = hub_sequence;
+                                             sendCheckUpdates();
+                                         } else {
+                                             logger.error("  Failed to set wake interval: error %d",
+                                                          static_cast<int>(error));
+                                             update_state_.reset();
+                                             work_tracker_.completeWork(WorkType::UpdatePull);
+                                         }
+                                     });
             break;
         }
 
@@ -480,7 +486,8 @@ void IrrigationMode::onUpdateAvailable(const UpdateAvailablePayload* payload) {
             break;
     }
 }
-void IrrigationMode::attemptDeferredRegistration() {
+void IrrigationMode::attemptDeferredRegistration()
+{
     // Get device ID from hardware
     pico_unique_board_id_t board_id;
     pico_get_unique_board_id(&board_id);
@@ -491,13 +498,9 @@ void IrrigationMode::attemptDeferredRegistration() {
     logger.info("Sending deferred registration (device_id=0x%016llX)", device_id);
 
     uint8_t registration_seq = messenger_.sendRegistrationRequest(
-        ADDRESS_HUB,
-        device_id,
-        NODE_TYPE_HYBRID,
-        CAP_VALVE_CONTROL | CAP_SOIL_MOISTURE,
+        ADDRESS_HUB, device_id, NODE_TYPE_HYBRID, CAP_VALVE_CONTROL | CAP_SOIL_MOISTURE,
         0x0100,  // Firmware version
-        "Irrigation Node"
-    );
+        "Irrigation Node");
 
     if (registration_seq != 0) {
         logger.info("Registration request sent (seq=%d)", registration_seq);
@@ -513,7 +516,8 @@ void IrrigationMode::attemptDeferredRegistration() {
     }
 }
 
-void IrrigationMode::signalReadyForSleep() {
+void IrrigationMode::signalReadyForSleep()
+{
     if (!pmu_available_ || !pmu_client_) {
         logger.debug("PMU not available, skipping ready for sleep signal");
         return;
@@ -532,15 +536,16 @@ void IrrigationMode::signalReadyForSleep() {
         volatile bool sleep_acked = false;
 
         pmu_logger.info("ReadyForSleep attempt %d/%d", attempt + 1, MAX_RETRIES);
-        pmu_client_->getProtocol().readyForSleep([&got_response, &sleep_acked](bool success, PMU::ErrorCode error) {
-            got_response = true;
-            sleep_acked = success;
-            if (success) {
-                pmu_logger.info("Ready for sleep acknowledged");
-            } else {
-                pmu_logger.error("Ready for sleep failed: error %d", static_cast<int>(error));
-            }
-        });
+        pmu_client_->getProtocol().readyForSleep(
+            [&got_response, &sleep_acked](bool success, PMU::ErrorCode error) {
+                got_response = true;
+                sleep_acked = success;
+                if (success) {
+                    pmu_logger.info("Ready for sleep acknowledged");
+                } else {
+                    pmu_logger.error("Ready for sleep failed: error %d", static_cast<int>(error));
+                }
+            });
 
         // Wait for response with polling
         for (int wait = 0; wait < RESPONSE_WAIT_MS / POLL_INTERVAL_MS && !got_response; wait++) {

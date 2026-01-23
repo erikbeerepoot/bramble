@@ -1,16 +1,17 @@
 #pragma once
 
+#include <functional>
+#include <map>
+#include <memory>
+#include <queue>
+
+#include "../hal/logger.h"
 #include "message.h"
 #include "message_builder.h"
 #include "message_validator.h"
+#include "network_stats.h"
 #include "retry_policy.h"
 #include "sx1276.h"
-#include "network_stats.h"
-#include "../hal/logger.h"
-#include <map>
-#include <memory>
-#include <functional>
-#include <queue>
 
 /**
  * @brief Recently seen message for deduplication
@@ -61,7 +62,7 @@ struct PendingMessage {
     DeliveryCriticality criticality;
     RetryPolicy::RetryConfig retry_config;
     AckCallback ack_callback;  // Optional callback when ACK received
-    uint64_t user_context;      // User-defined context (e.g., flash record index)
+    uint64_t user_context;     // User-defined context (e.g., flash record index)
 };
 
 /**
@@ -70,13 +71,13 @@ struct PendingMessage {
 class ReliableMessenger {
 public:
     // Callback type for actuator commands
-    using ActuatorCallback = std::function<void(const ActuatorPayload*)>;
+    using ActuatorCallback = std::function<void(const ActuatorPayload *)>;
 
     // Callback type for update available messages
-    using UpdateCallback = std::function<void(const UpdateAvailablePayload*)>;
+    using UpdateCallback = std::function<void(const UpdateAvailablePayload *)>;
 
     // Callback type for heartbeat response messages
-    using HeartbeatResponseCallback = std::function<void(const HeartbeatResponsePayload*)>;
+    using HeartbeatResponseCallback = std::function<void(const HeartbeatResponsePayload *)>;
 
     // Callback type for reregistration required (hub doesn't recognize node)
     using ReregistrationCallback = std::function<void()>;
@@ -84,8 +85,8 @@ public:
     // Callback type for registration success (provides new assigned address)
     using RegistrationSuccessCallback = std::function<void(uint16_t new_address)>;
 
-    ReliableMessenger(SX1276* lora, uint16_t node_addr, NetworkStats* stats = nullptr);
-    
+    ReliableMessenger(SX1276 *lora, uint16_t node_addr, NetworkStats *stats = nullptr);
+
     /**
      * @brief Send an actuator command with specified criticality
      * @param dst_addr Destination address
@@ -97,9 +98,9 @@ public:
      * @return true if message sent/queued successfully
      */
     bool sendActuatorCommand(uint16_t dst_addr, uint8_t actuator_type, uint8_t command,
-                            const uint8_t* params, uint8_t param_length, 
-                            DeliveryCriticality criticality = RELIABLE);
-    
+                             const uint8_t *params, uint8_t param_length,
+                             DeliveryCriticality criticality = RELIABLE);
+
     /**
      * @brief Send sensor data with specified criticality
      * @param dst_addr Destination address
@@ -109,9 +110,8 @@ public:
      * @param criticality Delivery criticality (BEST_EFFORT, RELIABLE, CRITICAL)
      * @return true if message sent/queued successfully
      */
-    bool sendSensorData(uint16_t dst_addr, uint8_t sensor_type,
-                       const uint8_t* data, uint8_t data_length,
-                       DeliveryCriticality criticality = BEST_EFFORT);
+    bool sendSensorData(uint16_t dst_addr, uint8_t sensor_type, const uint8_t *data,
+                        uint8_t data_length, DeliveryCriticality criticality = BEST_EFFORT);
 
     /**
      * @brief Send sensor data with ACK callback
@@ -124,12 +124,10 @@ public:
      * @param user_context User-defined context passed to callback
      * @return Sequence number of sent message (0 on failure)
      */
-    uint8_t sendSensorDataWithCallback(uint16_t dst_addr, uint8_t sensor_type,
-                                       const uint8_t* data, uint8_t data_length,
-                                       DeliveryCriticality criticality,
-                                       AckCallback ack_callback,
-                                       uint64_t user_context = 0);
-    
+    uint8_t sendSensorDataWithCallback(uint16_t dst_addr, uint8_t sensor_type, const uint8_t *data,
+                                       uint8_t data_length, DeliveryCriticality criticality,
+                                       AckCallback ack_callback, uint64_t user_context = 0);
+
     /**
      * @brief Send heartbeat message with node status
      * @param dst_addr Destination address (usually hub)
@@ -140,9 +138,8 @@ public:
      * @param error_flags Error status flags
      * @return true if heartbeat sent successfully
      */
-    bool sendHeartbeat(uint16_t dst_addr, uint32_t uptime_seconds,
-                      uint8_t battery_level, uint8_t signal_strength,
-                      uint8_t active_sensors, uint8_t error_flags);
+    bool sendHeartbeat(uint16_t dst_addr, uint32_t uptime_seconds, uint8_t battery_level,
+                       uint8_t signal_strength, uint8_t active_sensors, uint8_t error_flags);
 
     /**
      * @brief Send heartbeat response with current datetime (hub to node)
@@ -157,7 +154,7 @@ public:
      * @return true if heartbeat response sent successfully
      */
     bool sendHeartbeatResponse(uint16_t dst_addr, int16_t year, int8_t month, int8_t day,
-                              int8_t dotw, int8_t hour, int8_t min, int8_t sec);
+                               int8_t dotw, int8_t hour, int8_t min, int8_t sec);
 
     /**
      * @brief Send registration request to hub
@@ -169,10 +166,10 @@ public:
      * @param device_name Human-readable device name
      * @return Sequence number of sent message (0 on failure)
      */
-    uint8_t sendRegistrationRequest(uint16_t dst_addr, uint64_t device_id,
-                               uint8_t node_type, uint8_t capabilities,
-                               uint16_t firmware_ver, const char* device_name);
-    
+    uint8_t sendRegistrationRequest(uint16_t dst_addr, uint64_t device_id, uint8_t node_type,
+                                    uint8_t capabilities, uint16_t firmware_ver,
+                                    const char *device_name);
+
     /**
      * @brief Send registration response to node
      * @param dst_addr Destination address (requesting node)
@@ -183,9 +180,8 @@ public:
      * @param network_time Current network time
      * @return true if registration response sent successfully
      */
-    bool sendRegistrationResponse(uint16_t dst_addr, uint64_t device_id,
-                                uint16_t assigned_addr, uint8_t status,
-                                uint8_t retry_interval, uint32_t network_time);
+    bool sendRegistrationResponse(uint16_t dst_addr, uint64_t device_id, uint16_t assigned_addr,
+                                  uint8_t status, uint8_t retry_interval, uint32_t network_time);
 
     /**
      * @brief Send CHECK_UPDATES message to hub
@@ -205,7 +201,7 @@ public:
      * @return Sequence number of sent message (0 on failure)
      */
     uint8_t sendSensorDataBatch(uint16_t dst_addr, uint32_t start_index,
-                                const BatchSensorRecord* records, uint8_t record_count,
+                                const BatchSensorRecord *records, uint8_t record_count,
                                 DeliveryCriticality criticality = RELIABLE);
 
     /**
@@ -220,10 +216,9 @@ public:
      * @return Sequence number of sent message (0 on failure)
      */
     uint8_t sendSensorDataBatchWithCallback(uint16_t dst_addr, uint32_t start_index,
-                                            const BatchSensorRecord* records, uint8_t record_count,
+                                            const BatchSensorRecord *records, uint8_t record_count,
                                             DeliveryCriticality criticality,
-                                            AckCallback ack_callback,
-                                            uint64_t user_context = 0);
+                                            AckCallback ack_callback, uint64_t user_context = 0);
 
     /**
      * @brief Generic send method for any message type
@@ -232,8 +227,7 @@ public:
      * @param criticality Delivery criticality
      * @return true if message sent/queued successfully
      */
-    bool send(const uint8_t* buffer, size_t length,
-              DeliveryCriticality criticality = BEST_EFFORT);
+    bool send(const uint8_t *buffer, size_t length, DeliveryCriticality criticality = BEST_EFFORT);
 
     /**
      * @brief Generic send method with ACK callback
@@ -244,49 +238,47 @@ public:
      * @param user_context User-defined context passed to callback
      * @return Sequence number of sent message (0 on failure)
      */
-    uint8_t sendWithCallback(const uint8_t* buffer, size_t length,
-                             DeliveryCriticality criticality,
-                             AckCallback ack_callback,
-                             uint64_t user_context = 0);
-    
+    uint8_t sendWithCallback(const uint8_t *buffer, size_t length, DeliveryCriticality criticality,
+                             AckCallback ack_callback, uint64_t user_context = 0);
+
     /**
      * @brief Process incoming messages and handle ACKs
      * @param buffer Received message buffer
      * @param length Length of received message
      * @return true if message processed (may be ACK or new message)
      */
-    bool processIncomingMessage(const uint8_t* buffer, size_t length);
-    
+    bool processIncomingMessage(const uint8_t *buffer, size_t length);
+
     /**
      * @brief Update retry timers and resend messages if needed
      * Call this regularly in main loop
      */
     void update();
-    
+
     /**
      * @brief Get number of pending messages awaiting ACK
      */
     size_t getPendingCount() const { return pending_messages_.size(); }
-    
+
     /**
      * @brief Check if a specific message was acknowledged
      * @param seq_num Sequence number to check
      * @return true if ACK received for this sequence number
      */
     bool wasAcknowledged(uint8_t seq_num);
-    
+
     /**
      * @brief Update the node address (used after successful registration)
      * @param new_addr New address to use for sending messages
      */
     void updateNodeAddress(uint16_t new_addr);
-    
+
     /**
      * @brief Get current node address
      * @return Current node address
      */
     uint16_t getNodeAddress() const { return node_addr_; }
-    
+
     /**
      * @brief Set callback for actuator commands
      * @param callback Function to call when actuator command is received
@@ -303,19 +295,28 @@ public:
      * @brief Set callback for heartbeat response messages
      * @param callback Function to call when HEARTBEAT_RESPONSE is received
      */
-    void setHeartbeatResponseCallback(HeartbeatResponseCallback callback) { heartbeat_response_callback_ = callback; }
+    void setHeartbeatResponseCallback(HeartbeatResponseCallback callback)
+    {
+        heartbeat_response_callback_ = callback;
+    }
 
     /**
      * @brief Set callback for reregistration required
      * @param callback Function to call when hub requests re-registration
      */
-    void setReregistrationCallback(ReregistrationCallback callback) { reregistration_callback_ = callback; }
+    void setReregistrationCallback(ReregistrationCallback callback)
+    {
+        reregistration_callback_ = callback;
+    }
 
     /**
      * @brief Set callback for registration success
      * @param callback Function to call when registration succeeds (receives new address)
      */
-    void setRegistrationSuccessCallback(RegistrationSuccessCallback callback) { registration_success_callback_ = callback; }
+    void setRegistrationSuccessCallback(RegistrationSuccessCallback callback)
+    {
+        registration_success_callback_ = callback;
+    }
 
     /**
      * @brief Update node address (used after re-registration)
@@ -331,14 +332,14 @@ public:
     bool cancelPendingMessage(uint8_t seq_num);
 
 private:
-    SX1276* lora_;
+    SX1276 *lora_;
     uint16_t node_addr_;
     uint8_t next_seq_num_;
     std::map<uint8_t, PendingMessage> pending_messages_;
     std::queue<OutgoingMessage> message_queue_;
     bool is_transmitting_;
     Logger logger_;
-    NetworkStats* network_stats_;
+    NetworkStats *network_stats_;
     ActuatorCallback actuator_callback_;
     UpdateCallback update_callback_;
     HeartbeatResponseCallback heartbeat_response_callback_;
@@ -370,14 +371,14 @@ private:
      * @param length Message length
      * @return true if sent successfully
      */
-    bool sendMessage(const uint8_t* buffer, size_t length);
-    
+    bool sendMessage(const uint8_t *buffer, size_t length);
+
     /**
      * @brief Handle received ACK message
      * @param ack_payload ACK payload
      */
-    void handleAck(const AckPayload* ack_payload);
-    
+    void handleAck(const AckPayload *ack_payload);
+
     /**
      * @brief Send ACK for received actuator command
      * @param src_addr Original sender address
@@ -385,19 +386,18 @@ private:
      * @param status ACK status (0=success)
      */
     void sendAck(uint16_t src_addr, uint8_t seq_num, uint8_t status);
-    
-    
+
     /**
      * @brief Get current time in milliseconds
      */
     uint32_t getCurrentTime();
-    
+
     /**
      * @brief Get next sequence number within appropriate range
      * Hub uses 1-127, nodes use 128-255 to prevent collisions
      */
     uint8_t getNextSequenceNumber();
-    
+
     /**
      * @brief Template method for sending messages with common pattern
      * @tparam CreateFunc Function/lambda that creates the message
@@ -406,18 +406,20 @@ private:
      * @param msg_type Message type name for logging
      * @return true if message sent/queued successfully
      */
-    template<typename CreateFunc>
-    bool sendWithBuilder(CreateFunc create, DeliveryCriticality criticality, const char* msg_type) {
-        if (!lora_) return false;
-        
+    template <typename CreateFunc>
+    bool sendWithBuilder(CreateFunc create, DeliveryCriticality criticality, const char *msg_type)
+    {
+        if (!lora_)
+            return false;
+
         uint8_t buffer[MESSAGE_MAX_SIZE];
         size_t length = create(buffer);
-        
+
         if (length == 0) {
             logger_.error("Failed to create %s message", msg_type);
             return false;
         }
-        
+
         return send(buffer, length, criticality);
     }
 };

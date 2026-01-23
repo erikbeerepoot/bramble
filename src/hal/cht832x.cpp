@@ -1,13 +1,18 @@
 #include "cht832x.h"
+
 #include "pico/stdlib.h"
+
 #include "logger.h"
 
 static Logger logger("CHT832X");
 
-CHT832X::CHT832X(i2c_inst_t* i2c, uint sda_pin, uint scl_pin)
-    : i2c_(i2c), sda_pin_(sda_pin), scl_pin_(scl_pin), initialized_(false) {}
+CHT832X::CHT832X(i2c_inst_t *i2c, uint sda_pin, uint scl_pin)
+    : i2c_(i2c), sda_pin_(sda_pin), scl_pin_(scl_pin), initialized_(false)
+{
+}
 
-bool CHT832X::init() {
+bool CHT832X::init()
+{
     // Initialize I2C
     i2c_init(i2c_, I2C_BAUDRATE);
 
@@ -32,14 +37,16 @@ bool CHT832X::init() {
     return true;
 }
 
-bool CHT832X::isConnected() {
+bool CHT832X::isConnected()
+{
     // Try to read a single byte to check if device responds
     uint8_t dummy;
     int result = i2c_read_blocking(i2c_, I2C_ADDRESS, &dummy, 1, false);
     return result >= 0;
 }
 
-CHT832X::Reading CHT832X::read() {
+CHT832X::Reading CHT832X::read()
+{
     Reading reading = {0.0f, 0.0f, false};
 
     if (!initialized_) {

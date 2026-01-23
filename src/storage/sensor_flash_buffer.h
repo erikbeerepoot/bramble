@@ -1,11 +1,12 @@
 #pragma once
 
-#include <stdint.h>
 #include <stddef.h>
-#include "sensor_flash_metadata.h"
-#include "sensor_data_record.h"
+#include <stdint.h>
+
 #include "../hal/external_flash.h"
 #include "../hal/logger.h"
+#include "sensor_data_record.h"
+#include "sensor_flash_metadata.h"
 
 /**
  * @brief CRC16-CCITT calculation utility
@@ -19,14 +20,14 @@ public:
      * @param initial_value Initial CRC value (default 0xFFFF)
      * @return CRC16 checksum
      */
-    static uint16_t calculate(const uint8_t* data, size_t length, uint16_t initial_value = 0xFFFF);
+    static uint16_t calculate(const uint8_t *data, size_t length, uint16_t initial_value = 0xFFFF);
 
     /**
      * @brief Calculate CRC16 for a sensor data record (excluding CRC field)
      * @param record Record to calculate CRC for
      * @return CRC16 checksum
      */
-    static uint16_t calculateRecordCRC(const SensorDataRecord& record);
+    static uint16_t calculateRecordCRC(const SensorDataRecord &record);
 
 private:
     static const uint16_t crc16_table[256];
@@ -57,14 +58,14 @@ public:
     static constexpr size_t BATCH_SIZE = 19;
 
     // Sector geometry
-    static constexpr uint32_t SECTOR_SIZE = ExternalFlash::SECTOR_SIZE;  // 4KB
+    static constexpr uint32_t SECTOR_SIZE = ExternalFlash::SECTOR_SIZE;                     // 4KB
     static constexpr uint32_t RECORDS_PER_SECTOR = SECTOR_SIZE / sizeof(SensorDataRecord);  // ~341
 
     /**
      * @brief Construct sensor flash buffer
      * @param flash External flash driver instance
      */
-    explicit SensorFlashBuffer(ExternalFlash& flash);
+    explicit SensorFlashBuffer(ExternalFlash &flash);
 
     /**
      * @brief Initialize the flash buffer
@@ -86,7 +87,7 @@ public:
      * @param record Record to write (timestamp, temp, humidity, flags)
      * @return true if write successful
      */
-    bool writeRecord(const SensorDataRecord& record);
+    bool writeRecord(const SensorDataRecord &record);
 
     /**
      * @brief Mark a record as transmitted
@@ -113,9 +114,8 @@ public:
      * @param actual_count Output: actual number of records read
      * @return true if read successful
      */
-    bool readUntransmittedRecords(SensorDataRecord* records,
-                                   size_t max_count,
-                                   size_t& actual_count);
+    bool readUntransmittedRecords(SensorDataRecord *records, size_t max_count,
+                                  size_t &actual_count);
 
     /**
      * @brief Get current buffer statistics
@@ -126,7 +126,7 @@ public:
      * @param stats Output: current statistics
      * @return true if retrieval successful
      */
-    bool getStatistics(SensorFlashMetadata& stats) const;
+    bool getStatistics(SensorFlashMetadata &stats) const;
 
     /**
      * @brief Get number of untransmitted records
@@ -177,7 +177,7 @@ public:
     bool reset();
 
 private:
-    ExternalFlash& flash_;
+    ExternalFlash &flash_;
     SensorFlashMetadata metadata_;
     bool initialized_;
     Logger logger_;

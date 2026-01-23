@@ -1,0 +1,48 @@
+name: Style Check
+
+on:
+  pull_request:
+    paths:
+      - '**.cpp'
+      - '**.h'
+      - '**.hpp'
+      - '.clang-format'
+
+jobs:
+  format-check:
+    name: Check Code Formatting
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install clang-format
+        run: |
+          # Install clang-format-18 from LLVM APT repository (supports InsertBraces option)
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
+          echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-18 main" | sudo tee /etc/apt/sources.list.d/llvm.list
+          sudo apt-get update
+          sudo apt-get install -y clang-format-18
+
+      - name: Check formatting
+        run: |
+          # Find all C++ source files and check formatting
+          find src main.cpp -name "*.cpp" -o -name "*.h" -o -name "*.hpp" | \
+            xargs clang-format-18 --dry-run --Werror 2>&1 | tee format-check.log
+
+          if [ -s format-check.log ]; then
+            echo ""
+            echo "::error::Code formatting issues found. Please run 'clang-format -i' on the files above."
+            echo ""
+            echo "To fix all files at once, run:"
+            echo "  find src main.cpp -name '*.cpp' -o -name '*.h' | xargs clang-format -i"
+            exit 1
+          fi
+
+      - name: Upload format check results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: format-check-results
+          path: format-check.log

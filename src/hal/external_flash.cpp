@@ -1,23 +1,25 @@
 #include "external_flash.h"
-#include "hardware/gpio.h"
-#include "pico/stdlib.h"
+
 #include <cstring>
 
-ExternalFlash::ExternalFlash(spi_inst_t* spi, const ExternalFlashPins& pins)
-    : spi_(spi)
-    , pins_(pins)
-    , initialized_(false)
-    , logger_("EXTFLASH")
+#include "pico/stdlib.h"
+
+#include "hardware/gpio.h"
+
+ExternalFlash::ExternalFlash(spi_inst_t *spi, const ExternalFlashPins &pins)
+    : spi_(spi), pins_(pins), initialized_(false), logger_("EXTFLASH")
 {
 }
 
-ExternalFlash::~ExternalFlash() {
+ExternalFlash::~ExternalFlash()
+{
     if (initialized_) {
         powerDown();
     }
 }
 
-bool ExternalFlash::initGpio() {
+bool ExternalFlash::initGpio()
+{
     // Configure CS as output, active low (directly controlled, not SPI function)
     gpio_init(pins_.cs);
     gpio_set_dir(pins_.cs, GPIO_OUT);
@@ -31,7 +33,8 @@ bool ExternalFlash::initGpio() {
     return true;
 }
 
-bool ExternalFlash::init() {
+bool ExternalFlash::init()
+{
     logger_.info("Initializing external flash (hardware SPI)...");
     logger_.info("  Pins: CS=%d, RST=%d (SPI shared with LoRa)", pins_.cs, pins_.reset);
 
@@ -57,8 +60,8 @@ bool ExternalFlash::init() {
         return false;
     }
 
-    logger_.info("Flash ID: Manufacturer=0x%02X, Type=0x%02X, Capacity=0x%02X",
-                 manufacturer, memory_type, capacity);
+    logger_.info("Flash ID: Manufacturer=0x%02X, Type=0x%02X, Capacity=0x%02X", manufacturer,
+                 memory_type, capacity);
 
     // Verify it's a Micron flash (manufacturer ID 0x20)
     if (manufacturer != 0x20) {
@@ -71,13 +74,15 @@ bool ExternalFlash::init() {
     return true;
 }
 
-void ExternalFlash::csSelect() {
+void ExternalFlash::csSelect()
+{
     gpio_put(pins_.cs, 0);
     // Small delay for CS setup time
     __asm volatile("nop\nnop\nnop\nnop");
 }
 
-void ExternalFlash::csDeselect() {
+void ExternalFlash::csDeselect()
+{
     // Small delay for CS hold time
     __asm volatile("nop\nnop\nnop\nnop");
     gpio_put(pins_.cs, 1);
@@ -85,25 +90,31 @@ void ExternalFlash::csDeselect() {
     __asm volatile("nop\nnop\nnop\nnop");
 }
 
-void ExternalFlash::spiWriteByte(uint8_t byte) {
+void ExternalFlash::spiWriteByte(uint8_t byte)
+{
     spi_write_blocking(spi_, &byte, 1);
 }
 
-uint8_t ExternalFlash::spiReadByte() {
+uint8_t ExternalFlash::spiReadByte()
+{
     uint8_t byte;
     spi_read_blocking(spi_, 0xFF, &byte, 1);
     return byte;
 }
 
-void ExternalFlash::spiWrite(const uint8_t* data, size_t length) {
+void ExternalFlash::spiWrite(const uint8_t *data, size_t length)
+{
     spi_write_blocking(spi_, data, length);
 }
 
-void ExternalFlash::spiRead(uint8_t* data, size_t length) {
+void ExternalFlash::spiRead(uint8_t *data, size_t length)
+{
     spi_read_blocking(spi_, 0xFF, data, length);
 }
 
-ExternalFlashResult ExternalFlash::readId(uint8_t& manufacturer, uint8_t& memory_type, uint8_t& capacity) {
+ExternalFlashResult ExternalFlash::readId(uint8_t &manufacturer, uint8_t &memory_type,
+                                          uint8_t &capacity)
+{
     csSelect();
 
     spiWriteByte(MT25QLCommands::READ_ID);
@@ -116,7 +127,8 @@ ExternalFlashResult ExternalFlash::readId(uint8_t& manufacturer, uint8_t& memory
     return ExternalFlashResult::Success;
 }
 
-uint8_t ExternalFlash::readStatus() {
+uint8_t ExternalFlash::readStatus()
+{
     csSelect();
     spiWriteByte(MT25QLCommands::READ_STATUS);
     uint8_t status = spiReadByte();
@@ -124,11 +136,13 @@ uint8_t ExternalFlash::readStatus() {
     return status;
 }
 
-bool ExternalFlash::isBusy() {
+bool ExternalFlash::isBusy()
+{
     return (readStatus() & MT25QLStatus::BUSY) != 0;
 }
 
-ExternalFlashResult ExternalFlash::waitReady(uint32_t timeout_ms) {
+ExternalFlashResult ExternalFlash::waitReady(uint32_t timeout_ms)
+{
     uint32_t start = to_ms_since_boot(get_absolute_time());
 
     while (isBusy()) {
@@ -142,7 +156,8 @@ ExternalFlashResult ExternalFlash::waitReady(uint32_t timeout_ms) {
     return ExternalFlashResult::Success;
 }
 
-ExternalFlashResult ExternalFlash::writeEnable() {
+ExternalFlashResult ExternalFlash::writeEnable()
+{
     csSelect();
     spiWriteByte(MT25QLCommands::WRITE_ENABLE);
     csDeselect();
@@ -157,7 +172,8 @@ ExternalFlashResult ExternalFlash::writeEnable() {
     return ExternalFlashResult::Success;
 }
 
-ExternalFlashResult ExternalFlash::read(uint32_t address, uint8_t* buffer, size_t length) {
+ExternalFlashResult ExternalFlash::read(uint32_t address, uint8_t *buffer, size_t length)
+{
     if (!initialized_) {
         return ExternalFlashResult::ErrorNotInitialized;
     }
@@ -192,7 +208,8 @@ ExternalFlashResult ExternalFlash::read(uint32_t address, uint8_t* buffer, size_
     return ExternalFlashResult::Success;
 }
 
-ExternalFlashResult ExternalFlash::writePage(uint32_t address, const uint8_t* data, size_t length) {
+ExternalFlashResult ExternalFlash::writePage(uint32_t address, const uint8_t *data, size_t length)
+{
     if (length > PAGE_SIZE) {
         length = PAGE_SIZE;
     }
@@ -220,7 +237,8 @@ ExternalFlashResult ExternalFlash::writePage(uint32_t address, const uint8_t* da
     return waitReady(10);
 }
 
-ExternalFlashResult ExternalFlash::write(uint32_t address, const uint8_t* data, size_t length) {
+ExternalFlashResult ExternalFlash::write(uint32_t address, const uint8_t *data, size_t length)
+{
     if (!initialized_) {
         return ExternalFlashResult::ErrorNotInitialized;
     }
@@ -256,7 +274,8 @@ ExternalFlashResult ExternalFlash::write(uint32_t address, const uint8_t* data, 
     return ExternalFlashResult::Success;
 }
 
-ExternalFlashResult ExternalFlash::eraseSector(uint32_t address) {
+ExternalFlashResult ExternalFlash::eraseSector(uint32_t address)
+{
     if (!initialized_) {
         return ExternalFlashResult::ErrorNotInitialized;
     }
@@ -291,7 +310,8 @@ ExternalFlashResult ExternalFlash::eraseSector(uint32_t address) {
     return waitReady(500);
 }
 
-ExternalFlashResult ExternalFlash::eraseBlock(uint32_t address) {
+ExternalFlashResult ExternalFlash::eraseBlock(uint32_t address)
+{
     if (!initialized_) {
         return ExternalFlashResult::ErrorNotInitialized;
     }
@@ -326,7 +346,8 @@ ExternalFlashResult ExternalFlash::eraseBlock(uint32_t address) {
     return waitReady(3000);
 }
 
-ExternalFlashResult ExternalFlash::eraseChip() {
+ExternalFlashResult ExternalFlash::eraseChip()
+{
     if (!initialized_) {
         return ExternalFlashResult::ErrorNotInitialized;
     }
@@ -353,19 +374,22 @@ ExternalFlashResult ExternalFlash::eraseChip() {
     return waitReady(300000);  // 5 minute timeout
 }
 
-void ExternalFlash::powerDown() {
+void ExternalFlash::powerDown()
+{
     csSelect();
     spiWriteByte(MT25QLCommands::POWER_DOWN);
     csDeselect();
 }
 
-void ExternalFlash::wakeUp() {
+void ExternalFlash::wakeUp()
+{
     csSelect();
     spiWriteByte(MT25QLCommands::RELEASE_POWER_DOWN);
     csDeselect();
 }
 
-void ExternalFlash::reset() {
+void ExternalFlash::reset()
+{
     // Software reset sequence
     csSelect();
     spiWriteByte(MT25QLCommands::RESET_ENABLE);
