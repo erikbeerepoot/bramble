@@ -1,5 +1,7 @@
 #include "sensor_mode.h"
 
+#include <ctime>
+
 #include "hardware/i2c.h"
 
 #include "../hal/cht832x.h"
@@ -25,9 +27,9 @@ void SensorMode::onStart()
     logger.info("=== SENSOR MODE ACTIVE ===");
     logger.info("- Orange LED blink (init) -> Red short blink (operational)");
 
-    // Initialize external flash for sensor data storage    
+    // Initialize external flash for sensor data storage
     external_flash_ = std::make_unique<ExternalFlash>();
-    if (external_flash_->init()) {        
+    if (external_flash_->init()) {
         flash_buffer_ = std::make_unique<SensorFlashBuffer>(*external_flash_);
         if (flash_buffer_->init()) {
             SensorFlashMetadata stats;
@@ -84,7 +86,7 @@ void SensorMode::onStart()
             this->handlePmuWake(reason, entry);
         });
 
-        // Try to get time from PMU's battery-backed RTC (faster than waiting for hub sync)        
+        // Try to get time from PMU's battery-backed RTC (faster than waiting for hub sync)
         pmu_logger.info("Requesting datetime from PMU...");
         reliable_pmu_->getDateTime([this](bool valid, const PMU::DateTime &datetime) {
             if (valid) {
@@ -92,9 +94,23 @@ void SensorMode::onStart()
                                 datetime.year, datetime.month, datetime.day, datetime.hour,
                                 datetime.minute, datetime.second);
 
+                // Convert PMU datetime to Unix timestamp using mktime
+                uint16_t year = 2000 + datetime.year;
+                std::tm tm = {};
+                tm.tm_year = year - 1900;        // years since 1900
+                tm.tm_mon = datetime.month - 1;  // 0-based month
+                tm.tm_mday = datetime.day;
+                tm.tm_hour = datetime.hour;
+                tm.tm_min = datetime.minute;
+                tm.tm_sec = datetime.second;
+                uint32_t pmu_timestamp = static_cast<uint32_t>(std::mktime(&tm));
+
+                // Check if it's time to transmit BEFORE setting RTC
+                bool time_to_transmit = isTimeToTransmit(pmu_timestamp);
+
                 // Set RP2040 RTC from PMU time
                 datetime_t dt;
-                dt.year = 2000 + datetime.year;
+                dt.year = year;
                 dt.month = datetime.month;
                 dt.day = datetime.day;
                 dt.dotw = datetime.weekday;
@@ -103,15 +119,23 @@ void SensorMode::onStart()
                 dt.sec = datetime.second;
 
                 if (rtc_set_datetime(&dt)) {
-                    // Don't mark as synced yet - need hub confirmation
-                    logger.info(
-                        "RTC set from PMU (pending hub sync): %04d-%02d-%02d %02d:%02d:%02d",
-                        dt.year, dt.month, dt.day, dt.hour, dt.min, dt.sec);
+                    sleep_us(64);  // Wait for RTC to propagate
+                    logger.info("RTC set from PMU: %04d-%02d-%02d %02d:%02d:%02d", dt.year,
+                                dt.month, dt.day, dt.hour, dt.min, dt.sec);
                     switchToOperationalPattern();
-                    // Always sync from hub to correct PMU drift
-                    pmu_logger.info("Sending heartbeat for hub sync");
-                    heartbeat_request_time_ = to_ms_since_boot(get_absolute_time());
-                    sendHeartbeat(0);
+
+                    // Only sync from hub if it's time to transmit
+                    // This avoids unnecessary LoRa traffic between transmission intervals
+                    if (time_to_transmit) {
+                        pmu_logger.info("Time to transmit - sending heartbeat for hub sync");
+                        heartbeat_request_time_ = to_ms_since_boot(get_absolute_time());
+                        sendHeartbeat(0);
+                    } else {
+                        // PMU time is good enough, proceed directly to backlog check
+                        pmu_logger.info("Not time to transmit - using PMU time, skipping hub sync");
+                        rtc_synced_ = true;
+                        onRtcSynced();
+                    }
                 } else {
                     logger.error("Failed to set RTC from PMU time");
                 }
@@ -234,6 +258,35 @@ void SensorMode::sendHeartbeat(uint32_t current_time)
                              error_flags);
 }
 
+bool SensorMode::isTimeToTransmit(uint32_t current_timestamp) const
+{
+    if (!flash_buffer_) {
+        return false;
+    }
+
+    // Use provided timestamp or fall back to RTC
+    uint32_t now = (current_timestamp != 0) ? current_timestamp : getUnixTimestamp();
+
+    // No valid timestamp available - need hub sync
+    if (now == 0) {
+        return true;
+    }
+
+    SensorFlashMetadata stats;
+    uint32_t last_sync = 0;
+    if (flash_buffer_->getStatistics(stats)) {
+        last_sync = stats.last_sync_timestamp;
+    }
+
+    // First boot (no last_sync) - need hub sync for initial time
+    if (last_sync == 0) {
+        return true;
+    }
+
+    uint32_t elapsed = now - last_sync;
+    return elapsed >= TRANSMIT_INTERVAL_S;
+}
+
 void SensorMode::checkAndTransmitBacklog(uint32_t current_time)
 {
     (void)current_time;
@@ -246,6 +299,19 @@ void SensorMode::checkAndTransmitBacklog(uint32_t current_time)
 
     // Check if it's time to transmit (based on TRANSMIT_INTERVAL_S)
     // This ensures ALL transmission paths respect the 10-minute interval
+    if (!isTimeToTransmit()) {
+        uint32_t now = getUnixTimestamp();
+        SensorFlashMetadata stats;
+        uint32_t last_sync = 0;
+        if (flash_buffer_->getStatistics(stats)) {
+            last_sync = stats.last_sync_timestamp;
+        }
+        uint32_t elapsed = now - last_sync;
+        logger.info("Not time to transmit yet (%lu s / %lu s)", elapsed, TRANSMIT_INTERVAL_S);
+        signalReadyForSleep();
+        return;
+    }
+
     uint32_t now = getUnixTimestamp();
     SensorFlashMetadata stats;
     uint32_t last_sync = 0;
@@ -253,12 +319,6 @@ void SensorMode::checkAndTransmitBacklog(uint32_t current_time)
         last_sync = stats.last_sync_timestamp;
     }
     uint32_t elapsed = now - last_sync;
-
-    if (elapsed < TRANSMIT_INTERVAL_S && last_sync != 0) {
-        logger.info("Not time to transmit yet (%lu s / %lu s)", elapsed, TRANSMIT_INTERVAL_S);
-        signalReadyForSleep();
-        return;
-    }
 
     logger.info("Transmit interval reached (%lu s) - checking backlog", elapsed);
 
@@ -382,23 +442,27 @@ void SensorMode::signalReadyForSleep()
 
     // Post deferred task to send sleep signal in main loop
     // This avoids calling PMU protocol directly from callback chains (stack safety)
+    // Using postOnce() to deduplicate - multiple code paths call this but we only
+    // need one ReadyForSleep command per wake cycle
     pmu_logger.debug("Requesting sleep (posting deferred task)");
 
-    // Capture reliable_pmu_ pointer for the lambda
-    PMU::ReliablePmuClient* pmu = reliable_pmu_;
-    task_queue_.post([](void* ctx, uint32_t time) -> bool {
-        (void)time;
-        PMU::ReliablePmuClient* pmu_client = static_cast<PMU::ReliablePmuClient*>(ctx);
-        pmu_logger.info("Sending ReadyForSleep via reliable client");
-        pmu_client->readyForSleep([](bool success, PMU::ErrorCode error) {
-            if (success) {
-                pmu_logger.info("Ready for sleep acknowledged");
-            } else {
-                pmu_logger.error("Ready for sleep failed: error %d", static_cast<int>(error));
-            }
-        });
-        return true;  // Task complete
-    }, pmu, TaskPriority::Low);
+    // Pass this pointer as context so we can access reliable_pmu_
+    task_queue_.postOnce(
+        [](void *ctx, uint32_t time) -> bool {
+            (void)time;
+            SensorMode *self = static_cast<SensorMode *>(ctx);
+
+            pmu_logger.info("Sending ReadyForSleep via reliable client");
+            self->reliable_pmu_->readyForSleep([](bool success, PMU::ErrorCode error) {
+                if (success) {
+                    pmu_logger.info("Ready for sleep acknowledged");
+                } else {
+                    pmu_logger.error("Ready for sleep failed: error %d", static_cast<int>(error));
+                }
+            });
+            return true;  // Task complete
+        },
+        this, TaskPriority::Low);
 }
 
 void SensorMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry *entry)

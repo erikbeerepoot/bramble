@@ -102,4 +102,14 @@ private:
      * - Triggers backlog check flow
      */
     void onRtcSynced();
+
+    /**
+     * @brief Check if enough time has elapsed since last transmission
+     * @param current_timestamp Unix timestamp to use for comparison (0 = use RTC)
+     * @return true if it's time to transmit backlog, false otherwise
+     *
+     * Used to avoid unnecessary LoRa heartbeat sync when PMU has valid time
+     * but we're between transmission intervals.
+     */
+    bool isTimeToTransmit(uint32_t current_timestamp = 0) const;
 };
