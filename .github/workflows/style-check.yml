@@ -19,14 +19,17 @@ jobs:
 
       - name: Install clang-format
         run: |
+          # Install clang-format-18 from LLVM APT repository (supports InsertBraces option)
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
+          echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-18 main" | sudo tee /etc/apt/sources.list.d/llvm.list
           sudo apt-get update
-          sudo apt-get install -y clang-format-14
+          sudo apt-get install -y clang-format-18
 
       - name: Check formatting
         run: |
           # Find all C++ source files and check formatting
           find src main.cpp -name "*.cpp" -o -name "*.h" -o -name "*.hpp" | \
-            xargs clang-format-14 --dry-run --Werror 2>&1 | tee format-check.log
+            xargs clang-format-18 --dry-run --Werror 2>&1 | tee format-check.log
 
           if [ -s format-check.log ]; then
             echo ""
