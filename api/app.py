@@ -662,6 +662,7 @@ def get_node_sensor_data(addr: int):
         JSON array of sensor readings for this node
     """
     try:
+        request_start = time.time()
         db = get_database()
 
         start_time = request.args.get('start_time', type=int)
@@ -671,18 +672,29 @@ def get_node_sensor_data(addr: int):
 
         # Use downsampled query for chart display
         if downsample and start_time and end_time:
+            query_start = time.time()
             readings = db.query_readings_downsampled(
                 node_address=addr,
                 start_time=start_time,
                 end_time=end_time,
                 max_points=min(downsample, 2000)  # Cap at 2000 points
             )
-            return jsonify({
+            query_time = time.time() - query_start
+
+            json_start = time.time()
+            response_data = {
                 'node_address': addr,
                 'count': len(readings),
                 'downsampled': True,
-                'readings': readings  # Already in chart format
-            })
+                'readings': readings,  # Already in chart format
+                '_timing': {
+                    'query_ms': round(query_time * 1000, 1),
+                    'json_ms': round((time.time() - json_start) * 1000, 1),
+                    'total_ms': round((time.time() - request_start) * 1000, 1),
+                }
+            }
+            logger.info(f"sensor-data: query={query_time*1000:.0f}ms, readings={len(readings)}")
+            return jsonify(response_data)
 
         # Standard query for full data
         readings = db.query_readings(
@@ -742,14 +754,22 @@ def get_node_statistics(addr: int):
         JSON object with node statistics
     """
     try:
+        request_start = time.time()
         db = get_database()
 
         start_time = request.args.get('start_time', type=int)
         end_time = request.args.get('end_time', type=int)
 
+        query_start = time.time()
         stats = db.get_node_statistics(addr, start_time=start_time, end_time=end_time)
+        query_time = time.time() - query_start
 
         if stats:
+            stats['_timing'] = {
+                'query_ms': round(query_time * 1000, 1),
+                'total_ms': round((time.time() - request_start) * 1000, 1),
+            }
+            logger.info(f"statistics: query={query_time*1000:.0f}ms")
             return jsonify(stats)
         else:
             return jsonify({'error': f'No data found for node {addr}'}), 404
