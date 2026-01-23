@@ -1,7 +1,7 @@
 #pragma once
 
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
 
 /**
  * @brief Priority levels for task execution
@@ -19,9 +19,9 @@ enum class TaskPriority : uint8_t {
  * @brief Internal task state
  */
 enum class TaskState : uint8_t {
-    Empty = 0,   // Slot available
-    Pending,     // Waiting to run (delay or dependency not met)
-    Running,     // Currently executing
+    Empty = 0,  // Slot available
+    Pending,    // Waiting to run (delay or dependency not met)
+    Running,    // Currently executing
 };
 
 /**
@@ -62,14 +62,14 @@ public:
      * @param current_time Current system time in milliseconds
      * @return true if task is complete, false to re-queue for retry
      */
-    using TaskFunction = bool (*)(void* context, uint32_t current_time);
+    using TaskFunction = bool (*)(void *context, uint32_t current_time);
 
     /**
      * @brief Completion callback signature
      * @param task_id ID of the completed task
      * @param context User-provided context pointer
      */
-    using CompletionCallback = void (*)(uint16_t task_id, void* context);
+    using CompletionCallback = void (*)(uint16_t task_id, void *context);
 
     static constexpr size_t MAX_TASKS = 16;
     static constexpr size_t MAX_COMPLETIONS = 8;
@@ -86,8 +86,21 @@ public:
      * @param priority Task priority (default: Normal)
      * @return Task ID (non-zero), or INVALID_ID if queue is full
      */
-    uint16_t post(TaskFunction func, void* context = nullptr,
+    uint16_t post(TaskFunction func, void *context = nullptr,
                   TaskPriority priority = TaskPriority::Normal);
+
+    /**
+     * @brief Post a task only if no task with the same function is already queued
+     * @param func Task function to execute
+     * @param context Optional context pointer passed to func
+     * @param priority Task priority (default: Normal)
+     * @return Task ID if posted, existing task ID if already queued, or INVALID_ID if queue full
+     *
+     * Use this for idempotent operations where multiple requests should coalesce
+     * into a single execution (e.g., sleep signals, flush requests).
+     */
+    uint16_t postOnce(TaskFunction func, void *context = nullptr,
+                      TaskPriority priority = TaskPriority::Normal);
 
     /**
      * @brief Post a task to run after a delay
@@ -98,8 +111,7 @@ public:
      * @param priority Task priority
      * @return Task ID, or INVALID_ID if queue is full
      */
-    uint16_t postDelayed(TaskFunction func, void* context,
-                         uint32_t current_time, uint32_t delay_ms,
+    uint16_t postDelayed(TaskFunction func, void *context, uint32_t current_time, uint32_t delay_ms,
                          TaskPriority priority = TaskPriority::Normal);
 
     /**
@@ -113,8 +125,7 @@ public:
      * If depends_on is INVALID_ID or refers to a non-existent task,
      * the task will run immediately (no dependency).
      */
-    uint16_t postAfter(TaskFunction func, void* context,
-                       uint16_t depends_on,
+    uint16_t postAfter(TaskFunction func, void *context, uint16_t depends_on,
                        TaskPriority priority = TaskPriority::Normal);
 
     // === Task Management ===
@@ -144,7 +155,7 @@ public:
      * (returns true from its function). It does not fire if the task
      * is cancelled.
      */
-    bool onComplete(uint16_t task_id, CompletionCallback callback, void* context);
+    bool onComplete(uint16_t task_id, CompletionCallback callback, void *context);
 
     // === Processing ===
 
@@ -185,13 +196,13 @@ private:
      * @brief Internal task representation
      */
     struct Task {
-        TaskFunction function;   // Function to execute
-        void* context;           // User context
-        uint32_t run_after;      // Earliest run time (0 = immediate)
-        uint16_t id;             // Unique task ID
-        uint16_t depends_on;     // Task ID that must complete first (0 = none)
-        TaskPriority priority;   // Execution priority
-        TaskState state;         // Current state
+        TaskFunction function;  // Function to execute
+        void *context;          // User context
+        uint32_t run_after;     // Earliest run time (0 = immediate)
+        uint16_t id;            // Unique task ID
+        uint16_t depends_on;    // Task ID that must complete first (0 = none)
+        TaskPriority priority;  // Execution priority
+        TaskState state;        // Current state
     };
 
     /**
@@ -200,7 +211,7 @@ private:
     struct CompletionEntry {
         uint16_t task_id;
         CompletionCallback callback;
-        void* context;
+        void *context;
     };
 
     Task tasks_[MAX_TASKS];
@@ -211,14 +222,20 @@ private:
      * @brief Find an empty task slot
      * @return Pointer to empty slot, or nullptr if full
      */
-    Task* findEmptySlot();
+    Task *findEmptySlot();
 
     /**
      * @brief Find a task by ID
      * @return Pointer to task, or nullptr if not found
      */
-    Task* findById(uint16_t id);
-    const Task* findById(uint16_t id) const;
+    Task *findById(uint16_t id);
+    const Task *findById(uint16_t id) const;
+
+    /**
+     * @brief Find a pending/running task by function pointer
+     * @return Pointer to task, or nullptr if not found
+     */
+    const Task *findByFunction(TaskFunction func) const;
 
     /**
      * @brief Mark a task as complete and fire callbacks
@@ -231,7 +248,7 @@ private:
      * @param task Task to check
      * @return true if task can run
      */
-    bool areDependenciesMet(const Task& task) const;
+    bool areDependenciesMet(const Task &task) const;
 
     /**
      * @brief Check if a task is ready to execute
@@ -239,7 +256,7 @@ private:
      * @param current_time Current system time
      * @return true if task can run now
      */
-    bool isReady(const Task& task, uint32_t current_time) const;
+    bool isReady(const Task &task, uint32_t current_time) const;
 
     /**
      * @brief Get the next unique task ID
@@ -256,7 +273,6 @@ private:
      * @param priority Task priority
      * @return Task ID, or INVALID_ID if queue is full
      */
-    uint16_t postInternal(TaskFunction func, void* context,
-                          uint32_t run_after, uint16_t depends_on,
+    uint16_t postInternal(TaskFunction func, void *context, uint32_t run_after, uint16_t depends_on,
                           TaskPriority priority);
 };
