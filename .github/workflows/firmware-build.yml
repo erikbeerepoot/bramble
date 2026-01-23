@@ -11,12 +11,6 @@ on:
       - '.github/workflows/firmware-build.yml'
     tags:
       - 'v*'
-  pull_request:
-    branches: [main]
-    paths:
-      - 'src/**'
-      - 'pmu-stm32/**'
-      - 'CMakeLists.txt'
   release:
     types: [published]
   workflow_dispatch:
