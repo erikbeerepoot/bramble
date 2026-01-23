@@ -48,6 +48,14 @@ class SensorReading:
             'received_at': self.received_at
         }
 
+    def to_chart_dict(self) -> dict:
+        """Convert to compact dictionary for chart display."""
+        return {
+            'timestamp': self.timestamp,
+            'temperature_celsius': self.temperature_celsius,
+            'humidity_percent': self.humidity_percent,
+        }
+
 
 class WriteBuffer:
     """Buffer sensor readings for batch insertion.
@@ -431,11 +439,72 @@ class SensorDatabase:
         readings = self.query_readings(node_address=node_address, limit=1)
         return readings[0] if readings else None
 
-    def get_node_statistics(self, node_address: int) -> Optional[dict]:
+    def query_readings_downsampled(
+        self,
+        node_address: int,
+        start_time: int,
+        end_time: int,
+        max_points: int = 500
+    ) -> list[dict]:
+        """Query sensor readings with bucket averaging for chart display.
+
+        Divides the time range into buckets and returns averaged values
+        for each bucket. This dramatically reduces payload size while
+        preserving the overall trend.
+
+        Args:
+            node_address: Node address to query
+            start_time: Start timestamp (required)
+            end_time: End timestamp (required)
+            max_points: Maximum number of data points to return
+
+        Returns:
+            List of dicts with timestamp, temperature_celsius, humidity_percent
+        """
+        time_range = end_time - start_time
+        if time_range <= 0:
+            return []
+
+        # Calculate bucket size in seconds
+        bucket_size = max(1, time_range // max_points)
+
+        with self._get_connection() as conn:
+            result = conn.execute("""
+                SELECT
+                    (timestamp / ?) * ? as bucket_timestamp,
+                    AVG(temperature_centidegrees) as avg_temp,
+                    AVG(humidity_centipercent) as avg_hum,
+                    COUNT(*) as sample_count
+                FROM sensor_readings
+                WHERE node_address = ?
+                  AND timestamp >= ?
+                  AND timestamp <= ?
+                GROUP BY bucket_timestamp
+                ORDER BY bucket_timestamp ASC
+            """, (bucket_size, bucket_size, node_address, start_time, end_time))
+
+            return [
+                {
+                    'timestamp': int(row[0]) + bucket_size // 2,  # Use bucket midpoint
+                    'temperature_celsius': round(row[1] / 100.0, 2) if row[1] else None,
+                    'humidity_percent': round(row[2] / 100.0, 2) if row[2] else None,
+                    'sample_count': row[3],
+                }
+                for row in result.fetchall()
+            ]
+
+    def get_node_statistics(
+        self,
+        node_address: int,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None
+    ) -> Optional[dict]:
         """Get statistics for a specific node.
 
         Args:
             node_address: Node address to query
+            start_time: Start timestamp for stats calculation (optional)
+            end_time: End timestamp for stats calculation (optional)
 
         Returns:
             Dictionary with node statistics or None
@@ -451,19 +520,36 @@ class SensorDatabase:
             if not row:
                 return None
 
-            # Get temperature stats
-            stats_result = conn.execute("""
+            # Build time-filtered stats query
+            conditions = ["node_address = ?"]
+            params = [node_address]
+
+            if start_time is not None:
+                conditions.append("timestamp >= ?")
+                params.append(start_time)
+            if end_time is not None:
+                conditions.append("timestamp <= ?")
+                params.append(end_time)
+
+            where_clause = " AND ".join(conditions)
+
+            # Get temperature stats (filtered by time range if provided)
+            stats_result = conn.execute(f"""
                 SELECT
                     MIN(temperature_centidegrees) as min_temp,
                     MAX(temperature_centidegrees) as max_temp,
                     AVG(temperature_centidegrees) as avg_temp,
                     MIN(humidity_centipercent) as min_hum,
                     MAX(humidity_centipercent) as max_hum,
-                    AVG(humidity_centipercent) as avg_hum
+                    AVG(humidity_centipercent) as avg_hum,
+                    COUNT(*) as reading_count
                 FROM sensor_readings
-                WHERE node_address = ?
-            """, (node_address,))
+                WHERE {where_clause}
+            """, params)
             stats = stats_result.fetchone()
+
+            # Use filtered reading count if time range provided, otherwise total
+            reading_count = stats[6] if (start_time or end_time) else row[5]
 
             return {
                 'address': row[0],
@@ -472,6 +558,7 @@ class SensorDatabase:
                 'first_seen_at': row[3],
                 'last_seen_at': row[4],
                 'total_readings': row[5],
+                'reading_count': reading_count,
                 'temperature': {
                     'min_celsius': stats[0] / 100.0 if stats[0] else None,
                     'max_celsius': stats[1] / 100.0 if stats[1] else None,

@@ -6,6 +6,7 @@ requires-python = ">=3.11"
 dependencies = [
     "flask>=3.0.0",
     "flask-cors>=4.0.0",
+    "flask-compress>=1.14",
     "pyserial>=3.5",
     "duckdb>=0.10.0",
     "huey>=2.5.0",
