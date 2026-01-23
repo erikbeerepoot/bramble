@@ -7,7 +7,7 @@
 #include "../hal/pmu_client.h"
 #include "../hal/pmu_reliability.h"
 #include "../storage/sensor_flash_buffer.h"
-#include "../util/work_tracker.h"
+#include "../util/task_queue.h"
 #include "application_mode.h"
 
 /**
@@ -33,8 +33,7 @@ private:
     PmuClient *pmu_client_ = nullptr;
     PMU::ReliablePmuClient *reliable_pmu_ = nullptr;
     bool pmu_available_ = false;
-    volatile bool sleep_requested_ = false;  // Deferred sleep signal flag
-    WorkTracker work_tracker_;               // Tracks pending work, signals when idle
+    TaskQueue task_queue_;  // Unified task coordination
 
     // Hub sync timeout tracking - used to proceed with PMU time if hub doesn't respond
     uint32_t heartbeat_request_time_ = 0;
@@ -103,4 +102,14 @@ private:
      * - Triggers backlog check flow
      */
     void onRtcSynced();
+
+    /**
+     * @brief Check if enough time has elapsed since last transmission
+     * @param current_timestamp Unix timestamp to use for comparison (0 = use RTC)
+     * @return true if it's time to transmit backlog, false otherwise
+     *
+     * Used to avoid unnecessary LoRa heartbeat sync when PMU has valid time
+     * but we're between transmission intervals.
+     */
+    bool isTimeToTransmit(uint32_t current_timestamp = 0) const;
 };
