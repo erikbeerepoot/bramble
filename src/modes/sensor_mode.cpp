@@ -252,9 +252,10 @@ void SensorMode::readAndStoreSensorData(uint32_t current_time)
     }
 }
 
-void SensorMode::sendHeartbeat(uint32_t current_time)
+void SensorMode::sendHeartbeat(uint32_t /* current_time */)
 {
-    uint32_t uptime = current_time / 1000;  // Convert to seconds
+    // Always use actual boot time for uptime (parameter ignored for compatibility)
+    uint32_t uptime = to_ms_since_boot(get_absolute_time()) / 1000;
     uint8_t battery_level = getBatteryLevel();
     // RSSI is negative dBm (e.g., -70 dBm); convert to absolute value for payload
     int rssi = lora_.getRssi();
