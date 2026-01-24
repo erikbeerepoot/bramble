@@ -4,6 +4,12 @@
 	(generator_version "9.0")
 	(uuid "e35d7dcf-51bd-456f-89cf-e52d660079b4")
 	(paper "A4")
+	(title_block
+		(title "Bramble")
+		(date "2026-01-24")
+		(rev "v4")
+		(company "Barefoot Systems")
+	)
 	(lib_symbols
 		(symbol "Adafruit Feather RP2040 RFM-eagle-import:CAP_CERAMIC0805-NOOUTLINE"
 			(exclude_from_sim no)
@@ -231,6 +237,113 @@
 						(effects
 							(font
 								(size 0 0)
+							)
+						)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)
+		(symbol "Connector:TestPoint"
+			(pin_numbers
+				(hide yes)
+			)
+			(pin_names
+				(offset 0.762)
+				(hide yes)
+			)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "TP"
+				(at 0 6.858 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Value" "TestPoint"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Footprint" ""
+				(at 5.08 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Datasheet" "~"
+				(at 5.08 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Description" "test point"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "ki_keywords" "test point tp"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "ki_fp_filters" "Pin* Test*"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(symbol "TestPoint_0_1"
+				(circle
+					(center 0 3.302)
+					(radius 0.762)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+			)
+			(symbol "TestPoint_1_1"
+				(pin passive line
+					(at 0 0 90)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
 							)
 						)
 					)
@@ -1905,6 +2018,16 @@
 	)
 	(wire
 		(pts
+			(xy 98.806 55.118) (xy 98.806 61.468)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "52ce64e4-d76b-449d-b76f-f47e2857d542")
+	)
+	(wire
+		(pts
 			(xy 228.6 55.88) (xy 228.6 83.82)
 		)
 		(stroke
@@ -1962,6 +2085,16 @@
 			(type default)
 		)
 		(uuid "759b7675-0349-4485-b131-54ff227c1c84")
+	)
+	(wire
+		(pts
+			(xy 94.996 61.468) (xy 98.806 61.468)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "7e20cde6-57bd-4654-842a-ef34e48c7246")
 	)
 	(wire
 		(pts
@@ -3576,6 +3709,73 @@
 			(project "bramble"
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4"
 					(reference "R5")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Connector:TestPoint")
+		(at 98.806 55.118 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "91731d2f-6781-487a-8c2e-69ed1a94aab4")
+		(property "Reference" "TP6"
+			(at 100.33 50.5459 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "3V3 TEST"
+			(at 100.33 53.0859 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "TestPoint:TestPoint_Pad_1.5x1.5mm"
+			(at 103.886 55.118 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 103.886 55.118 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "test point"
+			(at 98.806 55.118 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "7c069b8c-7a34-49f9-acd7-08b6597351c1")
+		)
+		(instances
+			(project ""
+				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4"
+					(reference "TP6")
 					(unit 1)
 				)
 			)
