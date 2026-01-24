@@ -97,15 +97,15 @@ constexpr uint8_t CAP_SCHEDULING = CAP_BATTERY_MONITOR;  // Scheduling requires 
 
 // Error flags for HeartbeatPayload
 // These indicate various node health conditions
-constexpr uint8_t ERR_FLAG_NONE              = 0x00;  // No errors
-constexpr uint8_t ERR_FLAG_SENSOR_FAILURE    = 0x01;  // Temp/humidity sensor not responding
-constexpr uint8_t ERR_FLAG_FLASH_FAILURE     = 0x02;  // External flash not responding
-constexpr uint8_t ERR_FLAG_FLASH_FULL        = 0x04;  // Flash storage >90% full
-constexpr uint8_t ERR_FLAG_PMU_FAILURE       = 0x08;  // PMU communication failure
-constexpr uint8_t ERR_FLAG_BATTERY_LOW       = 0x10;  // Battery <20% (warning)
-constexpr uint8_t ERR_FLAG_BATTERY_CRITICAL  = 0x20;  // Battery <10% (critical)
-constexpr uint8_t ERR_FLAG_RTC_NOT_SYNCED    = 0x40;  // RTC never synchronized
-constexpr uint8_t ERR_FLAG_RADIO_ISSUE       = 0x80;  // LoRa transmission issues
+constexpr uint8_t ERR_FLAG_NONE = 0x00;              // No errors
+constexpr uint8_t ERR_FLAG_SENSOR_FAILURE = 0x01;    // Temp/humidity sensor not responding
+constexpr uint8_t ERR_FLAG_FLASH_FAILURE = 0x02;     // External flash not responding
+constexpr uint8_t ERR_FLAG_FLASH_FULL = 0x04;        // Flash storage >90% full
+constexpr uint8_t ERR_FLAG_PMU_FAILURE = 0x08;       // PMU communication failure
+constexpr uint8_t ERR_FLAG_BATTERY_LOW = 0x10;       // Battery <20% (warning)
+constexpr uint8_t ERR_FLAG_BATTERY_CRITICAL = 0x20;  // Battery <10% (critical)
+constexpr uint8_t ERR_FLAG_RTC_NOT_SYNCED = 0x40;    // RTC never synchronized
+constexpr uint8_t ERR_FLAG_RADIO_ISSUE = 0x80;       // LoRa transmission issues
 
 // Registration status codes
 enum RegistrationStatus {

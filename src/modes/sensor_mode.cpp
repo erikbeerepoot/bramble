@@ -251,17 +251,20 @@ void SensorMode::sendHeartbeat(uint32_t current_time)
 {
     uint32_t uptime = current_time / 1000;  // Convert to seconds
     uint8_t battery_level = getBatteryLevel();
-    uint8_t signal_strength = lora_.getRssi() > 0 ? lora_.getRssi() : 70;  // Use actual RSSI if available
+    uint8_t signal_strength =
+        lora_.getRssi() > 0 ? lora_.getRssi() : 70;  // Use actual RSSI if available
     uint8_t active_sensors = CAP_TEMPERATURE | CAP_HUMIDITY;
     uint8_t error_flags = collectErrorFlags();
 
-    logger.debug("Sending heartbeat (uptime=%lu s, battery=%u, errors=0x%02X)", uptime, battery_level, error_flags);
+    logger.debug("Sending heartbeat (uptime=%lu s, battery=%u, errors=0x%02X)", uptime,
+                 battery_level, error_flags);
 
     messenger_.sendHeartbeat(HUB_ADDRESS, uptime, battery_level, signal_strength, active_sensors,
                              error_flags);
 }
 
-uint8_t SensorMode::collectErrorFlags() {
+uint8_t SensorMode::collectErrorFlags()
+{
     uint8_t flags = ERR_FLAG_NONE;
 
     // Check sensor health - was last read successful?
@@ -307,7 +310,8 @@ uint8_t SensorMode::collectErrorFlags() {
     return flags;
 }
 
-uint8_t SensorMode::getBatteryLevel() {
+uint8_t SensorMode::getBatteryLevel()
+{
     // TODO: Query PMU for actual battery level when battery monitoring is implemented
     // For now, return 255 (external power) since current hardware doesn't have battery
     return 255;
