@@ -12,11 +12,13 @@ function App() {
   const [zones, setZones] = useState<Zone[]>([]);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<View>('nodes');
   const [connected, setConnected] = useState(false);
 
   const fetchNodes = useCallback(async () => {
+    setRefreshing(true);
     try {
       setError(null);
       const response = await getNodes();
@@ -27,6 +29,7 @@ function App() {
       setConnected(false);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
@@ -147,6 +150,7 @@ function App() {
                 zones={zones}
                 onSelect={handleNodeSelect}
                 onRefresh={fetchNodes}
+                refreshing={refreshing}
               />
             )}
           </>

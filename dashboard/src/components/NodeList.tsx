@@ -7,6 +7,7 @@ interface NodeListProps {
   zones: Zone[];
   onSelect: (node: Node) => void;
   onRefresh: () => void;
+  refreshing?: boolean;
 }
 
 interface ZoneGroup {
@@ -14,7 +15,7 @@ interface ZoneGroup {
   nodes: Node[];
 }
 
-function NodeList({ nodes, zones, onSelect, onRefresh }: NodeListProps) {
+function NodeList({ nodes, zones, onSelect, onRefresh, refreshing }: NodeListProps) {
   const [collapsedZones, setCollapsedZones] = useState<Set<number | 'unzoned'>>(new Set());
 
   const onlineNodes = nodes.filter(n => n.online);
@@ -98,12 +99,13 @@ function NodeList({ nodes, zones, onSelect, onRefresh }: NodeListProps) {
         </div>
         <button
           onClick={onRefresh}
+          disabled={refreshing}
           className="btn btn-secondary flex items-center space-x-2"
         >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
           </svg>
-          <span>Refresh</span>
+          <span>{refreshing ? 'Refreshing...' : 'Refresh'}</span>
         </button>
       </div>
 
