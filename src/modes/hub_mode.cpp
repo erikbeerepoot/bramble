@@ -168,7 +168,8 @@ void HubMode::processIncomingMessage(uint8_t *rx_buffer, int rx_len, uint32_t cu
         if (header->type == MSG_TYPE_HEARTBEAT) {
             const HeartbeatPayload *heartbeat =
                 reinterpret_cast<const HeartbeatPayload *>(rx_buffer + sizeof(MessageHeader));
-            handleHeartbeat(header->src_addr, heartbeat);
+            int16_t rssi = lora_.getRssi();  // Capture RSSI of this packet
+            handleHeartbeat(header->src_addr, heartbeat, rssi);
             // Fall through to base class for common processing
         } else if (header->type == MSG_TYPE_CHECK_UPDATES) {
             const CheckUpdatesPayload *check =
@@ -540,7 +541,7 @@ void HubMode::handleGetDateTime()
     // The response is handled in handleSerialCommand via handleDateTimeResponse
 }
 
-void HubMode::handleHeartbeat(uint16_t source_addr, const HeartbeatPayload *payload)
+void HubMode::handleHeartbeat(uint16_t source_addr, const HeartbeatPayload *payload, int16_t rssi)
 {
     // Get current datetime from RTC
     datetime_t dt;
@@ -564,10 +565,7 @@ void HubMode::handleHeartbeat(uint16_t source_addr, const HeartbeatPayload *payl
         device_id = node->device_id;
     }
 
-    // Get signal strength from heartbeat payload (sensor's measurement, stored as absolute value)
-    // Convert back to negative dBm; 0 means no valid measurement
-    int16_t rssi =
-        (payload->signal_strength > 0) ? -static_cast<int16_t>(payload->signal_strength) : 0;
+    // rssi parameter is measured by hub when receiving this heartbeat (already in dBm)
 
     // Format: HEARTBEAT <node_addr> <device_id> <battery> <error_flags> <signal> <uptime>
     // <pending_records>
