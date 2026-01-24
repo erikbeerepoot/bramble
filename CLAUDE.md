@@ -15,39 +15,45 @@ This is a Raspberry Pi Pico project using the Pico SDK. This project will use a 
 
 ### CMake Path
 
-CMake is installed via CMake.app. Use the full path in commands:
+CMake is bundled with the Pico SDK:
 ```bash
-CMAKE=/Applications/CMake.app/Contents/bin/cmake
+CMAKE=~/.pico-sdk/cmake/v3.31.5/bin/cmake
 ```
 
 ### Common Commands
 
 #### Production Build
 ```bash
-# Configure build (run from project root)
-cmake -B build
+# Configure build with hardware variant (run from project root)
+~/.pico-sdk/cmake/v3.31.5/bin/cmake -B build -DHARDWARE_VARIANT=SENSOR
 
-* Track work with Beads instead of Markdown. Run \'bd quickstart\' to see how.
-# Build the project
-cmake --build build
-
-# Build with verbose output
-cmake --build build --verbose
+# Build the project (parallel)
+~/.pico-sdk/cmake/v3.31.5/bin/cmake --build build -j8
 
 # Clean build
-rm -rf build && cmake -B build && cmake --build build
+rm -rf build && ~/.pico-sdk/cmake/v3.31.5/bin/cmake -B build -DHARDWARE_VARIANT=SENSOR && ~/.pico-sdk/cmake/v3.31.5/bin/cmake --build build -j8
 ```
 
 #### Test Build
 ```bash
 # Configure test build
-cmake -B build -DBUILD_TESTS=ON
+~/.pico-sdk/cmake/v3.31.5/bin/cmake -B build -DBUILD_TESTS=ON
 
 # Build test version
-cmake --build build
+~/.pico-sdk/cmake/v3.31.5/bin/cmake --build build -j8
 
 # Clean test build
-rm -rf build && cmake -B build -DBUILD_TESTS=ON && cmake --build build
+rm -rf build && ~/.pico-sdk/cmake/v3.31.5/bin/cmake -B build -DBUILD_TESTS=ON && ~/.pico-sdk/cmake/v3.31.5/bin/cmake --build build -j8
+```
+
+#### Flash via OpenOCD
+```bash
+~/.pico-sdk/openocd/0.12.0+dev/openocd \
+  -s ~/.pico-sdk/openocd/0.12.0+dev/scripts \
+  -f interface/cmsis-dap.cfg \
+  -f target/rp2040.cfg \
+  -c "adapter speed 5000" \
+  -c "program build/bramble_sensor.elf verify reset exit"
 ```
 
 The build outputs are in the `build/` directory. The main executable will be `bramble.uf2` which can be copied to the Pico when it's in bootloader mode.
@@ -133,7 +139,15 @@ Flash using STM32CubeIDE, ST-Link, or your preferred programmer.
 
 ## Claude Code Behavior
 
-**Do not attempt to run build/flash commands for embedded targets.** These require specific toolchains and hardware connections. Instead:
+### RP2040 Build/Flash
+Use the `/bramble-build` and `/bramble-flash` skills to build and flash RP2040 firmware:
+- `/bramble-build [VARIANT]` - Build firmware (default: SENSOR)
+- `/bramble-flash [VARIANT]` - Flash via OpenOCD with CMSIS-DAP debug probe
+
+Example: `/bramble-build SENSOR` then `/bramble-flash SENSOR`
+
+### STM32 PMU
+**Do not attempt to run STM32 build/flash commands directly.** These require specific toolchains. Instead:
 1. Make the code changes
 2. Provide the user with instructions to build and flash
 3. Wait for user to report results
