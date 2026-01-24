@@ -555,6 +555,26 @@ void HubMode::handleHeartbeat(uint16_t source_addr, const HeartbeatPayload *payl
 
     logger.debug("Sent time to node 0x%04X: %04d-%02d-%02d %02d:%02d:%02d", source_addr, dt.year,
                  dt.month, dt.day, dt.hour, dt.min, dt.sec);
+
+    // Forward heartbeat status to Raspberry Pi via UART
+    // Look up device_id from address manager
+    uint64_t device_id = 0;
+    const NodeInfo *node = address_manager_->getNodeInfo(source_addr);
+    if (node) {
+        device_id = node->device_id;
+    }
+
+    // Get signal strength from last received message
+    int8_t rssi = lora_.getRssi();
+
+    // Format: HEARTBEAT <node_addr> <device_id> <battery> <error_flags> <signal> <uptime>
+    char response[128];
+    snprintf(response, sizeof(response), "HEARTBEAT %u %llu %u %u %d %lu\n", source_addr, device_id,
+             payload->battery_level, payload->error_flags, rssi, payload->uptime_seconds);
+    uart_puts(API_UART_ID, response);
+
+    logger.debug("Forwarded heartbeat: node=%u, battery=%u, errors=0x%02X, rssi=%d", source_addr,
+                 payload->battery_level, payload->error_flags, rssi);
 }
 
 // ===== Sensor Data Forwarding =====
