@@ -97,15 +97,16 @@ constexpr uint8_t CAP_SCHEDULING = CAP_BATTERY_MONITOR;  // Scheduling requires 
 
 // Error flags for HeartbeatPayload
 // These indicate various node health conditions
-constexpr uint8_t ERR_FLAG_NONE = 0x00;              // No errors
-constexpr uint8_t ERR_FLAG_SENSOR_FAILURE = 0x01;    // Temp/humidity sensor not responding
-constexpr uint8_t ERR_FLAG_FLASH_FAILURE = 0x02;     // External flash not responding
-constexpr uint8_t ERR_FLAG_FLASH_FULL = 0x04;        // Flash storage >90% full
-constexpr uint8_t ERR_FLAG_PMU_FAILURE = 0x08;       // PMU communication failure
-constexpr uint8_t ERR_FLAG_BATTERY_LOW = 0x10;       // Battery <20% (warning)
-constexpr uint8_t ERR_FLAG_BATTERY_CRITICAL = 0x20;  // Battery <10% (critical)
-constexpr uint8_t ERR_FLAG_RTC_NOT_SYNCED = 0x40;    // RTC never synchronized
-constexpr uint8_t ERR_FLAG_RADIO_ISSUE = 0x80;       // LoRa transmission issues
+constexpr uint16_t ERR_FLAG_NONE = 0x00;              // No errors
+constexpr uint16_t ERR_FLAG_SENSOR_FAILURE = 0x01;    // Temp/humidity sensor not responding
+constexpr uint16_t ERR_FLAG_FLASH_FAILURE = 0x02;     // External flash not responding
+constexpr uint16_t ERR_FLAG_FLASH_FULL = 0x04;        // Flash storage >90% full
+constexpr uint16_t ERR_FLAG_PMU_FAILURE = 0x08;       // PMU communication failure
+constexpr uint16_t ERR_FLAG_BATTERY_LOW = 0x10;       // Battery <20% (warning)
+constexpr uint16_t ERR_FLAG_BATTERY_CRITICAL = 0x20;  // Battery <10% (critical)
+constexpr uint16_t ERR_FLAG_RTC_NOT_SYNCED = 0x40;    // RTC never synchronized
+constexpr uint16_t ERR_FLAG_TX_FAILURES = 0x80;       // Consecutive transmission failures
+constexpr uint16_t ERR_FLAG_HIGH_TIMEOUTS = 0x100;    // High message timeout rate
 
 // Registration status codes
 enum RegistrationStatus {
@@ -172,7 +173,7 @@ struct __attribute__((packed)) HeartbeatPayload {
     uint8_t battery_level;    // Battery percentage (0-100, 255=external power)
     uint8_t signal_strength;  // Last received RSSI (absolute value)
     uint8_t active_sensors;   // Bitmask of active sensors
-    uint8_t error_flags;      // Error status flags
+    uint16_t error_flags;     // Error status flags (extended to 16 bits)
 };
 
 /**
@@ -348,7 +349,7 @@ public:
      */
     static size_t createHeartbeatMessage(uint16_t src_addr, uint16_t dst_addr, uint8_t seq_num,
                                          uint8_t battery_level, uint8_t signal_quality,
-                                         uint32_t uptime_seconds, uint8_t status_flags,
+                                         uint32_t uptime_seconds, uint16_t status_flags,
                                          uint8_t *buffer);
 
     /**

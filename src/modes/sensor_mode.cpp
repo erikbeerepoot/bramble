@@ -8,6 +8,7 @@
 #include "../hal/logger.h"
 #include "../led_patterns.h"
 #include "../lora/message.h"
+#include "../lora/network_stats.h"
 #include "../lora/reliable_messenger.h"
 
 constexpr uint16_t HUB_ADDRESS = ADDRESS_HUB;
@@ -255,18 +256,18 @@ void SensorMode::sendHeartbeat(uint32_t current_time)
     int rssi = lora_.getRssi();
     uint8_t signal_strength = (rssi < 0 && rssi >= -120) ? static_cast<uint8_t>(-rssi) : 0;
     uint8_t active_sensors = CAP_TEMPERATURE | CAP_HUMIDITY;
-    uint8_t error_flags = collectErrorFlags();
+    uint16_t error_flags = collectErrorFlags();
 
-    logger.debug("Sending heartbeat (uptime=%lu s, battery=%u, errors=0x%02X)", uptime,
+    logger.debug("Sending heartbeat (uptime=%lu s, battery=%u, errors=0x%04X)", uptime,
                  battery_level, error_flags);
 
     messenger_.sendHeartbeat(HUB_ADDRESS, uptime, battery_level, signal_strength, active_sensors,
                              error_flags);
 }
 
-uint8_t SensorMode::collectErrorFlags()
+uint16_t SensorMode::collectErrorFlags()
 {
-    uint8_t flags = ERR_FLAG_NONE;
+    uint16_t flags = ERR_FLAG_NONE;
 
     // Check sensor health - was last read successful?
     if (sensor_ && !last_sensor_read_valid_) {
@@ -305,6 +306,25 @@ uint8_t SensorMode::collectErrorFlags()
             flags |= ERR_FLAG_BATTERY_CRITICAL;
         } else if (battery < 20) {
             flags |= ERR_FLAG_BATTERY_LOW;
+        }
+    }
+
+    // Check consecutive transmission failures
+    if (consecutive_tx_failures_ >= TX_FAILURE_THRESHOLD) {
+        flags |= ERR_FLAG_TX_FAILURES;
+    }
+
+    // Check network timeout rate from statistics
+    if (network_stats_) {
+        const auto &global = network_stats_->getGlobalStats();
+        uint32_t total_reliable =
+            global.criticality_totals[RELIABLE].sent + global.criticality_totals[CRITICAL].sent;
+        uint32_t total_timeouts =
+            global.criticality_totals[RELIABLE].timeouts + global.criticality_totals[CRITICAL].timeouts;
+
+        // Flag if >25% of reliable/critical messages are timing out (with minimum sample size)
+        if (total_reliable >= 10 && total_timeouts * 4 > total_reliable) {
+            flags |= ERR_FLAG_HIGH_TIMEOUTS;
         }
     }
 
@@ -461,6 +481,7 @@ bool SensorMode::transmitBatch(const SensorDataRecord *records, size_t count)
                 if (flash_buffer_->advanceReadIndex(static_cast<uint32_t>(count))) {
                     logger.info("Batch ACK received (seq=%d): %zu records transmitted", seq_num,
                                 count);
+                    consecutive_tx_failures_ = 0;  // Reset failure counter on success
 
                     // Check if we've cleared all backlog
                     if (flash_buffer_->getUntransmittedCount() == 0) {
@@ -471,6 +492,9 @@ bool SensorMode::transmitBatch(const SensorDataRecord *records, size_t count)
             } else {
                 logger.warn("Batch transmission failed (seq=%d, status=%d), will retry", seq_num,
                             ack_status);
+                if (consecutive_tx_failures_ < 255) {
+                    consecutive_tx_failures_++;
+                }
                 // Signal sleep on failure - we'll retry next wake cycle
                 signalReadyForSleep();
             }

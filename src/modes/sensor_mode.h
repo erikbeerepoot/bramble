@@ -117,7 +117,7 @@ private:
      * @brief Collect current error flags based on hardware status
      * @return Bitmask of ERR_FLAG_* constants from message.h
      */
-    uint8_t collectErrorFlags();
+    uint16_t collectErrorFlags();
 
     /**
      * @brief Get current battery level
@@ -126,5 +126,7 @@ private:
     uint8_t getBatteryLevel();
 
     // Error tracking state
-    bool last_sensor_read_valid_ = false;  // Track if last sensor read succeeded
+    bool last_sensor_read_valid_ = false;       // Track if last sensor read succeeded
+    uint8_t consecutive_tx_failures_ = 0;       // Track consecutive transmission failures
+    static constexpr uint8_t TX_FAILURE_THRESHOLD = 3;  // Failures before setting error flag
 };

@@ -87,7 +87,7 @@ bool ReliableMessenger::sendSensorData(uint16_t dst_addr, uint8_t sensor_type, c
 
 bool ReliableMessenger::sendHeartbeat(uint16_t dst_addr, uint32_t uptime_seconds,
                                       uint8_t battery_level, uint8_t signal_strength,
-                                      uint8_t active_sensors, uint8_t error_flags)
+                                      uint8_t active_sensors, uint16_t error_flags)
 {
     uint8_t seq_num = getNextSequenceNumber();
 
