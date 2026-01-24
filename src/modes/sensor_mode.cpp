@@ -3,6 +3,7 @@
 #include <ctime>
 
 #include "hardware/i2c.h"
+#include "pico/stdlib.h"
 
 #include "../hal/cht832x.h"
 #include "../hal/logger.h"
@@ -44,23 +45,9 @@ void SensorMode::onStart()
         logger.error("Failed to initialize external flash!");
     }
 
-    // Initialize CHT832X temperature/humidity sensor
+    // Create CHT832X sensor object (lazy init on first read)
     sensor_ = std::make_unique<CHT832X>(i2c1, PIN_I2C_SDA, PIN_I2C_SCL);
-
-    if (sensor_->init()) {
-        logger.info("CHT832X sensor initialized on I2C1 (SDA=%d, SCL=%d)", PIN_I2C_SDA,
-                    PIN_I2C_SCL);
-
-        // Take an initial reading to verify sensor is working
-        auto reading = sensor_->read();
-        if (reading.valid) {
-            logger.info("Initial reading: %.2fC, %.2f%%RH", reading.temperature, reading.humidity);
-        }
-    } else {
-        logger.error("Failed to initialize CHT832X sensor!");
-        logger.error("Check wiring: Red=3.3V, Black=GND, Green=GPIO%d, Yellow=GPIO%d", PIN_I2C_SCL,
-                     PIN_I2C_SDA);
-    }
+    logger.info("CHT832X sensor created (lazy init on first read)");
 
     // define led patterns
     led_pattern_ = std::make_unique<BlinkingPattern>(led_, 255, 165, 0, 250, 250);
@@ -145,6 +132,17 @@ void SensorMode::onStart()
                 pmu_logger.info(
                     "PMU time not valid (first boot?) - sending heartbeat for hub sync");
                 sendHeartbeat(0);
+
+                // delay here -- first boot, we give a bit of extra time to program the device
+                pmu_logger.info(
+                    "Delaying sleep to allow time for programming..."
+                );
+                sleep_ms(20000);
+                pmu_logger.info(
+                    "Done."
+                );
+
+
             }
         });
     } else {
@@ -193,7 +191,13 @@ void SensorMode::readAndStoreSensorData(uint32_t current_time)
     (void)current_time;  // No longer used - we use RTC Unix timestamp
 
     if (!sensor_) {
-        logger.error("Sensor not initialized");
+        logger.error("Sensor object not created");
+        return;
+    }
+
+    // Lazy init: try to initialize sensor if not yet done
+    if (!sensor_initialized_ && !tryInitSensor()) {
+        logger.warn("Sensor not ready, will retry next cycle");
         return;
     }
 
@@ -277,8 +281,9 @@ uint16_t SensorMode::collectErrorFlags()
 {
     uint16_t flags = ERR_FLAG_NONE;
 
-    // Check sensor health - was last read successful?
-    if (sensor_ && !last_sensor_read_valid_) {
+    // Check sensor health - only report failure if we've attempted to read
+    // (sensor_initialized_ means we've tried init and at least one read)
+    if (sensor_ && sensor_initialized_ && !last_sensor_read_valid_) {
         flags |= ERR_FLAG_SENSOR_FAILURE;
     }
 
@@ -639,4 +644,37 @@ void SensorMode::onRtcSynced()
     // Check and transmit backlog (handles 10-minute interval internally)
     // signalReadyForSleep() is called when done
     checkAndTransmitBacklog(to_ms_since_boot(get_absolute_time()));
+}
+
+bool SensorMode::tryInitSensor()
+{
+    if (sensor_initialized_) {
+        return true;
+    }
+
+    if (!sensor_) {
+        return false;
+    }
+
+    // Wait for sensor to stabilize after power-on before I2C communication
+    // Some sensors need time after VCC is applied before they're ready
+    logger.info("Waiting 1s for sensor power-on stabilization...");
+    sleep_ms(1000);
+
+    if (sensor_->init()) {
+        sensor_initialized_ = true;
+        logger.info("CHT832X sensor initialized on I2C1 (SDA=%d, SCL=%d)", PIN_I2C_SDA, PIN_I2C_SCL);
+
+        // Take an initial reading to verify sensor is working
+        auto reading = sensor_->read();
+        if (reading.valid) {
+            logger.info("Initial reading: %.2fC, %.2f%%RH", reading.temperature, reading.humidity);
+        }
+        return true;
+    }
+
+    logger.error("Failed to initialize CHT832X sensor!");
+    logger.error("Check wiring: Red=3.3V, Black=GND, Green=GPIO%d, Yellow=GPIO%d", PIN_I2C_SCL,
+                 PIN_I2C_SDA);
+    return false;
 }
