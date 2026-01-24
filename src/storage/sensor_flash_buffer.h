@@ -156,6 +156,29 @@ public:
     bool updateLastSync(uint32_t timestamp);
 
     /**
+     * @brief Get the initial boot timestamp
+     *
+     * Returns the Unix timestamp of when the device first booted after a
+     * power loss (battery disconnection). This timestamp is set once when
+     * RTC first becomes valid after a cold start.
+     *
+     * @return Unix timestamp of initial boot, or 0 if not yet set
+     */
+    uint32_t getInitialBootTimestamp() const;
+
+    /**
+     * @brief Set the initial boot timestamp (only if not already set)
+     *
+     * Sets the initial boot timestamp for uptime calculation. This should
+     * only be called once after RTC sync on first boot after power loss.
+     * If the timestamp is already set (non-zero), this call is a no-op.
+     *
+     * @param timestamp Unix timestamp to set
+     * @return true if timestamp was set, false if already set or error
+     */
+    bool setInitialBootTimestamp(uint32_t timestamp);
+
+    /**
      * @brief Flush metadata to flash
      *
      * Call this before power down to ensure write_index is persisted.

@@ -28,8 +28,9 @@ struct __attribute__((packed)) SensorFlashMetadata {
     uint32_t total_records;        // Total records written (wraps at UINT32_MAX)
     uint32_t records_transmitted;  // Records successfully transmitted
     uint32_t records_lost;         // Records overwritten before transmission
-    uint32_t last_sync_timestamp;  // Unix timestamp of last hub sync
-    uint8_t reserved[4060];        // Pad to 4KB sector size
+    uint32_t last_sync_timestamp;     // Unix timestamp of last hub sync
+    uint32_t initial_boot_timestamp;  // Unix timestamp of first boot after power loss
+    uint8_t reserved[4056];           // Pad to 4KB sector size (reduced by 4 bytes)
     uint32_t crc32;                // CRC32 of all fields above
 };
 

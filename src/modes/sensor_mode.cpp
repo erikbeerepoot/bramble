@@ -112,6 +112,15 @@ void SensorMode::onStart()
                                 dt.month, dt.day, dt.hour, dt.min, dt.sec);
                     switchToOperationalPattern();
 
+                    // RTC is now valid - mark as synced and set initial boot timestamp
+                    // This must happen BEFORE sendHeartbeat() to avoid ERR_FLAG_RTC_NOT_SYNCED
+                    rtc_synced_ = true;
+                    if (flash_buffer_ && flash_buffer_->getInitialBootTimestamp() == 0) {
+                        uint32_t now = getUnixTimestamp();
+                        flash_buffer_->setInitialBootTimestamp(now);
+                        logger.info("Set initial_boot_timestamp to %lu (from PMU sync)", now);
+                    }
+
                     // Only sync from hub if it's time to transmit
                     // This avoids unnecessary LoRa traffic between transmission intervals
                     if (time_to_transmit) {
@@ -121,7 +130,6 @@ void SensorMode::onStart()
                     } else {
                         // PMU time is good enough, proceed directly to backlog check
                         pmu_logger.info("Not time to transmit - using PMU time, skipping hub sync");
-                        rtc_synced_ = true;
                         onRtcSynced();
                     }
                 } else {
@@ -132,17 +140,6 @@ void SensorMode::onStart()
                 pmu_logger.info(
                     "PMU time not valid (first boot?) - sending heartbeat for hub sync");
                 sendHeartbeat(0);
-
-                // delay here -- first boot, we give a bit of extra time to program the device
-                pmu_logger.info(
-                    "Delaying sleep to allow time for programming..."
-                );
-                sleep_ms(20000);
-                pmu_logger.info(
-                    "Done."
-                );
-
-
             }
         });
     } else {
@@ -254,8 +251,13 @@ void SensorMode::readAndStoreSensorData(uint32_t current_time)
 
 void SensorMode::sendHeartbeat(uint32_t /* current_time */)
 {
-    // Always use actual boot time for uptime (parameter ignored for compatibility)
-    uint32_t uptime = to_ms_since_boot(get_absolute_time()) / 1000;
+    // Calculate uptime from initial boot timestamp (persisted across sleep cycles)
+    uint32_t uptime = 0;
+    uint32_t initial_boot = flash_buffer_ ? flash_buffer_->getInitialBootTimestamp() : 0;
+    uint32_t current_time_rtc = getUnixTimestamp();
+    if (initial_boot > 0 && current_time_rtc > initial_boot) {
+        uptime = current_time_rtc - initial_boot;
+    }
     uint8_t battery_level = getBatteryLevel();
     // RSSI is negative dBm (e.g., -70 dBm); convert to absolute value for payload
     int rssi = lora_.getRssi();
@@ -627,12 +629,20 @@ void SensorMode::onRtcSynced()
     // Switch to operational LED pattern if not already done
     switchToOperationalPattern();
 
-    // Initialize last_sync_timestamp if this is first boot
-    // This gives a valid baseline for the transmission interval check
+    // Initialize timestamps on first boot after power loss
     if (flash_buffer_) {
+        uint32_t now = getUnixTimestamp();
+
+        // Set initial boot timestamp for uptime calculation (only if not already set)
+        if (flash_buffer_->getInitialBootTimestamp() == 0) {
+            flash_buffer_->setInitialBootTimestamp(now);
+            logger.info("Set initial_boot_timestamp to %lu", now);
+        }
+
+        // Initialize last_sync_timestamp if this is first boot
+        // This gives a valid baseline for the transmission interval check
         SensorFlashMetadata stats;
         if (flash_buffer_->getStatistics(stats) && stats.last_sync_timestamp == 0) {
-            uint32_t now = getUnixTimestamp();
             flash_buffer_->updateLastSync(now);
             logger.info("Initialized last_sync_timestamp to %lu", now);
         }
