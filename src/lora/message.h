@@ -118,7 +118,8 @@ enum class UpdateType : uint8_t {
     SET_SCHEDULE = 0x01,      // Add/modify schedule entry
     REMOVE_SCHEDULE = 0x02,   // Remove schedule entry
     SET_DATETIME = 0x03,      // Sync RTC date/time
-    SET_WAKE_INTERVAL = 0x04  // Change periodic wake interval
+    SET_WAKE_INTERVAL = 0x04, // Change periodic wake interval
+    SET_CONFIG = 0x05         // Update node configuration parameter
 };
 
 /**
@@ -221,6 +222,18 @@ struct __attribute__((packed)) UpdateAvailablePayload {
     uint8_t update_type;       // UpdateType enum
     uint8_t sequence;          // Hub's sequence for this update
     uint8_t payload_data[24];  // Type-specific data
+};
+
+/**
+ * @brief Configuration update payload (used within UpdateAvailablePayload)
+ *
+ * Sent as payload_data in UpdateAvailablePayload when update_type is SET_CONFIG.
+ * Allows updating individual node configuration parameters from the hub/dashboard.
+ */
+struct __attribute__((packed)) ConfigPayload {
+    uint8_t param_id;   // ConfigParamId from sensor_config.h
+    uint8_t reserved;   // Reserved for future use
+    int32_t value;      // Parameter value (interpretation depends on param_id)
 };
 
 /**
