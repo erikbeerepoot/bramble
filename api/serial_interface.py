@@ -105,6 +105,11 @@ class SerialInterface:
             self._handle_datetime_query()
             return
 
+        # Handle heartbeat messages
+        if line.startswith("HEARTBEAT "):
+            self._handle_heartbeat(line)
+            return
+
         # Handle sensor data messages
         if line.startswith("SENSOR_DATA "):
             self._handle_sensor_data(line)
@@ -141,6 +146,44 @@ class SerialInterface:
             logger.info(f"Responded to datetime query: {response.strip()}")
         except Exception as e:
             logger.error(f"Failed to send datetime response: {e}")
+
+    def _handle_heartbeat(self, line: str):
+        """Handle heartbeat status from hub.
+
+        Format: HEARTBEAT <node_addr> <device_id> <battery> <error_flags> <signal> <uptime>
+        """
+        if not self.database:
+            logger.warning("Received heartbeat but no database configured")
+            return
+
+        try:
+            parts = line.split()
+            if len(parts) < 7:
+                logger.error(f"Invalid HEARTBEAT format: {line}")
+                return
+
+            node_addr = int(parts[1])
+            device_id = int(parts[2])
+            battery_level = int(parts[3])
+            error_flags = int(parts[4])
+            signal_strength = int(parts[5])
+            uptime_seconds = int(parts[6])
+
+            # Store in database
+            self.database.update_node_status(
+                address=node_addr,
+                device_id=device_id if device_id != 0 else None,
+                battery_level=battery_level,
+                error_flags=error_flags,
+                signal_strength=signal_strength,
+                uptime_seconds=uptime_seconds
+            )
+
+            logger.info(f"Updated node status: addr={node_addr}, battery={battery_level}, "
+                       f"errors=0x{error_flags:02X}, rssi={signal_strength}dBm, uptime={uptime_seconds}s")
+
+        except (ValueError, IndexError) as e:
+            logger.error(f"Failed to parse HEARTBEAT: {e}")
 
     def send_command(self, command: str, timeout: float = Config.COMMAND_TIMEOUT) -> list[str]:
         """Send command to hub and wait for response.

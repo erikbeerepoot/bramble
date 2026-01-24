@@ -169,6 +169,19 @@ class SensorDatabase:
         color VARCHAR(7) NOT NULL,
         description VARCHAR
     );
+
+    CREATE TABLE IF NOT EXISTS node_status (
+        address INTEGER PRIMARY KEY,
+        device_id UBIGINT,
+        battery_level INTEGER,
+        error_flags INTEGER,
+        signal_strength INTEGER,
+        uptime_seconds INTEGER,
+        updated_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_node_status_updated
+        ON node_status(updated_at);
     """
 
     def __init__(self, db_path: str = Config.SENSOR_DB_PATH):
@@ -939,3 +952,118 @@ class SensorDatabase:
         # Use -1 to explicitly unset zone_id in update_node_metadata
         zone_value = -1 if zone_id is None else zone_id
         return self.update_node_metadata(address, zone_id=zone_value)
+
+    # ===== Node Status Management =====
+
+    def update_node_status(
+        self,
+        address: int,
+        device_id: Optional[int] = None,
+        battery_level: Optional[int] = None,
+        error_flags: Optional[int] = None,
+        signal_strength: Optional[int] = None,
+        uptime_seconds: Optional[int] = None
+    ) -> dict:
+        """Update status for a node (upsert).
+
+        Args:
+            address: Node address
+            device_id: Hardware device ID
+            battery_level: Battery percentage (0-100, 255=external power)
+            error_flags: Bitmask of error flags
+            signal_strength: RSSI in dBm (negative value)
+            uptime_seconds: Node uptime in seconds
+
+        Returns:
+            Updated status dictionary
+        """
+        updated_at = int(time.time())
+
+        with self._get_connection() as conn:
+            # Check if status exists
+            existing = conn.execute(
+                "SELECT device_id, battery_level, error_flags, signal_strength, uptime_seconds FROM node_status WHERE address = ?",
+                (address,)
+            ).fetchone()
+
+            if existing:
+                # Update existing - only update fields that are provided
+                current_device_id = device_id if device_id is not None else existing[0]
+                current_battery = battery_level if battery_level is not None else existing[1]
+                current_errors = error_flags if error_flags is not None else existing[2]
+                current_signal = signal_strength if signal_strength is not None else existing[3]
+                current_uptime = uptime_seconds if uptime_seconds is not None else existing[4]
+
+                conn.execute("""
+                    UPDATE node_status
+                    SET device_id = ?, battery_level = ?, error_flags = ?,
+                        signal_strength = ?, uptime_seconds = ?, updated_at = ?
+                    WHERE address = ?
+                """, (current_device_id, current_battery, current_errors,
+                      current_signal, current_uptime, updated_at, address))
+            else:
+                # Insert new
+                conn.execute("""
+                    INSERT INTO node_status (address, device_id, battery_level, error_flags,
+                                            signal_strength, uptime_seconds, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (address, device_id, battery_level, error_flags,
+                      signal_strength, uptime_seconds, updated_at))
+
+        return self.get_node_status(address)
+
+    def get_node_status(self, address: int) -> Optional[dict]:
+        """Get status for a node.
+
+        Args:
+            address: Node address
+
+        Returns:
+            Status dictionary or None if not found
+        """
+        with self._get_connection() as conn:
+            result = conn.execute("""
+                SELECT address, device_id, battery_level, error_flags,
+                       signal_strength, uptime_seconds, updated_at
+                FROM node_status WHERE address = ?
+            """, (address,))
+            row = result.fetchone()
+
+            if not row:
+                return None
+
+            return {
+                'address': row[0],
+                'device_id': row[1],
+                'battery_level': row[2],
+                'error_flags': row[3],
+                'signal_strength': row[4],
+                'uptime_seconds': row[5],
+                'updated_at': row[6]
+            }
+
+    def get_all_node_status(self) -> dict[int, dict]:
+        """Get status for all nodes.
+
+        Returns:
+            Dictionary mapping address to status dict
+        """
+        with self._get_connection() as conn:
+            result = conn.execute("""
+                SELECT address, device_id, battery_level, error_flags,
+                       signal_strength, uptime_seconds, updated_at
+                FROM node_status
+            """)
+
+            status = {}
+            for row in result.fetchall():
+                status[row[0]] = {
+                    'address': row[0],
+                    'device_id': row[1],
+                    'battery_level': row[2],
+                    'error_flags': row[3],
+                    'signal_strength': row[4],
+                    'uptime_seconds': row[5],
+                    'updated_at': row[6]
+                }
+            return status

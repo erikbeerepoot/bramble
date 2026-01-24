@@ -110,9 +110,10 @@ def list_nodes():
         header = responses[0].split()
         count = int(header[1])
 
-        # Get all metadata to include with nodes
+        # Get all metadata and status to include with nodes
         db = get_database()
         all_metadata = db.get_all_node_metadata()
+        all_status = db.get_all_node_status()
 
         nodes = []
         for line in responses[1:]:
@@ -132,6 +133,9 @@ def list_nodes():
                     # Include metadata if available
                     if address in all_metadata:
                         node_dict['metadata'] = all_metadata[address]
+                    # Include status if available
+                    if address in all_status:
+                        node_dict['status'] = all_status[address]
                     nodes.append(node_dict)
 
         return jsonify({
@@ -180,6 +184,39 @@ def get_node(addr: int):
 
     except Exception as e:
         logger.error(f"Error getting node {addr}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/nodes/<int:addr>/status', methods=['GET'])
+def get_node_status(addr: int):
+    """Get status for a specific node.
+
+    Args:
+        addr: Node address
+
+    Returns:
+        JSON status object or 404 if not found
+    """
+    try:
+        db = get_database()
+        status = db.get_node_status(addr)
+
+        if status:
+            return jsonify(status)
+        else:
+            # Return empty status structure for nodes without status
+            return jsonify({
+                'address': addr,
+                'device_id': None,
+                'battery_level': None,
+                'error_flags': None,
+                'signal_strength': None,
+                'uptime_seconds': None,
+                'updated_at': None
+            })
+
+    except Exception as e:
+        logger.error(f"Error getting status for node {addr}: {e}")
         return jsonify({'error': str(e)}), 500
 
 
