@@ -2,8 +2,10 @@
 
 #include <memory>
 
+#include "../config/sensor_config_manager.h"
 #include "../hal/cht832x.h"
 #include "../hal/external_flash.h"
+#include "../hal/flash.h"
 #include "../hal/pmu_client.h"
 #include "../hal/pmu_reliability.h"
 #include "../storage/sensor_flash_buffer.h"
@@ -30,6 +32,8 @@ private:
     std::unique_ptr<CHT832X> sensor_;
     std::unique_ptr<ExternalFlash> external_flash_;
     std::unique_ptr<SensorFlashBuffer> flash_buffer_;
+    std::unique_ptr<Flash> internal_flash_;
+    std::unique_ptr<SensorConfigManager> sensor_config_;
     PmuClient *pmu_client_ = nullptr;
     PMU::ReliablePmuClient *reliable_pmu_ = nullptr;
     bool pmu_available_ = false;
@@ -96,6 +100,12 @@ private:
     void onHeartbeatResponse(const HeartbeatResponsePayload *payload) override;
 
     /**
+     * @brief Handle update available messages - apply config updates
+     * @param payload Update available payload
+     */
+    void onUpdateAvailable(const UpdateAvailablePayload *payload) override;
+
+    /**
      * @brief Handle RTC synchronization completion
      * Centralizes the flow after RTC sync (from PMU or hub heartbeat):
      * - Completes RtcSync work
@@ -112,4 +122,21 @@ private:
      * but we're between transmission intervals.
      */
     bool isTimeToTransmit(uint32_t current_timestamp = 0) const;
+
+    /**
+     * @brief Handle configuration update from hub
+     * @param param_id Configuration parameter ID
+     * @param value New parameter value
+     */
+    void handleConfigUpdate(uint8_t param_id, int32_t value);
+
+    /**
+     * @brief Get the sensor read interval from config (ms)
+     */
+    uint32_t getSensorReadIntervalMs() const;
+
+    /**
+     * @brief Get the transmit interval from config (seconds)
+     */
+    uint32_t getTransmitIntervalS() const;
 };

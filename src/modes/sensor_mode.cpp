@@ -27,6 +27,17 @@ void SensorMode::onStart()
     logger.info("=== SENSOR MODE ACTIVE ===");
     logger.info("- Orange LED blink (init) -> Red short blink (operational)");
 
+    // Initialize internal flash and sensor configuration
+    internal_flash_ = std::make_unique<Flash>();
+    sensor_config_ = std::make_unique<SensorConfigManager>(*internal_flash_);
+    if (sensor_config_->init()) {
+        logger.info("Sensor configuration loaded (read_interval=%lus, transmit_interval=%lus)",
+                    sensor_config_->getConfig().sensor_read_interval_s,
+                    sensor_config_->getConfig().transmit_interval_s);
+    } else {
+        logger.warn("Failed to initialize sensor configuration, using defaults");
+    }
+
     // Initialize external flash for sensor data storage
     external_flash_ = std::make_unique<ExternalFlash>();
     if (external_flash_->init()) {
@@ -152,8 +163,9 @@ void SensorMode::onStart()
     }
 
     // Add periodic sensor reading task (stores to flash, no immediate TX)
+    // Use config value for interval
     task_manager_.addTask([this](uint32_t time) { readAndStoreSensorData(time); },
-                          SENSOR_READ_INTERVAL_MS, "Sensor Read");
+                          getSensorReadIntervalMs(), "Sensor Read");
 
     // Add heartbeat task
     task_manager_.addTask([this](uint32_t time) { sendHeartbeat(time); }, HEARTBEAT_INTERVAL_MS,
@@ -222,8 +234,16 @@ void SensorMode::readAndStoreSensorData(uint32_t current_time)
     // Convert to fixed-point format
     // Temperature: int16_t in 0.01C units (e.g., 2350 = 23.50C)
     // Humidity: uint16_t in 0.01% units (e.g., 6500 = 65.00%)
-    int16_t temp_fixed = static_cast<int16_t>(reading.temperature * 100.0f);
-    uint16_t hum_fixed = static_cast<uint16_t>(reading.humidity * 100.0f);
+    int16_t temp_raw = static_cast<int16_t>(reading.temperature * 100.0f);
+    uint16_t hum_raw = static_cast<uint16_t>(reading.humidity * 100.0f);
+
+    // Apply calibration offsets from config
+    int16_t temp_fixed = sensor_config_ ? sensor_config_->applyTemperatureCalibration(temp_raw) : temp_raw;
+    uint16_t hum_fixed = sensor_config_ ? sensor_config_->applyHumidityCalibration(hum_raw) : hum_raw;
+
+    if (sensor_config_ && (sensor_config_->getTemperatureOffset() != 0 || sensor_config_->getHumidityOffset() != 0)) {
+        logger.debug("Applied calibration: temp %d->%d, hum %u->%u", temp_raw, temp_fixed, hum_raw, hum_fixed);
+    }
 
     // Write to flash only (no immediate TX - batch transmission handles delivery)
     if (flash_buffer_) {
@@ -284,7 +304,7 @@ bool SensorMode::isTimeToTransmit(uint32_t current_timestamp) const
     }
 
     uint32_t elapsed = now - last_sync;
-    return elapsed >= TRANSMIT_INTERVAL_S;
+    return elapsed >= getTransmitIntervalS();
 }
 
 void SensorMode::checkAndTransmitBacklog(uint32_t current_time)
@@ -307,7 +327,7 @@ void SensorMode::checkAndTransmitBacklog(uint32_t current_time)
             last_sync = stats.last_sync_timestamp;
         }
         uint32_t elapsed = now - last_sync;
-        logger.info("Not time to transmit yet (%lu s / %lu s)", elapsed, TRANSMIT_INTERVAL_S);
+        logger.info("Not time to transmit yet (%lu s / %lu s)", elapsed, getTransmitIntervalS());
         signalReadyForSleep();
         return;
     }
@@ -547,4 +567,77 @@ void SensorMode::onRtcSynced()
     // Check and transmit backlog (handles 10-minute interval internally)
     // signalReadyForSleep() is called when done
     checkAndTransmitBacklog(to_ms_since_boot(get_absolute_time()));
+}
+
+uint32_t SensorMode::getSensorReadIntervalMs() const
+{
+    if (sensor_config_) {
+        return sensor_config_->getSensorReadIntervalMs();
+    }
+    return SENSOR_READ_INTERVAL_MS;  // Fallback to compile-time default
+}
+
+uint32_t SensorMode::getTransmitIntervalS() const
+{
+    if (sensor_config_) {
+        return sensor_config_->getTransmitIntervalS();
+    }
+    return TRANSMIT_INTERVAL_S;  // Fallback to compile-time default
+}
+
+void SensorMode::onUpdateAvailable(const UpdateAvailablePayload *payload)
+{
+    if (!payload || !payload->has_update) {
+        logger.debug("No update available");
+        return;
+    }
+
+    UpdateType update_type = static_cast<UpdateType>(payload->update_type);
+    uint8_t sequence = payload->sequence;
+
+    logger.info("Received update: type=%d, seq=%d", payload->update_type, sequence);
+
+    if (update_type == UpdateType::SET_CONFIG) {
+        // Parse config payload (6 bytes: param_id, reserved, value[4])
+        const uint8_t *data = payload->payload_data;
+        uint8_t param_id = data[0];
+        // data[1] is reserved
+        int32_t value = static_cast<int32_t>(data[2]) |
+                        (static_cast<int32_t>(data[3]) << 8) |
+                        (static_cast<int32_t>(data[4]) << 16) |
+                        (static_cast<int32_t>(data[5]) << 24);
+
+        logger.info("  SET_CONFIG: param=%d, value=%ld", param_id, value);
+        handleConfigUpdate(param_id, value);
+    } else {
+        logger.warn("Unhandled update type %d in SensorMode", static_cast<int>(update_type));
+    }
+}
+
+void SensorMode::handleConfigUpdate(uint8_t param_id, int32_t value)
+{
+    if (!sensor_config_) {
+        logger.error("Cannot apply config update - config manager not initialized");
+        return;
+    }
+
+    ConfigParamId config_param = static_cast<ConfigParamId>(param_id);
+
+    if (!SensorConfigManager::validateParameter(config_param, value)) {
+        logger.error("Invalid config parameter value: param=%d, value=%ld", param_id, value);
+        return;
+    }
+
+    if (sensor_config_->setParameter(config_param, value)) {
+        logger.info("Applied config update: param=%d, value=%ld", param_id, value);
+
+        // Handle special cases that require immediate action
+        if (config_param == ConfigParamId::TX_POWER) {
+            // Apply TX power change immediately
+            lora_.setTxPower(static_cast<uint8_t>(value));
+            logger.info("Applied TX power change to %d dBm", static_cast<int>(value));
+        }
+    } else {
+        logger.error("Failed to apply config update: param=%d, value=%ld", param_id, value);
+    }
 }
