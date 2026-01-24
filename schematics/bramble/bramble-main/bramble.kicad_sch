@@ -834,603 +834,6 @@
 			)
 			(embedded_fonts no)
 		)
-		(symbol "Transistor_FET:DMN3300U"
-			(pin_names
-				(offset 0)
-				(hide yes)
-			)
-			(exclude_from_sim no)
-			(in_bom yes)
-			(on_board yes)
-			(property "Reference" "Q"
-				(at 5.08 1.905 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(justify left)
-				)
-			)
-			(property "Value" "DMN3300U"
-				(at 5.08 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(justify left)
-				)
-			)
-			(property "Footprint" "Package_TO_SOT_SMD:SOT-23"
-				(at 5.08 -1.905 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-						(italic yes)
-					)
-					(justify left)
-					(hide yes)
-				)
-			)
-			(property "Datasheet" "http://www.diodes.com/assets/Datasheets/ds31181.pdf"
-				(at 5.08 -3.81 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(justify left)
-					(hide yes)
-				)
-			)
-			(property "Description" "2A Id, 30V Vds, N-Channel MOSFET, SOT-23"
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(property "ki_keywords" "N-Channel MOSFET"
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(property "ki_fp_filters" "SOT?23*"
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(symbol "DMN3300U_0_1"
-				(polyline
-					(pts
-						(xy 0.254 1.905) (xy 0.254 -1.905)
-					)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 0.254 0) (xy -2.54 0)
-					)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 0.762 2.286) (xy 0.762 1.27)
-					)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 0.762 0.508) (xy 0.762 -0.508)
-					)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 0.762 -1.27) (xy 0.762 -2.286)
-					)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 0.762 -1.778) (xy 3.302 -1.778) (xy 3.302 1.778) (xy 0.762 1.778)
-					)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 1.016 0) (xy 2.032 0.381) (xy 2.032 -0.381) (xy 1.016 0)
-					)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type outline)
-					)
-				)
-				(circle
-					(center 1.651 0)
-					(radius 2.794)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 2.54 2.54) (xy 2.54 1.778)
-					)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(circle
-					(center 2.54 1.778)
-					(radius 0.254)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type outline)
-					)
-				)
-				(circle
-					(center 2.54 -1.778)
-					(radius 0.254)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type outline)
-					)
-				)
-				(polyline
-					(pts
-						(xy 2.54 -2.54) (xy 2.54 0) (xy 0.762 0)
-					)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 2.921 0.381) (xy 3.683 0.381)
-					)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 3.302 0.381) (xy 2.921 -0.254) (xy 3.683 -0.254) (xy 3.302 0.381)
-					)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-			)
-			(symbol "DMN3300U_1_1"
-				(pin input line
-					(at -5.08 0 0)
-					(length 2.54)
-					(name "G"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "1"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin passive line
-					(at 2.54 5.08 270)
-					(length 2.54)
-					(name "D"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "3"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin passive line
-					(at 2.54 -5.08 90)
-					(length 2.54)
-					(name "S"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "2"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-			)
-			(embedded_fonts no)
-		)
-		(symbol "Transistor_FET:FDN340P"
-			(pin_names
-				(hide yes)
-			)
-			(exclude_from_sim no)
-			(in_bom yes)
-			(on_board yes)
-			(property "Reference" "Q"
-				(at 5.08 1.905 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(justify left)
-				)
-			)
-			(property "Value" "FDN340P"
-				(at 5.08 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(justify left)
-				)
-			)
-			(property "Footprint" "Package_TO_SOT_SMD:SOT-23"
-				(at 5.08 -1.905 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-						(italic yes)
-					)
-					(justify left)
-					(hide yes)
-				)
-			)
-			(property "Datasheet" "https://www.onsemi.com/pub/Collateral/FDN340P-D.PDF"
-				(at 5.08 -3.81 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(justify left)
-					(hide yes)
-				)
-			)
-			(property "Description" "-2A Id, -20V Vds, P-Channel MOSFET, 70mOhm Ron, SOT-23"
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(property "ki_keywords" "P-Channel MOSFET"
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(property "ki_fp_filters" "SOT?23*"
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(symbol "FDN340P_0_1"
-				(polyline
-					(pts
-						(xy 0.254 1.905) (xy 0.254 -1.905)
-					)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 0.254 0) (xy -2.54 0)
-					)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 0.762 2.286) (xy 0.762 1.27)
-					)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 0.762 1.778) (xy 3.302 1.778) (xy 3.302 -1.778) (xy 0.762 -1.778)
-					)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 0.762 0.508) (xy 0.762 -0.508)
-					)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 0.762 -1.27) (xy 0.762 -2.286)
-					)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(circle
-					(center 1.651 0)
-					(radius 2.794)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 2.286 0) (xy 1.27 0.381) (xy 1.27 -0.381) (xy 2.286 0)
-					)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type outline)
-					)
-				)
-				(polyline
-					(pts
-						(xy 2.54 2.54) (xy 2.54 1.778)
-					)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(circle
-					(center 2.54 1.778)
-					(radius 0.254)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type outline)
-					)
-				)
-				(circle
-					(center 2.54 -1.778)
-					(radius 0.254)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type outline)
-					)
-				)
-				(polyline
-					(pts
-						(xy 2.54 -2.54) (xy 2.54 0) (xy 0.762 0)
-					)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 2.794 -0.508) (xy 2.921 -0.381) (xy 3.683 -0.381) (xy 3.81 -0.254)
-					)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 3.302 -0.381) (xy 2.921 0.254) (xy 3.683 0.254) (xy 3.302 -0.381)
-					)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-			)
-			(symbol "FDN340P_1_1"
-				(pin input line
-					(at -5.08 0 0)
-					(length 2.54)
-					(name "G"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "1"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin passive line
-					(at 2.54 5.08 270)
-					(length 2.54)
-					(name "D"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "3"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin passive line
-					(at 2.54 -5.08 90)
-					(length 2.54)
-					(name "S"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "2"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-			)
-			(embedded_fonts no)
-		)
 		(symbol "bramble:TPSM861253RDXR"
 			(pin_names
 				(offset 1.016)
@@ -2281,7 +1684,7 @@
 		(uuid "335a0beb-ba3a-415a-9c4b-27e3816c5806")
 	)
 	(junction
-		(at 104.394 61.468)
+		(at 94.996 61.468)
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "37a57be3-f641-4944-b452-ade216fdbca9")
@@ -2293,28 +1696,10 @@
 		(uuid "5051a663-e409-4948-828d-4dbb0b0f2a16")
 	)
 	(junction
-		(at 68.072 115.57)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "564dffbb-d180-4eed-bb9a-890f2d0d5e97")
-	)
-	(junction
-		(at 69.342 33.528)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "67b3dc1a-09fa-45f2-aa1e-b2b19732ba29")
-	)
-	(junction
 		(at 128.27 54.61)
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "7abea2ec-255d-49c6-b484-af414010863e")
-	)
-	(junction
-		(at 56.642 43.688)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "8e2dadae-1ddf-42f1-bff2-a724dff7648a")
 	)
 	(junction
 		(at 140.97 30.48)
@@ -2323,32 +1708,10 @@
 		(uuid "9f3b0b7e-63cc-401a-83fe-e4fbbcb1a71b")
 	)
 	(junction
-		(at 42.672 61.468)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "b1e39b5b-a984-42fe-89b4-7040bcd4a833")
-	)
-	(junction
-		(at 31.242 50.038)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "b656c33b-d20f-4968-86f7-e3577d112995")
-	)
-	(junction
 		(at 128.27 67.31)
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "f1329185-a3b3-45a5-99e5-1323747b8636")
-	)
-	(wire
-		(pts
-			(xy 21.082 50.038) (xy 19.812 50.038)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "038b3af7-13f2-4bf9-a4a3-02be9d5abf7f")
 	)
 	(wire
 		(pts
@@ -2392,7 +1755,7 @@
 	)
 	(wire
 		(pts
-			(xy 105.156 86.868) (xy 105.156 76.708)
+			(xy 95.758 86.868) (xy 95.758 76.708)
 		)
 		(stroke
 			(width 0)
@@ -2412,16 +1775,6 @@
 	)
 	(wire
 		(pts
-			(xy 42.672 43.688) (xy 42.672 44.958)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "1976cb8d-89e9-4ee0-839e-1bf3b452e1cf")
-	)
-	(wire
-		(pts
 			(xy 160.02 83.82) (xy 160.02 92.71)
 		)
 		(stroke
@@ -2429,26 +1782,6 @@
 			(type default)
 		)
 		(uuid "198feb8a-8c2c-4e73-b9e1-729cef72fdf3")
-	)
-	(wire
-		(pts
-			(xy 45.212 43.688) (xy 42.672 43.688)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "1a186c48-fa78-44a5-beb2-dca4742974a2")
-	)
-	(wire
-		(pts
-			(xy 31.242 52.578) (xy 31.242 50.038)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "1bda016d-4477-4dbf-a0e2-9a2b8514f8c7")
 	)
 	(wire
 		(pts
@@ -2492,7 +1825,7 @@
 	)
 	(wire
 		(pts
-			(xy 101.854 61.468) (xy 104.394 61.468)
+			(xy 92.456 61.468) (xy 94.996 61.468)
 		)
 		(stroke
 			(width 0)
@@ -2532,16 +1865,6 @@
 	)
 	(wire
 		(pts
-			(xy 31.242 50.038) (xy 35.052 50.038)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "4284004f-aeeb-4598-aa30-1ae34e992b56")
-	)
-	(wire
-		(pts
 			(xy 181.61 104.14) (xy 182.245 104.14)
 		)
 		(stroke
@@ -2552,7 +1875,7 @@
 	)
 	(wire
 		(pts
-			(xy 69.342 27.94) (xy 69.342 33.528)
+			(xy 59.944 27.94) (xy 59.944 61.468)
 		)
 		(stroke
 			(width 0)
@@ -2569,16 +1892,6 @@
 			(type default)
 		)
 		(uuid "46810134-ee65-420d-9a83-2a2de692d563")
-	)
-	(wire
-		(pts
-			(xy 56.642 34.798) (xy 56.642 33.528)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "48e952d7-0cc3-4994-9aeb-b8a147b51320")
 	)
 	(wire
 		(pts
@@ -2612,16 +1925,6 @@
 	)
 	(wire
 		(pts
-			(xy 56.642 43.688) (xy 61.722 43.688)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "63a5275b-aa86-4fb8-8595-b09a134aaa0a")
-	)
-	(wire
-		(pts
 			(xy 116.84 54.61) (xy 119.38 54.61)
 		)
 		(stroke
@@ -2642,16 +1945,6 @@
 	)
 	(wire
 		(pts
-			(xy 52.832 43.688) (xy 56.642 43.688)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "750ff776-014c-425f-83fe-a523a2925631")
-	)
-	(wire
-		(pts
 			(xy 181.61 99.06) (xy 182.245 99.06)
 		)
 		(stroke
@@ -2662,33 +1955,13 @@
 	)
 	(wire
 		(pts
-			(xy 69.342 61.468) (xy 71.374 61.468)
+			(xy 59.944 61.468) (xy 61.976 61.468)
 		)
 		(stroke
 			(width 0)
 			(type default)
 		)
 		(uuid "759b7675-0349-4485-b131-54ff227c1c84")
-	)
-	(wire
-		(pts
-			(xy 31.242 60.198) (xy 31.242 61.468)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "7cc721e0-949b-4c0c-b7fb-03df7e39d46b")
-	)
-	(wire
-		(pts
-			(xy 42.672 61.468) (xy 42.672 55.118)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "7d5b0047-9800-45a4-9355-e7a9fb3d33ae")
 	)
 	(wire
 		(pts
@@ -2702,7 +1975,7 @@
 	)
 	(wire
 		(pts
-			(xy 71.374 66.548) (xy 68.072 66.548)
+			(xy 61.976 66.548) (xy 58.674 66.548)
 		)
 		(stroke
 			(width 0)
@@ -2712,7 +1985,7 @@
 	)
 	(wire
 		(pts
-			(xy 68.072 115.57) (xy 116.84 115.57)
+			(xy 58.674 115.57) (xy 116.84 115.57)
 		)
 		(stroke
 			(width 0)
@@ -2722,17 +1995,7 @@
 	)
 	(wire
 		(pts
-			(xy 69.342 38.608) (xy 69.342 33.528)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "8a960c35-69f6-4b8c-bc63-06b23c6755f4")
-	)
-	(wire
-		(pts
-			(xy 101.854 71.628) (xy 104.394 71.628)
+			(xy 92.456 71.628) (xy 94.996 71.628)
 		)
 		(stroke
 			(width 0)
@@ -2752,7 +2015,7 @@
 	)
 	(wire
 		(pts
-			(xy 105.156 76.708) (xy 101.854 76.708)
+			(xy 95.758 76.708) (xy 92.456 76.708)
 		)
 		(stroke
 			(width 0)
@@ -2779,16 +2042,6 @@
 			(type default)
 		)
 		(uuid "9925ddcc-e258-4261-959e-a50f6ecd03e4")
-	)
-	(wire
-		(pts
-			(xy 56.642 33.528) (xy 69.342 33.528)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "99e62678-ff71-48f9-b61f-c3eb8778e554")
 	)
 	(wire
 		(pts
@@ -2942,7 +2195,7 @@
 	)
 	(wire
 		(pts
-			(xy 104.394 71.628) (xy 104.394 61.468)
+			(xy 94.996 71.628) (xy 94.996 61.468)
 		)
 		(stroke
 			(width 0)
@@ -2952,23 +2205,13 @@
 	)
 	(wire
 		(pts
-			(xy 104.394 53.848) (xy 104.394 61.468)
+			(xy 94.996 53.848) (xy 94.996 61.468)
 		)
 		(stroke
 			(width 0)
 			(type default)
 		)
 		(uuid "c29103ec-142b-4598-8586-112c2f14efb6")
-	)
-	(wire
-		(pts
-			(xy 42.672 61.468) (xy 42.672 64.008)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "c6bb8929-1e19-4abc-8481-45ef1ef793b0")
 	)
 	(wire
 		(pts
@@ -3032,46 +2275,6 @@
 	)
 	(wire
 		(pts
-			(xy 56.642 42.418) (xy 56.642 43.688)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "d0cce059-32e4-4f49-abe0-b40679c93233")
-	)
-	(wire
-		(pts
-			(xy 28.702 50.038) (xy 31.242 50.038)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "d0f826d1-067e-4e66-aa7d-d22414e6a3e1")
-	)
-	(wire
-		(pts
-			(xy 19.812 115.57) (xy 68.072 115.57)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "d1099f15-8201-4224-bfec-eb0d97897772")
-	)
-	(wire
-		(pts
-			(xy 19.812 50.038) (xy 19.812 115.57)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "d31d1d24-e06c-4e44-a2be-8fde89530f12")
-	)
-	(wire
-		(pts
 			(xy 124.46 34.29) (xy 124.46 30.48)
 		)
 		(stroke
@@ -3089,16 +2292,6 @@
 			(type default)
 		)
 		(uuid "d69f6b85-6731-42f8-9215-de1e8d67db14")
-	)
-	(wire
-		(pts
-			(xy 31.242 61.468) (xy 42.672 61.468)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "dc2b732c-323a-4a29-9238-8595bad4bac8")
 	)
 	(wire
 		(pts
@@ -3132,17 +2325,7 @@
 	)
 	(wire
 		(pts
-			(xy 69.342 48.768) (xy 69.342 61.468)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "eb441b5b-ae64-43e0-a0db-0e924247aff2")
-	)
-	(wire
-		(pts
-			(xy 68.072 66.548) (xy 68.072 115.57)
+			(xy 58.674 66.548) (xy 58.674 115.57)
 		)
 		(stroke
 			(width 0)
@@ -3159,16 +2342,6 @@
 			(type default)
 		)
 		(uuid "f96cde22-c4c3-4191-9b8e-7bc4a1034339")
-	)
-	(wire
-		(pts
-			(xy 56.642 44.958) (xy 56.642 43.688)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "fc93ddba-7f14-4d59-b132-594070b905ed")
 	)
 	(symbol
 		(lib_id "Device:R_US")
@@ -3440,82 +2613,6 @@
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4"
 					(reference "U1")
 					(unit 3)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "Transistor_FET:DMN3300U")
-		(at 40.132 50.038 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(uuid "23726982-eabb-46b5-b510-fb9cc2b55b71")
-		(property "Reference" "Q1"
-			(at 46.482 48.7679 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Value" "DMN3300U"
-			(at 46.482 51.3079 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Footprint" "Package_TO_SOT_SMD:SOT-23"
-			(at 45.212 51.943 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-					(italic yes)
-				)
-				(justify left)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "http://www.diodes.com/assets/Datasheets/ds31181.pdf"
-			(at 45.212 53.848 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-				(hide yes)
-			)
-		)
-		(property "Description" "2A Id, 30V Vds, N-Channel MOSFET, SOT-23"
-			(at 40.132 50.038 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "3"
-			(uuid "28a2b6e9-734e-43f8-9199-5f7cdf45dec1")
-		)
-		(pin "1"
-			(uuid "2c5aeecf-b087-4092-8e35-96e9bb061479")
-		)
-		(pin "2"
-			(uuid "a3a96250-051b-4e87-b893-ffa4064628a6")
-		)
-		(instances
-			(project "bramble"
-				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4"
-					(reference "Q1")
-					(unit 1)
 				)
 			)
 		)
@@ -3867,144 +2964,6 @@
 		)
 	)
 	(symbol
-		(lib_id "Device:R_US")
-		(at 56.642 38.608 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(uuid "2f901a2b-7b48-422d-8e62-7278683073c5")
-		(property "Reference" "R4"
-			(at 59.182 37.3379 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Value" "10k"
-			(at 59.182 39.8779 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Footprint" "Capacitor_SMD:C_0805_2012Metric"
-			(at 57.658 38.862 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "~"
-			(at 56.642 38.608 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "Resistor, US symbol"
-			(at 56.642 38.608 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "6e94e7ef-ac4c-423f-8e66-fabe3accbde4")
-		)
-		(pin "2"
-			(uuid "4f67606a-9125-4a1a-8de5-0e44a70e8379")
-		)
-		(instances
-			(project "bramble"
-				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4"
-					(reference "R4")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "Device:R_US")
-		(at 49.022 43.688 270)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(uuid "32040135-14c0-4190-9a1b-4af3d82ac8ee")
-		(property "Reference" "R3"
-			(at 49.022 37.338 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "100k"
-			(at 49.022 39.878 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" "Capacitor_SMD:C_0805_2012Metric"
-			(at 48.768 44.704 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "~"
-			(at 49.022 43.688 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "Resistor, US symbol"
-			(at 49.022 43.688 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "8453f524-f3ac-4b0f-90dc-ff6f0390df8c")
-		)
-		(pin "2"
-			(uuid "dc0ade94-505d-453a-afd6-d1ca6bfb46f4")
-		)
-		(instances
-			(project "bramble"
-				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4"
-					(reference "R3")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
 		(lib_id "Adafruit Feather RP2040 RFM-eagle-import:CAP_CERAMIC0805-NOOUTLINE")
 		(at 43.434 96.52 0)
 		(unit 1)
@@ -4132,144 +3091,6 @@
 			(project "bramble"
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4"
 					(reference "#U$08")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "Device:R_US")
-		(at 31.242 56.388 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(uuid "60139aaa-c6ff-4fc7-be13-f23ac1b37aa7")
-		(property "Reference" "R2"
-			(at 33.782 55.1179 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Value" "10k"
-			(at 33.782 57.6579 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Footprint" "Resistor_SMD:R_0805_2012Metric"
-			(at 32.258 56.642 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "~"
-			(at 31.242 56.388 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "Resistor, US symbol"
-			(at 31.242 56.388 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "120e2f91-c6fe-4a8b-888a-5736d19adf59")
-		)
-		(pin "2"
-			(uuid "bbee210b-0897-45bc-b7c0-02871ac1c980")
-		)
-		(instances
-			(project "bramble"
-				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4"
-					(reference "R2")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "Device:R_US")
-		(at 24.892 50.038 270)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(uuid "60df2510-6541-4f36-988e-e1653e7d8d37")
-		(property "Reference" "R1"
-			(at 24.892 43.688 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Value" "100"
-			(at 24.892 46.228 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" "Resistor_SMD:R_0805_2012Metric"
-			(at 24.638 51.054 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "~"
-			(at 24.892 50.038 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "Resistor, US symbol"
-			(at 24.892 50.038 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "173c5c09-df47-4133-a671-03771704639c")
-		)
-		(pin "2"
-			(uuid "0a6ffc80-4d57-402a-8f71-3dfc1699188f")
-		)
-		(instances
-			(project "bramble"
-				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4"
-					(reference "R1")
 					(unit 1)
 				)
 			)
@@ -4828,7 +3649,7 @@
 	)
 	(symbol
 		(lib_id "Adafruit Feather RP2040 RFM-eagle-import:GND")
-		(at 105.156 89.408 0)
+		(at 95.758 89.408 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -4836,7 +3657,7 @@
 		(dnp no)
 		(uuid "93ccce03-fcb7-4081-8399-46d6618673d9")
 		(property "Reference" "#U$04"
-			(at 105.156 89.408 0)
+			(at 95.758 89.408 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4845,7 +3666,7 @@
 			)
 		)
 		(property "Value" "GND"
-			(at 103.632 91.948 0)
+			(at 94.234 91.948 0)
 			(effects
 				(font
 					(size 1.27 1.0795)
@@ -4854,7 +3675,7 @@
 			)
 		)
 		(property "Footprint" ""
-			(at 105.156 89.408 0)
+			(at 95.758 89.408 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4863,7 +3684,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 105.156 89.408 0)
+			(at 95.758 89.408 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4872,7 +3693,7 @@
 			)
 		)
 		(property "Description" ""
-			(at 105.156 89.408 0)
+			(at 95.758 89.408 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4894,7 +3715,7 @@
 	)
 	(symbol
 		(lib_id "power:+9V")
-		(at 69.342 27.94 0)
+		(at 59.944 27.94 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -4903,7 +3724,7 @@
 		(fields_autoplaced yes)
 		(uuid "93def408-3293-43cf-9386-4307a4cc148e")
 		(property "Reference" "#PWR03"
-			(at 69.342 31.75 0)
+			(at 59.944 31.75 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4912,7 +3733,7 @@
 			)
 		)
 		(property "Value" "+9V"
-			(at 69.342 22.86 0)
+			(at 59.944 22.86 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4920,7 +3741,7 @@
 			)
 		)
 		(property "Footprint" ""
-			(at 69.342 27.94 0)
+			(at 59.944 27.94 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4929,7 +3750,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 69.342 27.94 0)
+			(at 59.944 27.94 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4938,7 +3759,7 @@
 			)
 		)
 		(property "Description" "Power symbol creates a global label with name \"+9V\""
-			(at 69.342 27.94 0)
+			(at 59.944 27.94 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4960,7 +3781,7 @@
 	)
 	(symbol
 		(lib_id "power:+3.3V")
-		(at 104.394 53.848 0)
+		(at 94.996 53.848 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -4969,7 +3790,7 @@
 		(fields_autoplaced yes)
 		(uuid "9ac401ce-bbec-4e60-94f5-d3d911b6e6c7")
 		(property "Reference" "#PWR04"
-			(at 104.394 57.658 0)
+			(at 94.996 57.658 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4978,7 +3799,7 @@
 			)
 		)
 		(property "Value" "+3V3"
-			(at 104.394 48.768 0)
+			(at 94.996 48.768 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4986,7 +3807,7 @@
 			)
 		)
 		(property "Footprint" ""
-			(at 104.394 53.848 0)
+			(at 94.996 53.848 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4995,7 +3816,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 104.394 53.848 0)
+			(at 94.996 53.848 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5004,7 +3825,7 @@
 			)
 		)
 		(property "Description" "Power symbol creates a global label with name \"+3.3V\""
-			(at 104.394 53.848 0)
+			(at 94.996 53.848 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5158,7 +3979,7 @@
 	)
 	(symbol
 		(lib_id "bramble:TPSM861253RDXR")
-		(at 86.614 69.088 0)
+		(at 77.216 69.088 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -5167,7 +3988,7 @@
 		(fields_autoplaced yes)
 		(uuid "b3e164db-ccb8-4f3c-a883-a2cf887388c7")
 		(property "Reference" "VR1"
-			(at 86.614 53.34 0)
+			(at 77.216 53.34 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5175,7 +3996,7 @@
 			)
 		)
 		(property "Value" "TPSM861253RDXR"
-			(at 86.614 55.88 0)
+			(at 77.216 55.88 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5183,7 +4004,7 @@
 			)
 		)
 		(property "Footprint" "Bramble:VREG_TPSM861253RDXR"
-			(at 86.614 69.088 0)
+			(at 77.216 69.088 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5193,7 +4014,7 @@
 			)
 		)
 		(property "Datasheet" "https://www.ti.com/lit/gpn/tpsm861253"
-			(at 86.614 69.088 0)
+			(at 77.216 69.088 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5203,7 +4024,7 @@
 			)
 		)
 		(property "Description" ""
-			(at 86.614 69.088 0)
+			(at 77.216 69.088 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5212,7 +4033,7 @@
 			)
 		)
 		(property "MF" "Texas Instruments"
-			(at 86.614 69.088 0)
+			(at 77.216 69.088 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5222,7 +4043,7 @@
 			)
 		)
 		(property "MAXIMUM_PACKAGE_HEIGHT" "2.1mm"
-			(at 86.614 69.088 0)
+			(at 77.216 69.088 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5232,7 +4053,7 @@
 			)
 		)
 		(property "Package" "PowerFQFN-7 Texas Instruments"
-			(at 86.614 69.088 0)
+			(at 77.216 69.088 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5242,7 +4063,7 @@
 			)
 		)
 		(property "Price" "None"
-			(at 86.614 69.088 0)
+			(at 77.216 69.088 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5252,7 +4073,7 @@
 			)
 		)
 		(property "Check_prices" "https://www.snapeda.com/parts/TPSM861253RDXR/Texas+Instruments/view-part/?ref=eda"
-			(at 86.614 69.088 0)
+			(at 77.216 69.088 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5262,7 +4083,7 @@
 			)
 		)
 		(property "STANDARD" "Manufacturer Recommendations"
-			(at 86.614 69.088 0)
+			(at 77.216 69.088 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5272,7 +4093,7 @@
 			)
 		)
 		(property "PARTREV" "B"
-			(at 86.614 69.088 0)
+			(at 77.216 69.088 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5282,7 +4103,7 @@
 			)
 		)
 		(property "SnapEDA_Link" "https://www.snapeda.com/parts/TPSM861253RDXR/Texas+Instruments/view-part/?ref=snap"
-			(at 86.614 69.088 0)
+			(at 77.216 69.088 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5292,7 +4113,7 @@
 			)
 		)
 		(property "MP" "TPSM861253RDXR"
-			(at 86.614 69.088 0)
+			(at 77.216 69.088 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5302,7 +4123,7 @@
 			)
 		)
 		(property "Description_1" "3V to 17V input voltage, 3.3V, 1A output synchronous buck module in QFN package"
-			(at 86.614 69.088 0)
+			(at 77.216 69.088 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5312,7 +4133,7 @@
 			)
 		)
 		(property "Availability" "In Stock"
-			(at 86.614 69.088 0)
+			(at 77.216 69.088 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5322,7 +4143,7 @@
 			)
 		)
 		(property "MANUFACTURER" "Texas Instruments"
-			(at 86.614 69.088 0)
+			(at 77.216 69.088 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5498,82 +4319,6 @@
 		)
 	)
 	(symbol
-		(lib_id "Transistor_FET:FDN340P")
-		(at 66.802 43.688 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(uuid "d32088f4-753f-4936-a0ea-b7b2eda057b6")
-		(property "Reference" "Q2"
-			(at 73.152 42.4179 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Value" "FDN360P"
-			(at 73.152 44.9579 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Footprint" "Package_TO_SOT_SMD:SOT-23"
-			(at 71.882 45.593 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-					(italic yes)
-				)
-				(justify left)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "https://www.onsemi.com/pub/Collateral/FDN340P-D.PDF"
-			(at 71.882 47.498 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-				(hide yes)
-			)
-		)
-		(property "Description" "-2A Id, -20V Vds, P-Channel MOSFET, 70mOhm Ron, SOT-23"
-			(at 66.802 43.688 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "3"
-			(uuid "32271585-0dae-494b-aaea-a479558d05e7")
-		)
-		(pin "2"
-			(uuid "14b48de6-415e-4af4-9163-cc87fd92018c")
-		)
-		(pin "1"
-			(uuid "9126137b-f99d-42c2-b1b0-9c24013d9657")
-		)
-		(instances
-			(project "bramble"
-				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4"
-					(reference "Q2")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
 		(lib_id "Adafruit Feather RP2040 RFM-eagle-import:GND")
 		(at 190.5 69.85 0)
 		(unit 1)
@@ -5700,72 +4445,6 @@
 			(project "bramble"
 				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4"
 					(reference "#PWR06")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "Adafruit Feather RP2040 RFM-eagle-import:GND")
-		(at 42.672 66.548 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "ea9120e9-9755-4338-8797-eaba7cfa85d9")
-		(property "Reference" "#U$02"
-			(at 42.672 66.548 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Value" "GND"
-			(at 41.148 69.088 0)
-			(effects
-				(font
-					(size 1.27 1.0795)
-				)
-				(justify left bottom)
-			)
-		)
-		(property "Footprint" ""
-			(at 42.672 66.548 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" ""
-			(at 42.672 66.548 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" ""
-			(at 42.672 66.548 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "69acebd1-145e-4e09-8646-167cc8f4127d")
-		)
-		(instances
-			(project "bramble"
-				(path "/e35d7dcf-51bd-456f-89cf-e52d660079b4"
-					(reference "#U$02")
 					(unit 1)
 				)
 			)
