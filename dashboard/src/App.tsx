@@ -1,21 +1,39 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, createContext, useContext } from 'react';
+import { Link, Outlet, useLocation } from 'react-router-dom';
 import type { Node, Zone } from './types';
 import { getNodes, checkHealth, getZones } from './api/client';
-import NodeList from './components/NodeList';
-import NodeDetail from './components/NodeDetail';
-import Settings from './components/Settings';
 
-type View = 'nodes' | 'settings';
+interface AppContextType {
+  nodes: Node[];
+  zones: Zone[];
+  loading: boolean;
+  refreshing: boolean;
+  error: string | null;
+  connected: boolean;
+  fetchNodes: () => Promise<void>;
+  fetchZones: () => Promise<void>;
+  updateNode: (node: Node) => void;
+  addZone: (zone: Zone) => void;
+}
+
+const AppContext = createContext<AppContextType | null>(null);
+
+export function useAppContext() {
+  const context = useContext(AppContext);
+  if (!context) {
+    throw new Error('useAppContext must be used within AppProvider');
+  }
+  return context;
+}
 
 function App() {
   const [nodes, setNodes] = useState<Node[]>([]);
   const [zones, setZones] = useState<Zone[]>([]);
-  const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [view, setView] = useState<View>('nodes');
   const [connected, setConnected] = useState(false);
+  const location = useLocation();
 
   const fetchNodes = useCallback(async () => {
     setRefreshing(true);
@@ -42,9 +60,13 @@ function App() {
     }
   }, []);
 
-  const handleZoneCreated = (zone: Zone) => {
+  const updateNode = useCallback((updatedNode: Node) => {
+    setNodes(prev => prev.map(n => n.address === updatedNode.address ? updatedNode : n));
+  }, []);
+
+  const addZone = useCallback((zone: Zone) => {
     setZones(prev => [...prev, zone].sort((a, b) => a.name.localeCompare(b.name)));
-  };
+  }, []);
 
   const checkConnection = useCallback(async () => {
     try {
@@ -67,96 +89,62 @@ function App() {
     return () => clearInterval(interval);
   }, [fetchNodes, fetchZones, checkConnection]);
 
-  const handleNodeSelect = (node: Node) => {
-    setSelectedNode(node);
-  };
+  const isNodesActive = location.pathname === '/nodes' || location.pathname.startsWith('/nodes/');
+  const isSettingsActive = location.pathname === '/settings';
 
-  const handleBackToList = () => {
-    setSelectedNode(null);
-  };
-
-  const handleNodeUpdate = (updatedNode: Node) => {
-    setNodes(nodes.map(n => n.address === updatedNode.address ? updatedNode : n));
-    if (selectedNode?.address === updatedNode.address) {
-      setSelectedNode(updatedNode);
-    }
+  const contextValue: AppContextType = {
+    nodes,
+    zones,
+    loading,
+    refreshing,
+    error,
+    connected,
+    fetchNodes,
+    fetchZones,
+    updateNode,
+    addZone,
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-bramble-700 text-white shadow-lg">
-        <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <h1 className="text-2xl font-bold">Bramble Dashboard</h1>
-              <div className={`flex items-center space-x-2 text-sm ${connected ? 'text-green-300' : 'text-red-300'}`}>
-                <span className={`w-2 h-2 rounded-full ${connected ? 'bg-green-400' : 'bg-red-400'}`}></span>
-                <span>{connected ? 'Connected' : 'Disconnected'}</span>
+    <AppContext.Provider value={contextValue}>
+      <div className="min-h-screen bg-gray-50">
+        <header className="bg-bramble-700 text-white shadow-lg">
+          <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-4">
+                <h1 className="text-2xl font-bold">Bramble Dashboard</h1>
+                <div className={`flex items-center space-x-2 text-sm ${connected ? 'text-green-300' : 'text-red-300'}`}>
+                  <span className={`w-2 h-2 rounded-full ${connected ? 'bg-green-400' : 'bg-red-400'}`}></span>
+                  <span>{connected ? 'Connected' : 'Disconnected'}</span>
+                </div>
               </div>
-            </div>
-            <nav className="flex space-x-4">
-              <button
-                onClick={() => { setView('nodes'); setSelectedNode(null); }}
-                className={`px-3 py-2 rounded-md text-sm font-medium ${
-                  view === 'nodes' ? 'bg-bramble-800' : 'hover:bg-bramble-600'
-                }`}
-              >
-                Nodes
-              </button>
-              <button
-                onClick={() => setView('settings')}
-                className={`px-3 py-2 rounded-md text-sm font-medium ${
-                  view === 'settings' ? 'bg-bramble-800' : 'hover:bg-bramble-600'
-                }`}
-              >
-                Settings
-              </button>
-            </nav>
-          </div>
-        </div>
-      </header>
-
-      <main className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
-        {view === 'settings' ? (
-          <Settings onSave={() => { fetchNodes(); setView('nodes'); }} />
-        ) : selectedNode ? (
-          <NodeDetail
-            node={selectedNode}
-            zones={zones}
-            onBack={handleBackToList}
-            onUpdate={handleNodeUpdate}
-            onZoneCreated={handleZoneCreated}
-          />
-        ) : (
-          <>
-            {loading ? (
-              <div className="text-center py-12">
-                <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-bramble-600 border-t-transparent"></div>
-                <p className="mt-2 text-gray-600">Loading nodes...</p>
-              </div>
-            ) : error ? (
-              <div className="card bg-red-50 border border-red-200">
-                <p className="text-red-700">Error: {error}</p>
-                <button
-                  onClick={fetchNodes}
-                  className="mt-2 btn btn-primary"
+              <nav className="flex space-x-4">
+                <Link
+                  to="/nodes"
+                  className={`px-3 py-2 rounded-md text-sm font-medium ${
+                    isNodesActive ? 'bg-bramble-800' : 'hover:bg-bramble-600'
+                  }`}
                 >
-                  Retry
-                </button>
-              </div>
-            ) : (
-              <NodeList
-                nodes={nodes}
-                zones={zones}
-                onSelect={handleNodeSelect}
-                onRefresh={fetchNodes}
-                refreshing={refreshing}
-              />
-            )}
-          </>
-        )}
-      </main>
-    </div>
+                  Nodes
+                </Link>
+                <Link
+                  to="/settings"
+                  className={`px-3 py-2 rounded-md text-sm font-medium ${
+                    isSettingsActive ? 'bg-bramble-800' : 'hover:bg-bramble-600'
+                  }`}
+                >
+                  Settings
+                </Link>
+              </nav>
+            </div>
+          </div>
+        </header>
+
+        <main className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
+          <Outlet />
+        </main>
+      </div>
+    </AppContext.Provider>
   );
 }
 
