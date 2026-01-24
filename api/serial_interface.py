@@ -150,7 +150,7 @@ class SerialInterface:
     def _handle_heartbeat(self, line: str):
         """Handle heartbeat status from hub.
 
-        Format: HEARTBEAT <node_addr> <device_id> <battery> <error_flags> <signal> <uptime>
+        Format: HEARTBEAT <node_addr> <device_id> <battery> <error_flags> <signal> <uptime> [<pending_records>]
         """
         if not self.database:
             logger.warning("Received heartbeat but no database configured")
@@ -168,6 +168,8 @@ class SerialInterface:
             error_flags = int(parts[4])
             signal_strength = int(parts[5])
             uptime_seconds = int(parts[6])
+            # pending_records is optional for backwards compatibility with older firmware
+            pending_records = int(parts[7]) if len(parts) > 7 else None
 
             # Store in database
             self.database.update_node_status(
@@ -176,11 +178,13 @@ class SerialInterface:
                 battery_level=battery_level,
                 error_flags=error_flags,
                 signal_strength=signal_strength,
-                uptime_seconds=uptime_seconds
+                uptime_seconds=uptime_seconds,
+                pending_records=pending_records
             )
 
+            pending_str = f", pending={pending_records}" if pending_records is not None else ""
             logger.info(f"Updated node status: addr={node_addr}, battery={battery_level}, "
-                       f"errors=0x{error_flags:02X}, rssi={signal_strength}dBm, uptime={uptime_seconds}s")
+                       f"errors=0x{error_flags:02X}, rssi={signal_strength}dBm, uptime={uptime_seconds}s{pending_str}")
 
         except (ValueError, IndexError) as e:
             logger.error(f"Failed to parse HEARTBEAT: {e}")

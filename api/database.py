@@ -177,6 +177,7 @@ class SensorDatabase:
         error_flags INTEGER,
         signal_strength INTEGER,
         uptime_seconds INTEGER,
+        pending_records INTEGER,
         updated_at INTEGER NOT NULL
     );
 
@@ -962,7 +963,8 @@ class SensorDatabase:
         battery_level: Optional[int] = None,
         error_flags: Optional[int] = None,
         signal_strength: Optional[int] = None,
-        uptime_seconds: Optional[int] = None
+        uptime_seconds: Optional[int] = None,
+        pending_records: Optional[int] = None
     ) -> dict:
         """Update status for a node (upsert).
 
@@ -973,6 +975,7 @@ class SensorDatabase:
             error_flags: Bitmask of error flags
             signal_strength: RSSI in dBm (negative value)
             uptime_seconds: Node uptime in seconds
+            pending_records: Untransmitted sensor records in flash backlog
 
         Returns:
             Updated status dictionary
@@ -982,7 +985,7 @@ class SensorDatabase:
         with self._get_connection() as conn:
             # Check if status exists
             existing = conn.execute(
-                "SELECT device_id, battery_level, error_flags, signal_strength, uptime_seconds FROM node_status WHERE address = ?",
+                "SELECT device_id, battery_level, error_flags, signal_strength, uptime_seconds, pending_records FROM node_status WHERE address = ?",
                 (address,)
             ).fetchone()
 
@@ -993,22 +996,23 @@ class SensorDatabase:
                 current_errors = error_flags if error_flags is not None else existing[2]
                 current_signal = signal_strength if signal_strength is not None else existing[3]
                 current_uptime = uptime_seconds if uptime_seconds is not None else existing[4]
+                current_pending = pending_records if pending_records is not None else existing[5]
 
                 conn.execute("""
                     UPDATE node_status
                     SET device_id = ?, battery_level = ?, error_flags = ?,
-                        signal_strength = ?, uptime_seconds = ?, updated_at = ?
+                        signal_strength = ?, uptime_seconds = ?, pending_records = ?, updated_at = ?
                     WHERE address = ?
                 """, (current_device_id, current_battery, current_errors,
-                      current_signal, current_uptime, updated_at, address))
+                      current_signal, current_uptime, current_pending, updated_at, address))
             else:
                 # Insert new
                 conn.execute("""
                     INSERT INTO node_status (address, device_id, battery_level, error_flags,
-                                            signal_strength, uptime_seconds, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                                            signal_strength, uptime_seconds, pending_records, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """, (address, device_id, battery_level, error_flags,
-                      signal_strength, uptime_seconds, updated_at))
+                      signal_strength, uptime_seconds, pending_records, updated_at))
 
         return self.get_node_status(address)
 
@@ -1024,7 +1028,7 @@ class SensorDatabase:
         with self._get_connection() as conn:
             result = conn.execute("""
                 SELECT address, device_id, battery_level, error_flags,
-                       signal_strength, uptime_seconds, updated_at
+                       signal_strength, uptime_seconds, pending_records, updated_at
                 FROM node_status WHERE address = ?
             """, (address,))
             row = result.fetchone()
@@ -1039,7 +1043,8 @@ class SensorDatabase:
                 'error_flags': row[3],
                 'signal_strength': row[4],
                 'uptime_seconds': row[5],
-                'updated_at': row[6]
+                'pending_records': row[6],
+                'updated_at': row[7]
             }
 
     def get_all_node_status(self) -> dict[int, dict]:
@@ -1051,7 +1056,7 @@ class SensorDatabase:
         with self._get_connection() as conn:
             result = conn.execute("""
                 SELECT address, device_id, battery_level, error_flags,
-                       signal_strength, uptime_seconds, updated_at
+                       signal_strength, uptime_seconds, pending_records, updated_at
                 FROM node_status
             """)
 
@@ -1064,6 +1069,7 @@ class SensorDatabase:
                     'error_flags': row[3],
                     'signal_strength': row[4],
                     'uptime_seconds': row[5],
-                    'updated_at': row[6]
+                    'pending_records': row[6],
+                    'updated_at': row[7]
                 }
             return status

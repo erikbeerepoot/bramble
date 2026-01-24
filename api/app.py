@@ -90,9 +90,33 @@ def system_time():
     })
 
 
+def _get_hub_queue_count(serial: SerialInterface, address: int) -> Optional[int]:
+    """Get the hub queue count for a node.
+
+    Args:
+        serial: Serial interface to hub
+        address: Node address
+
+    Returns:
+        Queue count or None if unavailable
+    """
+    try:
+        responses = serial.send_command(f'GET_QUEUE {address}', timeout=1.0)
+        if responses and responses[0].startswith('QUEUE'):
+            parts = responses[0].split()
+            if len(parts) >= 3:
+                return int(parts[2])
+    except Exception:
+        pass
+    return None
+
+
 @app.route('/api/nodes', methods=['GET'])
 def list_nodes():
     """List all registered nodes.
+
+    Query parameters:
+        include_queue: If 'true', include hub_queue_count for each node (slower)
 
     Returns:
         JSON array of node objects with metadata if available
@@ -115,6 +139,9 @@ def list_nodes():
         all_metadata = db.get_all_node_metadata()
         all_status = db.get_all_node_status()
 
+        # Check if we should include queue counts
+        include_queue = request.args.get('include_queue', '').lower() == 'true'
+
         nodes = []
         for line in responses[1:]:
             if line.startswith('NODE '):
@@ -136,6 +163,9 @@ def list_nodes():
                     # Include status if available
                     if address in all_status:
                         node_dict['status'] = all_status[address]
+                    # Include hub queue count if requested
+                    if include_queue:
+                        node_dict['hub_queue_count'] = _get_hub_queue_count(serial, address)
                     nodes.append(node_dict)
 
         return jsonify({
@@ -212,6 +242,7 @@ def get_node_status(address: int):
                 'error_flags': None,
                 'signal_strength': None,
                 'uptime_seconds': None,
+                'pending_records': None,
                 'updated_at': None
             })
 
