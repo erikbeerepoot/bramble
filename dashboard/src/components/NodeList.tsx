@@ -1,21 +1,17 @@
 import { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { Node, Zone } from '../types';
+import { useAppContext } from '../App';
 import NodeCard from './NodeCard';
-
-interface NodeListProps {
-  nodes: Node[];
-  zones: Zone[];
-  onSelect: (node: Node) => void;
-  onRefresh: () => void;
-  refreshing?: boolean;
-}
 
 interface ZoneGroup {
   zone: Zone | null;
   nodes: Node[];
 }
 
-function NodeList({ nodes, zones, onSelect, onRefresh, refreshing }: NodeListProps) {
+function NodeList() {
+  const { nodes, zones, loading, refreshing, error, fetchNodes } = useAppContext();
+  const navigate = useNavigate();
   const [collapsedZones, setCollapsedZones] = useState<Set<number | 'unzoned'>>(new Set());
 
   const onlineNodes = nodes.filter(n => n.online);
@@ -88,6 +84,33 @@ function NodeList({ nodes, zones, onSelect, onRefresh, refreshing }: NodeListPro
     return zone?.id ?? 'unzoned';
   };
 
+  const handleNodeSelect = (node: Node) => {
+    navigate(`/nodes/${node.address}`);
+  };
+
+  if (loading) {
+    return (
+      <div className="text-center py-12">
+        <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-bramble-600 border-t-transparent"></div>
+        <p className="mt-2 text-gray-600">Loading nodes...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="card bg-red-50 border border-red-200">
+        <p className="text-red-700">Error: {error}</p>
+        <button
+          onClick={fetchNodes}
+          className="mt-2 btn btn-primary"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -98,7 +121,7 @@ function NodeList({ nodes, zones, onSelect, onRefresh, refreshing }: NodeListPro
           </p>
         </div>
         <button
-          onClick={onRefresh}
+          onClick={fetchNodes}
           disabled={refreshing}
           className="btn btn-secondary flex items-center space-x-2"
         >
@@ -163,7 +186,7 @@ function NodeList({ nodes, zones, onSelect, onRefresh, refreshing }: NodeListPro
                         key={node.address}
                         node={node}
                         zone={group.zone ?? undefined}
-                        onClick={() => onSelect(node)}
+                        onClick={() => handleNodeSelect(node)}
                       />
                     ))}
                   </div>

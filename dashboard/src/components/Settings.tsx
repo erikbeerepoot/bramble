@@ -1,11 +1,11 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { getApiUrl, setApiUrl, checkHealth } from '../api/client';
+import { useAppContext } from '../App';
 
-interface SettingsProps {
-  onSave: () => void;
-}
-
-function Settings({ onSave }: SettingsProps) {
+function Settings() {
+  const navigate = useNavigate();
+  const { fetchNodes } = useAppContext();
   const [url, setUrl] = useState(getApiUrl());
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
@@ -36,9 +36,10 @@ function Settings({ onSave }: SettingsProps) {
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setApiUrl(url);
-    onSave();
+    await fetchNodes();
+    navigate('/nodes');
   };
 
   return (
