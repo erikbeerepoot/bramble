@@ -251,8 +251,9 @@ void SensorMode::sendHeartbeat(uint32_t current_time)
 {
     uint32_t uptime = current_time / 1000;  // Convert to seconds
     uint8_t battery_level = getBatteryLevel();
-    uint8_t signal_strength =
-        lora_.getRssi() > 0 ? lora_.getRssi() : 70;  // Use actual RSSI if available
+    // RSSI is negative dBm (e.g., -70 dBm); convert to absolute value for payload
+    int rssi = lora_.getRssi();
+    uint8_t signal_strength = (rssi < 0 && rssi >= -120) ? static_cast<uint8_t>(-rssi) : 0;
     uint8_t active_sensors = CAP_TEMPERATURE | CAP_HUMIDITY;
     uint8_t error_flags = collectErrorFlags();
 
