@@ -92,3 +92,19 @@ def queue_set_datetime(node_address: int, year: int, month: int, day: int,
     command = f"SET_DATETIME {node_address} {year} {month} {day} {weekday} {hour} {minute} {second}"
     command_id = f"datetime-{node_address}"
     return send_hub_command(command, command_id)
+
+
+def queue_set_config(node_address: int, param_id: int, value: int):
+    """Queue a SET_CONFIG command.
+
+    Args:
+        node_address: Node address
+        param_id: Configuration parameter ID (ConfigParamId from firmware)
+        value: Parameter value
+
+    Returns:
+        huey TaskResultWrapper for tracking status
+    """
+    command = f"SET_CONFIG {node_address} {param_id} {value}"
+    command_id = f"config-{node_address}-{param_id}"
+    return send_hub_command(command, command_id)

@@ -539,6 +539,134 @@ def set_datetime(addr: int):
         return jsonify({'error': str(e)}), 500
 
 
+# ===== Node Configuration Endpoints =====
+
+@app.route('/api/nodes/<int:addr>/config', methods=['GET'])
+def get_node_config(addr: int):
+    """Get configuration for a node.
+
+    Args:
+        addr: Node address
+
+    Returns:
+        JSON config object or defaults if not found
+    """
+    try:
+        db = get_database()
+        config = db.get_node_config(addr)
+
+        if config:
+            return jsonify(config)
+        else:
+            # Return default config for nodes without config set
+            return jsonify({
+                'address': addr,
+                'sensor_read_interval_s': 30,
+                'transmit_interval_s': 600,
+                'temperature_offset': 0,
+                'humidity_offset': 0,
+                'tx_power': 20,
+                'led_enabled': 1,
+                'updated_at': None
+            })
+
+    except Exception as e:
+        logger.error(f"Error getting config for node {addr}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/nodes/<int:addr>/config', methods=['PUT'])
+def update_node_config(addr: int):
+    """Update configuration for a node and queue the update for delivery.
+
+    Args:
+        addr: Node address
+
+    Request body:
+        {
+            "sensor_read_interval_s": 60,
+            "transmit_interval_s": 300,
+            "temperature_offset": 50,
+            "humidity_offset": -25,
+            "tx_power": 17,
+            "led_enabled": 1
+        }
+
+    Returns:
+        JSON response with task_ids for each queued update (202 Accepted)
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Request body must be JSON'}), 400
+
+        # Parameter ID mapping (matches ConfigParamId in firmware)
+        PARAM_IDS = {
+            'sensor_read_interval_s': 1,
+            'transmit_interval_s': 2,
+            'temperature_offset': 3,
+            'humidity_offset': 4,
+            'tx_power': 5,
+            'led_enabled': 6,
+        }
+
+        # Validation ranges
+        VALIDATION = {
+            'sensor_read_interval_s': (10, 3600),
+            'transmit_interval_s': (60, 86400),
+            'temperature_offset': (-1000, 1000),
+            'humidity_offset': (-1000, 1000),
+            'tx_power': (2, 20),
+            'led_enabled': (0, 1),
+        }
+
+        db = get_database()
+        from command_queue import queue_set_config
+
+        tasks = []
+        updated_params = {}
+
+        for param_name, param_id in PARAM_IDS.items():
+            if param_name in data:
+                value = int(data[param_name])
+
+                # Validate
+                min_val, max_val = VALIDATION[param_name]
+                if not min_val <= value <= max_val:
+                    return jsonify({
+                        'error': f'{param_name} must be {min_val}-{max_val}'
+                    }), 400
+
+                # Queue the update for the node
+                result = queue_set_config(
+                    node_address=addr,
+                    param_id=param_id,
+                    value=value
+                )
+                tasks.append({
+                    'param': param_name,
+                    'task_id': result.id
+                })
+                updated_params[param_name] = value
+
+        # Update the database cache
+        if updated_params:
+            db.update_node_config(addr, **updated_params)
+
+        return jsonify({
+            'status': 'queued',
+            'node_address': addr,
+            'tasks': tasks,
+            'message': f'{len(tasks)} config update(s) queued for delivery'
+        }), 202
+
+    except ValueError as e:
+        return jsonify({'error': f'Invalid value: {e}'}), 400
+    except Exception as e:
+        logger.error(f"Error updating config for node {addr}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 # ===== Sensor Data Endpoints =====
 
 @app.route('/api/sensor-data', methods=['GET'])

@@ -169,6 +169,17 @@ class SensorDatabase:
         color VARCHAR(7) NOT NULL,
         description VARCHAR
     );
+
+    CREATE TABLE IF NOT EXISTS node_config (
+        address INTEGER PRIMARY KEY,
+        sensor_read_interval_s INTEGER DEFAULT 30,
+        transmit_interval_s INTEGER DEFAULT 600,
+        temperature_offset INTEGER DEFAULT 0,
+        humidity_offset INTEGER DEFAULT 0,
+        tx_power INTEGER DEFAULT 20,
+        led_enabled INTEGER DEFAULT 1,
+        updated_at INTEGER NOT NULL
+    );
     """
 
     def __init__(self, db_path: str = Config.SENSOR_DB_PATH):
@@ -939,3 +950,111 @@ class SensorDatabase:
         # Use -1 to explicitly unset zone_id in update_node_metadata
         zone_value = -1 if zone_id is None else zone_id
         return self.update_node_metadata(address, zone_id=zone_value)
+
+    # ===== Node Configuration Management =====
+
+    def get_node_config(self, address: int) -> Optional[dict]:
+        """Get configuration for a node.
+
+        Args:
+            address: Node address
+
+        Returns:
+            Dictionary with node config or None if not found
+        """
+        with self._get_connection() as conn:
+            result = conn.execute("""
+                SELECT address, sensor_read_interval_s, transmit_interval_s,
+                       temperature_offset, humidity_offset, tx_power, led_enabled, updated_at
+                FROM node_config WHERE address = ?
+            """, (address,))
+            row = result.fetchone()
+
+            if not row:
+                return None
+
+            return {
+                'address': row[0],
+                'sensor_read_interval_s': row[1],
+                'transmit_interval_s': row[2],
+                'temperature_offset': row[3],
+                'humidity_offset': row[4],
+                'tx_power': row[5],
+                'led_enabled': row[6],
+                'updated_at': row[7]
+            }
+
+    def update_node_config(
+        self,
+        address: int,
+        sensor_read_interval_s: Optional[int] = None,
+        transmit_interval_s: Optional[int] = None,
+        temperature_offset: Optional[int] = None,
+        humidity_offset: Optional[int] = None,
+        tx_power: Optional[int] = None,
+        led_enabled: Optional[int] = None
+    ) -> dict:
+        """Update configuration for a node (upsert).
+
+        Args:
+            address: Node address
+            sensor_read_interval_s: How often to sample sensors (10-3600)
+            transmit_interval_s: Minimum interval between transmissions (60-86400)
+            temperature_offset: Calibration offset in 0.01C units (-1000 to 1000)
+            humidity_offset: Calibration offset in 0.01% units (-1000 to 1000)
+            tx_power: LoRa TX power in dBm (2-20)
+            led_enabled: 0=disabled, 1=enabled
+
+        Returns:
+            Updated config dictionary
+        """
+        updated_at = int(time.time())
+
+        with self._get_connection() as conn:
+            # Check if config exists
+            existing = conn.execute(
+                """SELECT sensor_read_interval_s, transmit_interval_s, temperature_offset,
+                          humidity_offset, tx_power, led_enabled
+                   FROM node_config WHERE address = ?""",
+                (address,)
+            ).fetchone()
+
+            if existing:
+                # Update existing - only update fields that are provided
+                current = {
+                    'sensor_read_interval_s': sensor_read_interval_s if sensor_read_interval_s is not None else existing[0],
+                    'transmit_interval_s': transmit_interval_s if transmit_interval_s is not None else existing[1],
+                    'temperature_offset': temperature_offset if temperature_offset is not None else existing[2],
+                    'humidity_offset': humidity_offset if humidity_offset is not None else existing[3],
+                    'tx_power': tx_power if tx_power is not None else existing[4],
+                    'led_enabled': led_enabled if led_enabled is not None else existing[5],
+                }
+
+                conn.execute("""
+                    UPDATE node_config
+                    SET sensor_read_interval_s = ?, transmit_interval_s = ?, temperature_offset = ?,
+                        humidity_offset = ?, tx_power = ?, led_enabled = ?, updated_at = ?
+                    WHERE address = ?
+                """, (current['sensor_read_interval_s'], current['transmit_interval_s'],
+                      current['temperature_offset'], current['humidity_offset'],
+                      current['tx_power'], current['led_enabled'], updated_at, address))
+            else:
+                # Insert new with defaults
+                defaults = {
+                    'sensor_read_interval_s': sensor_read_interval_s if sensor_read_interval_s is not None else 30,
+                    'transmit_interval_s': transmit_interval_s if transmit_interval_s is not None else 600,
+                    'temperature_offset': temperature_offset if temperature_offset is not None else 0,
+                    'humidity_offset': humidity_offset if humidity_offset is not None else 0,
+                    'tx_power': tx_power if tx_power is not None else 20,
+                    'led_enabled': led_enabled if led_enabled is not None else 1,
+                }
+
+                conn.execute("""
+                    INSERT INTO node_config (address, sensor_read_interval_s, transmit_interval_s,
+                                             temperature_offset, humidity_offset, tx_power, led_enabled, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (address, defaults['sensor_read_interval_s'], defaults['transmit_interval_s'],
+                      defaults['temperature_offset'], defaults['humidity_offset'],
+                      defaults['tx_power'], defaults['led_enabled'], updated_at))
+
+        return self.get_node_config(address)
