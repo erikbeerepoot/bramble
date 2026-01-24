@@ -569,14 +569,16 @@ void HubMode::handleHeartbeat(uint16_t source_addr, const HeartbeatPayload *payl
     int16_t rssi =
         (payload->signal_strength > 0) ? -static_cast<int16_t>(payload->signal_strength) : 0;
 
-    // Format: HEARTBEAT <node_addr> <device_id> <battery> <error_flags> <signal> <uptime>
+    // Format: HEARTBEAT <node_addr> <device_id> <battery> <error_flags> <signal> <uptime> <pending_records>
     char response[128];
-    snprintf(response, sizeof(response), "HEARTBEAT %u %llu %u %u %d %lu\n", source_addr, device_id,
-             payload->battery_level, payload->error_flags, rssi, payload->uptime_seconds);
+    snprintf(response, sizeof(response), "HEARTBEAT %u %llu %u %u %d %lu %u\n", source_addr,
+             device_id, payload->battery_level, payload->error_flags, rssi,
+             payload->uptime_seconds, payload->pending_records);
     uart_puts(API_UART_ID, response);
 
-    logger.debug("Forwarded heartbeat: node=%u, battery=%u, errors=0x%02X, rssi=%d", source_addr,
-                 payload->battery_level, payload->error_flags, rssi);
+    logger.debug("Forwarded heartbeat: node=%u, battery=%u, errors=0x%02X, rssi=%d, pending=%u",
+                 source_addr, payload->battery_level, payload->error_flags, rssi,
+                 payload->pending_records);
 }
 
 // ===== Sensor Data Forwarding =====

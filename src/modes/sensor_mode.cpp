@@ -258,11 +258,19 @@ void SensorMode::sendHeartbeat(uint32_t current_time)
     uint8_t active_sensors = CAP_TEMPERATURE | CAP_HUMIDITY;
     uint16_t error_flags = collectErrorFlags();
 
-    logger.debug("Sending heartbeat (uptime=%lu s, battery=%u, errors=0x%04X)", uptime,
-                 battery_level, error_flags);
+    // Get count of untransmitted records in flash backlog
+    uint16_t pending_records = 0;
+    if (flash_buffer_) {
+        uint32_t count = flash_buffer_->getUntransmittedCount();
+        // Clamp to uint16_t max (65535)
+        pending_records = (count > 0xFFFF) ? 0xFFFF : static_cast<uint16_t>(count);
+    }
+
+    logger.debug("Sending heartbeat (uptime=%lu s, battery=%u, errors=0x%04X, pending=%u)", uptime,
+                 battery_level, error_flags, pending_records);
 
     messenger_.sendHeartbeat(HUB_ADDRESS, uptime, battery_level, signal_strength, active_sensors,
-                             error_flags);
+                             error_flags, pending_records);
 }
 
 uint16_t SensorMode::collectErrorFlags()
