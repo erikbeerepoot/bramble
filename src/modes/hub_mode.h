@@ -31,6 +31,7 @@ private:
     void handleSetSchedule(const char *args);
     void handleRemoveSchedule(const char *args);
     void handleSetWakeInterval(const char *args);
+    void handleSetConfig(const char *args);
     void handleSetDateTime(const char *args);
     void handleDateTimeResponse(const char *args);
     void handleGetDateTime();  // Request datetime from RasPi

@@ -270,6 +270,8 @@ void HubMode::handleSerialCommand(const char *cmd)
         handleRemoveSchedule(cmd + 16);
     } else if (strncmp(cmd, "SET_WAKE_INTERVAL ", 18) == 0) {
         handleSetWakeInterval(cmd + 18);
+    } else if (strncmp(cmd, "SET_CONFIG ", 11) == 0) {
+        handleSetConfig(cmd + 11);
     } else if (strncmp(cmd, "SET_DATETIME ", 13) == 0) {
         handleSetDateTime(cmd + 13);
     } else if (strcmp(cmd, "GET_DATETIME") == 0) {
@@ -359,6 +361,9 @@ void HubMode::handleGetQueue(const char *args)
                 case UpdateType::SET_WAKE_INTERVAL:
                     type_str = "SET_WAKE_INTERVAL";
                     break;
+                case UpdateType::SET_CONFIG:
+                    type_str = "SET_CONFIG";
+                    break;
                 default:
                     type_str = "UNKNOWN";
                     break;
@@ -445,6 +450,35 @@ void HubMode::handleSetWakeInterval(const char *args)
         uart_puts(API_UART_ID, response);
     } else {
         uart_puts(API_UART_ID, "ERROR Failed to queue update\n");
+    }
+}
+
+void HubMode::handleSetConfig(const char *args)
+{
+    // Parse: <addr> <param_id> <value>
+    uint16_t node_addr;
+    int param_id;
+    int32_t value;
+
+    if (sscanf(args, "%hu %d %ld", &node_addr, &param_id, &value) != 3) {
+        uart_puts(API_UART_ID, "ERROR Invalid SET_CONFIG syntax\n");
+        return;
+    }
+
+    // Validate address range
+    if (node_addr < ADDRESS_MIN_NODE || node_addr > ADDRESS_MAX_NODE) {
+        uart_puts(API_UART_ID, "ERROR Invalid node address\n");
+        return;
+    }
+
+    // Queue update
+    if (hub_router_->queueConfigUpdate(node_addr, static_cast<uint8_t>(param_id), value)) {
+        size_t position = hub_router_->getPendingUpdateCount(node_addr);
+        char response[128];
+        snprintf(response, sizeof(response), "QUEUED SET_CONFIG %u %zu\n", node_addr, position);
+        uart_puts(API_UART_ID, response);
+    } else {
+        uart_puts(API_UART_ID, "ERROR Failed to queue config update\n");
     }
 }
 
