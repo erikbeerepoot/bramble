@@ -2,6 +2,8 @@ import type {
   Node,
   NodesResponse,
   NodeMetadata,
+  NodeConfig,
+  NodeConfigUpdateResponse,
   SensorDataResponse,
   NodeStatistics,
   Zone,
@@ -152,5 +154,21 @@ export async function setNodeZone(
   return fetchApi<NodeMetadata>(`/api/nodes/${address}/zone`, {
     method: 'PUT',
     body: JSON.stringify({ zone_id: zoneId }),
+  });
+}
+
+// Node Configuration API methods
+
+export async function getNodeConfig(address: number): Promise<NodeConfig> {
+  return fetchApi<NodeConfig>(`/api/nodes/${address}/config`);
+}
+
+export async function updateNodeConfig(
+  address: number,
+  config: Partial<Omit<NodeConfig, 'address' | 'updated_at'>>
+): Promise<NodeConfigUpdateResponse> {
+  return fetchApi<NodeConfigUpdateResponse>(`/api/nodes/${address}/config`, {
+    method: 'PUT',
+    body: JSON.stringify(config),
   });
 }

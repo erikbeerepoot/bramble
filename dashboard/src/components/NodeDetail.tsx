@@ -3,6 +3,7 @@ import type { Node, NodeStatistics, SensorReading, TimeRange, NodeMetadata, Cust
 import { TIME_RANGES } from '../types';
 import { getNodeSensorData, getNodeStatistics } from '../api/client';
 import NodeNameEditor from './NodeNameEditor';
+import NodeConfigEditor from './NodeConfigEditor';
 import SensorChart from './SensorChart';
 import TimeRangeSelector from './TimeRangeSelector';
 
@@ -113,6 +114,10 @@ function NodeDetail({ node, zones, onBack, onUpdate, onZoneCreated }: NodeDetail
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-1 space-y-4">
           <NodeNameEditor node={node} zones={zones} onUpdate={handleMetadataUpdate} onZoneCreated={onZoneCreated} />
+
+          {node.type === 'SENSOR' && (
+            <NodeConfigEditor nodeAddress={node.address} />
+          )}
 
           {statistics && (
             <div className="card">

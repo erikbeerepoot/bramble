@@ -19,6 +19,27 @@ export interface NodeMetadata {
   updated_at: number | null;
 }
 
+export interface NodeConfig {
+  address: number;
+  sensor_read_interval_s: number;
+  transmit_interval_s: number;
+  temperature_offset: number;
+  humidity_offset: number;
+  tx_power: number;
+  led_enabled: number;
+  updated_at: number | null;
+}
+
+export interface NodeConfigUpdateResponse {
+  status: string;
+  node_address: number;
+  tasks: Array<{
+    param: string;
+    task_id: string;
+  }>;
+  message: string;
+}
+
 export interface Node {
   address: number;
   device_id: number | null;
