@@ -564,8 +564,10 @@ void HubMode::handleHeartbeat(uint16_t source_addr, const HeartbeatPayload *payl
         device_id = node->device_id;
     }
 
-    // Get signal strength from last received message
-    int8_t rssi = lora_.getRssi();
+    // Get signal strength from heartbeat payload (sensor's measurement, stored as absolute value)
+    // Convert back to negative dBm; 0 means no valid measurement
+    int16_t rssi =
+        (payload->signal_strength > 0) ? -static_cast<int16_t>(payload->signal_strength) : 0;
 
     // Format: HEARTBEAT <node_addr> <device_id> <battery> <error_flags> <signal> <uptime>
     char response[128];
