@@ -1,0 +1,92 @@
+#!/bin/bash
+# Pre-commit hook to auto-format staged files
+# Formatters used:
+#   - clang-format: C/C++ files (.c, .cpp, .h, .hpp)
+#   - ruff: Python files (.py)
+#   - prettier: TypeScript/JavaScript files (.ts, .tsx, .js, .jsx)
+
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+NC='\033[0m' # No Color
+
+# Get list of staged files
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM)
+
+if [ -z "$STAGED_FILES" ]; then
+    exit 0
+fi
+
+# Track if any files were formatted
+FILES_FORMATTED=0
+
+# Format C/C++ files with clang-format
+CPP_FILES=$(echo "$STAGED_FILES" | grep -E '\.(c|cpp|cc|h|hpp)$' || true)
+if [ -n "$CPP_FILES" ]; then
+    if command -v clang-format &> /dev/null; then
+        echo -e "${GREEN}Formatting C/C++ files with clang-format...${NC}"
+        for file in $CPP_FILES; do
+            if [ -f "$file" ]; then
+                clang-format -i "$file"
+                git add "$file"
+                FILES_FORMATTED=1
+            fi
+        done
+    else
+        echo -e "${YELLOW}Warning: clang-format not found, skipping C/C++ formatting${NC}"
+    fi
+fi
+
+# Format Python files with ruff
+PY_FILES=$(echo "$STAGED_FILES" | grep -E '\.py$' || true)
+if [ -n "$PY_FILES" ]; then
+    if command -v ruff &> /dev/null; then
+        echo -e "${GREEN}Formatting Python files with ruff...${NC}"
+        for file in $PY_FILES; do
+            if [ -f "$file" ]; then
+                ruff format "$file" 2>/dev/null || true
+                ruff check --fix "$file" 2>/dev/null || true
+                git add "$file"
+                FILES_FORMATTED=1
+            fi
+        done
+    else
+        echo -e "${YELLOW}Warning: ruff not found, skipping Python formatting${NC}"
+        echo -e "${YELLOW}  Install with: pip install ruff${NC}"
+    fi
+fi
+
+# Format TypeScript/JavaScript files with prettier
+TS_FILES=$(echo "$STAGED_FILES" | grep -E '\.(ts|tsx|js|jsx)$' || true)
+if [ -n "$TS_FILES" ]; then
+    # Check for prettier in node_modules or globally
+    PRETTIER_CMD=""
+    if [ -f "dashboard/node_modules/.bin/prettier" ]; then
+        PRETTIER_CMD="dashboard/node_modules/.bin/prettier"
+    elif command -v prettier &> /dev/null; then
+        PRETTIER_CMD="prettier"
+    fi
+
+    if [ -n "$PRETTIER_CMD" ]; then
+        echo -e "${GREEN}Formatting TypeScript/JavaScript files with prettier...${NC}"
+        for file in $TS_FILES; do
+            if [ -f "$file" ]; then
+                $PRETTIER_CMD --write "$file" 2>/dev/null || true
+                git add "$file"
+                FILES_FORMATTED=1
+            fi
+        done
+    else
+        echo -e "${YELLOW}Warning: prettier not found, skipping TypeScript/JavaScript formatting${NC}"
+        echo -e "${YELLOW}  Install with: cd dashboard && npm install -D prettier${NC}"
+    fi
+fi
+
+if [ $FILES_FORMATTED -eq 1 ]; then
+    echo -e "${GREEN}Files formatted and re-staged.${NC}"
+fi
+
+exit 0
