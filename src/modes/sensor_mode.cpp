@@ -319,8 +319,8 @@ uint16_t SensorMode::collectErrorFlags()
         const auto &global = network_stats_->getGlobalStats();
         uint32_t total_reliable =
             global.criticality_totals[RELIABLE].sent + global.criticality_totals[CRITICAL].sent;
-        uint32_t total_timeouts =
-            global.criticality_totals[RELIABLE].timeouts + global.criticality_totals[CRITICAL].timeouts;
+        uint32_t total_timeouts = global.criticality_totals[RELIABLE].timeouts +
+                                  global.criticality_totals[CRITICAL].timeouts;
 
         // Flag if >25% of reliable/critical messages are timing out (with minimum sample size)
         if (total_reliable >= 10 && total_timeouts * 4 > total_reliable) {
