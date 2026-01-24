@@ -112,4 +112,19 @@ private:
      * but we're between transmission intervals.
      */
     bool isTimeToTransmit(uint32_t current_timestamp = 0) const;
+
+    /**
+     * @brief Collect current error flags based on hardware status
+     * @return Bitmask of ERR_FLAG_* constants from message.h
+     */
+    uint8_t collectErrorFlags();
+
+    /**
+     * @brief Get current battery level
+     * @return Battery percentage (0-100), or 255 for external power
+     */
+    uint8_t getBatteryLevel();
+
+    // Error tracking state
+    bool last_sensor_read_valid_ = false;  // Track if last sensor read succeeded
 };

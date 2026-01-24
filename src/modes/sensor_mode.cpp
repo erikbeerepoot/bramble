@@ -204,6 +204,9 @@ void SensorMode::readAndStoreSensorData(uint32_t current_time)
 
     auto reading = sensor_->read();
 
+    // Track sensor read validity for error reporting
+    last_sensor_read_valid_ = reading.valid;
+
     if (!reading.valid) {
         logger.error("Failed to read sensor");
         return;
@@ -247,15 +250,67 @@ void SensorMode::readAndStoreSensorData(uint32_t current_time)
 void SensorMode::sendHeartbeat(uint32_t current_time)
 {
     uint32_t uptime = current_time / 1000;  // Convert to seconds
-    uint8_t battery_level = 255;            // External power (no battery monitoring yet)
-    uint8_t signal_strength = 70;           // TODO: Get actual RSSI from LoRa
+    uint8_t battery_level = getBatteryLevel();
+    uint8_t signal_strength = lora_.getRssi() > 0 ? lora_.getRssi() : 70;  // Use actual RSSI if available
     uint8_t active_sensors = CAP_TEMPERATURE | CAP_HUMIDITY;
-    uint8_t error_flags = 0;  // No errors
+    uint8_t error_flags = collectErrorFlags();
 
-    logger.debug("Sending heartbeat (uptime=%lu s)", uptime);
+    logger.debug("Sending heartbeat (uptime=%lu s, battery=%u, errors=0x%02X)", uptime, battery_level, error_flags);
 
     messenger_.sendHeartbeat(HUB_ADDRESS, uptime, battery_level, signal_strength, active_sensors,
                              error_flags);
+}
+
+uint8_t SensorMode::collectErrorFlags() {
+    uint8_t flags = ERR_FLAG_NONE;
+
+    // Check sensor health - was last read successful?
+    if (sensor_ && !last_sensor_read_valid_) {
+        flags |= ERR_FLAG_SENSOR_FAILURE;
+    }
+
+    // Check flash status
+    if (!external_flash_ || !flash_buffer_) {
+        flags |= ERR_FLAG_FLASH_FAILURE;
+    } else {
+        // Check if flash is >90% full
+        SensorFlashMetadata stats;
+        if (flash_buffer_->getStatistics(stats)) {
+            uint32_t capacity = SensorFlashBuffer::MAX_RECORDS;
+            uint32_t usage = stats.total_records;
+            if (capacity > 0 && (usage * 100 / capacity) >= 90) {
+                flags |= ERR_FLAG_FLASH_FULL;
+            }
+        }
+    }
+
+    // Check PMU availability
+    if (!pmu_available_) {
+        flags |= ERR_FLAG_PMU_FAILURE;
+    }
+
+    // Check RTC sync status
+    if (!isRtcSynced()) {
+        flags |= ERR_FLAG_RTC_NOT_SYNCED;
+    }
+
+    // Check battery level for warnings
+    uint8_t battery = getBatteryLevel();
+    if (battery != 255) {  // 255 = external power
+        if (battery < 10) {
+            flags |= ERR_FLAG_BATTERY_CRITICAL;
+        } else if (battery < 20) {
+            flags |= ERR_FLAG_BATTERY_LOW;
+        }
+    }
+
+    return flags;
+}
+
+uint8_t SensorMode::getBatteryLevel() {
+    // TODO: Query PMU for actual battery level when battery monitoring is implemented
+    // For now, return 255 (external power) since current hardware doesn't have battery
+    return 255;
 }
 
 bool SensorMode::isTimeToTransmit(uint32_t current_timestamp) const
