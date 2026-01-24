@@ -26,6 +26,7 @@ export interface NodeStatus {
   error_flags: number | null;
   signal_strength: number | null;
   uptime_seconds: number | null;
+  pending_records: number | null;
   updated_at: number | null;
 }
 
@@ -37,6 +38,7 @@ export interface Node {
   last_seen_seconds: number;
   metadata?: NodeMetadata;
   status?: NodeStatus;
+  hub_queue_count?: number | null;
 }
 
 // Error flag constants (match firmware ERR_FLAG_* in message.h)
@@ -199,3 +201,13 @@ export const TIME_RANGES: Record<Exclude<TimeRange, 'custom'>, TimeRangeConfig> 
   '7d': { label: 'Last 7 Days', seconds: 604800 },
   '30d': { label: 'Last 30 Days', seconds: 2592000 },
 };
+
+/**
+ * Get backlog status color based on count
+ */
+export function getBacklogStatus(count: number | null | undefined): { color: string; label: string } {
+  if (count === null || count === undefined) return { color: 'gray', label: 'Unknown' };
+  if (count === 0) return { color: 'green', label: 'Clear' };
+  if (count < 50) return { color: 'yellow', label: 'Pending' };
+  return { color: 'red', label: 'Backlogged' };
+}
