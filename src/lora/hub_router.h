@@ -163,6 +163,15 @@ public:
     bool queueWakeIntervalUpdate(uint16_t node_addr, uint16_t interval_seconds);
 
     /**
+     * @brief Queue a configuration parameter update for a node
+     * @param node_addr Node address
+     * @param param_id Configuration parameter ID (ConfigParamId)
+     * @param value Parameter value
+     * @return true if queued successfully
+     */
+    bool queueConfigUpdate(uint16_t node_addr, uint8_t param_id, int32_t value);
+
+    /**
      * @brief Handle CHECK_UPDATES message from node
      * @param node_addr Node address
      * @param node_sequence Node's current sequence number

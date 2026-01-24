@@ -409,6 +409,37 @@ bool HubRouter::queueWakeIntervalUpdate(uint16_t node_addr, uint16_t interval_se
     return true;
 }
 
+bool HubRouter::queueConfigUpdate(uint16_t node_addr, uint8_t param_id, int32_t value)
+{
+    auto &state = node_updates_[node_addr];
+
+    if (state.pending_updates.size() >= MAX_UPDATES_PER_NODE) {
+        logger.warn("Update queue full for node 0x%04X", node_addr);
+        return false;
+    }
+
+    PendingUpdate update;
+    update.type = UpdateType::SET_CONFIG;
+    update.queued_at_ms = TimeUtils::getCurrentTimeMs();
+    update.sequence = state.next_sequence++;
+
+    // Pack config data matching ConfigPayload struct (6 bytes)
+    update.data[0] = param_id;
+    update.data[1] = 0;  // reserved
+    update.data[2] = value & 0xFF;
+    update.data[3] = (value >> 8) & 0xFF;
+    update.data[4] = (value >> 16) & 0xFF;
+    update.data[5] = (value >> 24) & 0xFF;
+    update.data_length = 6;
+
+    state.pending_updates.push(update);
+
+    logger.debug("Queued config update for node 0x%04X (seq=%d, param=%d, value=%ld)", node_addr,
+                 update.sequence, param_id, value);
+
+    return true;
+}
+
 void HubRouter::handleCheckUpdates(uint16_t node_addr, uint8_t node_sequence)
 {
     auto &state = node_updates_[node_addr];
