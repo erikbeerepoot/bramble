@@ -19,6 +19,17 @@ export interface NodeMetadata {
   updated_at: number | null;
 }
 
+export interface NodeStatus {
+  address: number;
+  device_id: number | null;
+  battery_level: number | null;
+  error_flags: number | null;
+  signal_strength: number | null;
+  uptime_seconds: number | null;
+  pending_records: number | null;
+  updated_at: number | null;
+}
+
 export interface Node {
   address: number;
   device_id: number | null;
@@ -26,6 +37,103 @@ export interface Node {
   online: boolean;
   last_seen_seconds: number;
   metadata?: NodeMetadata;
+  status?: NodeStatus;
+  hub_queue_count?: number | null;
+}
+
+// Error flag constants (match firmware ERR_FLAG_* in message.h)
+export const ERR_FLAG_NONE              = 0x00;
+export const ERR_FLAG_SENSOR_FAILURE    = 0x01;
+export const ERR_FLAG_FLASH_FAILURE     = 0x02;
+export const ERR_FLAG_FLASH_FULL        = 0x04;
+export const ERR_FLAG_PMU_FAILURE       = 0x08;
+export const ERR_FLAG_BATTERY_LOW       = 0x10;
+export const ERR_FLAG_BATTERY_CRITICAL  = 0x20;
+export const ERR_FLAG_RTC_NOT_SYNCED    = 0x40;
+export const ERR_FLAG_RADIO_ISSUE       = 0x80;
+
+// Error flag descriptions for display
+export const ERROR_FLAG_INFO: Record<number, { label: string; severity: 'warning' | 'error' }> = {
+  [ERR_FLAG_SENSOR_FAILURE]:   { label: 'Sensor Failure',   severity: 'error' },
+  [ERR_FLAG_FLASH_FAILURE]:    { label: 'Flash Failure',    severity: 'error' },
+  [ERR_FLAG_FLASH_FULL]:       { label: 'Flash Full',       severity: 'warning' },
+  [ERR_FLAG_PMU_FAILURE]:      { label: 'PMU Failure',      severity: 'error' },
+  [ERR_FLAG_BATTERY_LOW]:      { label: 'Low Battery',      severity: 'warning' },
+  [ERR_FLAG_BATTERY_CRITICAL]: { label: 'Critical Battery', severity: 'error' },
+  [ERR_FLAG_RTC_NOT_SYNCED]:   { label: 'RTC Not Synced',   severity: 'warning' },
+  [ERR_FLAG_RADIO_ISSUE]:      { label: 'Radio Issue',      severity: 'warning' },
+};
+
+/**
+ * Parse error flags into an array of active errors
+ */
+export function parseErrorFlags(flags: number | null): Array<{ flag: number; label: string; severity: 'warning' | 'error' }> {
+  if (flags === null || flags === 0) return [];
+
+  const errors: Array<{ flag: number; label: string; severity: 'warning' | 'error' }> = [];
+
+  for (const [flagStr, info] of Object.entries(ERROR_FLAG_INFO)) {
+    const flag = parseInt(flagStr, 10);
+    if (flags & flag) {
+      errors.push({ flag, ...info });
+    }
+  }
+
+  return errors;
+}
+
+/**
+ * Get the highest severity from error flags
+ */
+export function getHealthStatus(flags: number | null): 'healthy' | 'warning' | 'error' {
+  if (flags === null || flags === 0) return 'healthy';
+
+  const errors = parseErrorFlags(flags);
+  if (errors.some(e => e.severity === 'error')) return 'error';
+  if (errors.some(e => e.severity === 'warning')) return 'warning';
+  return 'healthy';
+}
+
+/**
+ * Get signal quality label from RSSI
+ */
+export function getSignalQuality(rssi: number | null): { label: string; bars: number; color: string } {
+  if (rssi === null) return { label: 'Unknown', bars: 0, color: 'gray' };
+
+  // RSSI is typically negative (dBm)
+  // Convert to absolute if positive (some systems report absolute)
+  const absRssi = rssi > 0 ? -rssi : rssi;
+
+  if (absRssi > -60) return { label: 'Excellent', bars: 4, color: 'green' };
+  if (absRssi > -80) return { label: 'Good', bars: 3, color: 'green' };
+  if (absRssi > -100) return { label: 'Fair', bars: 2, color: 'yellow' };
+  return { label: 'Poor', bars: 1, color: 'red' };
+}
+
+/**
+ * Get battery status from level
+ */
+export function getBatteryStatus(level: number | null): { label: string; color: string; isExternal: boolean } {
+  if (level === null) return { label: 'Unknown', color: 'gray', isExternal: false };
+  if (level === 255) return { label: 'External', color: 'blue', isExternal: true };
+  if (level > 60) return { label: `${level}%`, color: 'green', isExternal: false };
+  if (level > 20) return { label: `${level}%`, color: 'yellow', isExternal: false };
+  return { label: `${level}%`, color: 'red', isExternal: false };
+}
+
+/**
+ * Format uptime duration
+ */
+export function formatUptime(seconds: number | null): string {
+  if (seconds === null) return 'Unknown';
+
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+
+  if (days > 0) return `${days}d ${hours}h ${minutes}m`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
 }
 
 export interface NodesResponse {
@@ -93,3 +201,13 @@ export const TIME_RANGES: Record<Exclude<TimeRange, 'custom'>, TimeRangeConfig> 
   '7d': { label: 'Last 7 Days', seconds: 604800 },
   '30d': { label: 'Last 30 Days', seconds: 2592000 },
 };
+
+/**
+ * Get backlog status color based on count
+ */
+export function getBacklogStatus(count: number | null | undefined): { color: string; label: string } {
+  if (count === null || count === undefined) return { color: 'gray', label: 'Unknown' };
+  if (count === 0) return { color: 'green', label: 'Clear' };
+  if (count < 50) return { color: 'yellow', label: 'Pending' };
+  return { color: 'red', label: 'Backlogged' };
+}

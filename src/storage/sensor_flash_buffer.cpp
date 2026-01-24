@@ -367,6 +367,32 @@ bool SensorFlashBuffer::updateLastSync(uint32_t timestamp)
     return saveMetadata();
 }
 
+uint32_t SensorFlashBuffer::getInitialBootTimestamp() const
+{
+    if (!initialized_) {
+        return 0;
+    }
+    return metadata_.initial_boot_timestamp;
+}
+
+bool SensorFlashBuffer::setInitialBootTimestamp(uint32_t timestamp)
+{
+    if (!initialized_) {
+        return false;
+    }
+
+    // Only set if not already set (non-zero)
+    if (metadata_.initial_boot_timestamp != 0) {
+        logger_.debug("Initial boot timestamp already set to %lu, not overwriting",
+                      metadata_.initial_boot_timestamp);
+        return false;
+    }
+
+    metadata_.initial_boot_timestamp = timestamp;
+    logger_.info("Set initial boot timestamp to %lu", timestamp);
+    return saveMetadata();
+}
+
 bool SensorFlashBuffer::flush()
 {
     if (!initialized_) {
@@ -448,6 +474,7 @@ void SensorFlashBuffer::initializeMetadata()
     metadata_.records_transmitted = 0;
     metadata_.records_lost = 0;
     metadata_.last_sync_timestamp = 0;
+    metadata_.initial_boot_timestamp = 0;
 }
 
 uint32_t SensorFlashBuffer::getRecordAddress(uint32_t index) const

@@ -1,4 +1,8 @@
 import type { Node, Zone } from '../types';
+import BatteryGauge from './BatteryGauge';
+import SignalStrength from './SignalStrength';
+import HealthStatus from './HealthStatus';
+import BacklogStatus from './BacklogStatus';
 
 interface NodeCardProps {
   node: Node;
@@ -53,7 +57,21 @@ function NodeCard({ node, zone, onClick }: NodeCardProps) {
         }`} />
       </div>
 
-      <div className="mt-4 flex items-center justify-between text-sm">
+      {/* Status row - battery, signal, health, backlog */}
+      {node.status && (
+        <div className="mt-3 pt-3 border-t border-gray-100 flex items-center space-x-4">
+          <BatteryGauge level={node.status.battery_level} size="sm" />
+          <SignalStrength rssi={node.status.signal_strength} size="sm" />
+          <HealthStatus errorFlags={node.status.error_flags} size="sm" />
+          <BacklogStatus
+            pendingRecords={node.status.pending_records}
+            hubQueueCount={node.hub_queue_count}
+            size="sm"
+          />
+        </div>
+      )}
+
+      <div className="mt-3 flex items-center justify-between text-sm">
         <div className="text-gray-500">
           <span className="font-medium">{node.type}</span>
         </div>

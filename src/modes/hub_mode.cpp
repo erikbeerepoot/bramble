@@ -168,7 +168,8 @@ void HubMode::processIncomingMessage(uint8_t *rx_buffer, int rx_len, uint32_t cu
         if (header->type == MSG_TYPE_HEARTBEAT) {
             const HeartbeatPayload *heartbeat =
                 reinterpret_cast<const HeartbeatPayload *>(rx_buffer + sizeof(MessageHeader));
-            handleHeartbeat(header->src_addr, heartbeat);
+            int16_t rssi = lora_.getRssi();  // Capture RSSI of this packet
+            handleHeartbeat(header->src_addr, heartbeat, rssi);
             // Fall through to base class for common processing
         } else if (header->type == MSG_TYPE_CHECK_UPDATES) {
             const CheckUpdatesPayload *check =
@@ -540,7 +541,7 @@ void HubMode::handleGetDateTime()
     // The response is handled in handleSerialCommand via handleDateTimeResponse
 }
 
-void HubMode::handleHeartbeat(uint16_t source_addr, const HeartbeatPayload *payload)
+void HubMode::handleHeartbeat(uint16_t source_addr, const HeartbeatPayload *payload, int16_t rssi)
 {
     // Get current datetime from RTC
     datetime_t dt;
@@ -555,6 +556,28 @@ void HubMode::handleHeartbeat(uint16_t source_addr, const HeartbeatPayload *payl
 
     logger.debug("Sent time to node 0x%04X: %04d-%02d-%02d %02d:%02d:%02d", source_addr, dt.year,
                  dt.month, dt.day, dt.hour, dt.min, dt.sec);
+
+    // Forward heartbeat status to Raspberry Pi via UART
+    // Look up device_id from address manager
+    uint64_t device_id = 0;
+    const NodeInfo *node = address_manager_->getNodeInfo(source_addr);
+    if (node) {
+        device_id = node->device_id;
+    }
+
+    // rssi parameter is measured by hub when receiving this heartbeat (already in dBm)
+
+    // Format: HEARTBEAT <node_addr> <device_id> <battery> <error_flags> <signal> <uptime>
+    // <pending_records>
+    char response[128];
+    snprintf(response, sizeof(response), "HEARTBEAT %u %llu %u %u %d %lu %u\n", source_addr,
+             device_id, payload->battery_level, payload->error_flags, rssi, payload->uptime_seconds,
+             payload->pending_records);
+    uart_puts(API_UART_ID, response);
+
+    logger.debug("Forwarded heartbeat: node=%u, battery=%u, errors=0x%02X, rssi=%d, pending=%u",
+                 source_addr, payload->battery_level, payload->error_flags, rssi,
+                 payload->pending_records);
 }
 
 // ===== Sensor Data Forwarding =====

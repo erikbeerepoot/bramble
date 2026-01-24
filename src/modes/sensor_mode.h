@@ -112,4 +112,33 @@ private:
      * but we're between transmission intervals.
      */
     bool isTimeToTransmit(uint32_t current_timestamp = 0) const;
+
+    /**
+     * @brief Collect current error flags based on hardware status
+     * @return Bitmask of ERR_FLAG_* constants from message.h
+     */
+    uint16_t collectErrorFlags();
+
+    /**
+     * @brief Get current battery level
+     * @return Battery percentage (0-100), or 255 for external power
+     */
+    uint8_t getBatteryLevel();
+
+    // Error tracking state
+    bool last_sensor_read_valid_ = false;               // Track if last sensor read succeeded
+    uint8_t consecutive_tx_failures_ = 0;               // Track consecutive transmission failures
+    static constexpr uint8_t TX_FAILURE_THRESHOLD = 3;  // Failures before setting error flag
+
+    // Lazy sensor initialization
+    bool sensor_initialized_ = false;
+
+    /**
+     * @brief Try to initialize sensor with power-on delay
+     * @return true if sensor initialized successfully
+     *
+     * Called lazily on first read attempt. Includes delay to allow
+     * sensor to stabilize after power-on before I2C communication.
+     */
+    bool tryInitSensor();
 };

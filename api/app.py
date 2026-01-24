@@ -90,9 +90,33 @@ def system_time():
     })
 
 
+def _get_hub_queue_count(serial: SerialInterface, address: int) -> Optional[int]:
+    """Get the hub queue count for a node.
+
+    Args:
+        serial: Serial interface to hub
+        address: Node address
+
+    Returns:
+        Queue count or None if unavailable
+    """
+    try:
+        responses = serial.send_command(f'GET_QUEUE {address}', timeout=1.0)
+        if responses and responses[0].startswith('QUEUE'):
+            parts = responses[0].split()
+            if len(parts) >= 3:
+                return int(parts[2])
+    except Exception:
+        pass
+    return None
+
+
 @app.route('/api/nodes', methods=['GET'])
 def list_nodes():
     """List all registered nodes.
+
+    Query parameters:
+        include_queue: If 'true', include hub_queue_count for each node (slower)
 
     Returns:
         JSON array of node objects with metadata if available
@@ -110,9 +134,13 @@ def list_nodes():
         header = responses[0].split()
         count = int(header[1])
 
-        # Get all metadata to include with nodes
+        # Get all metadata and status to include with nodes
         db = get_database()
         all_metadata = db.get_all_node_metadata()
+        all_status = db.get_all_node_status()
+
+        # Check if we should include queue counts
+        include_queue = request.args.get('include_queue', '').lower() == 'true'
 
         nodes = []
         for line in responses[1:]:
@@ -132,6 +160,12 @@ def list_nodes():
                     # Include metadata if available
                     if address in all_metadata:
                         node_dict['metadata'] = all_metadata[address]
+                    # Include status if available
+                    if address in all_status:
+                        node_dict['status'] = all_status[address]
+                    # Include hub queue count if requested
+                    if include_queue:
+                        node_dict['hub_queue_count'] = _get_hub_queue_count(serial, address)
                     nodes.append(node_dict)
 
         return jsonify({
@@ -146,12 +180,12 @@ def list_nodes():
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/nodes/<int:addr>', methods=['GET'])
-def get_node(addr: int):
+@app.route('/api/nodes/<int:address>', methods=['GET'])
+def get_node(address: int):
     """Get details for a specific node.
 
     Args:
-        addr: Node address
+        address: Node address
 
     Returns:
         JSON node object
@@ -165,7 +199,7 @@ def get_node(addr: int):
         for line in responses[1:]:
             if line.startswith('NODE '):
                 parts = line.split()
-                if len(parts) >= 6 and int(parts[1]) == addr:
+                if len(parts) >= 6 and int(parts[1]) == address:
                     device_id = int(parts[2])
                     node = Node(
                         address=int(parts[1]),
@@ -176,33 +210,67 @@ def get_node(addr: int):
                     )
                     return jsonify(node.to_dict())
 
-        return jsonify({'error': f'Node {addr} not found'}), 404
+        return jsonify({'error': f'Node {address} not found'}), 404
 
     except Exception as e:
-        logger.error(f"Error getting node {addr}: {e}")
+        logger.error(f"Error getting node {address}: {e}")
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/nodes/<int:addr>/metadata', methods=['GET'])
-def get_node_metadata(addr: int):
+@app.route('/api/nodes/<int:address>/status', methods=['GET'])
+def get_node_status(address: int):
+    """Get status for a specific node.
+
+    Args:
+        address: Node address
+
+    Returns:
+        JSON status object or 404 if not found
+    """
+    try:
+        db = get_database()
+        status = db.get_node_status(address)
+
+        if status:
+            return jsonify(status)
+        else:
+            # Return empty status structure for nodes without status
+            return jsonify({
+                'address': address,
+                'device_id': None,
+                'battery_level': None,
+                'error_flags': None,
+                'signal_strength': None,
+                'uptime_seconds': None,
+                'pending_records': None,
+                'updated_at': None
+            })
+
+    except Exception as e:
+        logger.error(f"Error getting status for node {address}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/nodes/<int:address>/metadata', methods=['GET'])
+def get_node_metadata(address: int):
     """Get metadata for a specific node.
 
     Args:
-        addr: Node address
+        address: Node address
 
     Returns:
         JSON metadata object or 404 if not found
     """
     try:
         db = get_database()
-        metadata = db.get_node_metadata(addr)
+        metadata = db.get_node_metadata(address)
 
         if metadata:
             return jsonify(metadata)
         else:
             # Return empty metadata structure for nodes without metadata
             return jsonify({
-                'address': addr,
+                'address': address,
                 'name': None,
                 'location': None,
                 'notes': None,
@@ -210,16 +278,16 @@ def get_node_metadata(addr: int):
             })
 
     except Exception as e:
-        logger.error(f"Error getting metadata for node {addr}: {e}")
+        logger.error(f"Error getting metadata for node {address}: {e}")
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/nodes/<int:addr>/metadata', methods=['PUT'])
-def update_node_metadata(addr: int):
+@app.route('/api/nodes/<int:address>/metadata', methods=['PUT'])
+def update_node_metadata(address: int):
     """Update metadata for a node.
 
     Args:
-        addr: Node address
+        address: Node address
 
     Request body:
         {
@@ -238,7 +306,7 @@ def update_node_metadata(addr: int):
 
         db = get_database()
         metadata = db.update_node_metadata(
-            address=addr,
+            address=address,
             name=data.get('name'),
             location=data.get('location'),
             notes=data.get('notes')
@@ -247,23 +315,23 @@ def update_node_metadata(addr: int):
         return jsonify(metadata)
 
     except Exception as e:
-        logger.error(f"Error updating metadata for node {addr}: {e}")
+        logger.error(f"Error updating metadata for node {address}: {e}")
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/nodes/<int:addr>/queue', methods=['GET'])
-def get_queue(addr: int):
+@app.route('/api/nodes/<int:address>/queue', methods=['GET'])
+def get_queue(address: int):
     """Get pending updates queue for a node.
 
     Args:
-        addr: Node address
+        address: Node address
 
     Returns:
         JSON array of queued updates
     """
     try:
         serial = get_serial()
-        responses = serial.send_command(f'GET_QUEUE {addr}')
+        responses = serial.send_command(f'GET_QUEUE {address}')
 
         # Parse response
         # Format: QUEUE <addr> <count>
@@ -290,7 +358,7 @@ def get_queue(addr: int):
                     updates.append(update.to_dict())
 
         return jsonify({
-            'node_address': addr,
+            'node_address': address,
             'count': count,
             'updates': updates
         })
@@ -298,16 +366,16 @@ def get_queue(addr: int):
     except TimeoutError:
         return jsonify({'error': 'Hub did not respond'}), 504
     except Exception as e:
-        logger.error(f"Error getting queue for node {addr}: {e}")
+        logger.error(f"Error getting queue for node {address}: {e}")
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/nodes/<int:addr>/schedules', methods=['POST'])
-def add_schedule(addr: int):
+@app.route('/api/nodes/<int:address>/schedules', methods=['POST'])
+def add_schedule(address: int):
     """Add or update a schedule entry for a node.
 
     Args:
-        addr: Node address
+        address: Node address
 
     Request body:
         {
@@ -349,7 +417,7 @@ def add_schedule(addr: int):
         from command_queue import queue_set_schedule
 
         result = queue_set_schedule(
-            node_address=addr,
+            node_address=address,
             index=data['index'],
             hour=data['hour'],
             minute=data['minute'],
@@ -361,22 +429,22 @@ def add_schedule(addr: int):
         return jsonify({
             'status': 'queued',
             'task_id': result.id,
-            'node_address': addr,
+            'node_address': address,
             'schedule': data,
             'message': 'Command queued for delivery'
         }), 202
 
     except Exception as e:
-        logger.error(f"Error adding schedule for node {addr}: {e}")
+        logger.error(f"Error adding schedule for node {address}: {e}")
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/nodes/<int:addr>/schedules/<int:index>', methods=['DELETE'])
-def remove_schedule(addr: int, index: int):
+@app.route('/api/nodes/<int:address>/schedules/<int:index>', methods=['DELETE'])
+def remove_schedule(address: int, index: int):
     """Remove a schedule entry from a node.
 
     Args:
-        addr: Node address
+        address: Node address
         index: Schedule index (0-7)
 
     Returns:
@@ -389,27 +457,27 @@ def remove_schedule(addr: int, index: int):
         # Queue command for delivery
         from command_queue import queue_remove_schedule
 
-        result = queue_remove_schedule(node_address=addr, index=index)
+        result = queue_remove_schedule(node_address=address, index=index)
 
         return jsonify({
             'status': 'queued',
             'task_id': result.id,
-            'node_address': addr,
+            'node_address': address,
             'schedule_index': index,
             'message': 'Command queued for delivery'
         }), 202
 
     except Exception as e:
-        logger.error(f"Error removing schedule {index} for node {addr}: {e}")
+        logger.error(f"Error removing schedule {index} for node {address}: {e}")
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/nodes/<int:addr>/wake-interval', methods=['POST'])
-def set_wake_interval(addr: int):
+@app.route('/api/nodes/<int:address>/wake-interval', methods=['POST'])
+def set_wake_interval(address: int):
     """Set periodic wake interval for a node.
 
     Args:
-        addr: Node address
+        address: Node address
 
     Request body:
         {
@@ -435,27 +503,27 @@ def set_wake_interval(addr: int):
         # Queue command for delivery
         from command_queue import queue_set_wake_interval
 
-        result = queue_set_wake_interval(node_address=addr, interval_seconds=interval)
+        result = queue_set_wake_interval(node_address=address, interval_seconds=interval)
 
         return jsonify({
             'status': 'queued',
             'task_id': result.id,
-            'node_address': addr,
+            'node_address': address,
             'interval_seconds': interval,
             'message': 'Command queued for delivery'
         }), 202
 
     except Exception as e:
-        logger.error(f"Error setting wake interval for node {addr}: {e}")
+        logger.error(f"Error setting wake interval for node {address}: {e}")
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/nodes/<int:addr>/datetime', methods=['POST'])
-def set_datetime(addr: int):
+@app.route('/api/nodes/<int:address>/datetime', methods=['POST'])
+def set_datetime(address: int):
     """Set date/time for a node's RTC.
 
     Args:
-        addr: Node address
+        address: Node address
 
     Request body:
         {
@@ -508,7 +576,7 @@ def set_datetime(addr: int):
         from command_queue import queue_set_datetime
 
         result = queue_set_datetime(
-            node_address=addr,
+            node_address=address,
             year=year,
             month=month,
             day=day,
@@ -521,7 +589,7 @@ def set_datetime(addr: int):
         return jsonify({
             'status': 'queued',
             'task_id': result.id,
-            'node_address': addr,
+            'node_address': address,
             'datetime': {
                 'year': year,
                 'month': month,
@@ -535,7 +603,7 @@ def set_datetime(addr: int):
         }), 202
 
     except Exception as e:
-        logger.error(f"Error setting datetime for node {addr}: {e}")
+        logger.error(f"Error setting datetime for node {address}: {e}")
         return jsonify({'error': str(e)}), 500
 
 
@@ -645,12 +713,12 @@ def export_sensor_data():
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/nodes/<int:addr>/sensor-data', methods=['GET'])
-def get_node_sensor_data(addr: int):
+@app.route('/api/nodes/<int:address>/sensor-data', methods=['GET'])
+def get_node_sensor_data(address: int):
     """Get sensor data for a specific node.
 
     Args:
-        addr: Node address
+        address: Node address
 
     Query parameters:
         start_time: Start timestamp (optional, required for downsampling)
@@ -674,7 +742,7 @@ def get_node_sensor_data(addr: int):
         if downsample and start_time and end_time:
             query_start = time.time()
             readings = db.query_readings_downsampled(
-                node_address=addr,
+                node_address=address,
                 start_time=start_time,
                 end_time=end_time,
                 max_points=min(downsample, 2000)  # Cap at 2000 points
@@ -683,7 +751,7 @@ def get_node_sensor_data(addr: int):
 
             json_start = time.time()
             response_data = {
-                'node_address': addr,
+                'node_address': address,
                 'count': len(readings),
                 'downsampled': True,
                 'readings': readings,  # Already in chart format
@@ -698,53 +766,53 @@ def get_node_sensor_data(addr: int):
 
         # Standard query for full data
         readings = db.query_readings(
-            node_address=addr,
+            node_address=address,
             start_time=start_time,
             end_time=end_time,
             limit=limit
         )
 
         return jsonify({
-            'node_address': addr,
+            'node_address': address,
             'count': len(readings),
             'readings': [r.to_chart_dict() for r in readings]
         })
 
     except Exception as e:
-        logger.error(f"Error getting sensor data for node {addr}: {e}")
+        logger.error(f"Error getting sensor data for node {address}: {e}")
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/nodes/<int:addr>/sensor-data/latest', methods=['GET'])
-def get_node_latest(addr: int):
+@app.route('/api/nodes/<int:address>/sensor-data/latest', methods=['GET'])
+def get_node_latest(address: int):
     """Get the most recent sensor reading for a node.
 
     Args:
-        addr: Node address
+        address: Node address
 
     Returns:
         JSON sensor reading or 404 if not found
     """
     try:
         db = get_database()
-        reading = db.get_latest_reading(addr)
+        reading = db.get_latest_reading(address)
 
         if reading:
             return jsonify(reading.to_dict())
         else:
-            return jsonify({'error': f'No readings found for node {addr}'}), 404
+            return jsonify({'error': f'No readings found for node {address}'}), 404
 
     except Exception as e:
-        logger.error(f"Error getting latest reading for node {addr}: {e}")
+        logger.error(f"Error getting latest reading for node {address}: {e}")
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/nodes/<int:addr>/statistics', methods=['GET'])
-def get_node_statistics(addr: int):
+@app.route('/api/nodes/<int:address>/statistics', methods=['GET'])
+def get_node_statistics(address: int):
     """Get statistics for a specific node.
 
     Args:
-        addr: Node address
+        address: Node address
 
     Query parameters:
         start_time: Start timestamp for stats calculation (optional)
@@ -761,7 +829,7 @@ def get_node_statistics(addr: int):
         end_time = request.args.get('end_time', type=int)
 
         query_start = time.time()
-        stats = db.get_node_statistics(addr, start_time=start_time, end_time=end_time)
+        stats = db.get_node_statistics(address, start_time=start_time, end_time=end_time)
         query_time = time.time() - query_start
 
         if stats:
@@ -772,10 +840,10 @@ def get_node_statistics(addr: int):
             logger.info(f"statistics: query={query_time*1000:.0f}ms")
             return jsonify(stats)
         else:
-            return jsonify({'error': f'No data found for node {addr}'}), 404
+            return jsonify({'error': f'No data found for node {address}'}), 404
 
     except Exception as e:
-        logger.error(f"Error getting statistics for node {addr}: {e}")
+        logger.error(f"Error getting statistics for node {address}: {e}")
         return jsonify({'error': str(e)}), 500
 
 
@@ -975,12 +1043,12 @@ def delete_zone(zone_id: int):
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/nodes/<int:addr>/zone', methods=['PUT'])
-def set_node_zone(addr: int):
+@app.route('/api/nodes/<int:address>/zone', methods=['PUT'])
+def set_node_zone(address: int):
     """Set a node's zone.
 
     Args:
-        addr: Node address
+        address: Node address
 
     Request body:
         {
@@ -1010,17 +1078,17 @@ def set_node_zone(addr: int):
                 return jsonify({'error': f'Zone {zone_id} not found'}), 404
 
         db = get_database()
-        metadata = db.set_node_zone(addr, zone_id)
+        metadata = db.set_node_zone(address, zone_id)
 
         if metadata:
             return jsonify(metadata)
         else:
             # Node metadata doesn't exist yet, create it
-            metadata = db.update_node_metadata(addr, zone_id=zone_id if zone_id else -1)
+            metadata = db.update_node_metadata(address, zone_id=zone_id if zone_id else -1)
             return jsonify(metadata)
 
     except Exception as e:
-        logger.error(f"Error setting zone for node {addr}: {e}")
+        logger.error(f"Error setting zone for node {address}: {e}")
         return jsonify({'error': str(e)}), 500
 
 

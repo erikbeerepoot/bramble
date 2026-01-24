@@ -87,15 +87,31 @@ bool ReliableMessenger::sendSensorData(uint16_t dst_addr, uint8_t sensor_type, c
 
 bool ReliableMessenger::sendHeartbeat(uint16_t dst_addr, uint32_t uptime_seconds,
                                       uint8_t battery_level, uint8_t signal_strength,
-                                      uint8_t active_sensors, uint8_t error_flags)
+                                      uint8_t active_sensors, uint16_t error_flags,
+                                      uint16_t pending_records)
 {
     uint8_t seq_num = getNextSequenceNumber();
 
     return sendWithBuilder(
         [=](uint8_t *buffer) {
-            return MessageHandler::createHeartbeatMessage(node_addr_, dst_addr, seq_num,
-                                                          battery_level, signal_strength,
-                                                          uptime_seconds, error_flags, buffer);
+            // Build heartbeat message with pending_records field
+            Message *msg = reinterpret_cast<Message *>(buffer);
+            msg->header.magic = MESSAGE_MAGIC;
+            msg->header.type = MSG_TYPE_HEARTBEAT;
+            msg->header.flags = 0;
+            msg->header.src_addr = node_addr_;
+            msg->header.dst_addr = dst_addr;
+            msg->header.seq_num = seq_num;
+
+            HeartbeatPayload *payload = reinterpret_cast<HeartbeatPayload *>(msg->payload);
+            payload->uptime_seconds = uptime_seconds;
+            payload->battery_level = battery_level;
+            payload->signal_strength = signal_strength;
+            payload->active_sensors = active_sensors;
+            payload->error_flags = error_flags;
+            payload->pending_records = pending_records;
+
+            return sizeof(MessageHeader) + sizeof(HeartbeatPayload);
         },
         BEST_EFFORT, "heartbeat");
 }

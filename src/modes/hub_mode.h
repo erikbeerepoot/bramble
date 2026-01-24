@@ -53,8 +53,9 @@ public:
      * @brief Handle heartbeat from node and send time response
      * @param source_addr Node address
      * @param payload Heartbeat payload
+     * @param rssi RSSI measured by hub when receiving this heartbeat (dBm)
      */
-    void handleHeartbeat(uint16_t source_addr, const HeartbeatPayload *payload);
+    void handleHeartbeat(uint16_t source_addr, const HeartbeatPayload *payload, int16_t rssi);
 
 protected:
     void onStart() override;

@@ -67,7 +67,7 @@ size_t MessageHandler::createActuatorMessage(uint16_t src_addr, uint16_t dst_add
 
 size_t MessageHandler::createHeartbeatMessage(uint16_t src_addr, uint16_t dst_addr, uint8_t seq_num,
                                               uint8_t battery_level, uint8_t signal_quality,
-                                              uint32_t uptime_seconds, uint8_t status_flags,
+                                              uint32_t uptime_seconds, uint16_t status_flags,
                                               uint8_t *buffer)
 {
     HeartbeatPayload payload = {.uptime_seconds = uptime_seconds,

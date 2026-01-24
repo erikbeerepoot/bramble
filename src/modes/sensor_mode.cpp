@@ -3,11 +3,13 @@
 #include <ctime>
 
 #include "hardware/i2c.h"
+#include "pico/stdlib.h"
 
 #include "../hal/cht832x.h"
 #include "../hal/logger.h"
 #include "../led_patterns.h"
 #include "../lora/message.h"
+#include "../lora/network_stats.h"
 #include "../lora/reliable_messenger.h"
 
 constexpr uint16_t HUB_ADDRESS = ADDRESS_HUB;
@@ -43,23 +45,9 @@ void SensorMode::onStart()
         logger.error("Failed to initialize external flash!");
     }
 
-    // Initialize CHT832X temperature/humidity sensor
+    // Create CHT832X sensor object (lazy init on first read)
     sensor_ = std::make_unique<CHT832X>(i2c1, PIN_I2C_SDA, PIN_I2C_SCL);
-
-    if (sensor_->init()) {
-        logger.info("CHT832X sensor initialized on I2C1 (SDA=%d, SCL=%d)", PIN_I2C_SDA,
-                    PIN_I2C_SCL);
-
-        // Take an initial reading to verify sensor is working
-        auto reading = sensor_->read();
-        if (reading.valid) {
-            logger.info("Initial reading: %.2fC, %.2f%%RH", reading.temperature, reading.humidity);
-        }
-    } else {
-        logger.error("Failed to initialize CHT832X sensor!");
-        logger.error("Check wiring: Red=3.3V, Black=GND, Green=GPIO%d, Yellow=GPIO%d", PIN_I2C_SCL,
-                     PIN_I2C_SDA);
-    }
+    logger.info("CHT832X sensor created (lazy init on first read)");
 
     // define led patterns
     led_pattern_ = std::make_unique<BlinkingPattern>(led_, 255, 165, 0, 250, 250);
@@ -124,6 +112,15 @@ void SensorMode::onStart()
                                 dt.month, dt.day, dt.hour, dt.min, dt.sec);
                     switchToOperationalPattern();
 
+                    // RTC is now valid - mark as synced and set initial boot timestamp
+                    // This must happen BEFORE sendHeartbeat() to avoid ERR_FLAG_RTC_NOT_SYNCED
+                    rtc_synced_ = true;
+                    if (flash_buffer_ && flash_buffer_->getInitialBootTimestamp() == 0) {
+                        uint32_t now = getUnixTimestamp();
+                        flash_buffer_->setInitialBootTimestamp(now);
+                        logger.info("Set initial_boot_timestamp to %lu (from PMU sync)", now);
+                    }
+
                     // Only sync from hub if it's time to transmit
                     // This avoids unnecessary LoRa traffic between transmission intervals
                     if (time_to_transmit) {
@@ -133,7 +130,6 @@ void SensorMode::onStart()
                     } else {
                         // PMU time is good enough, proceed directly to backlog check
                         pmu_logger.info("Not time to transmit - using PMU time, skipping hub sync");
-                        rtc_synced_ = true;
                         onRtcSynced();
                     }
                 } else {
@@ -192,7 +188,13 @@ void SensorMode::readAndStoreSensorData(uint32_t current_time)
     (void)current_time;  // No longer used - we use RTC Unix timestamp
 
     if (!sensor_) {
-        logger.error("Sensor not initialized");
+        logger.error("Sensor object not created");
+        return;
+    }
+
+    // Lazy init: try to initialize sensor if not yet done
+    if (!sensor_initialized_ && !tryInitSensor()) {
+        logger.warn("Sensor not ready, will retry next cycle");
         return;
     }
 
@@ -203,6 +205,9 @@ void SensorMode::readAndStoreSensorData(uint32_t current_time)
     }
 
     auto reading = sensor_->read();
+
+    // Track sensor read validity for error reporting
+    last_sensor_read_valid_ = reading.valid;
 
     if (!reading.valid) {
         logger.error("Failed to read sensor");
@@ -244,18 +249,109 @@ void SensorMode::readAndStoreSensorData(uint32_t current_time)
     }
 }
 
-void SensorMode::sendHeartbeat(uint32_t current_time)
+void SensorMode::sendHeartbeat(uint32_t /* current_time */)
 {
-    uint32_t uptime = current_time / 1000;  // Convert to seconds
-    uint8_t battery_level = 255;            // External power (no battery monitoring yet)
-    uint8_t signal_strength = 70;           // TODO: Get actual RSSI from LoRa
+    // Calculate uptime from initial boot timestamp (persisted across sleep cycles)
+    uint32_t uptime = 0;
+    uint32_t initial_boot = flash_buffer_ ? flash_buffer_->getInitialBootTimestamp() : 0;
+    uint32_t current_time_rtc = getUnixTimestamp();
+    if (initial_boot > 0 && current_time_rtc > initial_boot) {
+        uptime = current_time_rtc - initial_boot;
+    }
+    uint8_t battery_level = getBatteryLevel();
+    // RSSI is negative dBm (e.g., -70 dBm); convert to absolute value for payload
+    int rssi = lora_.getRssi();
+    uint8_t signal_strength = (rssi < 0 && rssi >= -120) ? static_cast<uint8_t>(-rssi) : 0;
     uint8_t active_sensors = CAP_TEMPERATURE | CAP_HUMIDITY;
-    uint8_t error_flags = 0;  // No errors
+    uint16_t error_flags = collectErrorFlags();
 
-    logger.debug("Sending heartbeat (uptime=%lu s)", uptime);
+    // Get count of untransmitted records in flash backlog
+    uint16_t pending_records = 0;
+    if (flash_buffer_) {
+        uint32_t count = flash_buffer_->getUntransmittedCount();
+        // Clamp to uint16_t max (65535)
+        pending_records = (count > 0xFFFF) ? 0xFFFF : static_cast<uint16_t>(count);
+    }
+
+    logger.debug("Sending heartbeat (uptime=%lu s, battery=%u, errors=0x%04X, pending=%u)", uptime,
+                 battery_level, error_flags, pending_records);
 
     messenger_.sendHeartbeat(HUB_ADDRESS, uptime, battery_level, signal_strength, active_sensors,
-                             error_flags);
+                             error_flags, pending_records);
+}
+
+uint16_t SensorMode::collectErrorFlags()
+{
+    uint16_t flags = ERR_FLAG_NONE;
+
+    // Check sensor health - only report failure if we've attempted to read
+    // (sensor_initialized_ means we've tried init and at least one read)
+    if (sensor_ && sensor_initialized_ && !last_sensor_read_valid_) {
+        flags |= ERR_FLAG_SENSOR_FAILURE;
+    }
+
+    // Check flash status
+    if (!external_flash_ || !flash_buffer_) {
+        flags |= ERR_FLAG_FLASH_FAILURE;
+    } else {
+        // Check if flash is >90% full
+        SensorFlashMetadata stats;
+        if (flash_buffer_->getStatistics(stats)) {
+            uint32_t capacity = SensorFlashBuffer::MAX_RECORDS;
+            uint32_t usage = stats.total_records;
+            if (capacity > 0 && (usage * 100 / capacity) >= 90) {
+                flags |= ERR_FLAG_FLASH_FULL;
+            }
+        }
+    }
+
+    // Check PMU availability
+    if (!pmu_available_) {
+        flags |= ERR_FLAG_PMU_FAILURE;
+    }
+
+    // Check RTC sync status
+    if (!isRtcSynced()) {
+        flags |= ERR_FLAG_RTC_NOT_SYNCED;
+    }
+
+    // Check battery level for warnings
+    uint8_t battery = getBatteryLevel();
+    if (battery != 255) {  // 255 = external power
+        if (battery < 10) {
+            flags |= ERR_FLAG_BATTERY_CRITICAL;
+        } else if (battery < 20) {
+            flags |= ERR_FLAG_BATTERY_LOW;
+        }
+    }
+
+    // Check consecutive transmission failures
+    if (consecutive_tx_failures_ >= TX_FAILURE_THRESHOLD) {
+        flags |= ERR_FLAG_TX_FAILURES;
+    }
+
+    // Check network timeout rate from statistics
+    if (network_stats_) {
+        const auto &global = network_stats_->getGlobalStats();
+        uint32_t total_reliable =
+            global.criticality_totals[RELIABLE].sent + global.criticality_totals[CRITICAL].sent;
+        uint32_t total_timeouts = global.criticality_totals[RELIABLE].timeouts +
+                                  global.criticality_totals[CRITICAL].timeouts;
+
+        // Flag if >25% of reliable/critical messages are timing out (with minimum sample size)
+        if (total_reliable >= 10 && total_timeouts * 4 > total_reliable) {
+            flags |= ERR_FLAG_HIGH_TIMEOUTS;
+        }
+    }
+
+    return flags;
+}
+
+uint8_t SensorMode::getBatteryLevel()
+{
+    // TODO: Query PMU for actual battery level when battery monitoring is implemented
+    // For now, return 255 (external power) since current hardware doesn't have battery
+    return 255;
 }
 
 bool SensorMode::isTimeToTransmit(uint32_t current_timestamp) const
@@ -401,6 +497,7 @@ bool SensorMode::transmitBatch(const SensorDataRecord *records, size_t count)
                 if (flash_buffer_->advanceReadIndex(static_cast<uint32_t>(count))) {
                     logger.info("Batch ACK received (seq=%d): %zu records transmitted", seq_num,
                                 count);
+                    consecutive_tx_failures_ = 0;  // Reset failure counter on success
 
                     // Check if we've cleared all backlog
                     if (flash_buffer_->getUntransmittedCount() == 0) {
@@ -411,6 +508,9 @@ bool SensorMode::transmitBatch(const SensorDataRecord *records, size_t count)
             } else {
                 logger.warn("Batch transmission failed (seq=%d, status=%d), will retry", seq_num,
                             ack_status);
+                if (consecutive_tx_failures_ < 255) {
+                    consecutive_tx_failures_++;
+                }
                 // Signal sleep on failure - we'll retry next wake cycle
                 signalReadyForSleep();
             }
@@ -529,12 +629,20 @@ void SensorMode::onRtcSynced()
     // Switch to operational LED pattern if not already done
     switchToOperationalPattern();
 
-    // Initialize last_sync_timestamp if this is first boot
-    // This gives a valid baseline for the transmission interval check
+    // Initialize timestamps on first boot after power loss
     if (flash_buffer_) {
+        uint32_t now = getUnixTimestamp();
+
+        // Set initial boot timestamp for uptime calculation (only if not already set)
+        if (flash_buffer_->getInitialBootTimestamp() == 0) {
+            flash_buffer_->setInitialBootTimestamp(now);
+            logger.info("Set initial_boot_timestamp to %lu", now);
+        }
+
+        // Initialize last_sync_timestamp if this is first boot
+        // This gives a valid baseline for the transmission interval check
         SensorFlashMetadata stats;
         if (flash_buffer_->getStatistics(stats) && stats.last_sync_timestamp == 0) {
-            uint32_t now = getUnixTimestamp();
             flash_buffer_->updateLastSync(now);
             logger.info("Initialized last_sync_timestamp to %lu", now);
         }
@@ -547,4 +655,37 @@ void SensorMode::onRtcSynced()
     // Check and transmit backlog (handles 10-minute interval internally)
     // signalReadyForSleep() is called when done
     checkAndTransmitBacklog(to_ms_since_boot(get_absolute_time()));
+}
+
+bool SensorMode::tryInitSensor()
+{
+    if (sensor_initialized_) {
+        return true;
+    }
+
+    if (!sensor_) {
+        return false;
+    }
+
+    // Wait for sensor to stabilize after power-on before I2C communication
+    // Some sensors need time after VCC is applied before they're ready
+    logger.info("Waiting 1s for sensor power-on stabilization...");
+    sleep_ms(1000);
+
+    if (sensor_->init()) {
+        sensor_initialized_ = true;
+        logger.info("CHT832X sensor initialized on I2C1 (SDA=%d, SCL=%d)", PIN_I2C_SDA, PIN_I2C_SCL);
+
+        // Take an initial reading to verify sensor is working
+        auto reading = sensor_->read();
+        if (reading.valid) {
+            logger.info("Initial reading: %.2fC, %.2f%%RH", reading.temperature, reading.humidity);
+        }
+        return true;
+    }
+
+    logger.error("Failed to initialize CHT832X sensor!");
+    logger.error("Check wiring: Red=3.3V, Black=GND, Green=GPIO%d, Yellow=GPIO%d", PIN_I2C_SCL,
+                 PIN_I2C_SDA);
+    return false;
 }
