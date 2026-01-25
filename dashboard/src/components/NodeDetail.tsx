@@ -164,6 +164,16 @@ function NodeDetail({ node, zones, onBack, onUpdate, onZoneCreated }: NodeDetail
                   </dd>
                 </div>
 
+                {/* Unsent Records */}
+                <div>
+                  <dt className="text-sm text-gray-500 mb-1">Unsent Records</dt>
+                  <dd className="text-lg font-medium text-gray-900">
+                    {node.status.pending_records !== null
+                      ? node.status.pending_records.toLocaleString()
+                      : 'Unknown'}
+                  </dd>
+                </div>
+
                 {/* Active Issues */}
                 {node.status.error_flags !== null && node.status.error_flags !== 0 && (
                   <div className="pt-3 border-t">
