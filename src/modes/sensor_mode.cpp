@@ -28,7 +28,7 @@ SensorMode::~SensorMode() = default;
 void SensorMode::onStart()
 {
     logger.info("=== SENSOR MODE ACTIVE ===");
-    logger.info("- Orange LED blink (init) -> Red short blink (operational)");
+    logger.info("LED: orange=init, yellow=sync, green=ok, orange=degraded, red=error");
 
     // Initialize external flash for sensor data storage
     external_flash_ = std::make_unique<ExternalFlash>();
@@ -50,9 +50,13 @@ void SensorMode::onStart()
     sensor_ = std::make_unique<CHT832X>(i2c1, PIN_I2C_SDA, PIN_I2C_SCL);
     logger.info("CHT832X sensor created (lazy init on first read)");
 
-    // Define LED patterns
+    // Initial LED pattern: orange blink while initializing/awaiting time
+    // Patterns are switched dynamically in onStateChange based on state:
+    //   SYNCING_TIME: yellow fast short blink (50ms on, 250ms off)
+    //   TIME_SYNCED/READING/CHECKING/TRANSMITTING/READY: green short blink
+    //   DEGRADED_NO_SENSOR: orange short blink
+    //   ERROR: red short blink
     led_pattern_ = std::make_unique<BlinkingPattern>(led_, 255, 165, 0, 250, 250);
-    operational_pattern_ = std::make_unique<ShortBlinkPattern>(led_, 125, 0, 0);
 
     // Set up state change handler - centralizes all reactions to state changes
     sensor_state_.setCallback([this](SensorState state) {
@@ -173,12 +177,13 @@ void SensorMode::onStateChange(SensorState state)
             break;
 
         case SensorState::SYNCING_TIME:
-            // Waiting for hub response - nothing to schedule
+            // Waiting for hub response - yellow fast short blink
+            led_pattern_ = std::make_unique<ShortBlinkPattern>(led_, 255, 255, 0, 50, 250);
             break;
 
         case SensorState::TIME_SYNCED:
-            // RTC valid - switch LED and initialize timestamps
-            switchToOperationalPattern();
+            // RTC valid - green short blink, initialize timestamps
+            led_pattern_ = std::make_unique<ShortBlinkPattern>(led_, 0, 255, 0);
             initializeFlashTimestamps();
 
             // Try to initialize sensor
@@ -245,8 +250,8 @@ void SensorMode::onStateChange(SensorState state)
             break;
 
         case SensorState::DEGRADED_NO_SENSOR:
-            // Sensor failed - skip to backlog check
-            switchToOperationalPattern();  // Still operational, just degraded
+            // Sensor failed - orange short blink, skip to backlog check
+            led_pattern_ = std::make_unique<ShortBlinkPattern>(led_, 255, 165, 0);
             task_queue_.postOnce(
                 [](void *ctx, uint32_t time) -> bool {
                     (void)time;
@@ -259,6 +264,8 @@ void SensorMode::onStateChange(SensorState state)
             break;
 
         case SensorState::ERROR:
+            // Red short blink for error
+            led_pattern_ = std::make_unique<ShortBlinkPattern>(led_, 255, 0, 0);
             logger.error("Entered ERROR state");
             break;
 
@@ -427,8 +434,9 @@ uint16_t SensorMode::collectErrorFlags()
         flags |= ERR_FLAG_PMU_FAILURE;
     }
 
-    // Check RTC sync status via sensor state machine
-    if (!sensor_state_.isTimeSynced()) {
+    // Only flag RTC error if sync failed, not during normal boot sequence
+    // (AWAITING_TIME/SYNCING_TIME are expected states, not errors)
+    if (!sensor_state_.isTimeSynced() && !sensor_state_.isAwaitingTime()) {
         flags |= ERR_FLAG_RTC_NOT_SYNCED;
     }
 
