@@ -2,8 +2,9 @@
 
 #include <ctime>
 
-#include "hardware/i2c.h"
 #include "pico/stdlib.h"
+
+#include "hardware/i2c.h"
 
 #include "../hal/cht832x.h"
 #include "../hal/logger.h"
@@ -167,14 +168,21 @@ void SensorMode::onLoop()
         reliable_pmu_->update();
     }
 
-    // Check for heartbeat timeout - proceed with PMU time if hub doesn't respond
+    // Check for heartbeat timeout - only proceed if RTC is actually running
     if (!rtc_synced_ && heartbeat_request_time_ > 0) {
         uint32_t elapsed = to_ms_since_boot(get_absolute_time()) - heartbeat_request_time_;
         if (elapsed >= HEARTBEAT_TIMEOUT_MS) {
-            logger.warn("Hub sync timeout (%lu ms) - proceeding with PMU time", elapsed);
+            logger.warn("Hub sync timeout (%lu ms)", elapsed);
             heartbeat_request_time_ = 0;  // Clear to prevent repeated timeout
-            rtc_synced_ = true;
-            onRtcSynced();
+
+            // Only mark synced if RTC is actually running (PMU set it earlier)
+            if (rtc_running()) {
+                rtc_synced_ = true;
+                onRtcSynced();
+            } else {
+                logger.error("RTC not running after timeout - no valid time source");
+                // Will retry on next heartbeat cycle
+            }
         }
     }
 
@@ -674,7 +682,8 @@ bool SensorMode::tryInitSensor()
 
     if (sensor_->init()) {
         sensor_initialized_ = true;
-        logger.info("CHT832X sensor initialized on I2C1 (SDA=%d, SCL=%d)", PIN_I2C_SDA, PIN_I2C_SCL);
+        logger.info("CHT832X sensor initialized on I2C1 (SDA=%d, SCL=%d)", PIN_I2C_SDA,
+                    PIN_I2C_SCL);
 
         // Take an initial reading to verify sensor is working
         auto reading = sensor_->read();
