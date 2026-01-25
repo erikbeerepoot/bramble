@@ -1,5 +1,4 @@
 #pragma once
-#include <atomic>
 #include <cstdint>
 #include <memory>
 
@@ -9,6 +8,7 @@
 #include "led_patterns.h"
 #include "lora/message.h"
 #include "periodic_task_manager.h"
+#include "util/base_state_machine.h"
 
 // Forward declarations
 class ReliableMessenger;
@@ -33,7 +33,7 @@ protected:
     std::unique_ptr<LEDPattern> led_pattern_;
     std::unique_ptr<LEDPattern> operational_pattern_;  // Pattern to switch to after RTC sync
     PeriodicTaskManager task_manager_;
-    std::atomic<bool> rtc_synced_{false};  // True after receiving heartbeat response with time
+    BaseStateMachine state_machine_;  // Centralized state management
 
 public:
     ApplicationMode(ReliableMessenger &messenger, SX1276 &lora, NeoPixel &led,
@@ -107,12 +107,6 @@ protected:
     virtual bool shouldSleep() const { return true; }
 
     /**
-     * @brief Check if RTC has been synchronized via heartbeat response
-     * @return true if RTC contains valid time from hub
-     */
-    bool isRtcSynced() const { return rtc_synced_.load(); }
-
-    /**
      * @brief Get current Unix timestamp from RTC
      * @return Unix timestamp (seconds since 1970-01-01), or 0 if RTC not synced
      */
@@ -125,4 +119,12 @@ protected:
      * in onStart() to define the pattern used after initialization completes.
      */
     void switchToOperationalPattern();
+
+    /**
+     * @brief Update state machine based on current hardware state
+     *
+     * Reads hardware state (rtc_running) and updates the state machine.
+     * Call this after any hardware state changes (RTC set, etc).
+     */
+    void updateStateMachine();
 };

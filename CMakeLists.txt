@@ -119,6 +119,9 @@ else()
         src/storage/sensor_flash_buffer.cpp
         src/util/work_tracker.cpp
         src/util/task_queue.cpp
+        src/util/base_state_machine.cpp
+        src/util/sensor_state_machine.cpp
+        src/util/irrigation_state_machine.cpp
         src/modes/application_mode.cpp
         src/modes/hub_mode.cpp
     )

@@ -113,9 +113,8 @@ void SensorMode::onStart()
                                 dt.month, dt.day, dt.hour, dt.min, dt.sec);
                     switchToOperationalPattern();
 
-                    // RTC is now valid - mark as synced and set initial boot timestamp
-                    // This must happen BEFORE sendHeartbeat() to avoid ERR_FLAG_RTC_NOT_SYNCED
-                    rtc_synced_ = true;
+                    updateStateMachine();
+                    updateSensorState();
                     if (flash_buffer_ && flash_buffer_->getInitialBootTimestamp() == 0) {
                         uint32_t now = getUnixTimestamp();
                         flash_buffer_->setInitialBootTimestamp(now);
@@ -159,6 +158,10 @@ void SensorMode::onStart()
     // Add backlog transmission task
     task_manager_.addTask([this](uint32_t time) { checkAndTransmitBacklog(time); },
                           BACKLOG_TX_INTERVAL_MS, "Backlog Transmission");
+
+    // Mark sensor state machine as initialized
+    sensor_state_.markInitialized();
+    updateSensorState();
 }
 
 void SensorMode::onLoop()
@@ -168,20 +171,16 @@ void SensorMode::onLoop()
         reliable_pmu_->update();
     }
 
-    // Check for heartbeat timeout - only proceed if RTC is actually running
-    if (!rtc_synced_ && heartbeat_request_time_ > 0) {
+    // Hub sync timeout - check if PMU already set RTC and we can proceed
+    if (!state_machine_.isOperational() && heartbeat_request_time_ > 0) {
         uint32_t elapsed = to_ms_since_boot(get_absolute_time()) - heartbeat_request_time_;
         if (elapsed >= HEARTBEAT_TIMEOUT_MS) {
-            logger.warn("Hub sync timeout (%lu ms)", elapsed);
-            heartbeat_request_time_ = 0;  // Clear to prevent repeated timeout
-
-            // Only mark synced if RTC is actually running (PMU set it earlier)
-            if (rtc_running()) {
-                rtc_synced_ = true;
+            logger.warn("Hub sync timeout (%lu ms) - checking if PMU time is valid", elapsed);
+            heartbeat_request_time_ = 0;
+            updateStateMachine();
+            updateSensorState();
+            if (state_machine_.isOperational()) {
                 onRtcSynced();
-            } else {
-                logger.error("RTC not running after timeout - no valid time source");
-                // Will retry on next heartbeat cycle
             }
         }
     }
@@ -207,7 +206,7 @@ void SensorMode::readAndStoreSensorData(uint32_t current_time)
     }
 
     // Check if RTC has been synced - don't store readings with invalid timestamps
-    if (!isRtcSynced()) {
+    if (!state_machine_.isOperational()) {
         logger.warn("RTC not synced yet, skipping sensor storage");
         return;
     }
@@ -292,22 +291,17 @@ uint16_t SensorMode::collectErrorFlags()
 {
     uint16_t flags = ERR_FLAG_NONE;
 
-    // Check sensor health - report failure if:
-    // 1. Init was attempted but failed (sensor_init_attempted_ && !sensor_initialized_)
-    // 2. Init succeeded but last read failed (sensor_initialized_ && !last_sensor_read_valid_)
-    if (sensor_) {
-        bool init_failed = sensor_init_attempted_ && !sensor_initialized_;
-        bool read_failed = sensor_initialized_ && !last_sensor_read_valid_;
-        if (init_failed || read_failed) {
-            flags |= ERR_FLAG_SENSOR_FAILURE;
-        }
+    // Check sensor health via state machine
+    if (sensor_state_.isDegraded()) {
+        flags |= ERR_FLAG_SENSOR_FAILURE;
+    } else if (sensor_initialized_ && !last_sensor_read_valid_) {
+        flags |= ERR_FLAG_SENSOR_FAILURE;
     }
 
     // Check flash status
     if (!external_flash_ || !flash_buffer_) {
         flags |= ERR_FLAG_FLASH_FAILURE;
     } else {
-        // Check if flash is >90% full
         SensorFlashMetadata stats;
         if (flash_buffer_->getStatistics(stats)) {
             uint32_t capacity = SensorFlashBuffer::MAX_RECORDS;
@@ -323,9 +317,8 @@ uint16_t SensorMode::collectErrorFlags()
         flags |= ERR_FLAG_PMU_FAILURE;
     }
 
-    // Check RTC sync status - must match getUnixTimestamp() logic
-    // which checks both rtc_synced_ AND rtc_running()
-    if (!isRtcSynced() || !rtc_running()) {
+    // Check RTC sync status
+    if (!state_machine_.isOperational()) {
         flags |= ERR_FLAG_RTC_NOT_SYNCED;
     }
 
@@ -681,20 +674,17 @@ bool SensorMode::tryInitSensor()
         return false;
     }
 
-    // Mark that we've attempted initialization (for error reporting)
     sensor_init_attempted_ = true;
 
-    // Wait for sensor to stabilize after power-on before I2C communication
-    // Some sensors need time after VCC is applied before they're ready
     logger.info("Waiting 1s for sensor power-on stabilization...");
     sleep_ms(1000);
 
     if (sensor_->init()) {
         sensor_initialized_ = true;
+        updateSensorState();
         logger.info("CHT832X sensor initialized on I2C1 (SDA=%d, SCL=%d)", PIN_I2C_SDA,
                     PIN_I2C_SCL);
 
-        // Take an initial reading to verify sensor is working
         auto reading = sensor_->read();
         if (reading.valid) {
             logger.info("Initial reading: %.2fC, %.2f%%RH", reading.temperature, reading.humidity);
@@ -702,8 +692,18 @@ bool SensorMode::tryInitSensor()
         return true;
     }
 
+    updateSensorState();
     logger.error("Failed to initialize CHT832X sensor!");
     logger.error("Check wiring: Red=3.3V, Black=GND, Green=GPIO%d, Yellow=GPIO%d", PIN_I2C_SCL,
                  PIN_I2C_SDA);
     return false;
+}
+
+void SensorMode::updateSensorState()
+{
+    SensorHardwareState hw;
+    hw.rtc_running = rtc_running();
+    hw.sensor_initialized = sensor_initialized_;
+    hw.sensor_init_attempted = sensor_init_attempted_;
+    sensor_state_.update(hw);
 }

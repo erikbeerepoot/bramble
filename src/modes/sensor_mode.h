@@ -7,6 +7,7 @@
 #include "../hal/pmu_client.h"
 #include "../hal/pmu_reliability.h"
 #include "../storage/sensor_flash_buffer.h"
+#include "../util/sensor_state_machine.h"
 #include "../util/task_queue.h"
 #include "application_mode.h"
 
@@ -130,16 +131,19 @@ private:
     uint8_t consecutive_tx_failures_ = 0;               // Track consecutive transmission failures
     static constexpr uint8_t TX_FAILURE_THRESHOLD = 3;  // Failures before setting error flag
 
-    // Lazy sensor initialization
+    // Sensor state tracking
+    SensorStateMachine sensor_state_;
     bool sensor_initialized_ = false;
-    bool sensor_init_attempted_ = false;  // Track if we've tried to init (for error reporting)
+    bool sensor_init_attempted_ = false;
+
+    /**
+     * @brief Update sensor state machine with current hardware state
+     */
+    void updateSensorState();
 
     /**
      * @brief Try to initialize sensor with power-on delay
      * @return true if sensor initialized successfully
-     *
-     * Called lazily on first read attempt. Includes delay to allow
-     * sensor to stabilize after power-on before I2C communication.
      */
     bool tryInitSensor();
 };
