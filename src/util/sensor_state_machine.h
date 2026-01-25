@@ -8,8 +8,9 @@
 enum class SensorState : uint8_t {
     INITIALIZING,        // Hardware setup in progress
     AWAITING_TIME,       // Waiting for RTC sync (from hub or PMU)
+    TIME_SYNCED,         // RTC running, can store data, sensor not yet attempted
     OPERATIONAL,         // RTC running, sensor working
-    DEGRADED_NO_SENSOR,  // RTC running but sensor failed
+    DEGRADED_NO_SENSOR,  // RTC running but sensor init attempted and failed
     ERROR,               // Unrecoverable error
 };
 
@@ -61,17 +62,32 @@ public:
     bool isOperational() const { return state_ == SensorState::OPERATIONAL; }
 
     /**
-     * @brief Check if RTC is synced (OPERATIONAL or DEGRADED_NO_SENSOR)
+     * @brief Check if RTC is synced (any state with valid time)
      */
     bool isTimeSynced() const
     {
-        return state_ == SensorState::OPERATIONAL || state_ == SensorState::DEGRADED_NO_SENSOR;
+        return state_ == SensorState::TIME_SYNCED || state_ == SensorState::OPERATIONAL ||
+               state_ == SensorState::DEGRADED_NO_SENSOR;
     }
 
     /**
-     * @brief Check if sensor is available
+     * @brief Check if can store data (RTC synced, regardless of sensor status)
+     */
+    bool canStoreData() const { return isTimeSynced(); }
+
+    /**
+     * @brief Check if sensor is available and working
      */
     bool hasSensor() const { return state_ == SensorState::OPERATIONAL; }
+
+    /**
+     * @brief Check if sensor init was attempted but not yet successful
+     * Use this to decide whether to attempt sensor initialization.
+     */
+    bool needsSensorInit() const
+    {
+        return state_ == SensorState::TIME_SYNCED;
+    }
 
     /**
      * @brief Check if in degraded mode (RTC ok, sensor failed)

@@ -33,16 +33,17 @@ SensorState SensorStateMachine::deriveState(const SensorHardwareState &hardware_
     }
 
     // RTC is running - check sensor status
-    if (hardware_state.sensor_init_attempted && !hardware_state.sensor_initialized) {
-        return SensorState::DEGRADED_NO_SENSOR;
-    }
-
     if (hardware_state.sensor_initialized) {
         return SensorState::OPERATIONAL;
     }
 
-    // RTC synced but sensor not yet attempted - still operational for timestamp purposes
-    return SensorState::OPERATIONAL;
+    if (hardware_state.sensor_init_attempted) {
+        // Sensor init was attempted but failed
+        return SensorState::DEGRADED_NO_SENSOR;
+    }
+
+    // RTC synced but sensor not yet attempted
+    return SensorState::TIME_SYNCED;
 }
 
 const char *SensorStateMachine::stateName(SensorState state)
@@ -52,6 +53,8 @@ const char *SensorStateMachine::stateName(SensorState state)
             return "INITIALIZING";
         case SensorState::AWAITING_TIME:
             return "AWAITING_TIME";
+        case SensorState::TIME_SYNCED:
+            return "TIME_SYNCED";
         case SensorState::OPERATIONAL:
             return "OPERATIONAL";
         case SensorState::DEGRADED_NO_SENSOR:
