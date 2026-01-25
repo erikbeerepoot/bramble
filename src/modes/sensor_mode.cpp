@@ -323,8 +323,9 @@ uint16_t SensorMode::collectErrorFlags()
         flags |= ERR_FLAG_PMU_FAILURE;
     }
 
-    // Check RTC sync status
-    if (!isRtcSynced()) {
+    // Check RTC sync status - must match getUnixTimestamp() logic
+    // which checks both rtc_synced_ AND rtc_running()
+    if (!isRtcSynced() || !rtc_running()) {
         flags |= ERR_FLAG_RTC_NOT_SYNCED;
     }
 
