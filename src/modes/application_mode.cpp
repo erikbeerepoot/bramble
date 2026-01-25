@@ -41,6 +41,10 @@ void ApplicationMode::run()
     // Call startup hook
     onStart();
 
+    // Mark initialization complete - state machine can now transition based on hardware
+    state_machine_.markInitialized();
+    updateStateMachine();
+
     // If using multicore, start the task manager on Core 1
     task_manager_.start();
 
@@ -117,7 +121,9 @@ void ApplicationMode::onHeartbeatResponse(const HeartbeatResponsePayload *payloa
 
     // Set RP2040 RTC
     if (rtc_set_datetime(&dt)) {
-        rtc_synced_ = true;
+        // Wait for RTC to propagate, then update state machine
+        sleep_us(64);
+        updateStateMachine();
         logger.info("RTC synchronized: %04d-%02d-%02d %02d:%02d:%02d (dow=%d)", dt.year, dt.month,
                     dt.day, dt.hour, dt.min, dt.sec, dt.dotw);
 
@@ -130,10 +136,6 @@ void ApplicationMode::onHeartbeatResponse(const HeartbeatResponsePayload *payloa
 
 uint32_t ApplicationMode::getUnixTimestamp() const
 {
-    if (!rtc_synced_ || !rtc_running()) {
-        return 0;
-    }
-
     datetime_t dt;
     if (!rtc_get_datetime(&dt)) {
         return 0;
@@ -169,4 +171,11 @@ void ApplicationMode::switchToOperationalPattern()
         led_pattern_ = std::move(operational_pattern_);
         logger.info("Switched to operational LED pattern");
     }
+}
+
+void ApplicationMode::updateStateMachine()
+{
+    BaseHardwareState hardware_state;
+    hardware_state.rtc_running = rtc_running();
+    state_machine_.update(hardware_state);
 }

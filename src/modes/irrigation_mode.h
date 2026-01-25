@@ -2,6 +2,7 @@
 
 #include "../hal/pmu_client.h"
 #include "../hal/valve_controller.h"
+#include "../util/irrigation_state_machine.h"
 #include "../util/work_tracker.h"
 #include "application_mode.h"
 
@@ -33,7 +34,13 @@ private:
     bool pmu_available_;
     UpdatePullState update_state_;
     WorkTracker work_tracker_;  // Tracks pending work, signals when idle
-    bool needs_registration_;   // True if we need to register with hub
+    IrrigationStateMachine irrigation_state_;
+    bool needs_registration_;  // True if we need to register with hub
+
+    /**
+     * @brief Update irrigation state machine with current hardware state
+     */
+    void updateIrrigationState();
 
     // PMU callback handlers
     void handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry *entry);

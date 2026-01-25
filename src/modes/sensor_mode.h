@@ -7,6 +7,7 @@
 #include "../hal/pmu_client.h"
 #include "../hal/pmu_reliability.h"
 #include "../storage/sensor_flash_buffer.h"
+#include "../util/sensor_state_machine.h"
 #include "../util/task_queue.h"
 #include "application_mode.h"
 
@@ -63,18 +64,35 @@ private:
     void sendHeartbeat(uint32_t current_time);
 
     /**
-     * @brief Check for untransmitted records and batch transmit them
-     * @param current_time Current system time in milliseconds
+     * @brief Check if there's backlog to transmit
+     * @return true if transmission is needed, false if ready for sleep
+     *
+     * Pure function: only checks conditions, does not transmit.
+     * Caller should use result to report to state machine.
      */
-    void checkAndTransmitBacklog(uint32_t current_time);
+    bool checkBacklog();
+
+    /**
+     * @brief Transmit backlog to hub
+     *
+     * Reads untransmitted records and sends batch.
+     * Reports reportTransmitComplete() when done (via callback).
+     */
+    void transmitBacklog();
 
     /**
      * @brief Transmit a batch of sensor records
      * @param records Array of records to transmit
      * @param count Number of records in batch
-     * @return true if transmission successful
+     * @return true if transmission initiated successfully
      */
     bool transmitBatch(const SensorDataRecord *records, size_t count);
+
+    /**
+     * @brief Initialize flash timestamps on first boot
+     * Sets initial_boot_timestamp and last_sync_timestamp if not set.
+     */
+    void initializeFlashTimestamps();
 
     /**
      * @brief Signal to PMU that RP2040 is ready for sleep
@@ -94,14 +112,6 @@ private:
      * @param payload Heartbeat response with timestamp from hub
      */
     void onHeartbeatResponse(const HeartbeatResponsePayload *payload) override;
-
-    /**
-     * @brief Handle RTC synchronization completion
-     * Centralizes the flow after RTC sync (from PMU or hub heartbeat):
-     * - Completes RtcSync work
-     * - Triggers backlog check flow
-     */
-    void onRtcSynced();
 
     /**
      * @brief Check if enough time has elapsed since last transmission
@@ -130,15 +140,25 @@ private:
     uint8_t consecutive_tx_failures_ = 0;               // Track consecutive transmission failures
     static constexpr uint8_t TX_FAILURE_THRESHOLD = 3;  // Failures before setting error flag
 
-    // Lazy sensor initialization
-    bool sensor_initialized_ = false;
+    // Event-driven state machine - reports events, queries state
+    // No external flags needed - state machine tracks everything internally
+    SensorStateMachine sensor_state_;
+
+    /**
+     * @brief Handle state machine state changes
+     *
+     * Centralizes all reactions to state changes:
+     * - LED pattern updates
+     * - Error handling
+     * - Future: notifications, logging, etc.
+     *
+     * @param state New state after transition
+     */
+    void onStateChange(SensorState state);
 
     /**
      * @brief Try to initialize sensor with power-on delay
      * @return true if sensor initialized successfully
-     *
-     * Called lazily on first read attempt. Includes delay to allow
-     * sensor to stabilize after power-on before I2C communication.
      */
     bool tryInitSensor();
 };

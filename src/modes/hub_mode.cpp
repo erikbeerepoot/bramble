@@ -26,6 +26,7 @@ static Logger logger("HubMode");
 constexpr uint32_t STATS_INTERVAL_MS = 30000;             // 30 seconds
 constexpr uint32_t MAINTENANCE_INTERVAL_MS = 300000;      // 5 minutes
 constexpr uint32_t DATETIME_QUERY_INTERVAL_MS = 3600000;  // 1 hour
+constexpr uint32_t DATETIME_RETRY_INTERVAL_MS = 5000;     // 5 seconds retry if RTC not running
 
 void HubMode::onStart()
 {
@@ -121,6 +122,16 @@ void HubMode::onLoop()
 {
     // Process serial input from Raspberry Pi
     processSerialInput();
+
+    // Retry GET_DATETIME until RTC is running (belt-and-suspenders approach)
+    // This handles cases where RasPi wasn't ready when hub first booted
+    if (!rtc_running()) {
+        uint32_t now = to_ms_since_boot(get_absolute_time());
+        if (now - last_datetime_sync_ms_ >= DATETIME_RETRY_INTERVAL_MS) {
+            logger.debug("RTC not running - retrying datetime sync");
+            syncTimeFromRaspberryPi();
+        }
+    }
 }
 
 void HubMode::processIncomingMessage(uint8_t *rx_buffer, int rx_len, uint32_t current_time)

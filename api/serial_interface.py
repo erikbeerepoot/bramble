@@ -100,6 +100,13 @@ class SerialInterface:
         """
         logger.debug(f"Hub: {line}")
 
+        # Proactively send time when hub signals it's ready
+        # This ensures hub gets time regardless of boot order
+        if line == "HUB_READY":
+            logger.info("Hub ready - proactively sending datetime")
+            self._handle_datetime_query()
+            return
+
         # Check if this is a query from hub
         if line == "GET_DATETIME":
             self._handle_datetime_query()

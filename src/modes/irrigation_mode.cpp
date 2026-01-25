@@ -88,12 +88,11 @@ void IrrigationMode::onStart()
                 dt.sec = datetime.second;
 
                 if (rtc_set_datetime(&dt)) {
-                    rtc_synced_ = true;
+                    sleep_us(64);
+                    updateStateMachine();
                     logger.info("RTC synced from PMU: %04d-%02d-%02d %02d:%02d:%02d", dt.year,
                                 dt.month, dt.day, dt.hour, dt.min, dt.sec);
-                    // Switch to operational LED pattern immediately
                     switchToOperationalPattern();
-                    // Complete RTC sync work
                     work_tracker_.completeWork(WorkType::RtcSync);
                 } else {
                     logger.error("Failed to set RTC from PMU time");
@@ -161,6 +160,9 @@ void IrrigationMode::onStart()
                                      active_sensors, error_flags);
         },
         HEARTBEAT_INTERVAL_MS, "Heartbeat");
+
+    irrigation_state_.markInitialized();
+    updateIrrigationState();
 }
 
 void IrrigationMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry *entry)
@@ -295,10 +297,12 @@ void IrrigationMode::onHeartbeatResponse(const HeartbeatResponsePayload *payload
                 // Complete RTC sync work regardless of PMU result - RP2040 RTC was synced by base
                 // class
                 work_tracker_.completeWork(WorkType::RtcSync);
+                updateIrrigationState();
             });
     } else if (payload) {
         // No PMU available, but RTC was synced by base class
         work_tracker_.completeWork(WorkType::RtcSync);
+        updateIrrigationState();
     }
 }
 
@@ -563,4 +567,14 @@ void IrrigationMode::signalReadyForSleep()
         pmu_logger.warn("No response to ReadyForSleep (attempt %d/%d)", attempt + 1, MAX_RETRIES);
         sleep_ms(100);  // Small delay before retry
     }
+}
+
+void IrrigationMode::updateIrrigationState()
+{
+    IrrigationHardwareState hardware_state;
+    hardware_state.rtc_running = rtc_running();
+    hardware_state.valve_open = valve_controller_.getActiveValveMask() != 0;
+    hardware_state.update_pending = work_tracker_.hasWork(WorkType::UpdatePull);
+    hardware_state.applying_update = false;
+    irrigation_state_.update(hardware_state);
 }
