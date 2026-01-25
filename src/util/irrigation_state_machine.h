@@ -37,7 +37,7 @@ public:
     /**
      * @brief Update state based on current hardware status
      */
-    void update(const IrrigationHardwareState &hw);
+    void update(const IrrigationHardwareState &hardware_state);
 
     /**
      * @brief Get current state
@@ -59,7 +59,9 @@ public:
      */
     bool isTimeSynced() const
     {
-        return state_ != IrrigationState::AWAITING_TIME && state_ != IrrigationState::INITIALIZING;
+        return state_ == IrrigationState::IDLE || state_ == IrrigationState::CHECKING_UPDATES ||
+               state_ == IrrigationState::APPLYING_UPDATES ||
+               state_ == IrrigationState::VALVE_ACTIVE;
     }
 
     /**
@@ -93,7 +95,7 @@ public:
     static const char *stateName(IrrigationState state);
 
 private:
-    IrrigationState deriveState(const IrrigationHardwareState &hw) const;
+    IrrigationState deriveState(const IrrigationHardwareState &hardware_state) const;
 
     IrrigationState state_ = IrrigationState::INITIALIZING;
     StateCallback callback_;
