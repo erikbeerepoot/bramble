@@ -50,9 +50,14 @@ void SensorMode::onStart()
     sensor_ = std::make_unique<CHT832X>(i2c1, PIN_I2C_SDA, PIN_I2C_SCL);
     logger.info("CHT832X sensor created (lazy init on first read)");
 
-    // define led patterns
+    // Define LED patterns
     led_pattern_ = std::make_unique<BlinkingPattern>(led_, 255, 165, 0, 250, 250);
     operational_pattern_ = std::make_unique<ShortBlinkPattern>(led_, 125, 0, 0);
+
+    // Set up state change handler - centralizes all reactions to state changes
+    sensor_state_.setCallback([this](SensorState state) {
+        onStateChange(state);
+    });
 
     // Initialize PMU client at 9600 baud to match STM32 LPUART configuration
     pmu_client_ = new PmuClient(PMU_UART_ID, PMU_UART_TX_PIN, PMU_UART_RX_PIN, 9600);
@@ -111,10 +116,9 @@ void SensorMode::onStart()
                     sleep_us(64);  // Wait for RTC to propagate
                     logger.info("RTC set from PMU: %04d-%02d-%02d %02d:%02d:%02d", dt.year,
                                 dt.month, dt.day, dt.hour, dt.min, dt.sec);
-                    switchToOperationalPattern();
 
-                    updateStateMachine();
-                    updateSensorState();
+                    // Report RTC sync - state callback handles LED pattern change
+                    sensor_state_.reportRtcSynced();
                     if (flash_buffer_ && flash_buffer_->getInitialBootTimestamp() == 0) {
                         uint32_t now = getUnixTimestamp();
                         flash_buffer_->setInitialBootTimestamp(now);
@@ -127,10 +131,11 @@ void SensorMode::onStart()
                         pmu_logger.info("Time to transmit - sending heartbeat for hub sync");
                         heartbeat_request_time_ = to_ms_since_boot(get_absolute_time());
                         sendHeartbeat(0);
+                        sensor_state_.reportHeartbeatSent();
                     } else {
-                        // PMU time is good enough, proceed directly to backlog check
+                        // PMU time is good enough, proceed directly
                         pmu_logger.info("Not time to transmit - using PMU time, skipping hub sync");
-                        onRtcSynced();
+                        // reportRtcSynced will trigger TIME_SYNCED -> onStateChange handles the rest
                     }
                 } else {
                     logger.error("Failed to set RTC from PMU time");
@@ -140,29 +145,129 @@ void SensorMode::onStart()
                 pmu_logger.info(
                     "PMU time not valid (first boot?) - sending heartbeat for hub sync");
                 sendHeartbeat(0);
+                sensor_state_.reportHeartbeatSent();
             }
         });
     } else {
         logger.warn("PMU client not available - sending heartbeat for time sync");
         sendHeartbeat(0);
+        sensor_state_.reportHeartbeatSent();
     }
 
-    // Add periodic sensor reading task (stores to flash, no immediate TX)
-    task_manager_.addTask([this](uint32_t time) { readAndStoreSensorData(time); },
-                          SENSOR_READ_INTERVAL_MS, "Sensor Read");
+    // Note: Periodic tasks are no longer used - state machine drives all work.
+    // The wake cycle flow (TIME_SYNCED -> READING_SENSOR -> CHECKING_BACKLOG ->
+    // TRANSMITTING -> READY_FOR_SLEEP) handles sensor reads and transmissions.
+    // Heartbeats are sent on each wake cycle as part of time sync.
 
-    // Add heartbeat task
-    task_manager_.addTask([this](uint32_t time) { sendHeartbeat(time); }, HEARTBEAT_INTERVAL_MS,
-                          "Heartbeat");
-
-    // Add backlog transmission task
-    task_manager_.addTask([this](uint32_t time) { checkAndTransmitBacklog(time); },
-                          BACKLOG_TX_INTERVAL_MS, "Backlog Transmission");
-
-    // Mark sensor state machine as initialized
+    // Mark sensor state machine as initialized (transitions to AWAITING_TIME)
     sensor_state_.markInitialized();
-    updateSensorState();
 }
+
+void SensorMode::onStateChange(SensorState state)
+{
+    // Centralized task scheduler - reacts to state changes by posting work
+    switch (state) {
+        case SensorState::AWAITING_TIME:
+            // Schedule heartbeat for time sync (if PMU doesn't have time)
+            // Note: PMU time check happens in onStart, this is the fallback path
+            break;
+
+        case SensorState::SYNCING_TIME:
+            // Waiting for hub response - nothing to schedule
+            break;
+
+        case SensorState::TIME_SYNCED:
+            // RTC valid - switch LED and initialize timestamps
+            switchToOperationalPattern();
+            initializeFlashTimestamps();
+
+            // Try to initialize sensor
+            task_queue_.postOnce(
+                [](void *ctx, uint32_t time) -> bool {
+                    (void)time;
+                    SensorMode *self = static_cast<SensorMode *>(ctx);
+                    self->tryInitSensor();
+                    // State machine handles transition based on sensor init result
+                    return true;
+                },
+                this, TaskPriority::High);
+            break;
+
+        case SensorState::READING_SENSOR:
+            // Take sensor reading
+            task_queue_.postOnce(
+                [](void *ctx, uint32_t time) -> bool {
+                    (void)time;
+                    SensorMode *self = static_cast<SensorMode *>(ctx);
+                    self->readAndStoreSensorData(to_ms_since_boot(get_absolute_time()));
+                    self->sensor_state_.reportReadComplete();
+                    return true;
+                },
+                this, TaskPriority::High);
+            break;
+
+        case SensorState::CHECKING_BACKLOG:
+            // Check if transmission needed
+            task_queue_.postOnce(
+                [](void *ctx, uint32_t time) -> bool {
+                    (void)time;
+                    SensorMode *self = static_cast<SensorMode *>(ctx);
+                    bool needsTx = self->checkBacklog();
+                    self->sensor_state_.reportCheckComplete(needsTx);
+                    return true;
+                },
+                this, TaskPriority::High);
+            break;
+
+        case SensorState::TRANSMITTING:
+            // Transmit backlog
+            task_queue_.postOnce(
+                [](void *ctx, uint32_t time) -> bool {
+                    (void)time;
+                    SensorMode *self = static_cast<SensorMode *>(ctx);
+                    self->transmitBacklog();
+                    // Note: reportTransmitComplete called in transmitBatch callback
+                    return true;
+                },
+                this, TaskPriority::High);
+            break;
+
+        case SensorState::READY_FOR_SLEEP:
+            // All work done - signal PMU
+            task_queue_.postOnce(
+                [](void *ctx, uint32_t time) -> bool {
+                    (void)time;
+                    SensorMode *self = static_cast<SensorMode *>(ctx);
+                    self->signalReadyForSleep();
+                    return true;
+                },
+                this, TaskPriority::Low);
+            break;
+
+        case SensorState::DEGRADED_NO_SENSOR:
+            // Sensor failed - skip to backlog check
+            switchToOperationalPattern();  // Still operational, just degraded
+            task_queue_.postOnce(
+                [](void *ctx, uint32_t time) -> bool {
+                    (void)time;
+                    SensorMode *self = static_cast<SensorMode *>(ctx);
+                    bool needsTx = self->checkBacklog();
+                    self->sensor_state_.reportCheckComplete(needsTx);
+                    return true;
+                },
+                this, TaskPriority::High);
+            break;
+
+        case SensorState::ERROR:
+            logger.error("Entered ERROR state");
+            break;
+
+        case SensorState::INITIALIZING:
+            // Initial state - nothing to do yet
+            break;
+    }
+}
+
 
 void SensorMode::onLoop()
 {
@@ -175,12 +280,12 @@ void SensorMode::onLoop()
     if (!sensor_state_.isTimeSynced() && heartbeat_request_time_ > 0) {
         uint32_t elapsed = to_ms_since_boot(get_absolute_time()) - heartbeat_request_time_;
         if (elapsed >= HEARTBEAT_TIMEOUT_MS) {
-            logger.warn("Hub sync timeout (%lu ms) - checking if PMU time is valid", elapsed);
+            logger.warn("Hub sync timeout (%lu ms) - checking if RTC is running", elapsed);
             heartbeat_request_time_ = 0;
-            updateStateMachine();
-            updateSensorState();
-            if (sensor_state_.isTimeSynced()) {
-                onRtcSynced();
+            // Check hardware directly - if RTC is running, PMU must have set it
+            if (rtc_running()) {
+                // reportRtcSynced triggers TIME_SYNCED -> onStateChange handles the rest
+                sensor_state_.reportRtcSynced();
             }
         }
     }
@@ -395,14 +500,11 @@ bool SensorMode::isTimeToTransmit(uint32_t current_timestamp) const
     return elapsed >= TRANSMIT_INTERVAL_S;
 }
 
-void SensorMode::checkAndTransmitBacklog(uint32_t current_time)
+bool SensorMode::checkBacklog()
 {
-    (void)current_time;
-
     if (!flash_buffer_) {
-        // No flash buffer - signal ready for sleep
-        signalReadyForSleep();
-        return;
+        logger.debug("No flash buffer - no backlog to check");
+        return false;
     }
 
     // Check if it's time to transmit (based on TRANSMIT_INTERVAL_S)
@@ -416,8 +518,7 @@ void SensorMode::checkAndTransmitBacklog(uint32_t current_time)
         }
         uint32_t elapsed = now - last_sync;
         logger.info("Not time to transmit yet (%lu s / %lu s)", elapsed, TRANSMIT_INTERVAL_S);
-        signalReadyForSleep();
-        return;
+        return false;
     }
 
     uint32_t now = getUnixTimestamp();
@@ -427,19 +528,28 @@ void SensorMode::checkAndTransmitBacklog(uint32_t current_time)
         last_sync = stats.last_sync_timestamp;
     }
     uint32_t elapsed = now - last_sync;
-
     logger.info("Transmit interval reached (%lu s) - checking backlog", elapsed);
 
     uint32_t untransmitted_count = flash_buffer_->getUntransmittedCount();
     if (untransmitted_count == 0) {
         logger.debug("No backlog to transmit");
-        // Update last sync timestamp in flash - nothing to send counts as success
+        // Update last sync timestamp - nothing to send counts as success
         flash_buffer_->updateLastSync(getUnixTimestamp());
-        signalReadyForSleep();
-        return;
+        return false;
     }
 
-    logger.info("Backlog check: %lu untransmitted records", untransmitted_count);
+    logger.info("Backlog check: %lu untransmitted records - transmission needed",
+                untransmitted_count);
+    return true;
+}
+
+void SensorMode::transmitBacklog()
+{
+    if (!flash_buffer_) {
+        logger.error("No flash buffer - cannot transmit");
+        sensor_state_.reportTransmitComplete();
+        return;
+    }
 
     // Read up to BATCH_SIZE records
     SensorDataRecord records[SensorFlashBuffer::BATCH_SIZE];
@@ -448,31 +558,31 @@ void SensorMode::checkAndTransmitBacklog(uint32_t current_time)
     if (!flash_buffer_->readUntransmittedRecords(records, SensorFlashBuffer::BATCH_SIZE,
                                                  actual_count)) {
         logger.error("Failed to read untransmitted records");
-        // Signal sleep on error - we'll retry next wake cycle
-        signalReadyForSleep();
+        sensor_state_.reportTransmitComplete();
         return;
     }
 
+    uint32_t untransmitted_count = flash_buffer_->getUntransmittedCount();
     if (actual_count == 0) {
         logger.warn("No valid records to transmit - skipping %lu corrupt records",
                     untransmitted_count);
-        // All remaining records are corrupt - advance past them so we don't get stuck
-        flash_buffer_->advanceReadIndex(static_cast<uint32_t>(untransmitted_count));
-        signalReadyForSleep();
+        // All remaining records are corrupt - advance past them
+        flash_buffer_->advanceReadIndex(untransmitted_count);
+        sensor_state_.reportTransmitComplete();
         return;
     }
 
     logger.info("Transmitting batch of %zu records", actual_count);
 
-    // Transmit the batch - sleep signal handled in callback
+    // Transmit the batch - reportTransmitComplete called in callback
     if (transmitBatch(records, actual_count)) {
         logger.info("Batch transmission initiated");
-        // Update last sync timestamp in flash (persists across power cycles)
+        // Update last sync timestamp (persists across power cycles)
         flash_buffer_->updateLastSync(getUnixTimestamp());
-        // Note: Sleep signal sent in transmitBatch callback when all records sent
+        // Note: reportTransmitComplete called in transmitBatch callback
     } else {
-        logger.warn("Batch transmission failed to initiate, will retry later");
-        signalReadyForSleep();
+        logger.warn("Batch transmission failed to initiate");
+        sensor_state_.reportTransmitComplete();
     }
 }
 
@@ -514,7 +624,6 @@ bool SensorMode::transmitBatch(const SensorDataRecord *records, size_t count)
                     // Check if we've cleared all backlog
                     if (flash_buffer_->getUntransmittedCount() == 0) {
                         logger.info("All backlog transmitted");
-                        signalReadyForSleep();
                     }
                 }
             } else {
@@ -523,9 +632,9 @@ bool SensorMode::transmitBatch(const SensorDataRecord *records, size_t count)
                 if (consecutive_tx_failures_ < 255) {
                     consecutive_tx_failures_++;
                 }
-                // Signal sleep on failure - we'll retry next wake cycle
-                signalReadyForSleep();
             }
+            // Report completion to state machine (triggers READY_FOR_SLEEP)
+            sensor_state_.reportTransmitComplete();
         },
         start_index  // Pass start index as user_context
     );
@@ -583,17 +692,17 @@ void SensorMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry 
 
     switch (reason) {
         case PMU::WakeReason::Periodic:
-            pmu_logger.info("Periodic wake - checking backlog");
-            // Take a sensor reading now
-            readAndStoreSensorData(to_ms_since_boot(get_absolute_time()));
-
-            // Check and transmit backlog (handles 10-minute interval internally)
-            // signalReadyForSleep() is called when done
-            checkAndTransmitBacklog(to_ms_since_boot(get_absolute_time()));
+            pmu_logger.info("Periodic wake - restarting sensor cycle");
+            // Report wake to state machine - it handles the appropriate transition
+            if (!sensor_state_.reportWakeFromSleep()) {
+                // Need time sync first
+                pmu_logger.warn("RTC not synced on periodic wake - requesting time");
+                sendHeartbeat(0);
+                sensor_state_.reportHeartbeatSent();
+            }
             break;
 
         case PMU::WakeReason::Scheduled:
-            // Sensor mode doesn't have scheduled events, but log if received
             pmu_logger.warn("Unexpected scheduled wake in sensor mode");
             break;
 
@@ -619,54 +728,45 @@ void SensorMode::onHeartbeatResponse(const HeartbeatResponsePayload *payload)
                         datetime.month, datetime.day, datetime.hour, datetime.minute,
                         datetime.second);
 
-        // Send datetime to PMU, then trigger RTC synced flow
+        // Send datetime to PMU, then report RTC synced
         reliable_pmu_->setDateTime(datetime, [this](bool success, PMU::ErrorCode error) {
             if (success) {
                 pmu_logger.info("PMU time sync successful");
             } else {
                 pmu_logger.error("PMU time sync failed: error %d", static_cast<int>(error));
             }
-            // Trigger backlog check flow now that RTC is synced
-            // (regardless of whether PMU sync succeeded - RP2040 RTC is updated by base class)
-            onRtcSynced();
+            // Report RTC synced (regardless of PMU sync - RP2040 RTC is set by base class)
+            // This triggers TIME_SYNCED -> onStateChange handles the rest
+            sensor_state_.reportRtcSynced();
         });
     } else if (payload) {
-        // No PMU, but RTC was synced by base class - trigger flow directly
-        onRtcSynced();
+        // No PMU, but RTC was synced by base class - report event directly
+        sensor_state_.reportRtcSynced();
     }
 }
 
-void SensorMode::onRtcSynced()
+void SensorMode::initializeFlashTimestamps()
 {
-    // Switch to operational LED pattern if not already done
-    switchToOperationalPattern();
-
     // Initialize timestamps on first boot after power loss
-    if (flash_buffer_) {
-        uint32_t now = getUnixTimestamp();
-
-        // Set initial boot timestamp for uptime calculation (only if not already set)
-        if (flash_buffer_->getInitialBootTimestamp() == 0) {
-            flash_buffer_->setInitialBootTimestamp(now);
-            logger.info("Set initial_boot_timestamp to %lu", now);
-        }
-
-        // Initialize last_sync_timestamp if this is first boot
-        // This gives a valid baseline for the transmission interval check
-        SensorFlashMetadata stats;
-        if (flash_buffer_->getStatistics(stats) && stats.last_sync_timestamp == 0) {
-            flash_buffer_->updateLastSync(now);
-            logger.info("Initialized last_sync_timestamp to %lu", now);
-        }
+    if (!flash_buffer_) {
+        return;
     }
 
-    // Take a sensor reading now that RTC is synced
-    pmu_logger.info("RTC synced - taking sensor reading");
-    readAndStoreSensorData(to_ms_since_boot(get_absolute_time()));
+    uint32_t now = getUnixTimestamp();
 
-    // Check and transmit backlog (handles 10-minute interval internally)
-    // signalReadyForSleep() is called when done
-    checkAndTransmitBacklog(to_ms_since_boot(get_absolute_time()));
+    // Set initial boot timestamp for uptime calculation (only if not already set)
+    if (flash_buffer_->getInitialBootTimestamp() == 0) {
+        flash_buffer_->setInitialBootTimestamp(now);
+        logger.info("Set initial_boot_timestamp to %lu", now);
+    }
+
+    // Initialize last_sync_timestamp if this is first boot
+    // This gives a valid baseline for the transmission interval check
+    SensorFlashMetadata stats;
+    if (flash_buffer_->getStatistics(stats) && stats.last_sync_timestamp == 0) {
+        flash_buffer_->updateLastSync(now);
+        logger.info("Initialized last_sync_timestamp to %lu", now);
+    }
 }
 
 bool SensorMode::tryInitSensor()
@@ -680,15 +780,12 @@ bool SensorMode::tryInitSensor()
         return false;
     }
 
-    // Mark that we've attempted sensor init (for state machine)
-    sensor_init_attempted_ = true;
-
     logger.info("Waiting 1s for sensor power-on stabilization...");
     sleep_ms(1000);
 
     if (sensor_->init()) {
-        sensor_initialized_ = true;
-        updateSensorState();
+        // Report success to state machine (transitions to OPERATIONAL)
+        sensor_state_.reportSensorInitSuccess();
         logger.info("CHT832X sensor initialized on I2C1 (SDA=%d, SCL=%d)", PIN_I2C_SDA,
                     PIN_I2C_SCL);
 
@@ -699,19 +796,10 @@ bool SensorMode::tryInitSensor()
         return true;
     }
 
-    // Init failed - update state machine to reflect degraded state
-    updateSensorState();
+    // Report failure to state machine (transitions to DEGRADED_NO_SENSOR)
+    sensor_state_.reportSensorInitFailure();
     logger.error("Failed to initialize CHT832X sensor!");
     logger.error("Check wiring: Red=3.3V, Black=GND, Green=GPIO%d, Yellow=GPIO%d", PIN_I2C_SCL,
                  PIN_I2C_SDA);
     return false;
-}
-
-void SensorMode::updateSensorState()
-{
-    SensorHardwareState hardware_state;
-    hardware_state.rtc_running = rtc_running();
-    hardware_state.sensor_initialized = sensor_initialized_;
-    hardware_state.sensor_init_attempted = sensor_init_attempted_;
-    sensor_state_.update(hardware_state);
 }
