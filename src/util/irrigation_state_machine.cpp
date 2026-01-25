@@ -4,9 +4,9 @@
 
 static Logger logger("IrrigationSM");
 
-void IrrigationStateMachine::update(const IrrigationHardwareState &hw)
+void IrrigationStateMachine::update(const IrrigationHardwareState &hardware_state)
 {
-    IrrigationState new_state = deriveState(hw);
+    IrrigationState new_state = deriveState(hardware_state);
 
     if (new_state != state_) {
         logger.info("State: %s -> %s", stateName(state_), stateName(new_state));
@@ -18,7 +18,7 @@ void IrrigationStateMachine::update(const IrrigationHardwareState &hw)
     }
 }
 
-IrrigationState IrrigationStateMachine::deriveState(const IrrigationHardwareState &hw) const
+IrrigationState IrrigationStateMachine::deriveState(const IrrigationHardwareState &hardware_state) const
 {
     if (error_) {
         return IrrigationState::ERROR;
@@ -28,20 +28,20 @@ IrrigationState IrrigationStateMachine::deriveState(const IrrigationHardwareStat
         return IrrigationState::INITIALIZING;
     }
 
-    if (!hw.rtc_running) {
+    if (!hardware_state.rtc_running) {
         return IrrigationState::AWAITING_TIME;
     }
 
     // RTC is running - check operational state
-    if (hw.valve_open) {
+    if (hardware_state.valve_open) {
         return IrrigationState::VALVE_ACTIVE;
     }
 
-    if (hw.applying_update) {
+    if (hardware_state.applying_update) {
         return IrrigationState::APPLYING_UPDATES;
     }
 
-    if (hw.update_pending) {
+    if (hardware_state.update_pending) {
         return IrrigationState::CHECKING_UPDATES;
     }
 

@@ -180,7 +180,7 @@ void ApplicationMode::switchToOperationalPattern()
 
 void ApplicationMode::updateStateMachine()
 {
-    BaseHardwareState hw;
-    hw.rtc_running = rtc_running();
-    state_machine_.update(hw);
+    BaseHardwareState hardware_state;
+    hardware_state.rtc_running = rtc_running();
+    state_machine_.update(hardware_state);
 }

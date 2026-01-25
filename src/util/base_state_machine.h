@@ -39,9 +39,9 @@ struct BaseHardwareState {
  *   });
  *
  *   // In main loop or after hardware changes:
- *   BaseHardwareState hw;
- *   hw.rtc_running = rtc_running();
- *   state_machine.update(hw);
+ *   BaseHardwareState hardware_state;
+ *   hardware_state.rtc_running = rtc_running();
+ *   state_machine.update(hardware_state);
  *
  *   if (state_machine.isOperational()) {
  *       // Do work that requires RTC
@@ -53,12 +53,12 @@ public:
 
     /**
      * @brief Update state based on current hardware status
-     * @param hw Current hardware state
+     * @param hardware_state Current hardware state
      *
      * State is always derived from hardware - this is the single update path.
      * If state changes, the callback is invoked.
      */
-    void update(const BaseHardwareState &hw);
+    void update(const BaseHardwareState &hardware_state);
 
     /**
      * @brief Get current state
@@ -115,12 +115,12 @@ public:
 protected:
     /**
      * @brief Derive state from hardware and internal flags
-     * @param hw Current hardware state
+     * @param hardware_state Current hardware state
      * @return Derived state
      *
      * Override in derived classes to add mode-specific state logic.
      */
-    virtual BaseState deriveState(const BaseHardwareState &hw) const;
+    virtual BaseState deriveState(const BaseHardwareState &hardware_state) const;
 
     BaseState state_ = BaseState::INITIALIZING;
     StateCallback callback_;

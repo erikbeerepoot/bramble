@@ -701,9 +701,9 @@ bool SensorMode::tryInitSensor()
 
 void SensorMode::updateSensorState()
 {
-    SensorHardwareState hw;
-    hw.rtc_running = rtc_running();
-    hw.sensor_initialized = sensor_initialized_;
-    hw.sensor_init_attempted = sensor_init_attempted_;
-    sensor_state_.update(hw);
+    SensorHardwareState hardware_state;
+    hardware_state.rtc_running = rtc_running();
+    hardware_state.sensor_initialized = sensor_initialized_;
+    hardware_state.sensor_init_attempted = sensor_init_attempted_;
+    sensor_state_.update(hardware_state);
 }

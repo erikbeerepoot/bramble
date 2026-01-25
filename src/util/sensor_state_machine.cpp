@@ -4,9 +4,9 @@
 
 static Logger logger("SensorSM");
 
-void SensorStateMachine::update(const SensorHardwareState &hw)
+void SensorStateMachine::update(const SensorHardwareState &hardware_state)
 {
-    SensorState new_state = deriveState(hw);
+    SensorState new_state = deriveState(hardware_state);
 
     if (new_state != state_) {
         logger.info("State: %s -> %s", stateName(state_), stateName(new_state));
@@ -18,7 +18,7 @@ void SensorStateMachine::update(const SensorHardwareState &hw)
     }
 }
 
-SensorState SensorStateMachine::deriveState(const SensorHardwareState &hw) const
+SensorState SensorStateMachine::deriveState(const SensorHardwareState &hardware_state) const
 {
     if (error_) {
         return SensorState::ERROR;
@@ -28,16 +28,16 @@ SensorState SensorStateMachine::deriveState(const SensorHardwareState &hw) const
         return SensorState::INITIALIZING;
     }
 
-    if (!hw.rtc_running) {
+    if (!hardware_state.rtc_running) {
         return SensorState::AWAITING_TIME;
     }
 
     // RTC is running - check sensor status
-    if (hw.sensor_init_attempted && !hw.sensor_initialized) {
+    if (hardware_state.sensor_init_attempted && !hardware_state.sensor_initialized) {
         return SensorState::DEGRADED_NO_SENSOR;
     }
 
-    if (hw.sensor_initialized) {
+    if (hardware_state.sensor_initialized) {
         return SensorState::OPERATIONAL;
     }
 

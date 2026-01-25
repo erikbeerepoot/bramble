@@ -4,9 +4,9 @@
 
 static Logger logger("StateMachine");
 
-void BaseStateMachine::update(const BaseHardwareState &hw)
+void BaseStateMachine::update(const BaseHardwareState &hardware_state)
 {
-    BaseState new_state = deriveState(hw);
+    BaseState new_state = deriveState(hardware_state);
 
     if (new_state != state_) {
         logger.info("State: %s -> %s", stateName(state_), stateName(new_state));
@@ -18,7 +18,7 @@ void BaseStateMachine::update(const BaseHardwareState &hw)
     }
 }
 
-BaseState BaseStateMachine::deriveState(const BaseHardwareState &hw) const
+BaseState BaseStateMachine::deriveState(const BaseHardwareState &hardware_state) const
 {
     // Error state is terminal
     if (error_) {
@@ -31,7 +31,7 @@ BaseState BaseStateMachine::deriveState(const BaseHardwareState &hw) const
     }
 
     // Check hardware state
-    if (!hw.rtc_running) {
+    if (!hardware_state.rtc_running) {
         return BaseState::AWAITING_TIME;
     }
 

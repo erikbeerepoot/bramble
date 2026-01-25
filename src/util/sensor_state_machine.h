@@ -34,11 +34,11 @@ struct SensorHardwareState : BaseHardwareState {
  *   });
  *
  *   // After sensor init attempt:
- *   SensorHardwareState hw;
- *   hw.rtc_running = rtc_running();
- *   hw.sensor_initialized = sensor_->init();
- *   hw.sensor_init_attempted = true;
- *   state_machine.update(hw);
+ *   SensorHardwareState hardware_state;
+ *   hardware_state.rtc_running = rtc_running();
+ *   hardware_state.sensor_initialized = sensor_->init();
+ *   hardware_state.sensor_init_attempted = true;
+ *   state_machine.update(hardware_state);
  */
 class SensorStateMachine {
 public:
@@ -46,9 +46,9 @@ public:
 
     /**
      * @brief Update state based on current hardware status
-     * @param hw Current hardware state
+     * @param hardware_state Current hardware state
      */
-    void update(const SensorHardwareState &hw);
+    void update(const SensorHardwareState &hardware_state);
 
     /**
      * @brief Get current state
@@ -109,7 +109,7 @@ public:
     static const char *stateName(SensorState state);
 
 private:
-    SensorState deriveState(const SensorHardwareState &hw) const;
+    SensorState deriveState(const SensorHardwareState &hardware_state) const;
 
     SensorState state_ = SensorState::INITIALIZING;
     StateCallback callback_;

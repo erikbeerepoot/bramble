@@ -571,10 +571,10 @@ void IrrigationMode::signalReadyForSleep()
 
 void IrrigationMode::updateIrrigationState()
 {
-    IrrigationHardwareState hw;
-    hw.rtc_running = rtc_running();
-    hw.valve_open = valve_controller_.getActiveValveMask() != 0;
-    hw.update_pending = work_tracker_.hasWork(WorkType::UpdatePull);
-    hw.applying_update = false;
-    irrigation_state_.update(hw);
+    IrrigationHardwareState hardware_state;
+    hardware_state.rtc_running = rtc_running();
+    hardware_state.valve_open = valve_controller_.getActiveValveMask() != 0;
+    hardware_state.update_pending = work_tracker_.hasWork(WorkType::UpdatePull);
+    hardware_state.applying_update = false;
+    irrigation_state_.update(hardware_state);
 }
