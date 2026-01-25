@@ -146,6 +146,20 @@ Use the `/bramble-build` and `/bramble-flash` skills to build and flash RP2040 f
 
 Example: `/bramble-build SENSOR` then `/bramble-flash SENSOR`
 
+### After Code Changes
+After making code changes, build all affected variants in parallel using the `/bramble-build` skill:
+- Changes to shared code (src/util/, src/lora/, src/hal/) affect ALL variants - build them all in parallel
+- Changes to mode-specific code (src/modes/sensor_mode.*) only affect that variant
+- Use parallel Skill tool calls to build multiple variants simultaneously
+
+Example for shared code changes:
+```
+[Call Skill: bramble-build SENSOR]
+[Call Skill: bramble-build IRRIGATION]
+[Call Skill: bramble-build CONTROLLER]
+```
+All three calls should be made in the same message for parallel execution.
+
 ### STM32 PMU
 **Do not attempt to run STM32 build/flash commands directly.** These require specific toolchains. Instead:
 1. Make the code changes
