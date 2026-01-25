@@ -292,10 +292,15 @@ uint16_t SensorMode::collectErrorFlags()
 {
     uint16_t flags = ERR_FLAG_NONE;
 
-    // Check sensor health - only report failure if we've attempted to read
-    // (sensor_initialized_ means we've tried init and at least one read)
-    if (sensor_ && sensor_initialized_ && !last_sensor_read_valid_) {
-        flags |= ERR_FLAG_SENSOR_FAILURE;
+    // Check sensor health - report failure if:
+    // 1. Init was attempted but failed (sensor_init_attempted_ && !sensor_initialized_)
+    // 2. Init succeeded but last read failed (sensor_initialized_ && !last_sensor_read_valid_)
+    if (sensor_) {
+        bool init_failed = sensor_init_attempted_ && !sensor_initialized_;
+        bool read_failed = sensor_initialized_ && !last_sensor_read_valid_;
+        if (init_failed || read_failed) {
+            flags |= ERR_FLAG_SENSOR_FAILURE;
+        }
     }
 
     // Check flash status
@@ -674,6 +679,9 @@ bool SensorMode::tryInitSensor()
     if (!sensor_) {
         return false;
     }
+
+    // Mark that we've attempted initialization (for error reporting)
+    sensor_init_attempted_ = true;
 
     // Wait for sensor to stabilize after power-on before I2C communication
     // Some sensors need time after VCC is applied before they're ready

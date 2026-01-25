@@ -132,6 +132,7 @@ private:
 
     // Lazy sensor initialization
     bool sensor_initialized_ = false;
+    bool sensor_init_attempted_ = false;  // Track if we've tried to init (for error reporting)
 
     /**
      * @brief Try to initialize sensor with power-on delay
