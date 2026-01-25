@@ -172,14 +172,14 @@ void SensorMode::onLoop()
     }
 
     // Hub sync timeout - check if PMU already set RTC and we can proceed
-    if (!state_machine_.isOperational() && heartbeat_request_time_ > 0) {
+    if (!sensor_state_.isTimeSynced() && heartbeat_request_time_ > 0) {
         uint32_t elapsed = to_ms_since_boot(get_absolute_time()) - heartbeat_request_time_;
         if (elapsed >= HEARTBEAT_TIMEOUT_MS) {
             logger.warn("Hub sync timeout (%lu ms) - checking if PMU time is valid", elapsed);
             heartbeat_request_time_ = 0;
             updateStateMachine();
             updateSensorState();
-            if (state_machine_.isOperational()) {
+            if (sensor_state_.isTimeSynced()) {
                 onRtcSynced();
             }
         }
@@ -199,16 +199,20 @@ void SensorMode::readAndStoreSensorData(uint32_t current_time)
         return;
     }
 
-    // Lazy init: try to initialize sensor if not yet done
-    if (!sensor_initialized_ && !tryInitSensor()) {
-        logger.warn("Sensor not ready, will retry next cycle");
+    // Check if RTC has been synced - don't store readings with invalid timestamps
+    if (!sensor_state_.isTimeSynced()) {
+        logger.warn("RTC not synced yet (state=%s), skipping sensor storage",
+                    SensorStateMachine::stateName(sensor_state_.state()));
         return;
     }
 
-    // Check if RTC has been synced - don't store readings with invalid timestamps
-    if (!state_machine_.isOperational()) {
-        logger.warn("RTC not synced yet, skipping sensor storage");
-        return;
+    // Lazy init: try to initialize sensor if not yet working
+    if (!sensor_state_.hasSensor()) {
+        if (!tryInitSensor()) {
+            logger.warn("Sensor not ready (state=%s), will retry next cycle",
+                        SensorStateMachine::stateName(sensor_state_.state()));
+            return;
+        }
     }
 
     auto reading = sensor_->read();
@@ -294,7 +298,8 @@ uint16_t SensorMode::collectErrorFlags()
     // Check sensor health via state machine
     if (sensor_state_.isDegraded()) {
         flags |= ERR_FLAG_SENSOR_FAILURE;
-    } else if (sensor_initialized_ && !last_sensor_read_valid_) {
+    } else if (sensor_state_.hasSensor() && !last_sensor_read_valid_) {
+        // Sensor initialized but last read failed
         flags |= ERR_FLAG_SENSOR_FAILURE;
     }
 
@@ -317,8 +322,8 @@ uint16_t SensorMode::collectErrorFlags()
         flags |= ERR_FLAG_PMU_FAILURE;
     }
 
-    // Check RTC sync status
-    if (!state_machine_.isOperational()) {
+    // Check RTC sync status via sensor state machine
+    if (!sensor_state_.isTimeSynced()) {
         flags |= ERR_FLAG_RTC_NOT_SYNCED;
     }
 
@@ -666,7 +671,8 @@ void SensorMode::onRtcSynced()
 
 bool SensorMode::tryInitSensor()
 {
-    if (sensor_initialized_) {
+    // Already working - no need to re-init
+    if (sensor_state_.hasSensor()) {
         return true;
     }
 
@@ -674,6 +680,7 @@ bool SensorMode::tryInitSensor()
         return false;
     }
 
+    // Mark that we've attempted sensor init (for state machine)
     sensor_init_attempted_ = true;
 
     logger.info("Waiting 1s for sensor power-on stabilization...");
@@ -692,6 +699,7 @@ bool SensorMode::tryInitSensor()
         return true;
     }
 
+    // Init failed - update state machine to reflect degraded state
     updateSensorState();
     logger.error("Failed to initialize CHT832X sensor!");
     logger.error("Check wiring: Red=3.3V, Black=GND, Green=GPIO%d, Yellow=GPIO%d", PIN_I2C_SCL,

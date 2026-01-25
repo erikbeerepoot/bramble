@@ -131,8 +131,11 @@ private:
     uint8_t consecutive_tx_failures_ = 0;               // Track consecutive transmission failures
     static constexpr uint8_t TX_FAILURE_THRESHOLD = 3;  // Failures before setting error flag
 
-    // Sensor state tracking
+    // Sensor state machine - use this for all state queries
     SensorStateMachine sensor_state_;
+
+    // Hardware state tracking (input to state machine, not for direct use)
+    // Use sensor_state_.hasSensor(), sensor_state_.isTimeSynced(), etc. for decisions
     bool sensor_initialized_ = false;
     bool sensor_init_attempted_ = false;
 
