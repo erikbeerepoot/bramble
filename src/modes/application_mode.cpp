@@ -136,11 +136,6 @@ void ApplicationMode::onHeartbeatResponse(const HeartbeatResponsePayload *payloa
 
 uint32_t ApplicationMode::getUnixTimestamp() const
 {
-    // State machine already checks rtc_running() in its derived state
-    if (!state_machine_.isOperational()) {
-        return 0;
-    }
-
     datetime_t dt;
     if (!rtc_get_datetime(&dt)) {
         return 0;
