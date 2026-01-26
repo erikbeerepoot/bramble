@@ -281,12 +281,17 @@ bool SX1276::sendAsync(const uint8_t *data, size_t length)
 bool SX1276::isTxDone()
 {
     if (interrupt_enabled_) {
-        // In interrupt mode, check the flag first
+        // Process any pending interrupt first — the ISR sets interrupt_pending_,
+        // but handleInterrupt() must run to translate that into tx_complete_.
+        if (interrupt_pending_) {
+            handleInterrupt();
+        }
+
         if (tx_complete_) {
             return true;
         }
 
-        // Fallback: Also check register directly in case interrupt was missed
+        // Fallback: check register directly in case interrupt was truly missed
         uint8_t irq_flags = readRegister(SX1276_REG_IRQ_FLAGS);
         if (irq_flags & SX1276_IRQ_TX_DONE_MASK) {
             logger_.warn("TX done flag set in register but interrupt was missed!");
@@ -623,9 +628,8 @@ uint8_t SX1276::handleInterrupt()
     if (irq_flags & SX1276_IRQ_TX_DONE_MASK) {
         tx_complete_ = true;
         logger_.debug("TX done interrupt received!");
-
-        // Automatically go back to RX mode after TX
-        startReceive();
+        // Note: caller (sendMessage) handles returning to RX mode via startReceive()
+        // to avoid double startReceive() which clears IRQ flags and can lose RX packets
     }
 
     // Call user callback if provided
@@ -641,4 +645,31 @@ void SX1276::clearInterruptFlags()
     message_ready_ = false;
     tx_complete_ = false;
     interrupt_pending_ = false;
+}
+
+bool SX1276::checkForMissedRxInterrupt()
+{
+    if (!interrupt_enabled_ || message_ready_) {
+        return false;
+    }
+
+    // Process any pending interrupt first — the ISR may have fired
+    // but handleInterrupt() hasn't been called yet
+    if (interrupt_pending_) {
+        handleInterrupt();
+        if (message_ready_) {
+            return true;
+        }
+    }
+
+    uint8_t irq_flags = readRegister(SX1276_REG_IRQ_FLAGS);
+    if (irq_flags & SX1276_IRQ_RX_DONE_MASK) {
+        logger_.warn("RX done flag set in register but interrupt was missed!");
+        // Process via handleInterrupt by setting the pending flag
+        interrupt_pending_ = true;
+        handleInterrupt();
+        return true;
+    }
+
+    return false;
 }

@@ -232,6 +232,17 @@ public:
     uint8_t handleInterrupt();
 
     /**
+     * @brief Check for missed RX done interrupt via register poll
+     *
+     * Fallback for unreliable DIO0 GPIO interrupts. Reads the IRQ flags
+     * register directly and processes any RX done that the interrupt missed.
+     * Should be called in the main loop after handleInterrupt().
+     *
+     * @return true if a missed interrupt was recovered
+     */
+    bool checkForMissedRxInterrupt();
+
+    /**
      * @brief Check if a message is ready after interrupt
      * @return true if RX done with valid message
      */
