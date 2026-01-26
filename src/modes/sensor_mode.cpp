@@ -135,7 +135,8 @@ void SensorMode::onStart()
                         pmu_logger.info("Time to transmit - sending heartbeat for hub sync");
                         heartbeat_request_time_ = to_ms_since_boot(get_absolute_time());
                         sendHeartbeat(0);
-                        sensor_state_.reportHeartbeatSent();
+                        // Note: state is already TIME_SYNCED from reportRtcSynced() above,
+                        // so reportHeartbeatSent() would be rejected (wrong source state)
                     } else {
                         // PMU time is good enough, proceed directly
                         pmu_logger.info("Not time to transmit - using PMU time, skipping hub sync");
@@ -148,12 +149,14 @@ void SensorMode::onStart()
                 // PMU doesn't have valid time - need to sync from hub
                 pmu_logger.info(
                     "PMU time not valid (first boot?) - sending heartbeat for hub sync");
+                heartbeat_request_time_ = to_ms_since_boot(get_absolute_time());
                 sendHeartbeat(0);
                 sensor_state_.reportHeartbeatSent();
             }
         });
     } else {
         logger.warn("PMU client not available - sending heartbeat for time sync");
+        heartbeat_request_time_ = to_ms_since_boot(get_absolute_time());
         sendHeartbeat(0);
         sensor_state_.reportHeartbeatSent();
     }
@@ -185,6 +188,12 @@ void SensorMode::onStateChange(SensorState state)
             // RTC valid - green short blink, initialize timestamps
             led_pattern_ = std::make_unique<ShortBlinkPattern>(led_, 0, 255, 0);
             initializeFlashTimestamps();
+
+            // If we just synced from hub (first boot), resend heartbeat with correct uptime
+            // The initial heartbeat had uptime=0 because RTC wasn't set yet
+            if (sensor_state_.previousState() == SensorState::SYNCING_TIME) {
+                sendHeartbeat(to_ms_since_boot(get_absolute_time()));
+            }
 
             // Try to initialize sensor
             task_queue_.postOnce(
@@ -585,9 +594,8 @@ void SensorMode::transmitBacklog()
     // Transmit the batch - reportTransmitComplete called in callback
     if (transmitBatch(records, actual_count)) {
         logger.info("Batch transmission initiated");
-        // Update last sync timestamp (persists across power cycles)
-        flash_buffer_->updateLastSync(getUnixTimestamp());
-        // Note: reportTransmitComplete called in transmitBatch callback
+        // Note: updateLastSync moved to ACK callback in transmitBatch to avoid
+        // resetting the 10-minute timer before delivery is confirmed
     } else {
         logger.warn("Batch transmission failed to initiate");
         sensor_state_.reportTransmitComplete();
@@ -628,6 +636,7 @@ bool SensorMode::transmitBatch(const SensorDataRecord *records, size_t count)
                     logger.info("Batch ACK received (seq=%d): %zu records transmitted", seq_num,
                                 count);
                     consecutive_tx_failures_ = 0;  // Reset failure counter on success
+                    flash_buffer_->updateLastSync(getUnixTimestamp());
 
                     // Check if we've cleared all backlog
                     if (flash_buffer_->getUntransmittedCount() == 0) {
@@ -762,8 +771,13 @@ void SensorMode::initializeFlashTimestamps()
 
     uint32_t now = getUnixTimestamp();
 
-    // Set initial boot timestamp for uptime calculation (only if not already set)
-    if (flash_buffer_->getInitialBootTimestamp() == 0) {
+    // Reset boot timestamp on STM32 power cycle (PMU lost its clock, had to sync from hub).
+    // This makes uptime reflect "time since last full power loss" rather than "time since
+    // first deployment." The SYNCING_TIME previous state means PMU had no valid time.
+    if (sensor_state_.previousState() == SensorState::SYNCING_TIME) {
+        flash_buffer_->setInitialBootTimestamp(now);
+        logger.info("Power cycle detected - reset initial_boot_timestamp to %lu", now);
+    } else if (flash_buffer_->getInitialBootTimestamp() == 0) {
         flash_buffer_->setInitialBootTimestamp(now);
         logger.info("Set initial_boot_timestamp to %lu", now);
     }
