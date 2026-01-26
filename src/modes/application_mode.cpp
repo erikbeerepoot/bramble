@@ -70,6 +70,9 @@ void ApplicationMode::run()
             lora_.handleInterrupt();
         }
 
+        // Fallback: check for missed RX interrupts via register poll
+        lora_.checkForMissedRxInterrupt();
+
         // Check for incoming messages
         if (lora_.isMessageReady()) {
             uint8_t rx_buffer[MESSAGE_MAX_SIZE];

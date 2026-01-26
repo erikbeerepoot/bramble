@@ -50,10 +50,28 @@ list(GET BRAMBLE_VERSION_PARTS 0 BRAMBLE_VERSION_MAJOR)
 list(GET BRAMBLE_VERSION_PARTS 1 BRAMBLE_VERSION_MINOR)
 list(GET BRAMBLE_VERSION_PARTS 2 BRAMBLE_VERSION_BUILD)
 
-# Auto-increment build number and write back to VERSION file
-math(EXPR BRAMBLE_VERSION_BUILD "${BRAMBLE_VERSION_BUILD} + 1")
-set(BRAMBLE_VERSION_STRING "${BRAMBLE_VERSION_MAJOR}.${BRAMBLE_VERSION_MINOR}.${BRAMBLE_VERSION_BUILD}")
-file(WRITE "${CMAKE_CURRENT_LIST_DIR}/VERSION" "${BRAMBLE_VERSION_STRING}\n")
+# Auto-increment build number once per build session.
+# A guard file prevents multiple increments when building several
+# hardware variants in parallel (each runs cmake configure separately).
+set(VERSION_GUARD_FILE "${CMAKE_CURRENT_LIST_DIR}/.version_guard")
+set(SHOULD_INCREMENT TRUE)
+
+if(EXISTS "${VERSION_GUARD_FILE}")
+    file(TIMESTAMP "${VERSION_GUARD_FILE}" _guard_ts "%s" UTC)
+    string(TIMESTAMP _now_ts "%s" UTC)
+    math(EXPR _elapsed "${_now_ts} - ${_guard_ts}")
+    if(_elapsed LESS 30)
+        set(SHOULD_INCREMENT FALSE)
+    endif()
+endif()
+
+if(SHOULD_INCREMENT)
+    math(EXPR BRAMBLE_VERSION_BUILD "${BRAMBLE_VERSION_BUILD} + 1")
+    set(BRAMBLE_VERSION_STRING "${BRAMBLE_VERSION_MAJOR}.${BRAMBLE_VERSION_MINOR}.${BRAMBLE_VERSION_BUILD}")
+    file(WRITE "${CMAKE_CURRENT_LIST_DIR}/VERSION" "${BRAMBLE_VERSION_STRING}\n")
+    file(WRITE "${VERSION_GUARD_FILE}" "${BRAMBLE_VERSION_STRING}\n")
+endif()
+
 message(STATUS "Bramble firmware version: ${BRAMBLE_VERSION_STRING}")
 
 set(PICO_CXX_ENABLE_EXCEPTIONS 1)

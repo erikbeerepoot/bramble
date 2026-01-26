@@ -3,7 +3,6 @@
 
 #include <cstdint>
 #include <functional>
-#include <map>
 
 #include "pico/stdlib.h"
 
@@ -48,8 +47,10 @@ private:
     // Static callback function for the Pico SDK
     static void globalInterruptHandler(uint gpio, uint32_t events);
 
-    // Map of GPIO pin to handler
-    std::map<uint, InterruptHandler> handlers_;
+    // Fixed-size array of handlers indexed by GPIO pin number
+    // RP2040 has 30 GPIO pins (0-29)
+    static constexpr size_t MAX_GPIO_PINS = 30;
+    InterruptHandler handlers_[MAX_GPIO_PINS] = {};
 
     // Flag to track if the global handler has been registered
     bool global_handler_registered_ = false;

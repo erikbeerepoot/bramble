@@ -17,6 +17,11 @@ GpioInterruptManager::GpioInterruptManager()
 
 void GpioInterruptManager::registerHandler(uint gpio, uint32_t events, InterruptHandler handler)
 {
+    if (gpio >= MAX_GPIO_PINS) {
+        log.warn("Cannot register handler for invalid GPIO pin %d", gpio);
+        return;
+    }
+
     // Store the handler
     handlers_[gpio] = handler;
 
@@ -36,29 +41,26 @@ void GpioInterruptManager::registerHandler(uint gpio, uint32_t events, Interrupt
 
 void GpioInterruptManager::unregisterHandler(uint gpio)
 {
+    if (gpio >= MAX_GPIO_PINS) {
+        log.warn("Cannot unregister handler for invalid GPIO pin %d", gpio);
+        return;
+    }
+
     // Disable interrupts for this pin
     gpio_set_irq_enabled(gpio, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, false);
 
     // Remove the handler
-    handlers_.erase(gpio);
+    handlers_[gpio] = nullptr;
 
     log.debug("Unregistered handler for pin %d", gpio);
 }
 
 void GpioInterruptManager::globalInterruptHandler(uint gpio, uint32_t events)
 {
-    log.debug("Global handler called for pin %d (events: 0x%X)", gpio, events);
-
-    // Get the singleton instance and route the interrupt
+    // IMPORTANT: This runs in hardware interrupt context.
+    // No logging, no printf, no USB/UART access, no heap allocation.
     auto &manager = getInstance();
-
-    // Find the handler for this GPIO
-    auto it = manager.handlers_.find(gpio);
-    if (it != manager.handlers_.end()) {
-        log.debug("Routing to registered handler for pin %d", gpio);
-        // Call the registered handler
-        it->second(gpio, events);
-    } else {
-        log.warn("Unhandled interrupt on pin %d (events: 0x%X)", gpio, events);
+    if (gpio < MAX_GPIO_PINS && manager.handlers_[gpio]) {
+        manager.handlers_[gpio](gpio, events);
     }
 }

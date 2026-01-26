@@ -32,6 +32,14 @@ constexpr size_t SEEN_MESSAGE_BUFFER_SIZE = 16;
 constexpr uint32_t SEEN_MESSAGE_EXPIRY_MS = 30000;  // 30 seconds
 
 /**
+ * @brief Callback type for ACK received notification
+ *
+ * Called when an ACK is received for a message. Provides the sequence number,
+ * ACK status, and optional user context (can be used for flash record index).
+ */
+using AckCallback = std::function<void(uint8_t seq_num, uint8_t ack_status, uint64_t user_context)>;
+
+/**
  * @brief Outgoing message waiting to be transmitted
  */
 struct OutgoingMessage {
@@ -39,16 +47,10 @@ struct OutgoingMessage {
     size_t length;
     DeliveryCriticality criticality;
     uint8_t seq_num;
-    uint8_t attempts;  // Number of previous transmission attempts
+    uint8_t attempts;          // Number of previous transmission attempts
+    AckCallback ack_callback;  // Carried through retries so callback survives re-queuing
+    uint64_t user_context;     // Carried through retries alongside ack_callback
 };
-
-/**
- * @brief Callback type for ACK received notification
- *
- * Called when an ACK is received for a message. Provides the sequence number,
- * ACK status, and optional user context (can be used for flash record index).
- */
-using AckCallback = std::function<void(uint8_t seq_num, uint8_t ack_status, uint64_t user_context)>;
 
 /**
  * @brief Pending message for retry tracking

@@ -205,4 +205,7 @@ private:
 
     // Initialize GPIO pins (CS and RESET only)
     bool initGpio();
+
+    // Hardware reset via GPIO reset pin
+    void hardwareReset();
 };

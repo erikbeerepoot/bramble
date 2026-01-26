@@ -41,6 +41,10 @@ private:
     static constexpr uint32_t HEARTBEAT_TIMEOUT_MS =
         250;  // Aggressive timeout for low-power operation
 
+    // Listen window tracking - receive window before sleep for hub responses
+    uint32_t listen_window_start_time_ = 0;
+    static constexpr uint32_t LISTEN_WINDOW_MS = 500;
+
     // I2C pin configuration for CHT832X sensor
     static constexpr uint PIN_I2C_SDA = 26;  // GPIO26 (A0)
     static constexpr uint PIN_I2C_SCL = 27;  // GPIO27 (A1)
@@ -49,7 +53,7 @@ private:
     static constexpr uint32_t SENSOR_READ_INTERVAL_MS = 30000;  // 30 seconds
     static constexpr uint32_t HEARTBEAT_INTERVAL_MS = 60000;    // 60 seconds
     static constexpr uint32_t BACKLOG_TX_INTERVAL_MS = 120000;  // 2 minutes
-    static constexpr uint32_t TRANSMIT_INTERVAL_S = 600;        // 10 minutes between transmissions
+    static constexpr uint32_t TRANSMIT_INTERVAL_S = 300;        // 5 minutes between transmissions
 
     /**
      * @brief Read sensor and store data to flash (no immediate TX)

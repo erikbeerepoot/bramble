@@ -34,12 +34,15 @@
  *             ▼ reportReadComplete()                 │
  *         CHECKING_BACKLOG ◄─────────────────────────┘
  *             │
- *             ├── (not time to TX) ──► READY_FOR_SLEEP
+ *             ├── (not time to TX) ──► LISTENING or READY_FOR_SLEEP
  *             │
  *             ▼ (time to TX)
  *         TRANSMITTING
  *             │
  *             ▼ reportTransmitComplete()
+ *         LISTENING or READY_FOR_SLEEP
+ *             │
+ *             ▼ (LISTENING only if expectResponse() was called)
  *         READY_FOR_SLEEP ──► signalReadyForSleep() ──► [PMU sleeps]
  */
 enum class SensorState : uint8_t {
@@ -50,6 +53,7 @@ enum class SensorState : uint8_t {
     READING_SENSOR,      // Taking sensor reading
     CHECKING_BACKLOG,    // Deciding if transmission needed
     TRANSMITTING,        // Sending batch to hub
+    LISTENING,           // Receive window open, awaiting hub responses
     READY_FOR_SLEEP,     // All wake work done
     DEGRADED_NO_SENSOR,  // Sensor failed, can still log timestamps
     ERROR,               // Unrecoverable error
@@ -181,9 +185,33 @@ public:
      * @brief Report that transmission is complete
      *
      * Call after transmitBatch() callback fires (success or failure).
-     * Transitions TRANSMITTING → READY_FOR_SLEEP.
+     * Transitions TRANSMITTING → LISTENING.
      */
     void reportTransmitComplete();
+
+    /**
+     * @brief Report that listen window is complete
+     *
+     * Call after the receive window timeout expires.
+     * Transitions LISTENING → READY_FOR_SLEEP.
+     */
+    void reportListenComplete();
+
+    /**
+     * @brief Note that an outgoing message expects a response
+     *
+     * Call after sending any message that should generate a reply from the
+     * hub (e.g., heartbeat expects HEARTBEAT_RESPONSE). The state machine
+     * uses this to decide whether to enter LISTENING before sleep.
+     *
+     * Counter is reset automatically on reportWakeFromSleep().
+     */
+    void expectResponse();
+
+    /**
+     * @brief Check if any responses are expected this wake cycle
+     */
+    bool hasExpectedResponses() const { return expected_responses_ > 0; }
 
     /**
      * @brief Report wake from sleep (restart the sensor cycle)
@@ -264,6 +292,19 @@ public:
      */
     bool isTransmitting() const { return state_ == SensorState::TRANSMITTING; }
 
+    /**
+     * @brief Check if in listen window (awaiting hub responses before sleep)
+     */
+    bool isListening() const { return state_ == SensorState::LISTENING; }
+
+    /**
+     * @brief Get previous state (before last transition)
+     *
+     * Useful in state change callbacks to determine how we arrived
+     * at the current state (e.g., TIME_SYNCED from SYNCING_TIME vs PMU path).
+     */
+    SensorState previousState() const { return previous_state_; }
+
     // =========================================================================
     // Callback
     // =========================================================================
@@ -291,11 +332,12 @@ private:
      * @brief Directly transition to a new state
      *
      * Used for workflow states (SYNCING_TIME, READING_SENSOR, CHECKING_BACKLOG,
-     * TRANSMITTING, READY_FOR_SLEEP) that progress through explicit events.
+     * TRANSMITTING, LISTENING, READY_FOR_SLEEP) that progress through explicit events.
      */
     void transitionTo(SensorState newState);
 
     SensorState state_ = SensorState::INITIALIZING;
+    SensorState previous_state_ = SensorState::INITIALIZING;
     StateCallback callback_;
 
     // Internal state tracking - not accessible from outside
@@ -304,4 +346,5 @@ private:
     bool rtc_synced_ = false;
     bool sensor_initialized_ = false;
     bool sensor_init_attempted_ = false;
+    uint8_t expected_responses_ = 0;
 };

@@ -89,8 +89,11 @@ void SensorStateMachine::reportCheckComplete(bool needsTransmit)
     if (needsTransmit) {
         logger.debug("Backlog needs transmission");
         transitionTo(SensorState::TRANSMITTING);
+    } else if (hasExpectedResponses()) {
+        logger.debug("No transmission needed, listening for responses");
+        transitionTo(SensorState::LISTENING);
     } else {
-        logger.debug("No transmission needed");
+        logger.debug("No transmission needed, no responses expected");
         transitionTo(SensorState::READY_FOR_SLEEP);
     }
 }
@@ -101,12 +104,36 @@ void SensorStateMachine::reportTransmitComplete()
         logger.warn("reportTransmitComplete() called in unexpected state: %s", stateName(state_));
         return;
     }
-    logger.debug("Transmission complete");
+    if (hasExpectedResponses()) {
+        logger.debug("Transmission complete, listening for responses");
+        transitionTo(SensorState::LISTENING);
+    } else {
+        logger.debug("Transmission complete, no responses expected");
+        transitionTo(SensorState::READY_FOR_SLEEP);
+    }
+}
+
+void SensorStateMachine::expectResponse()
+{
+    expected_responses_++;
+    logger.debug("Expected responses: %d", expected_responses_);
+}
+
+void SensorStateMachine::reportListenComplete()
+{
+    if (state_ != SensorState::LISTENING) {
+        logger.warn("reportListenComplete() called in unexpected state: %s", stateName(state_));
+        return;
+    }
+    logger.debug("Listen window complete");
     transitionTo(SensorState::READY_FOR_SLEEP);
 }
 
 bool SensorStateMachine::reportWakeFromSleep()
 {
+    // Reset per-cycle state
+    expected_responses_ = 0;
+
     if (!rtc_synced_) {
         // Need time sync first - caller should send heartbeat
         logger.info("Wake from sleep but RTC not synced - need time sync");
@@ -166,6 +193,7 @@ void SensorStateMachine::updateState()
     // Only log and callback on actual state change
     if (new_state != state_) {
         logger.info("State: %s -> %s", stateName(state_), stateName(new_state));
+        previous_state_ = state_;
         state_ = new_state;
 
         if (callback_) {
@@ -181,6 +209,7 @@ void SensorStateMachine::transitionTo(SensorState newState)
     }
 
     logger.info("State: %s -> %s", stateName(state_), stateName(newState));
+    previous_state_ = state_;
     state_ = newState;
 
     if (callback_) {
@@ -205,6 +234,8 @@ const char *SensorStateMachine::stateName(SensorState state)
             return "CHECKING_BACKLOG";
         case SensorState::TRANSMITTING:
             return "TRANSMITTING";
+        case SensorState::LISTENING:
+            return "LISTENING";
         case SensorState::READY_FOR_SLEEP:
             return "READY_FOR_SLEEP";
         case SensorState::DEGRADED_NO_SENSOR:

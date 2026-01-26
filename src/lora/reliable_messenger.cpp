@@ -561,6 +561,8 @@ void ReliableMessenger::update()
                 pending.attempts = outgoing.attempts;  // Preserve attempt count
                 pending.criticality = outgoing.criticality;
                 pending.retry_config = RetryPolicy::getConfig(outgoing.criticality);
+                pending.ack_callback = outgoing.ack_callback;
+                pending.user_context = outgoing.user_context;
 
                 pending_messages_[outgoing.seq_num] = std::move(pending);
 
@@ -595,7 +597,7 @@ void ReliableMessenger::update()
                 logger_.info("Retry %d for seq=%d (%s)", next_attempt, seq_num,
                              RetryPolicy::getPolicyName(pending.criticality));
 
-                // Create a copy and re-queue it, preserving the attempt count
+                // Create a copy and re-queue it, preserving the attempt count and callback
                 OutgoingMessage retry_msg;
                 retry_msg.buffer = std::make_unique<uint8_t[]>(pending.length);
                 memcpy(retry_msg.buffer.get(), pending.buffer.get(), pending.length);
@@ -603,6 +605,8 @@ void ReliableMessenger::update()
                 retry_msg.criticality = pending.criticality;
                 retry_msg.seq_num = seq_num;
                 retry_msg.attempts = next_attempt;  // Set the incremented attempt count
+                retry_msg.ack_callback = pending.ack_callback;
+                retry_msg.user_context = pending.user_context;
 
                 message_queue_.push(std::move(retry_msg));
 
@@ -612,6 +616,13 @@ void ReliableMessenger::update()
             } else {
                 // Give up
                 logger_.error("Message seq=%d failed after %d attempts", seq_num, pending.attempts);
+
+                // Invoke callback with failure status so caller knows delivery failed
+                if (pending.ack_callback) {
+                    logger_.debug("Invoking ACK callback with failure for seq=%d", seq_num);
+                    pending.ack_callback(seq_num, 0xFF, pending.user_context);
+                }
+
                 if (network_stats_) {
                     network_stats_->recordTimeout(pending.dst_addr, pending.criticality);
                     network_stats_->recordMessageSent(pending.dst_addr, pending.criticality, false,
