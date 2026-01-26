@@ -3,11 +3,25 @@
 #include <stdint.h>
 
 // Bramble firmware version
-// Format: (MAJOR << 24) | (MINOR << 16) | BUILD
+// Version is read from the VERSION file at the project root by CMake,
+// which passes BRAMBLE_VERSION_MAJOR, BRAMBLE_VERSION_MINOR, and
+// BRAMBLE_VERSION_BUILD as compile definitions.
+//
+// Encoding: (MAJOR << 24) | (MINOR << 16) | BUILD
 // Major: 8 bits (0-255), Minor: 8 bits (0-255), Build: 16 bits (0-65535)
+
+// Fallback defaults for IDE intellisense or non-CMake builds
+#ifndef BRAMBLE_VERSION_MAJOR
 #define BRAMBLE_VERSION_MAJOR 0
-#define BRAMBLE_VERSION_MINOR 1
+#endif
+
+#ifndef BRAMBLE_VERSION_MINOR
+#define BRAMBLE_VERSION_MINOR 0
+#endif
+
+#ifndef BRAMBLE_VERSION_BUILD
 #define BRAMBLE_VERSION_BUILD 0
+#endif
 
 #define BRAMBLE_FIRMWARE_VERSION                                                                    \
     ((uint32_t)((BRAMBLE_VERSION_MAJOR << 24) | (BRAMBLE_VERSION_MINOR << 16) |                    \
