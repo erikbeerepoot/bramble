@@ -34,13 +34,16 @@
  *             ▼ reportReadComplete()                 │
  *         CHECKING_BACKLOG ◄─────────────────────────┘
  *             │
- *             ├── (not time to TX) ──► READY_FOR_SLEEP
+ *             ├── (not time to TX) ──► LISTENING
  *             │
  *             ▼ (time to TX)
  *         TRANSMITTING
  *             │
  *             ▼ reportTransmitComplete()
- *         READY_FOR_SLEEP ──► signalReadyForSleep() ──► [PMU sleeps]
+ *         LISTENING ──(500ms timeout)──► READY_FOR_SLEEP
+ *             │                              │
+ *             │ reportListenComplete()       ▼
+ *             └──────────────────────► signalReadyForSleep() ──► [PMU sleeps]
  */
 enum class SensorState : uint8_t {
     INITIALIZING,        // Hardware setup in progress
@@ -50,6 +53,7 @@ enum class SensorState : uint8_t {
     READING_SENSOR,      // Taking sensor reading
     CHECKING_BACKLOG,    // Deciding if transmission needed
     TRANSMITTING,        // Sending batch to hub
+    LISTENING,           // Receive window open, awaiting hub responses
     READY_FOR_SLEEP,     // All wake work done
     DEGRADED_NO_SENSOR,  // Sensor failed, can still log timestamps
     ERROR,               // Unrecoverable error
@@ -181,9 +185,17 @@ public:
      * @brief Report that transmission is complete
      *
      * Call after transmitBatch() callback fires (success or failure).
-     * Transitions TRANSMITTING → READY_FOR_SLEEP.
+     * Transitions TRANSMITTING → LISTENING.
      */
     void reportTransmitComplete();
+
+    /**
+     * @brief Report that listen window is complete
+     *
+     * Call after the receive window timeout expires.
+     * Transitions LISTENING → READY_FOR_SLEEP.
+     */
+    void reportListenComplete();
 
     /**
      * @brief Report wake from sleep (restart the sensor cycle)
@@ -265,6 +277,11 @@ public:
     bool isTransmitting() const { return state_ == SensorState::TRANSMITTING; }
 
     /**
+     * @brief Check if in listen window (awaiting hub responses before sleep)
+     */
+    bool isListening() const { return state_ == SensorState::LISTENING; }
+
+    /**
      * @brief Get previous state (before last transition)
      *
      * Useful in state change callbacks to determine how we arrived
@@ -299,7 +316,7 @@ private:
      * @brief Directly transition to a new state
      *
      * Used for workflow states (SYNCING_TIME, READING_SENSOR, CHECKING_BACKLOG,
-     * TRANSMITTING, READY_FOR_SLEEP) that progress through explicit events.
+     * TRANSMITTING, LISTENING, READY_FOR_SLEEP) that progress through explicit events.
      */
     void transitionTo(SensorState newState);
 
