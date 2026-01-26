@@ -217,7 +217,10 @@ class SensorDatabase:
     @contextmanager
     def _get_connection(self):
         """Context manager for database connections."""
-        conn = duckdb.connect(self.db_path)
+        conn = duckdb.connect(self.db_path, config={
+            'memory_limit': Config.DB_MEMORY_LIMIT,
+            'threads': Config.DB_THREADS,
+        })
         try:
             yield conn
         finally:
