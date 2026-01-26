@@ -212,3 +212,44 @@ export function getBacklogStatus(count: number | null | undefined): { color: str
   if (count < 50) return { color: 'yellow', label: 'Pending' };
   return { color: 'red', label: 'Backlogged' };
 }
+
+/**
+ * Overall node health for dashboard display.
+ * Returns a single color representing the worst condition across
+ * error flags, battery, and signal strength.
+ *
+ * red    = error-level issue (sensor/flash/PMU failure, critical battery, offline)
+ * orange = degraded (poor signal, high backlog)
+ * yellow = warning (low battery, flash full, RTC not synced, radio issue)
+ * green  = healthy
+ * gray   = unknown (no status data)
+ */
+export type OverallHealth = 'red' | 'orange' | 'yellow' | 'green' | 'gray';
+
+export function getOverallNodeHealth(node: Node): OverallHealth {
+  if (!node.online) return 'red';
+  if (!node.status) return 'gray';
+
+  const { error_flags, battery_level, signal_strength, pending_records } = node.status;
+
+  // Check error flags for error-level issues
+  const health = getHealthStatus(error_flags);
+  if (health === 'error') return 'red';
+
+  // Poor signal is a degraded (orange) condition
+  if (signal_strength !== null) {
+    const absRssi = signal_strength > 0 ? -signal_strength : signal_strength;
+    if (absRssi < -100) return 'orange';
+  }
+
+  // High backlog is degraded
+  if (pending_records !== null && pending_records >= 50) return 'orange';
+
+  // Warning-level error flags
+  if (health === 'warning') return 'yellow';
+
+  // Low battery (not critical, that's caught by error flags) is a warning
+  if (battery_level !== null && battery_level !== 255 && battery_level <= 20) return 'yellow';
+
+  return 'green';
+}

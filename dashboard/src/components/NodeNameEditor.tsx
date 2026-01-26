@@ -113,6 +113,12 @@ function NodeNameEditor({ node, zones, onUpdate, onZoneCreated }: NodeNameEditor
               <dd className="text-gray-900 font-mono text-sm">{node.device_id.toString(16).toUpperCase()}</dd>
             </div>
           )}
+          {node.firmware_version && (
+            <div>
+              <dt className="text-sm text-gray-500">Firmware</dt>
+              <dd className="text-gray-900 font-mono text-sm">v{node.firmware_version}</dd>
+            </div>
+          )}
         </dl>
       </div>
     );
