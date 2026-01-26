@@ -91,7 +91,7 @@ void SensorStateMachine::reportCheckComplete(bool needsTransmit)
         transitionTo(SensorState::TRANSMITTING);
     } else {
         logger.debug("No transmission needed");
-        transitionTo(SensorState::READY_FOR_SLEEP);
+        transitionTo(SensorState::LISTENING);
     }
 }
 
@@ -102,6 +102,16 @@ void SensorStateMachine::reportTransmitComplete()
         return;
     }
     logger.debug("Transmission complete");
+    transitionTo(SensorState::LISTENING);
+}
+
+void SensorStateMachine::reportListenComplete()
+{
+    if (state_ != SensorState::LISTENING) {
+        logger.warn("reportListenComplete() called in unexpected state: %s", stateName(state_));
+        return;
+    }
+    logger.debug("Listen window complete");
     transitionTo(SensorState::READY_FOR_SLEEP);
 }
 
@@ -207,6 +217,8 @@ const char *SensorStateMachine::stateName(SensorState state)
             return "CHECKING_BACKLOG";
         case SensorState::TRANSMITTING:
             return "TRANSMITTING";
+        case SensorState::LISTENING:
+            return "LISTENING";
         case SensorState::READY_FOR_SLEEP:
             return "READY_FOR_SLEEP";
         case SensorState::DEGRADED_NO_SENSOR:

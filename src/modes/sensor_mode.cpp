@@ -246,6 +246,12 @@ void SensorMode::onStateChange(SensorState state)
                 this, TaskPriority::High);
             break;
 
+        case SensorState::LISTENING:
+            // Receive window open - stay awake briefly for hub responses
+            listen_window_start_time_ = to_ms_since_boot(get_absolute_time());
+            logger.info("Receive window open (%lu ms)", LISTEN_WINDOW_MS);
+            break;
+
         case SensorState::READY_FOR_SLEEP:
             // All work done - signal PMU
             task_queue_.postOnce(
@@ -303,6 +309,16 @@ void SensorMode::onLoop()
                 // reportRtcSynced triggers TIME_SYNCED -> onStateChange handles the rest
                 sensor_state_.reportRtcSynced();
             }
+        }
+    }
+
+    // Listen window timeout - close receive window and proceed to sleep
+    if (sensor_state_.isListening() && listen_window_start_time_ > 0) {
+        uint32_t elapsed = to_ms_since_boot(get_absolute_time()) - listen_window_start_time_;
+        if (elapsed >= LISTEN_WINDOW_MS) {
+            logger.info("Receive window closed after %lu ms", elapsed);
+            listen_window_start_time_ = 0;
+            sensor_state_.reportListenComplete();
         }
     }
 
