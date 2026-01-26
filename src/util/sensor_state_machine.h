@@ -34,16 +34,16 @@
  *             ▼ reportReadComplete()                 │
  *         CHECKING_BACKLOG ◄─────────────────────────┘
  *             │
- *             ├── (not time to TX) ──► LISTENING
+ *             ├── (not time to TX) ──► LISTENING or READY_FOR_SLEEP
  *             │
  *             ▼ (time to TX)
  *         TRANSMITTING
  *             │
  *             ▼ reportTransmitComplete()
- *         LISTENING ──(500ms timeout)──► READY_FOR_SLEEP
- *             │                              │
- *             │ reportListenComplete()       ▼
- *             └──────────────────────► signalReadyForSleep() ──► [PMU sleeps]
+ *         LISTENING or READY_FOR_SLEEP
+ *             │
+ *             ▼ (LISTENING only if expectResponse() was called)
+ *         READY_FOR_SLEEP ──► signalReadyForSleep() ──► [PMU sleeps]
  */
 enum class SensorState : uint8_t {
     INITIALIZING,        // Hardware setup in progress
@@ -198,6 +198,22 @@ public:
     void reportListenComplete();
 
     /**
+     * @brief Note that an outgoing message expects a response
+     *
+     * Call after sending any message that should generate a reply from the
+     * hub (e.g., heartbeat expects HEARTBEAT_RESPONSE). The state machine
+     * uses this to decide whether to enter LISTENING before sleep.
+     *
+     * Counter is reset automatically on reportWakeFromSleep().
+     */
+    void expectResponse();
+
+    /**
+     * @brief Check if any responses are expected this wake cycle
+     */
+    bool hasExpectedResponses() const { return expected_responses_ > 0; }
+
+    /**
      * @brief Report wake from sleep (restart the sensor cycle)
      *
      * Call when PMU signals a periodic wake. Restarts the cycle based on
@@ -330,4 +346,5 @@ private:
     bool rtc_synced_ = false;
     bool sensor_initialized_ = false;
     bool sensor_init_attempted_ = false;
+    uint8_t expected_responses_ = 0;
 };

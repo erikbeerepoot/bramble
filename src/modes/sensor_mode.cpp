@@ -426,6 +426,9 @@ void SensorMode::sendHeartbeat(uint32_t /* current_time */)
 
     messenger_.sendHeartbeat(HUB_ADDRESS, uptime, battery_level, signal_strength, active_sensors,
                              error_flags, pending_records);
+
+    // Heartbeat expects a HEARTBEAT_RESPONSE from the hub
+    sensor_state_.expectResponse();
 }
 
 uint16_t SensorMode::collectErrorFlags()

@@ -89,9 +89,12 @@ void SensorStateMachine::reportCheckComplete(bool needsTransmit)
     if (needsTransmit) {
         logger.debug("Backlog needs transmission");
         transitionTo(SensorState::TRANSMITTING);
-    } else {
-        logger.debug("No transmission needed");
+    } else if (hasExpectedResponses()) {
+        logger.debug("No transmission needed, listening for responses");
         transitionTo(SensorState::LISTENING);
+    } else {
+        logger.debug("No transmission needed, no responses expected");
+        transitionTo(SensorState::READY_FOR_SLEEP);
     }
 }
 
@@ -101,8 +104,19 @@ void SensorStateMachine::reportTransmitComplete()
         logger.warn("reportTransmitComplete() called in unexpected state: %s", stateName(state_));
         return;
     }
-    logger.debug("Transmission complete");
-    transitionTo(SensorState::LISTENING);
+    if (hasExpectedResponses()) {
+        logger.debug("Transmission complete, listening for responses");
+        transitionTo(SensorState::LISTENING);
+    } else {
+        logger.debug("Transmission complete, no responses expected");
+        transitionTo(SensorState::READY_FOR_SLEEP);
+    }
+}
+
+void SensorStateMachine::expectResponse()
+{
+    expected_responses_++;
+    logger.debug("Expected responses: %d", expected_responses_);
 }
 
 void SensorStateMachine::reportListenComplete()
@@ -117,6 +131,9 @@ void SensorStateMachine::reportListenComplete()
 
 bool SensorStateMachine::reportWakeFromSleep()
 {
+    // Reset per-cycle state
+    expected_responses_ = 0;
+
     if (!rtc_synced_) {
         // Need time sync first - caller should send heartbeat
         logger.info("Wake from sleep but RTC not synced - need time sync");
