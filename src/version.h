@@ -3,9 +3,9 @@
 #include <stdint.h>
 
 // Bramble firmware version
-// Version is read from the VERSION file at the project root by CMake,
-// which passes BRAMBLE_VERSION_MAJOR, BRAMBLE_VERSION_MINOR, and
-// BRAMBLE_VERSION_BUILD as compile definitions.
+// Major and minor are read from the VERSION file at the project root.
+// Build number auto-increments on each cmake configure (stored in build dir).
+// CMake passes all three as compile definitions.
 //
 // Encoding: (MAJOR << 24) | (MINOR << 16) | BUILD
 // Major: 8 bits (0-255), Minor: 8 bits (0-255), Build: 16 bits (0-65535)
