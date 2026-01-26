@@ -43,35 +43,55 @@ bool ExternalFlash::init()
         return false;
     }
 
-    // Reset the flash
-    reset();
+    constexpr int MAX_ATTEMPTS = 3;
 
-    // Small delay after reset
-    sleep_ms(10);
+    for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+        // Hardware reset the flash
+        hardwareReset();
 
-    // Wake up in case it's in power-down mode
-    wakeUp();
-    sleep_us(50);  // tRES1 = 3us typical
+        // Wake up in case it's in power-down mode
+        wakeUp();
+        sleep_us(50);  // tRES1 = 3us typical
 
-    // Read and verify JEDEC ID
-    uint8_t manufacturer, memory_type, capacity;
-    if (readId(manufacturer, memory_type, capacity) != ExternalFlashResult::Success) {
-        logger_.error("Failed to read flash ID");
-        return false;
+        // Read and verify JEDEC ID
+        uint8_t manufacturer, memory_type, capacity;
+        if (readId(manufacturer, memory_type, capacity) != ExternalFlashResult::Success) {
+            logger_.error("Failed to read flash ID (attempt %d/%d)", attempt + 1, MAX_ATTEMPTS);
+            continue;
+        }
+
+        logger_.info("Flash ID: Manufacturer=0x%02X, Type=0x%02X, Capacity=0x%02X", manufacturer,
+                     memory_type, capacity);
+
+        // If manufacturer ID is 0x00, flash is unresponsive - retry with hardware reset
+        if (manufacturer == 0x00) {
+            logger_.warn("Flash unresponsive (manufacturer=0x00), retrying with hardware reset "
+                         "(%d/%d)",
+                         attempt + 1, MAX_ATTEMPTS);
+            continue;
+        }
+
+        // Verify it's a Micron flash (manufacturer ID 0x20)
+        if (manufacturer != 0x20) {
+            logger_.warn("Unexpected manufacturer ID (expected 0x20 for Micron)");
+            // Continue anyway - might still work
+        }
+
+        initialized_ = true;
+        logger_.info("External flash initialized successfully");
+        return true;
     }
 
-    logger_.info("Flash ID: Manufacturer=0x%02X, Type=0x%02X, Capacity=0x%02X", manufacturer,
-                 memory_type, capacity);
+    logger_.error("External flash init failed after %d attempts", MAX_ATTEMPTS);
+    return false;
+}
 
-    // Verify it's a Micron flash (manufacturer ID 0x20)
-    if (manufacturer != 0x20) {
-        logger_.warn("Unexpected manufacturer ID (expected 0x20 for Micron)");
-        // Continue anyway - might still work
-    }
-
-    initialized_ = true;
-    logger_.info("External flash initialized successfully");
-    return true;
+void ExternalFlash::hardwareReset()
+{
+    gpio_put(pins_.reset, 0);
+    sleep_ms(1);  // Conservative pulse width (MT25QL spec: ~10us)
+    gpio_put(pins_.reset, 1);
+    sleep_ms(10);  // Device recovery time (tPUW)
 }
 
 void ExternalFlash::csSelect()
