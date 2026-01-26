@@ -215,10 +215,29 @@ function NodeDetail({ node, zones, onBack, onUpdate, onZoneCreated }: NodeDetail
           )}
 
           {loadingStatistics ? (
-            <div className="card">
-              <h3 className="text-lg font-medium text-gray-900 mb-4">Statistics</h3>
-              <div className="flex items-center justify-center h-24">
-                <div className="inline-block animate-spin rounded-full h-6 w-6 border-4 border-bramble-600 border-t-transparent"></div>
+            <div className="card animate-pulse">
+              <div className="h-5 w-24 bg-gray-200 rounded mb-4" />
+              <div className="space-y-3">
+                <div>
+                  <div className="h-3 w-24 bg-gray-200 rounded mb-1" />
+                  <div className="h-6 w-16 bg-gray-200 rounded" />
+                </div>
+                <div className="border-t pt-3">
+                  <div className="h-3 w-20 bg-gray-200 rounded mb-2" />
+                  <div className="grid grid-cols-3 gap-2">
+                    <div><div className="h-3 w-8 bg-gray-200 rounded mb-1" /><div className="h-4 w-12 bg-gray-200 rounded" /></div>
+                    <div><div className="h-3 w-8 bg-gray-200 rounded mb-1" /><div className="h-4 w-12 bg-gray-200 rounded" /></div>
+                    <div><div className="h-3 w-8 bg-gray-200 rounded mb-1" /><div className="h-4 w-12 bg-gray-200 rounded" /></div>
+                  </div>
+                </div>
+                <div className="border-t pt-3">
+                  <div className="h-3 w-16 bg-gray-200 rounded mb-2" />
+                  <div className="grid grid-cols-3 gap-2">
+                    <div><div className="h-3 w-8 bg-gray-200 rounded mb-1" /><div className="h-4 w-12 bg-gray-200 rounded" /></div>
+                    <div><div className="h-3 w-8 bg-gray-200 rounded mb-1" /><div className="h-4 w-12 bg-gray-200 rounded" /></div>
+                    <div><div className="h-3 w-8 bg-gray-200 rounded mb-1" /><div className="h-4 w-12 bg-gray-200 rounded" /></div>
+                  </div>
+                </div>
               </div>
             </div>
           ) : statistics && (
@@ -281,8 +300,17 @@ function NodeDetail({ node, zones, onBack, onUpdate, onZoneCreated }: NodeDetail
             </div>
 
             {loadingSensorData ? (
-              <div className="flex items-center justify-center h-64">
-                <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-bramble-600 border-t-transparent"></div>
+              <div className="space-y-6 animate-pulse">
+                {/* Temperature chart skeleton */}
+                <div>
+                  <div className="h-4 w-28 bg-gray-200 rounded mb-3" />
+                  <div className="h-48 bg-gray-200 rounded" />
+                </div>
+                {/* Humidity chart skeleton */}
+                <div>
+                  <div className="h-4 w-20 bg-gray-200 rounded mb-3" />
+                  <div className="h-48 bg-gray-200 rounded" />
+                </div>
               </div>
             ) : error && readings.length === 0 ? (
               <div className="p-4 bg-red-50 border border-red-200 rounded-md text-red-700">
