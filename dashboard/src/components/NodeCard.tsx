@@ -80,11 +80,18 @@ function NodeCard({ node, zone, onClick }: NodeCardProps) {
         </div>
       </div>
 
-      {node.device_id && (
-        <div className="mt-2 text-xs text-gray-400 font-mono truncate">
-          ID: {node.device_id.toString(16).toUpperCase()}
-        </div>
-      )}
+      <div className="mt-2 flex items-center justify-between text-xs text-gray-400 font-mono">
+        {node.device_id && (
+          <span className="truncate">
+            ID: {node.device_id.toString(16).toUpperCase()}
+          </span>
+        )}
+        {node.firmware_version && (
+          <span className="ml-2 flex-shrink-0">
+            v{node.firmware_version}
+          </span>
+        )}
+      </div>
     </div>
   );
 }

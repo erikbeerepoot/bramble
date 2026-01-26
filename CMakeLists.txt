@@ -42,6 +42,20 @@ endif()
 
 project(bramble C CXX ASM)
 
+# Read firmware version from VERSION file (major.minor.build)
+file(READ "${CMAKE_CURRENT_LIST_DIR}/VERSION" BRAMBLE_VERSION_RAW)
+string(STRIP "${BRAMBLE_VERSION_RAW}" BRAMBLE_VERSION_STRING)
+string(REPLACE "." ";" BRAMBLE_VERSION_PARTS "${BRAMBLE_VERSION_STRING}")
+list(GET BRAMBLE_VERSION_PARTS 0 BRAMBLE_VERSION_MAJOR)
+list(GET BRAMBLE_VERSION_PARTS 1 BRAMBLE_VERSION_MINOR)
+list(GET BRAMBLE_VERSION_PARTS 2 BRAMBLE_VERSION_BUILD)
+
+# Auto-increment build number and write back to VERSION file
+math(EXPR BRAMBLE_VERSION_BUILD "${BRAMBLE_VERSION_BUILD} + 1")
+set(BRAMBLE_VERSION_STRING "${BRAMBLE_VERSION_MAJOR}.${BRAMBLE_VERSION_MINOR}.${BRAMBLE_VERSION_BUILD}")
+file(WRITE "${CMAKE_CURRENT_LIST_DIR}/VERSION" "${BRAMBLE_VERSION_STRING}\n")
+message(STATUS "Bramble firmware version: ${BRAMBLE_VERSION_STRING}")
+
 set(PICO_CXX_ENABLE_EXCEPTIONS 1)
 
 set(PICO_CXX_ENABLE_RTTI 1)
@@ -67,15 +81,20 @@ if(BUILD_TESTS)
     
     # Common test settings
     pico_set_program_name(bramble_test "bramble_test")
-    pico_set_program_version(bramble_test "0.1")
+    pico_set_program_version(bramble_test "${BRAMBLE_VERSION_STRING}")
     pico_enable_stdio_uart(bramble_test 0)
     pico_enable_stdio_usb(bramble_test 1)
-    
+
     # Test libraries
     target_link_libraries(bramble_test pico_stdlib)
     target_include_directories(bramble_test PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}
         ${CMAKE_CURRENT_LIST_DIR}/src
+    )
+    target_compile_definitions(bramble_test PRIVATE
+        BRAMBLE_VERSION_MAJOR=${BRAMBLE_VERSION_MAJOR}
+        BRAMBLE_VERSION_MINOR=${BRAMBLE_VERSION_MINOR}
+        BRAMBLE_VERSION_BUILD=${BRAMBLE_VERSION_BUILD}
     )
     
     target_link_libraries(bramble_test 
@@ -204,7 +223,7 @@ endif()
 if(NOT BUILD_TESTS)
     # Target configuration
     pico_set_program_name(${TARGET_NAME} "${TARGET_NAME}")
-    pico_set_program_version(${TARGET_NAME} "0.1")
+    pico_set_program_version(${TARGET_NAME} "${BRAMBLE_VERSION_STRING}")
 
     # Enable stdio on USB for all targets
     pico_enable_stdio_usb(${TARGET_NAME} 1)
@@ -225,6 +244,9 @@ if(NOT BUILD_TESTS)
         PICO_DEFAULT_UART_TX_PIN=24
         PICO_DEFAULT_UART_RX_PIN=-1
         PICO_XOSC_STARTUP_DELAY_MULTIPLIER=128
+        BRAMBLE_VERSION_MAJOR=${BRAMBLE_VERSION_MAJOR}
+        BRAMBLE_VERSION_MINOR=${BRAMBLE_VERSION_MINOR}
+        BRAMBLE_VERSION_BUILD=${BRAMBLE_VERSION_BUILD}
     )
     
     # Libraries and configuration for the target

@@ -169,7 +169,7 @@ public:
      * @return Sequence number of sent message (0 on failure)
      */
     uint8_t sendRegistrationRequest(uint16_t dst_addr, uint64_t device_id, uint8_t node_type,
-                                    uint8_t capabilities, uint16_t firmware_ver,
+                                    uint8_t capabilities, uint32_t firmware_ver,
                                     const char *device_name);
 
     /**

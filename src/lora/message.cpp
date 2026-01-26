@@ -101,7 +101,7 @@ size_t MessageHandler::createHeartbeatResponseMessage(uint16_t src_addr, uint16_
 size_t MessageHandler::createRegistrationMessage(uint16_t src_addr, uint16_t dst_addr,
                                                  uint8_t seq_num, uint64_t device_id,
                                                  uint8_t node_type, uint8_t capabilities,
-                                                 uint16_t firmware_ver, const char *device_name,
+                                                 uint32_t firmware_ver, const char *device_name,
                                                  uint8_t *buffer)
 {
     if (device_id == 0) {

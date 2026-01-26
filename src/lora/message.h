@@ -197,7 +197,7 @@ struct __attribute__((packed)) RegistrationPayload {
     uint64_t device_id;     // Unique device identifier (chip serial/MAC)
     uint8_t node_type;      // Node type (sensor/actuator/hybrid)
     uint8_t capabilities;   // Capability flags (what sensors/actuators available)
-    uint16_t firmware_ver;  // Firmware version
+    uint32_t firmware_ver;  // Firmware version
     char device_name[16];   // Human readable device name
 };
 
@@ -388,7 +388,7 @@ public:
      */
     static size_t createRegistrationMessage(uint16_t src_addr, uint16_t dst_addr, uint8_t seq_num,
                                             uint64_t device_id, uint8_t node_type,
-                                            uint8_t capabilities, uint16_t firmware_ver,
+                                            uint8_t capabilities, uint32_t firmware_ver,
                                             const char *device_name, uint8_t *buffer);
 
     /**

@@ -125,7 +125,7 @@ NodeConfiguration NodeConfigManager::createDefaultConfiguration(uint64_t device_
                                                                 const char *device_name,
                                                                 uint8_t node_type,
                                                                 uint8_t capabilities,
-                                                                uint16_t firmware_version)
+                                                                uint32_t firmware_version)
 {
     NodeConfiguration config = {};  // Zero-initialize
 

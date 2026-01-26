@@ -24,9 +24,9 @@ struct __attribute__((packed)) NodeConfiguration {
     char device_name[16];        // Device name
     uint8_t node_type;           // Node type
     uint8_t capabilities;        // Node capabilities
-    uint16_t firmware_version;   // Firmware version at registration
+    uint32_t firmware_version;   // Firmware version at registration
     uint32_t crc32;              // CRC32 of all above fields
-    uint8_t padding[214];        // Pad to 256 bytes (1 flash page)
+    uint8_t padding[212];        // Pad to 256 bytes (1 flash page)
 };
 
 static_assert(sizeof(NodeConfiguration) == FLASH_PAGE_SIZE,
@@ -82,7 +82,7 @@ public:
      */
     static NodeConfiguration createDefaultConfiguration(uint64_t device_id, const char *device_name,
                                                         uint8_t node_type, uint8_t capabilities,
-                                                        uint16_t firmware_version);
+                                                        uint32_t firmware_version);
 
 private:
     Logger logger_;  // Module logger

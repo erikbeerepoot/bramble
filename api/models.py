@@ -3,6 +3,18 @@ from dataclasses import dataclass
 from typing import Optional
 
 
+def format_firmware_version(raw_version: int) -> str:
+    """Format a raw uint32 firmware version as a human-readable string.
+
+    Encoding: (major << 24) | (minor << 16) | build
+    Example: 0x01000000 -> "1.0.0", 0x01010005 -> "1.1.5"
+    """
+    major = (raw_version >> 24) & 0xFF
+    minor = (raw_version >> 16) & 0xFF
+    build = raw_version & 0xFFFF
+    return f"{major}.{minor}.{build}"
+
+
 @dataclass
 class Node:
     """Represents a LoRa node in the network."""
@@ -11,19 +23,26 @@ class Node:
     node_type: str
     online: bool
     last_seen_seconds: int
+    firmware_version: Optional[str] = None
 
     @classmethod
-    def from_hub_response(cls, addr: int, device_id: int, node_type: str, online: str, last_seen: str):
+    def from_hub_response(cls, addr: int, device_id: int, node_type: str, online: str,
+                          last_seen: str, firmware_version_raw: Optional[int] = None):
         """Create Node from hub LIST_NODES response line.
 
-        Format: NODE <addr> <device_id> <type> <online> <last_seen_sec>
+        Format: NODE <addr> <device_id> <type> <online> <last_seen_sec> [<firmware_version>]
         """
+        fw_version = None
+        if firmware_version_raw is not None and firmware_version_raw != 0:
+            fw_version = format_firmware_version(firmware_version_raw)
+
         return cls(
             address=addr,
             device_id=device_id if device_id != 0 else None,
             node_type=node_type,
             online=online == '1',
-            last_seen_seconds=int(last_seen)
+            last_seen_seconds=int(last_seen),
+            firmware_version=fw_version
         )
 
     def to_dict(self):
@@ -33,7 +52,8 @@ class Node:
             'device_id': self.device_id,
             'type': self.node_type,
             'online': self.online,
-            'last_seen_seconds': self.last_seen_seconds
+            'last_seen_seconds': self.last_seen_seconds,
+            'firmware_version': self.firmware_version
         }
 
 
