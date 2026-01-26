@@ -5,8 +5,8 @@
 // Bramble firmware version
 // Format: (MAJOR << 24) | (MINOR << 16) | BUILD
 // Major: 8 bits (0-255), Minor: 8 bits (0-255), Build: 16 bits (0-65535)
-#define BRAMBLE_VERSION_MAJOR 1
-#define BRAMBLE_VERSION_MINOR 0
+#define BRAMBLE_VERSION_MAJOR 0
+#define BRAMBLE_VERSION_MINOR 1
 #define BRAMBLE_VERSION_BUILD 0
 
 #define BRAMBLE_FIRMWARE_VERSION                                                                    \
