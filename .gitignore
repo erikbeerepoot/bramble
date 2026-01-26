@@ -91,6 +91,9 @@ __pycache__/
 docs/build/
 doc/build/
 
+# Build version guard (prevents duplicate increments in parallel builds)
+.version_guard
+
 # Configuration files that might contain secrets
 config.local.*
 secrets.*
