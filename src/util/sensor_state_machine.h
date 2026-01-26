@@ -264,6 +264,14 @@ public:
      */
     bool isTransmitting() const { return state_ == SensorState::TRANSMITTING; }
 
+    /**
+     * @brief Get previous state (before last transition)
+     *
+     * Useful in state change callbacks to determine how we arrived
+     * at the current state (e.g., TIME_SYNCED from SYNCING_TIME vs PMU path).
+     */
+    SensorState previousState() const { return previous_state_; }
+
     // =========================================================================
     // Callback
     // =========================================================================
@@ -296,6 +304,7 @@ private:
     void transitionTo(SensorState newState);
 
     SensorState state_ = SensorState::INITIALIZING;
+    SensorState previous_state_ = SensorState::INITIALIZING;
     StateCallback callback_;
 
     // Internal state tracking - not accessible from outside
