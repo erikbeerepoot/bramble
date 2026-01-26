@@ -1,4 +1,4 @@
-name: Style Check
+name: Auto Format
 
 on:
   pull_request:
@@ -8,14 +8,20 @@ on:
       - '**.hpp'
       - '.clang-format'
 
+permissions:
+  contents: write
+
 jobs:
-  format-check:
-    name: Check Code Formatting
+  auto-format:
+    name: Auto Format Code
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install clang-format
         run: |
@@ -25,24 +31,19 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y clang-format-21
 
-      - name: Check formatting
+      - name: Format code
         run: |
-          # Find all C++ source files and check formatting
           find src main.cpp -name "*.cpp" -o -name "*.h" -o -name "*.hpp" | \
-            xargs clang-format-21 --dry-run --Werror 2>&1 | tee format-check.log
+            xargs clang-format-21 -i
 
-          if [ -s format-check.log ]; then
-            echo ""
-            echo "::error::Code formatting issues found. Please run 'clang-format -i' on the files above."
-            echo ""
-            echo "To fix all files at once, run:"
-            echo "  find src main.cpp -name '*.cpp' -o -name '*.h' | xargs clang-format -i"
-            exit 1
+      - name: Commit formatting changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No formatting changes needed."
+          else
+            git commit -m "style: auto-format code with clang-format"
+            git push
           fi
-
-      - name: Upload format check results
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: format-check-results
-          path: format-check.log
