@@ -166,6 +166,7 @@ void SensorStateMachine::updateState()
     // Only log and callback on actual state change
     if (new_state != state_) {
         logger.info("State: %s -> %s", stateName(state_), stateName(new_state));
+        previous_state_ = state_;
         state_ = new_state;
 
         if (callback_) {
@@ -181,6 +182,7 @@ void SensorStateMachine::transitionTo(SensorState newState)
     }
 
     logger.info("State: %s -> %s", stateName(state_), stateName(newState));
+    previous_state_ = state_;
     state_ = newState;
 
     if (callback_) {
