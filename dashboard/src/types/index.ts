@@ -36,6 +36,7 @@ export interface Node {
   type: string;
   online: boolean;
   last_seen_seconds: number;
+  firmware_version: string | null;
   metadata?: NodeMetadata;
   status?: NodeStatus;
   hub_queue_count?: number | null;

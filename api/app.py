@@ -9,7 +9,7 @@ from typing import Optional
 from config import Config
 from serial_interface import SerialInterface
 from database import SensorDatabase
-from models import Node, NodeMetadata, Schedule, QueuedUpdate, Zone
+from models import Node, NodeMetadata, Schedule, QueuedUpdate, Zone, format_firmware_version
 
 
 # Setup logging
@@ -127,7 +127,7 @@ def list_nodes():
 
         # Parse response
         # Format: NODE_LIST <count>
-        #         NODE <addr> <device_id> <type> <online> <last_seen_sec>
+        #         NODE <addr> <device_id> <type> <online> <last_seen_sec> [<firmware_version>]
         if not responses or not responses[0].startswith('NODE_LIST'):
             return jsonify({'error': 'Invalid response from hub'}), 500
 
@@ -149,12 +149,15 @@ def list_nodes():
                 if len(parts) >= 6:
                     device_id = int(parts[2])
                     address = int(parts[1])
+                    # firmware_version is optional for backwards compatibility
+                    firmware_version_raw = int(parts[6]) if len(parts) >= 7 else None
                     node = Node(
                         address=address,
                         device_id=device_id if device_id != 0 else None,
                         node_type=parts[3],
                         online=parts[4] == '1',
-                        last_seen_seconds=int(parts[5])
+                        last_seen_seconds=int(parts[5]),
+                        firmware_version=format_firmware_version(firmware_version_raw) if firmware_version_raw else None
                     )
                     node_dict = node.to_dict()
                     # Include metadata if available
@@ -195,18 +198,20 @@ def get_node(address: int):
         responses = serial.send_command('LIST_NODES')
 
         # Parse and find the node
-        # Format: NODE <addr> <device_id> <type> <online> <last_seen_sec>
+        # Format: NODE <addr> <device_id> <type> <online> <last_seen_sec> [<firmware_version>]
         for line in responses[1:]:
             if line.startswith('NODE '):
                 parts = line.split()
                 if len(parts) >= 6 and int(parts[1]) == address:
                     device_id = int(parts[2])
+                    firmware_version_raw = int(parts[6]) if len(parts) >= 7 else None
                     node = Node(
                         address=int(parts[1]),
                         device_id=device_id if device_id != 0 else None,
                         node_type=parts[3],
                         online=parts[4] == '1',
-                        last_seen_seconds=int(parts[5])
+                        last_seen_seconds=int(parts[5]),
+                        firmware_version=format_firmware_version(firmware_version_raw) if firmware_version_raw else None
                     )
                     return jsonify(node.to_dict())
 

@@ -322,9 +322,10 @@ void HubMode::handleListNodes()
             uint32_t now = to_ms_since_boot(get_absolute_time());
             uint32_t last_seen_sec = (now - node->last_seen_time) / 1000;
 
-            // Send node info (include device_id for hardware identification)
-            snprintf(response, sizeof(response), "NODE %u %llu %s %d %lu\n", addr, node->device_id,
-                     type, node->is_active ? 1 : 0, last_seen_sec);
+            // Send node info (include device_id and firmware version for identification)
+            snprintf(response, sizeof(response), "NODE %u %llu %s %d %lu %lu\n", addr,
+                     node->device_id, type, node->is_active ? 1 : 0, last_seen_sec,
+                     (unsigned long)node->firmware_version);
             uart_puts(API_UART_ID, response);
         }
     }

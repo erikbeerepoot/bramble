@@ -156,6 +156,16 @@ function NodeDetail({ node, zones, onBack, onUpdate, onZoneCreated }: NodeDetail
                   </dd>
                 </div>
 
+                {/* Firmware Version */}
+                {node.firmware_version && (
+                  <div>
+                    <dt className="text-sm text-gray-500 mb-1">Firmware</dt>
+                    <dd className="text-lg font-medium text-gray-900 font-mono">
+                      v{node.firmware_version}
+                    </dd>
+                  </div>
+                )}
+
                 {/* Health Status */}
                 <div>
                   <dt className="text-sm text-gray-500 mb-1">Health</dt>

@@ -35,6 +35,7 @@
 // Configuration includes
 #include "config/hub_config.h"
 #include "config/node_config.h"
+#include "version.h"
 
 // Common mode includes
 #include "modes/hub_mode.h"
@@ -115,6 +116,8 @@ int main()
     Logger log("Main");
 
     log.info("==== Bramble Network Device ====");
+    log.info("Firmware version: v%d.%d.%d", BRAMBLE_VERSION_MAJOR, BRAMBLE_VERSION_MINOR,
+             BRAMBLE_VERSION_BUILD);
 
 // External flash test moved after SPI initialization (see below)
 
@@ -219,7 +222,7 @@ int main()
         messenger.setReregistrationCallback([&messenger, device_id, config]() {
             printf("Re-registering with hub...\n");
             messenger.sendRegistrationRequest(ADDRESS_HUB, device_id, config.node_type,
-                                              config.capabilities, 0x0100, config.device_name);
+                                              config.capabilities, BRAMBLE_FIRMWARE_VERSION, config.device_name);
         });
 
         // Set up registration success callback (save new address to flash)
@@ -351,7 +354,7 @@ bool attemptRegistration(ReliableMessenger &messenger, SX1276 &lora,
 
     // Send registration request and store sequence number
     uint8_t registration_seq = messenger.sendRegistrationRequest(
-        ADDRESS_HUB, device_id, config.node_type, config.capabilities, 0x0100, config.device_name);
+        ADDRESS_HUB, device_id, config.node_type, config.capabilities, BRAMBLE_FIRMWARE_VERSION, config.device_name);
     if (registration_seq == 0) {
         log.error("Failed to send registration request");
         return false;

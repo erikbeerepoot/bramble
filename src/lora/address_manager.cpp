@@ -16,7 +16,7 @@ AddressManager::AddressManager() : next_available_address_(ADDRESS_MIN_NODE)
 }
 
 uint16_t AddressManager::registerNode(uint64_t device_id, uint8_t node_type, uint8_t capabilities,
-                                      uint16_t firmware_version, const char *device_name)
+                                      uint32_t firmware_version, const char *device_name)
 {
     // Input validation
     if (device_id == 0) {

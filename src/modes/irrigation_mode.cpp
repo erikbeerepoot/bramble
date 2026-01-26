@@ -10,6 +10,7 @@
 #include "../led_patterns.h"
 #include "../lora/message.h"
 #include "../lora/reliable_messenger.h"
+#include "../version.h"
 
 constexpr uint16_t HUB_ADDRESS = ADDRESS_HUB;
 constexpr uint32_t HEARTBEAT_INTERVAL_MS = 60000;  // 60 seconds
@@ -503,7 +504,7 @@ void IrrigationMode::attemptDeferredRegistration()
 
     uint8_t registration_seq = messenger_.sendRegistrationRequest(
         ADDRESS_HUB, device_id, NODE_TYPE_HYBRID, CAP_VALVE_CONTROL | CAP_SOIL_MOISTURE,
-        0x0100,  // Firmware version
+        BRAMBLE_FIRMWARE_VERSION,
         "Irrigation Node");
 
     if (registration_seq != 0) {

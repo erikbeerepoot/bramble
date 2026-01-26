@@ -132,7 +132,7 @@ bool ReliableMessenger::sendHeartbeatResponse(uint16_t dst_addr, int16_t year, i
 
 uint8_t ReliableMessenger::sendRegistrationRequest(uint16_t dst_addr, uint64_t device_id,
                                                    uint8_t node_type, uint8_t capabilities,
-                                                   uint16_t firmware_ver, const char *device_name)
+                                                   uint32_t firmware_ver, const char *device_name)
 {
     uint8_t seq_num = getNextSequenceNumber();
 
