@@ -19,7 +19,6 @@
 #include "hardware/watchdog.h"
 
 // HAL includes
-#include "hal/external_flash.h"
 #include "hal/flash.h"
 #include "hal/logger.h"
 #include "hal/neopixel.h"
@@ -99,7 +98,6 @@ bool initializeHardware(SX1276 &lora, NeoPixel &led);
 uint64_t getDeviceId();
 bool attemptRegistration(ReliableMessenger &messenger, SX1276 &lora,
                          NodeConfigManager &config_manager, uint64_t device_id);
-bool testExternalFlash(spi_inst_t *spi);
 
 /**
  * @brief Main entry point
@@ -118,8 +116,6 @@ int main()
     log.info("==== Bramble Network Device ====");
     log.info("Firmware version: v%d.%d.%d", BRAMBLE_VERSION_MAJOR, BRAMBLE_VERSION_MINOR,
              BRAMBLE_VERSION_BUILD);
-
-// External flash test moved after SPI initialization (see below)
 
 // Determine role from build configuration
 #if defined(DEFAULT_IS_HUB) && DEFAULT_IS_HUB
@@ -160,9 +156,6 @@ int main()
         led.show();
         // panic("Hardware initialization failed!");
     }
-
-    // Test external flash (must be after SPI initialization)
-    testExternalFlash(SPI_PORT);
 
     // Initialize network statistics
     NetworkStats network_stats;
@@ -222,7 +215,8 @@ int main()
         messenger.setReregistrationCallback([&messenger, device_id, config]() {
             printf("Re-registering with hub...\n");
             messenger.sendRegistrationRequest(ADDRESS_HUB, device_id, config.node_type,
-                                              config.capabilities, BRAMBLE_FIRMWARE_VERSION, config.device_name);
+                                              config.capabilities, BRAMBLE_FIRMWARE_VERSION,
+                                              config.device_name);
         });
 
         // Set up registration success callback (save new address to flash)
@@ -354,7 +348,8 @@ bool attemptRegistration(ReliableMessenger &messenger, SX1276 &lora,
 
     // Send registration request and store sequence number
     uint8_t registration_seq = messenger.sendRegistrationRequest(
-        ADDRESS_HUB, device_id, config.node_type, config.capabilities, BRAMBLE_FIRMWARE_VERSION, config.device_name);
+        ADDRESS_HUB, device_id, config.node_type, config.capabilities, BRAMBLE_FIRMWARE_VERSION,
+        config.device_name);
     if (registration_seq == 0) {
         log.error("Failed to send registration request");
         return false;
@@ -502,60 +497,4 @@ void processIncomingMessage(uint8_t *rx_buffer, int rx_len, ReliableMessenger &m
 
     // Try to route the message if it's not for the hub
     hub_router->processMessage(rx_buffer, rx_len, source_address);
-}
-
-bool testExternalFlash(spi_inst_t *spi)
-{
-    Logger log("Flash");
-
-    log.debug("--- External Flash Test ---");
-    ExternalFlash ext_flash(spi);
-
-    // Results stored in volatile vars for debugger inspection
-    volatile bool flash_ok = false;
-    volatile uint8_t flash_mfr = 0;
-    volatile uint8_t flash_type = 0;
-    volatile uint8_t flash_cap = 0;
-    volatile uint8_t flash_data[16] = {0};
-
-    if (!ext_flash.init()) {
-        log.error("External flash init FAILED");
-        return false;
-    }
-
-    uint8_t mfr, mem_type, capacity;
-    if (ext_flash.readId(mfr, mem_type, capacity) != ExternalFlashResult::Success) {
-        log.error("Failed to read flash ID");
-        return false;
-    }
-
-    flash_mfr = mfr;
-    flash_type = mem_type;
-    flash_cap = capacity;
-
-    log.debug("Flash ID: Mfr=0x%02X Type=0x%02X Cap=0x%02X", mfr, mem_type, capacity);
-
-    // Check if it's a Micron flash (0x20)
-    if (mfr == 0x20) {
-        flash_ok = true;
-    }
-
-    // Try reading first 16 bytes
-    uint8_t buffer[16];
-    if (ext_flash.read(0, buffer, sizeof(buffer)) == ExternalFlashResult::Success) {
-        for (int i = 0; i < 16; i++) {
-            flash_data[i] = buffer[i];
-        }
-        log.debug("First 4 bytes: %02X %02X %02X %02X ...", buffer[0], buffer[1], buffer[2],
-                  buffer[3]);
-    }
-
-    // SET BREAKPOINT HERE to inspect results:
-    // flash_ok, flash_mfr, flash_type, flash_cap, flash_data
-    volatile int flash_test_done = 1;  // Breakpoint marker
-    (void)flash_test_done;             // Prevent unused warning
-    (void)flash_ok;                    // Prevent unused warning
-
-    log.debug("--- End Flash Test ---");
-    return true;
 }
