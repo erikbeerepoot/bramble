@@ -48,7 +48,10 @@ function BacklogStatus({
     <div className={`flex items-center ${config.gap}`}>
       {/* Sensor backlog (flash -> hub) */}
       {pendingRecords !== null && pendingRecords !== undefined && (
-        <div className={`flex items-center ${config.gap}`} title="Sensor backlog (untransmitted records)">
+        <div
+          className={`flex items-center ${config.gap}`}
+          title="Sensor backlog (untransmitted records)"
+        >
           <Database size={config.icon} className={sensorColorClass} />
           {showLabel && (
             <span className={`${config.textSize} ${sensorColorClass} font-medium`}>

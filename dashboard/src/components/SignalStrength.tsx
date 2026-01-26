@@ -1,10 +1,4 @@
-import {
-  Signal,
-  SignalLow,
-  SignalMedium,
-  SignalHigh,
-  SignalZero,
-} from 'lucide-react';
+import { Signal, SignalLow, SignalMedium, SignalHigh, SignalZero } from 'lucide-react';
 import { getSignalQuality } from '../types';
 
 interface SignalStrengthProps {
@@ -55,7 +49,7 @@ function SignalStrength({ rssi, showLabel = true, size = 'sm' }: SignalStrengthP
     <div className="flex items-center space-x-1.5">
       {getSignalIcon()}
       {showLabel && (
-        <span className={`${config.textSize} text-gray-600 font-medium`}>
+        <span className={`${config.textSize} text-gray-600 dark:text-gray-300 font-medium`}>
           {rssi !== null ? `${rssi}dBm` : '--'}
         </span>
       )}

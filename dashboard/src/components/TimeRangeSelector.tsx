@@ -22,8 +22,16 @@ function parseDateTimeLocal(value: string): number {
   return Math.floor(new Date(value).getTime() / 1000);
 }
 
-function TimeRangeSelector({ value, onChange, customRange, onCustomRangeChange }: TimeRangeSelectorProps) {
-  const ranges = Object.entries(TIME_RANGES) as [Exclude<TimeRange, 'custom'>, typeof TIME_RANGES[keyof typeof TIME_RANGES]][];
+function TimeRangeSelector({
+  value,
+  onChange,
+  customRange,
+  onCustomRangeChange,
+}: TimeRangeSelectorProps) {
+  const ranges = Object.entries(TIME_RANGES) as [
+    Exclude<TimeRange, 'custom'>,
+    (typeof TIME_RANGES)[keyof typeof TIME_RANGES],
+  ][];
 
   const handleStartChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (onCustomRangeChange && customRange) {
@@ -53,7 +61,7 @@ function TimeRangeSelector({ value, onChange, customRange, onCustomRangeChange }
             className={`px-3 py-1 text-sm rounded-md transition-colors ${
               value === key
                 ? 'bg-bramble-600 text-white'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
             }`}
           >
             {config.label}
@@ -64,7 +72,7 @@ function TimeRangeSelector({ value, onChange, customRange, onCustomRangeChange }
           className={`px-3 py-1 text-sm rounded-md transition-colors ${
             value === 'custom'
               ? 'bg-bramble-600 text-white'
-              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
           }`}
         >
           Custom
@@ -72,19 +80,19 @@ function TimeRangeSelector({ value, onChange, customRange, onCustomRangeChange }
       </div>
       {value === 'custom' && customRange && (
         <div className="flex items-center space-x-2 text-sm">
-          <label className="text-gray-600">From:</label>
+          <label className="text-gray-600 dark:text-gray-400">From:</label>
           <input
             type="datetime-local"
             value={formatDateTimeLocal(customRange.startTime)}
             onChange={handleStartChange}
-            className="px-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-bramble-500"
+            className="px-2 py-1 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-bramble-500"
           />
-          <label className="text-gray-600">To:</label>
+          <label className="text-gray-600 dark:text-gray-400">To:</label>
           <input
             type="datetime-local"
             value={formatDateTimeLocal(customRange.endTime)}
             onChange={handleEndChange}
-            className="px-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-bramble-500"
+            className="px-2 py-1 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-bramble-500"
           />
         </div>
       )}

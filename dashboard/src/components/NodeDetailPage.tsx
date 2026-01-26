@@ -29,7 +29,7 @@ function NodeDetailPage() {
       }
 
       // First try to find the node in the cached list
-      const cachedNode = nodes.find(n => n.address === addressNum);
+      const cachedNode = nodes.find((n) => n.address === addressNum);
       if (cachedNode) {
         setNode(cachedNode);
         setLoading(false);
@@ -54,7 +54,7 @@ function NodeDetailPage() {
   useEffect(() => {
     if (node && address) {
       const addressNum = parseInt(address, 10);
-      const updatedNode = nodes.find(n => n.address === addressNum);
+      const updatedNode = nodes.find((n) => n.address === addressNum);
       if (updatedNode) {
         setNode(updatedNode);
       }
@@ -74,19 +74,16 @@ function NodeDetailPage() {
     return (
       <div className="text-center py-12">
         <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-bramble-600 border-t-transparent"></div>
-        <p className="mt-2 text-gray-600">Loading node...</p>
+        <p className="mt-2 text-gray-600 dark:text-gray-400">Loading node...</p>
       </div>
     );
   }
 
   if (error || !node) {
     return (
-      <div className="card bg-red-50 border border-red-200">
-        <p className="text-red-700">Error: {error || 'Node not found'}</p>
-        <button
-          onClick={handleBack}
-          className="mt-2 btn btn-primary"
-        >
+      <div className="card bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+        <p className="text-red-700 dark:text-red-400">Error: {error || 'Node not found'}</p>
+        <button onClick={handleBack} className="mt-2 btn btn-primary">
           Back to Nodes
         </button>
       </div>

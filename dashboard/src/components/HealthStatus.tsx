@@ -1,9 +1,5 @@
 import { useState } from 'react';
-import {
-  CheckCircle2,
-  AlertTriangle,
-  AlertCircle,
-} from 'lucide-react';
+import { CheckCircle2, AlertTriangle, AlertCircle } from 'lucide-react';
 import { parseErrorFlags, getHealthStatus } from '../types';
 
 interface HealthStatusProps {
@@ -49,7 +45,7 @@ function HealthStatus({ errorFlags, size = 'sm', showTooltip = true }: HealthSta
       onMouseLeave={() => setTooltipVisible(false)}
     >
       {getStatusIcon()}
-      <span className={`${config.textSize} text-gray-600`}>{primaryLabel}</span>
+      <span className={`${config.textSize} text-gray-600 dark:text-gray-300`}>{primaryLabel}</span>
 
       {/* Tooltip with full error list */}
       {showTooltip && tooltipVisible && errors.length > 0 && (

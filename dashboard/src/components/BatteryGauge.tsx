@@ -71,7 +71,7 @@ function BatteryGauge({ level, showLabel = true, size = 'sm' }: BatteryGaugeProp
     <div className="flex items-center space-x-1.5">
       {getBatteryIcon()}
       {showLabel && (
-        <span className={`${config.textSize} text-gray-600 font-medium`}>
+        <span className={`${config.textSize} text-gray-600 dark:text-gray-300 font-medium`}>
           {status.isExternal ? 'EXT' : level !== null ? `${level}%` : '--'}
         </span>
       )}

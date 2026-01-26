@@ -1,5 +1,6 @@
 import Plot from 'react-plotly.js';
 import type { SensorReading } from '../types';
+import { useAppContext } from '../App';
 
 // Maximum gap (in seconds) between points before breaking the line
 const GAP_THRESHOLD_SECONDS = 10 * 60; // 10 minutes
@@ -56,11 +57,26 @@ interface SensorChartProps {
   title: string;
   yAxisLabel: string;
   color: string;
-  startTime?: number;  // Unix timestamp
-  endTime?: number;    // Unix timestamp
+  startTime?: number; // Unix timestamp
+  endTime?: number; // Unix timestamp
 }
 
-function SensorChart({ readings, dataKey, title, yAxisLabel, color, startTime, endTime }: SensorChartProps) {
+function SensorChart({
+  readings,
+  dataKey,
+  title,
+  yAxisLabel,
+  color,
+  startTime,
+  endTime,
+}: SensorChartProps) {
+  const { theme } = useAppContext();
+  const isDark = theme === 'dark';
+
+  // Theme-aware colors for Plotly (which doesn't use Tailwind)
+  const gridColor = isDark ? '#374151' : '#f3f4f6';
+  const tickColor = isDark ? '#d1d5db' : '#374151';
+
   // Sort readings by timestamp (oldest first for proper line chart)
   const sortedReadings = [...readings].sort((a, b) => a.timestamp - b.timestamp);
 
@@ -68,21 +84,24 @@ function SensorChart({ readings, dataKey, title, yAxisLabel, color, startTime, e
   const segments = splitIntoSegments(sortedReadings, dataKey, GAP_THRESHOLD_SECONDS);
 
   // Calculate statistics from original readings
-  const validValues = sortedReadings.map(r => r[dataKey]).filter(v => v !== null && v !== undefined) as number[];
+  const validValues = sortedReadings
+    .map((r) => r[dataKey])
+    .filter((v) => v !== null && v !== undefined) as number[];
   const min = validValues.length > 0 ? Math.min(...validValues) : 0;
   const max = validValues.length > 0 ? Math.max(...validValues) : 0;
-  const avg = validValues.length > 0 ? validValues.reduce((a, b) => a + b, 0) / validValues.length : 0;
+  const avg =
+    validValues.length > 0 ? validValues.reduce((a, b) => a + b, 0) / validValues.length : 0;
 
   // Calculate y-axis range with 10% padding
-  const yPadding = (max - min) * 0.1 || 1;  // fallback to 1 if min===max
+  const yPadding = (max - min) * 0.1 || 1; // fallback to 1 if min===max
   const yMin = min - yPadding;
   const yMax = max + yPadding;
 
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
-        <h4 className="font-medium text-gray-700">{title}</h4>
-        <div className="flex items-center space-x-4 text-sm text-gray-500">
+        <h4 className="font-medium text-gray-700 dark:text-gray-300">{title}</h4>
+        <div className="flex items-center space-x-4 text-sm text-gray-500 dark:text-gray-400">
           <span>Min: {min.toFixed(1)}</span>
           <span>Avg: {avg.toFixed(1)}</span>
           <span>Max: {max.toFixed(1)}</span>
@@ -110,34 +129,44 @@ function SensorChart({ readings, dataKey, title, yAxisLabel, color, startTime, e
           xaxis: {
             type: 'date',
             tickformat: '%H:%M\n%b %d',
-            gridcolor: '#f3f4f6',
-            range: startTime && endTime
-              ? [new Date(startTime * 1000), new Date(endTime * 1000)]
-              : undefined,
+            gridcolor: gridColor,
+            tickfont: { color: tickColor },
+            range:
+              startTime && endTime
+                ? [new Date(startTime * 1000), new Date(endTime * 1000)]
+                : undefined,
           },
           yaxis: {
-            title: { text: yAxisLabel },
-            gridcolor: '#f3f4f6',
+            title: { text: yAxisLabel, font: { color: tickColor } },
+            gridcolor: gridColor,
+            tickfont: { color: tickColor },
             range: validValues.length > 0 ? [yMin, yMax] : undefined,
           },
           paper_bgcolor: 'transparent',
           plot_bgcolor: 'transparent',
           hovermode: 'x unified',
           showlegend: false,
-          shapes: validValues.length > 0 ? [
-            {
-              type: 'line',
-              x0: startTime ? new Date(startTime * 1000) : new Date(sortedReadings[0].timestamp * 1000),
-              x1: endTime ? new Date(endTime * 1000) : new Date(sortedReadings[sortedReadings.length - 1].timestamp * 1000),
-              y0: avg,
-              y1: avg,
-              line: {
-                color: color,
-                width: 1.5,
-                dash: 'dash',
-              },
-            },
-          ] : [],
+          shapes:
+            validValues.length > 0
+              ? [
+                  {
+                    type: 'line',
+                    x0: startTime
+                      ? new Date(startTime * 1000)
+                      : new Date(sortedReadings[0].timestamp * 1000),
+                    x1: endTime
+                      ? new Date(endTime * 1000)
+                      : new Date(sortedReadings[sortedReadings.length - 1].timestamp * 1000),
+                    y0: avg,
+                    y1: avg,
+                    line: {
+                      color: color,
+                      width: 1.5,
+                      dash: 'dash',
+                    },
+                  },
+                ]
+              : [],
         }}
         config={{
           responsive: true,

@@ -49,20 +49,23 @@ function CreateZoneModal({ onClose, onCreated }: CreateZoneModalProps) {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h3 className="text-lg font-medium text-gray-900">Create New Zone</h3>
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
+        <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+          <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Create New Zone</h3>
         </div>
 
         <div className="px-6 py-4 space-y-4">
           {error && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-md text-red-700 text-sm">
+            <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md text-red-700 dark:text-red-400 text-sm">
               {error}
             </div>
           )}
 
           <div>
-            <label htmlFor="zone-name" className="block text-sm font-medium text-gray-700 mb-1">
+            <label
+              htmlFor="zone-name"
+              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+            >
               Name *
             </label>
             <input
@@ -77,7 +80,7 @@ function CreateZoneModal({ onClose, onCreated }: CreateZoneModalProps) {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Color
             </label>
             <div className="flex flex-wrap gap-2">
@@ -88,7 +91,7 @@ function CreateZoneModal({ onClose, onCreated }: CreateZoneModalProps) {
                   onClick={() => setColor(presetColor)}
                   className={`w-8 h-8 rounded-full border-2 transition-all ${
                     color === presetColor
-                      ? 'border-gray-800 scale-110'
+                      ? 'border-gray-800 dark:border-gray-200 scale-110'
                       : 'border-transparent hover:scale-105'
                   }`}
                   style={{ backgroundColor: presetColor }}
@@ -97,19 +100,22 @@ function CreateZoneModal({ onClose, onCreated }: CreateZoneModalProps) {
               ))}
             </div>
             <div className="mt-2 flex items-center space-x-2">
-              <span className="text-sm text-gray-500">Custom:</span>
+              <span className="text-sm text-gray-500 dark:text-gray-400">Custom:</span>
               <input
                 type="color"
                 value={color}
                 onChange={(e) => setColor(e.target.value)}
                 className="w-8 h-8 rounded cursor-pointer"
               />
-              <span className="text-sm text-gray-500 font-mono">{color}</span>
+              <span className="text-sm text-gray-500 dark:text-gray-400 font-mono">{color}</span>
             </div>
           </div>
 
           <div>
-            <label htmlFor="zone-description" className="block text-sm font-medium text-gray-700 mb-1">
+            <label
+              htmlFor="zone-description"
+              className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+            >
               Description
             </label>
             <textarea
@@ -123,12 +129,8 @@ function CreateZoneModal({ onClose, onCreated }: CreateZoneModalProps) {
           </div>
         </div>
 
-        <div className="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
-          <button
-            onClick={onClose}
-            disabled={saving}
-            className="btn btn-secondary"
-          >
+        <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3">
+          <button onClick={onClose} disabled={saving} className="btn btn-secondary">
             Cancel
           </button>
           <button

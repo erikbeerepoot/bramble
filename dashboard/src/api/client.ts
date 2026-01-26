@@ -145,10 +145,7 @@ export async function deleteZone(zoneId: number): Promise<void> {
   });
 }
 
-export async function setNodeZone(
-  address: number,
-  zoneId: number | null
-): Promise<NodeMetadata> {
+export async function setNodeZone(address: number, zoneId: number | null): Promise<NodeMetadata> {
   return fetchApi<NodeMetadata>(`/api/nodes/${address}/zone`, {
     method: 'PUT',
     body: JSON.stringify({ zone_id: zoneId }),

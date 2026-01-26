@@ -1,6 +1,20 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { Node, NodeStatistics, SensorReading, TimeRange, NodeMetadata, CustomTimeRange, Zone } from '../types';
-import { TIME_RANGES, parseErrorFlags, formatUptime, getSignalQuality, getBatteryStatus } from '../types';
+import type {
+  Node,
+  NodeStatistics,
+  SensorReading,
+  TimeRange,
+  NodeMetadata,
+  CustomTimeRange,
+  Zone,
+} from '../types';
+import {
+  TIME_RANGES,
+  parseErrorFlags,
+  formatUptime,
+  getSignalQuality,
+  getBatteryStatus,
+} from '../types';
 import { getNodeSensorData, getNodeStatistics } from '../api/client';
 import NodeNameEditor from './NodeNameEditor';
 import SensorChart from './SensorChart';
@@ -53,7 +67,7 @@ function NodeDetail({ node, zones, onBack, onUpdate, onZoneCreated }: NodeDetail
         getNodeSensorData(node.address, {
           startTime,
           endTime,
-          downsample: 500,  // Bucket-average to ~500 points for charts
+          downsample: 500, // Bucket-average to ~500 points for charts
         }),
         getNodeStatistics(node.address, {
           startTime,
@@ -88,7 +102,7 @@ function NodeDetail({ node, zones, onBack, onUpdate, onZoneCreated }: NodeDetail
     <div>
       <button
         onClick={onBack}
-        className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 mb-4"
+        className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 mb-4"
       >
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -98,14 +112,18 @@ function NodeDetail({ node, zones, onBack, onUpdate, onZoneCreated }: NodeDetail
 
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">{displayName}</h2>
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{displayName}</h2>
           <div className="flex items-center space-x-3 mt-1">
-            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-              node.online ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-            }`}>
+            <span
+              className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                node.online
+                  ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300'
+                  : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300'
+              }`}
+            >
               {node.online ? 'Online' : 'Offline'}
             </span>
-            <span className="text-sm text-gray-500">{node.type}</span>
+            <span className="text-sm text-gray-500 dark:text-gray-400">{node.type}</span>
           </div>
         </div>
         <button onClick={fetchData} className="btn btn-secondary">
@@ -115,19 +133,26 @@ function NodeDetail({ node, zones, onBack, onUpdate, onZoneCreated }: NodeDetail
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-1 space-y-4">
-          <NodeNameEditor node={node} zones={zones} onUpdate={handleMetadataUpdate} onZoneCreated={onZoneCreated} />
+          <NodeNameEditor
+            node={node}
+            zones={zones}
+            onUpdate={handleMetadataUpdate}
+            onZoneCreated={onZoneCreated}
+          />
 
           {/* Node Status Panel */}
           {node.status && (
             <div className="card">
-              <h3 className="text-lg font-medium text-gray-900 mb-4">Node Status</h3>
+              <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">
+                Node Status
+              </h3>
               <div className="space-y-4">
                 {/* Battery */}
                 <div>
-                  <dt className="text-sm text-gray-500 mb-1">Battery</dt>
+                  <dt className="text-sm text-gray-500 dark:text-gray-400 mb-1">Battery</dt>
                   <dd className="flex items-center space-x-2">
                     <BatteryGauge level={node.status.battery_level} size="md" />
-                    <span className="text-sm text-gray-600">
+                    <span className="text-sm text-gray-600 dark:text-gray-300">
                       {getBatteryStatus(node.status.battery_level).isExternal
                         ? 'External Power'
                         : node.status.battery_level !== null
@@ -139,10 +164,10 @@ function NodeDetail({ node, zones, onBack, onUpdate, onZoneCreated }: NodeDetail
 
                 {/* Signal Strength */}
                 <div>
-                  <dt className="text-sm text-gray-500 mb-1">Signal Strength</dt>
+                  <dt className="text-sm text-gray-500 dark:text-gray-400 mb-1">Signal Strength</dt>
                   <dd className="flex items-center space-x-2">
                     <SignalStrength rssi={node.status.signal_strength} size="md" />
-                    <span className="text-sm text-gray-600">
+                    <span className="text-sm text-gray-600 dark:text-gray-300">
                       {getSignalQuality(node.status.signal_strength).label}
                     </span>
                   </dd>
@@ -150,8 +175,8 @@ function NodeDetail({ node, zones, onBack, onUpdate, onZoneCreated }: NodeDetail
 
                 {/* Uptime */}
                 <div>
-                  <dt className="text-sm text-gray-500 mb-1">Uptime</dt>
-                  <dd className="text-lg font-medium text-gray-900">
+                  <dt className="text-sm text-gray-500 dark:text-gray-400 mb-1">Uptime</dt>
+                  <dd className="text-lg font-medium text-gray-900 dark:text-gray-100">
                     {formatUptime(node.status.uptime_seconds)}
                   </dd>
                 </div>
@@ -159,8 +184,8 @@ function NodeDetail({ node, zones, onBack, onUpdate, onZoneCreated }: NodeDetail
                 {/* Firmware Version */}
                 {node.firmware_version && (
                   <div>
-                    <dt className="text-sm text-gray-500 mb-1">Firmware</dt>
-                    <dd className="text-lg font-medium text-gray-900 font-mono">
+                    <dt className="text-sm text-gray-500 dark:text-gray-400 mb-1">Firmware</dt>
+                    <dd className="text-lg font-medium text-gray-900 dark:text-gray-100 font-mono">
                       v{node.firmware_version}
                     </dd>
                   </div>
@@ -168,24 +193,28 @@ function NodeDetail({ node, zones, onBack, onUpdate, onZoneCreated }: NodeDetail
 
                 {/* Health Status */}
                 <div>
-                  <dt className="text-sm text-gray-500 mb-1">Health</dt>
+                  <dt className="text-sm text-gray-500 dark:text-gray-400 mb-1">Health</dt>
                   <dd>
-                    <HealthStatus errorFlags={node.status.error_flags} size="md" showTooltip={false} />
+                    <HealthStatus
+                      errorFlags={node.status.error_flags}
+                      size="md"
+                      showTooltip={false}
+                    />
                   </dd>
                 </div>
 
                 {/* Active Issues */}
                 {node.status.error_flags !== null && node.status.error_flags !== 0 && (
-                  <div className="pt-3 border-t">
-                    <dt className="text-sm text-gray-500 mb-2">Active Issues</dt>
+                  <div className="pt-3 border-t dark:border-gray-700">
+                    <dt className="text-sm text-gray-500 dark:text-gray-400 mb-2">Active Issues</dt>
                     <dd className="flex flex-wrap gap-1.5">
                       {parseErrorFlags(node.status.error_flags).map((error) => (
                         <span
                           key={error.flag}
                           className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
                             error.severity === 'error'
-                              ? 'bg-red-100 text-red-800'
-                              : 'bg-yellow-100 text-yellow-800'
+                              ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300'
+                              : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300'
                           }`}
                         >
                           {error.label}
@@ -197,7 +226,7 @@ function NodeDetail({ node, zones, onBack, onUpdate, onZoneCreated }: NodeDetail
 
                 {/* Last Updated */}
                 {node.status.updated_at && (
-                  <div className="text-xs text-gray-400 pt-2">
+                  <div className="text-xs text-gray-400 dark:text-gray-500 pt-2">
                     Status updated: {new Date(node.status.updated_at * 1000).toLocaleString()}
                   </div>
                 )}
@@ -207,43 +236,59 @@ function NodeDetail({ node, zones, onBack, onUpdate, onZoneCreated }: NodeDetail
 
           {statistics && (
             <div className="card">
-              <h3 className="text-lg font-medium text-gray-900 mb-4">Statistics</h3>
+              <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">
+                Statistics
+              </h3>
               <dl className="space-y-3">
                 <div>
-                  <dt className="text-sm text-gray-500">Total Readings</dt>
-                  <dd className="text-xl font-semibold text-gray-900">{statistics.total_readings.toLocaleString()}</dd>
+                  <dt className="text-sm text-gray-500 dark:text-gray-400">Total Readings</dt>
+                  <dd className="text-xl font-semibold text-gray-900 dark:text-gray-100">
+                    {statistics.total_readings.toLocaleString()}
+                  </dd>
                 </div>
-                <div className="border-t pt-3">
-                  <dt className="text-sm text-gray-500 mb-2">Temperature</dt>
+                <div className="border-t dark:border-gray-700 pt-3">
+                  <dt className="text-sm text-gray-500 dark:text-gray-400 mb-2">Temperature</dt>
                   <div className="grid grid-cols-3 gap-2 text-sm">
                     <div>
-                      <div className="text-gray-400">Min</div>
-                      <div className="font-medium">{statistics.temperature.min_celsius?.toFixed(1) ?? '-'}C</div>
+                      <div className="text-gray-400 dark:text-gray-500">Min</div>
+                      <div className="font-medium">
+                        {statistics.temperature.min_celsius?.toFixed(1) ?? '-'}C
+                      </div>
                     </div>
                     <div>
-                      <div className="text-gray-400">Avg</div>
-                      <div className="font-medium">{statistics.temperature.avg_celsius?.toFixed(1) ?? '-'}C</div>
+                      <div className="text-gray-400 dark:text-gray-500">Avg</div>
+                      <div className="font-medium">
+                        {statistics.temperature.avg_celsius?.toFixed(1) ?? '-'}C
+                      </div>
                     </div>
                     <div>
-                      <div className="text-gray-400">Max</div>
-                      <div className="font-medium">{statistics.temperature.max_celsius?.toFixed(1) ?? '-'}C</div>
+                      <div className="text-gray-400 dark:text-gray-500">Max</div>
+                      <div className="font-medium">
+                        {statistics.temperature.max_celsius?.toFixed(1) ?? '-'}C
+                      </div>
                     </div>
                   </div>
                 </div>
-                <div className="border-t pt-3">
-                  <dt className="text-sm text-gray-500 mb-2">Humidity</dt>
+                <div className="border-t dark:border-gray-700 pt-3">
+                  <dt className="text-sm text-gray-500 dark:text-gray-400 mb-2">Humidity</dt>
                   <div className="grid grid-cols-3 gap-2 text-sm">
                     <div>
-                      <div className="text-gray-400">Min</div>
-                      <div className="font-medium">{statistics.humidity.min_percent?.toFixed(1) ?? '-'}%</div>
+                      <div className="text-gray-400 dark:text-gray-500">Min</div>
+                      <div className="font-medium">
+                        {statistics.humidity.min_percent?.toFixed(1) ?? '-'}%
+                      </div>
                     </div>
                     <div>
-                      <div className="text-gray-400">Avg</div>
-                      <div className="font-medium">{statistics.humidity.avg_percent?.toFixed(1) ?? '-'}%</div>
+                      <div className="text-gray-400 dark:text-gray-500">Avg</div>
+                      <div className="font-medium">
+                        {statistics.humidity.avg_percent?.toFixed(1) ?? '-'}%
+                      </div>
                     </div>
                     <div>
-                      <div className="text-gray-400">Max</div>
-                      <div className="font-medium">{statistics.humidity.max_percent?.toFixed(1) ?? '-'}%</div>
+                      <div className="text-gray-400 dark:text-gray-500">Max</div>
+                      <div className="font-medium">
+                        {statistics.humidity.max_percent?.toFixed(1) ?? '-'}%
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -255,7 +300,7 @@ function NodeDetail({ node, zones, onBack, onUpdate, onZoneCreated }: NodeDetail
         <div className="lg:col-span-2 space-y-4">
           <div className="card">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-medium text-gray-900">Sensor Data</h3>
+              <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Sensor Data</h3>
               <TimeRangeSelector
                 value={timeRange}
                 onChange={setTimeRange}
@@ -269,11 +314,11 @@ function NodeDetail({ node, zones, onBack, onUpdate, onZoneCreated }: NodeDetail
                 <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-bramble-600 border-t-transparent"></div>
               </div>
             ) : error ? (
-              <div className="p-4 bg-red-50 border border-red-200 rounded-md text-red-700">
+              <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md text-red-700 dark:text-red-400">
                 {error}
               </div>
             ) : readings.length === 0 ? (
-              <div className="text-center py-12 text-gray-500">
+              <div className="text-center py-12 text-gray-500 dark:text-gray-400">
                 No sensor data available for this time range.
               </div>
             ) : (
