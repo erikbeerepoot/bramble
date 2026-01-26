@@ -20,6 +20,8 @@ class Config:
 
     # Database settings
     SENSOR_DB_PATH = os.getenv('SENSOR_DB_PATH', '/data/sensor_data.duckdb')
+    DB_MEMORY_LIMIT = os.getenv('DB_MEMORY_LIMIT', '128MB')  # DuckDB memory limit (default 75% RAM is too aggressive for Pi)
+    DB_THREADS = int(os.getenv('DB_THREADS', '2'))  # DuckDB worker threads
     DB_BATCH_SIZE = int(os.getenv('DB_BATCH_SIZE', '100'))  # Records per batch insert
     DB_FLUSH_INTERVAL = float(os.getenv('DB_FLUSH_INTERVAL', '5.0'))  # Seconds between buffer flushes
 
