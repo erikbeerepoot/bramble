@@ -128,11 +128,11 @@ if(BUILD_TESTS)
     pico_add_extra_outputs(bramble_test)
     
 else()
-    # Hardware variant selection
+    # Hardware variant selection (ALL builds every variant in parallel)
     set(HARDWARE_VARIANT "IRRIGATION" CACHE STRING "Hardware variant type")
     set_property(CACHE HARDWARE_VARIANT PROPERTY STRINGS
-        GENERIC HUB CONTROLLER IRRIGATION SENSOR)
-    
+        ALL GENERIC HUB CONTROLLER IRRIGATION SENSOR)
+
     # Common source files for all variants
     set(COMMON_SOURCES
         src/lora/sx1276.cpp
@@ -162,9 +162,12 @@ else()
         src/modes/application_mode.cpp
         src/modes/hub_mode.cpp
     )
-    
-    # Build specialized executable based on hardware variant
-    if(HARDWARE_VARIANT STREQUAL "IRRIGATION")
+
+    # List of targets to configure
+    set(BUILD_TARGETS "")
+
+    # Build specialized executables (ALL builds every variant)
+    if(HARDWARE_VARIANT STREQUAL "ALL" OR HARDWARE_VARIANT STREQUAL "IRRIGATION")
         add_executable(bramble_irrigation
             main.cpp
             src/modes/irrigation_mode.cpp
@@ -175,12 +178,13 @@ else()
         )
         target_compile_definitions(bramble_irrigation PRIVATE
             HARDWARE_IRRIGATION=1
-            DEFAULT_IS_HUB=0  # Irrigation nodes default to node role
+            DEFAULT_IS_HUB=0
         )
-        set(TARGET_NAME bramble_irrigation)
+        list(APPEND BUILD_TARGETS bramble_irrigation)
         message(STATUS "Building IRRIGATION variant")
-        
-    elseif(HARDWARE_VARIANT STREQUAL "CONTROLLER")
+    endif()
+
+    if(HARDWARE_VARIANT STREQUAL "ALL" OR HARDWARE_VARIANT STREQUAL "CONTROLLER")
         add_executable(bramble_controller
             main.cpp
             src/modes/controller_mode.cpp
@@ -189,25 +193,27 @@ else()
         )
         target_compile_definitions(bramble_controller PRIVATE
             HARDWARE_CONTROLLER=1
-            DEFAULT_IS_HUB=1  # Controllers default to hub role
+            DEFAULT_IS_HUB=1
         )
-        set(TARGET_NAME bramble_controller)
+        list(APPEND BUILD_TARGETS bramble_controller)
         message(STATUS "Building CONTROLLER variant")
+    endif()
 
-    elseif(HARDWARE_VARIANT STREQUAL "HUB")
+    if(HARDWARE_VARIANT STREQUAL "ALL" OR HARDWARE_VARIANT STREQUAL "HUB")
         add_executable(bramble_hub
             main.cpp
             src/modes/hub_mode.cpp
             ${COMMON_SOURCES}
         )
         target_compile_definitions(bramble_hub PRIVATE
-            HARDWARE_GENERIC=1  # Use generic hardware base
-            DEFAULT_IS_HUB=1    # Always run as hub
+            HARDWARE_GENERIC=1
+            DEFAULT_IS_HUB=1
         )
-        set(TARGET_NAME bramble_hub)
+        list(APPEND BUILD_TARGETS bramble_hub)
         message(STATUS "Building HUB variant (pure hub mode)")
+    endif()
 
-    elseif(HARDWARE_VARIANT STREQUAL "SENSOR")
+    if(HARDWARE_VARIANT STREQUAL "ALL" OR HARDWARE_VARIANT STREQUAL "SENSOR")
         add_executable(bramble_sensor
             main.cpp
             src/modes/sensor_mode.cpp
@@ -216,12 +222,13 @@ else()
         )
         target_compile_definitions(bramble_sensor PRIVATE
             HARDWARE_SENSOR=1
-            DEFAULT_IS_HUB=0  # Sensors default to node role
+            DEFAULT_IS_HUB=0
         )
-        set(TARGET_NAME bramble_sensor)
+        list(APPEND BUILD_TARGETS bramble_sensor)
         message(STATUS "Building SENSOR variant")
-        
-    else() # GENERIC
+    endif()
+
+    if(HARDWARE_VARIANT STREQUAL "ALL" OR HARDWARE_VARIANT STREQUAL "GENERIC")
         add_executable(bramble_generic
             main.cpp
             src/modes/application_mode.cpp
@@ -229,77 +236,79 @@ else()
         )
         target_compile_definitions(bramble_generic PRIVATE
             HARDWARE_GENERIC=1
-            DEFAULT_IS_HUB=0  # Generic nodes default to node role
+            DEFAULT_IS_HUB=0
         )
-        set(TARGET_NAME bramble_generic)
+        list(APPEND BUILD_TARGETS bramble_generic)
         message(STATUS "Building GENERIC variant")
     endif()
     
 endif()
 
-# Configure specialized target if not building tests
+# Configure all production targets
 if(NOT BUILD_TESTS)
-    # Target configuration
-    pico_set_program_name(${TARGET_NAME} "${TARGET_NAME}")
-    pico_set_program_version(${TARGET_NAME} "${BRAMBLE_VERSION_STRING}")
+    foreach(TARGET_NAME IN LISTS BUILD_TARGETS)
+        # Target configuration
+        pico_set_program_name(${TARGET_NAME} "${TARGET_NAME}")
+        pico_set_program_version(${TARGET_NAME} "${BRAMBLE_VERSION_STRING}")
 
-    # Enable stdio on USB for all targets
-    pico_enable_stdio_usb(${TARGET_NAME} 1)
-    pico_enable_stdio_rtt(${TARGET_NAME} 0)
+        # Enable stdio on USB for all targets
+        pico_enable_stdio_usb(${TARGET_NAME} 1)
+        pico_enable_stdio_rtt(${TARGET_NAME} 0)
 
-    # Configure stdio_uart per-target:
-    # - Hub: disabled (UART1 used for API communication with Raspberry Pi)
-    # - Other nodes: enabled (for debug probe UART output)
-    if(HARDWARE_VARIANT STREQUAL "HUB")
-        pico_enable_stdio_uart(${TARGET_NAME} 0)
-    else()
-        pico_enable_stdio_uart(${TARGET_NAME} 1)
-    endif()
+        # Configure stdio_uart per-target:
+        # - Hub: disabled (UART1 used for API communication with Raspberry Pi)
+        # - Other nodes: enabled (for debug probe UART output)
+        if(TARGET_NAME STREQUAL "bramble_hub")
+            pico_enable_stdio_uart(${TARGET_NAME} 0)
+        else()
+            pico_enable_stdio_uart(${TARGET_NAME} 1)
+        endif()
 
-    # UART1 pin configuration for custom board (all targets use same pins)
-    target_compile_definitions(${TARGET_NAME} PRIVATE
-        PICO_DEFAULT_UART=1
-        PICO_DEFAULT_UART_TX_PIN=24
-        PICO_DEFAULT_UART_RX_PIN=-1
-        PICO_XOSC_STARTUP_DELAY_MULTIPLIER=128
-        BRAMBLE_VERSION_MAJOR=${BRAMBLE_VERSION_MAJOR}
-        BRAMBLE_VERSION_MINOR=${BRAMBLE_VERSION_MINOR}
-        BRAMBLE_VERSION_BUILD=${BRAMBLE_VERSION_BUILD}
-    )
-    
-    # Libraries and configuration for the target
-    target_link_libraries(${TARGET_NAME} pico_stdlib)
-    
-    target_include_directories(${TARGET_NAME} PRIVATE
-        ${CMAKE_CURRENT_LIST_DIR}
-        ${CMAKE_CURRENT_LIST_DIR}/src
-    )
-    
-    target_link_libraries(${TARGET_NAME}
-        hardware_spi
-        hardware_i2c
-        hardware_timer
-        hardware_clocks
-        hardware_pio
-        hardware_flash
-        hardware_sync
-        hardware_rtc
-        pico_multicore
-        pico_util
-        pico_unique_id
-    )
-    
-    # Add pico-extras libraries if available
-    if(EXISTS ${PICO_EXTRAS_PATH})
-        target_link_libraries(${TARGET_NAME} 
-            hardware_sleep
-            hardware_rosc
+        # UART1 pin configuration for custom board (all targets use same pins)
+        target_compile_definitions(${TARGET_NAME} PRIVATE
+            PICO_DEFAULT_UART=1
+            PICO_DEFAULT_UART_TX_PIN=24
+            PICO_DEFAULT_UART_RX_PIN=-1
+            PICO_XOSC_STARTUP_DELAY_MULTIPLIER=128
+            BRAMBLE_VERSION_MAJOR=${BRAMBLE_VERSION_MAJOR}
+            BRAMBLE_VERSION_MINOR=${BRAMBLE_VERSION_MINOR}
+            BRAMBLE_VERSION_BUILD=${BRAMBLE_VERSION_BUILD}
         )
-    endif()
-    
-    # Generate PIO headers
-    pico_generate_pio_header(${TARGET_NAME} ${CMAKE_CURRENT_LIST_DIR}/src/hal/ws2812.pio)
-    
-    pico_add_extra_outputs(${TARGET_NAME})
+
+        # Libraries and configuration for the target
+        target_link_libraries(${TARGET_NAME} pico_stdlib)
+
+        target_include_directories(${TARGET_NAME} PRIVATE
+            ${CMAKE_CURRENT_LIST_DIR}
+            ${CMAKE_CURRENT_LIST_DIR}/src
+        )
+
+        target_link_libraries(${TARGET_NAME}
+            hardware_spi
+            hardware_i2c
+            hardware_timer
+            hardware_clocks
+            hardware_pio
+            hardware_flash
+            hardware_sync
+            hardware_rtc
+            pico_multicore
+            pico_util
+            pico_unique_id
+        )
+
+        # Add pico-extras libraries if available
+        if(EXISTS ${PICO_EXTRAS_PATH})
+            target_link_libraries(${TARGET_NAME}
+                hardware_sleep
+                hardware_rosc
+            )
+        endif()
+
+        # Generate PIO headers
+        pico_generate_pio_header(${TARGET_NAME} ${CMAKE_CURRENT_LIST_DIR}/src/hal/ws2812.pio)
+
+        pico_add_extra_outputs(${TARGET_NAME})
+    endforeach()
 endif()
 
