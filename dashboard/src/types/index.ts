@@ -13,7 +13,6 @@ export interface ZonesResponse {
 export interface NodeMetadata {
   address: number;
   name: string | null;
-  location: string | null;
   notes: string | null;
   zone_id: number | null;
   updated_at: number | null;

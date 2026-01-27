@@ -59,11 +59,6 @@ function NodeCard({ node, zone, onClick }: NodeCardProps) {
             <p className="text-sm text-gray-500">Address: {node.address}</p>
           )}
 
-          {node.metadata?.location && (
-            <p className="text-sm text-gray-500 mt-1 truncate">
-              {node.metadata.location}
-            </p>
-          )}
         </div>
 
         {/* Overall health indicator */}

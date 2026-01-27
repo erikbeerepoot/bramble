@@ -157,7 +157,6 @@ class SensorDatabase:
     CREATE TABLE IF NOT EXISTS node_metadata (
         address INTEGER PRIMARY KEY,
         name VARCHAR,
-        location VARCHAR,
         notes VARCHAR,
         zone_id INTEGER,
         updated_at INTEGER NOT NULL
@@ -665,7 +664,7 @@ class SensorDatabase:
         """
         with self._get_connection() as conn:
             result = conn.execute("""
-                SELECT address, name, location, notes, zone_id, updated_at
+                SELECT address, name, notes, zone_id, updated_at
                 FROM node_metadata WHERE address = ?
             """, (address,))
             row = result.fetchone()
@@ -676,10 +675,9 @@ class SensorDatabase:
             return {
                 'address': row[0],
                 'name': row[1],
-                'location': row[2],
-                'notes': row[3],
-                'zone_id': row[4],
-                'updated_at': row[5]
+                'notes': row[2],
+                'zone_id': row[3],
+                'updated_at': row[4]
             }
 
     def get_all_node_metadata(self) -> dict[int, dict]:
@@ -690,7 +688,7 @@ class SensorDatabase:
         """
         with self._get_connection() as conn:
             result = conn.execute("""
-                SELECT address, name, location, notes, zone_id, updated_at
+                SELECT address, name, notes, zone_id, updated_at
                 FROM node_metadata
             """)
 
@@ -699,10 +697,9 @@ class SensorDatabase:
                 metadata[row[0]] = {
                     'address': row[0],
                     'name': row[1],
-                    'location': row[2],
-                    'notes': row[3],
-                    'zone_id': row[4],
-                    'updated_at': row[5]
+                    'notes': row[2],
+                    'zone_id': row[3],
+                    'updated_at': row[4]
                 }
             return metadata
 
@@ -710,7 +707,6 @@ class SensorDatabase:
         self,
         address: int,
         name: Optional[str] = None,
-        location: Optional[str] = None,
         notes: Optional[str] = None,
         zone_id: Optional[int] = None
     ) -> dict:
@@ -719,7 +715,6 @@ class SensorDatabase:
         Args:
             address: Node address
             name: Friendly name for the node
-            location: Location description
             notes: Additional notes
             zone_id: Zone ID (use -1 to explicitly unset, None to preserve)
 
@@ -731,35 +726,34 @@ class SensorDatabase:
         with self._get_connection() as conn:
             # Check if metadata exists
             existing = conn.execute(
-                "SELECT name, location, notes, zone_id FROM node_metadata WHERE address = ?",
+                "SELECT name, notes, zone_id FROM node_metadata WHERE address = ?",
                 (address,)
             ).fetchone()
 
             if existing:
                 # Update existing - only update fields that are provided
                 current_name = name if name is not None else existing[0]
-                current_location = location if location is not None else existing[1]
-                current_notes = notes if notes is not None else existing[2]
+                current_notes = notes if notes is not None else existing[1]
                 # zone_id: -1 means explicitly unset, None means preserve current
                 if zone_id == -1:
                     current_zone_id = None
                 elif zone_id is not None:
                     current_zone_id = zone_id
                 else:
-                    current_zone_id = existing[3]
+                    current_zone_id = existing[2]
 
                 conn.execute("""
                     UPDATE node_metadata
-                    SET name = ?, location = ?, notes = ?, zone_id = ?, updated_at = ?
+                    SET name = ?, notes = ?, zone_id = ?, updated_at = ?
                     WHERE address = ?
-                """, (current_name, current_location, current_notes, current_zone_id, updated_at, address))
+                """, (current_name, current_notes, current_zone_id, updated_at, address))
             else:
                 # Insert new
                 actual_zone_id = None if zone_id == -1 else zone_id
                 conn.execute("""
-                    INSERT INTO node_metadata (address, name, location, notes, zone_id, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """, (address, name, location, notes, actual_zone_id, updated_at))
+                    INSERT INTO node_metadata (address, name, notes, zone_id, updated_at)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (address, name, notes, actual_zone_id, updated_at))
 
         return self.get_node_metadata(address)
 

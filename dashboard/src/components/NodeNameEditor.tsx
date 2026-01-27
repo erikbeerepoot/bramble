@@ -13,7 +13,6 @@ interface NodeNameEditorProps {
 function NodeNameEditor({ node, zones, onUpdate, onZoneCreated }: NodeNameEditorProps) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(node.metadata?.name || '');
-  const [location, setLocation] = useState(node.metadata?.location || '');
   const [notes, setNotes] = useState(node.metadata?.notes || '');
   const [selectedZoneId, setSelectedZoneId] = useState<number | null>(node.metadata?.zone_id ?? null);
   const [saving, setSaving] = useState(false);
@@ -35,7 +34,6 @@ function NodeNameEditor({ node, zones, onUpdate, onZoneCreated }: NodeNameEditor
       // Update other metadata
       const updated = await updateNodeMetadata(node.address, {
         name: name || null,
-        location: location || null,
         notes: notes || null,
       });
       onUpdate(updated);
@@ -49,7 +47,6 @@ function NodeNameEditor({ node, zones, onUpdate, onZoneCreated }: NodeNameEditor
 
   const handleCancel = () => {
     setName(node.metadata?.name || '');
-    setLocation(node.metadata?.location || '');
     setNotes(node.metadata?.notes || '');
     setSelectedZoneId(node.metadata?.zone_id ?? null);
     setEditing(false);
@@ -94,10 +91,6 @@ function NodeNameEditor({ node, zones, onUpdate, onZoneCreated }: NodeNameEditor
                 <span className="text-gray-400 italic">Not assigned</span>
               )}
             </dd>
-          </div>
-          <div>
-            <dt className="text-sm text-gray-500">Location</dt>
-            <dd className="text-gray-900">{node.metadata?.location || <span className="text-gray-400 italic">Not set</span>}</dd>
           </div>
           <div>
             <dt className="text-sm text-gray-500">Notes</dt>
@@ -185,20 +178,6 @@ function NodeNameEditor({ node, zones, onUpdate, onZoneCreated }: NodeNameEditor
               <span>{zones.find(z => z.id === selectedZoneId)?.name}</span>
             </div>
           )}
-        </div>
-
-        <div>
-          <label htmlFor="location" className="block text-sm font-medium text-gray-700 mb-1">
-            Location
-          </label>
-          <input
-            id="location"
-            type="text"
-            value={location}
-            onChange={(e) => setLocation(e.target.value)}
-            placeholder="e.g., North greenhouse, row 3"
-            className="input w-full"
-          />
         </div>
 
         <div>

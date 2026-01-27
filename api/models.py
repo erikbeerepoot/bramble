@@ -59,10 +59,9 @@ class Node:
 
 @dataclass
 class NodeMetadata:
-    """Metadata for a LoRa node (friendly name, location, notes)."""
+    """Metadata for a LoRa node (friendly name, notes)."""
     address: int
     name: Optional[str] = None
-    location: Optional[str] = None
     notes: Optional[str] = None
     zone_id: Optional[int] = None
     updated_at: Optional[int] = None
@@ -72,7 +71,6 @@ class NodeMetadata:
         return {
             'address': self.address,
             'name': self.name,
-            'location': self.location,
             'notes': self.notes,
             'zone_id': self.zone_id,
             'updated_at': self.updated_at
