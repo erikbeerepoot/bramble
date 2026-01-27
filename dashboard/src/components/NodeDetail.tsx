@@ -126,9 +126,9 @@ function NodeDetail({ node, zones, onBack, onUpdate, onZoneCreated }: NodeDetail
         <span>Back to nodes</span>
       </button>
 
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">{displayName}</h2>
+      <div className="flex items-start justify-between gap-4 mb-6">
+        <div className="min-w-0">
+          <h2 className="text-xl sm:text-2xl font-bold text-gray-900 truncate">{displayName}</h2>
           {currentZone && (
             <span
               className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium mt-1"
@@ -150,7 +150,7 @@ function NodeDetail({ node, zones, onBack, onUpdate, onZoneCreated }: NodeDetail
             <span className="text-sm text-gray-500">{node.type}</span>
           </div>
         </div>
-        <button onClick={fetchData} className="btn btn-secondary">
+        <button onClick={fetchData} className="btn btn-secondary shrink-0">
           Refresh
         </button>
       </div>
@@ -323,7 +323,7 @@ function NodeDetail({ node, zones, onBack, onUpdate, onZoneCreated }: NodeDetail
 
         <div className="lg:col-span-2 space-y-4">
           <div className="card">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
               <h3 className="text-lg font-medium text-gray-900">Sensor Data</h3>
               <TimeRangeSelector
                 value={timeRange}

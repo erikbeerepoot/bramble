@@ -7,7 +7,7 @@ body {
 }
 
 .card {
-  @apply bg-white rounded-lg shadow-md p-4;
+  @apply bg-white rounded-lg shadow-md p-4 overflow-hidden;
 }
 
 .btn {

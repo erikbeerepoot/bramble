@@ -80,9 +80,9 @@ function SensorChart({ readings, dataKey, title, yAxisLabel, color, startTime, e
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-2">
+      <div className="flex flex-wrap items-center justify-between gap-1 mb-2">
         <h4 className="font-medium text-gray-700">{title}</h4>
-        <div className="flex items-center space-x-4 text-sm text-gray-500">
+        <div className="flex items-center gap-3 text-sm text-gray-500">
           <span>Min: {min.toFixed(1)}</span>
           <span>Avg: {avg.toFixed(1)}</span>
           <span>Max: {max.toFixed(1)}</span>

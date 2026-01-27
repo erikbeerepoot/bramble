@@ -45,7 +45,7 @@ function TimeRangeSelector({ value, onChange, customRange, onCustomRangeChange }
 
   return (
     <div className="flex flex-col space-y-2">
-      <div className="flex items-center space-x-1">
+      <div className="flex flex-wrap gap-1">
         {ranges.map(([key, config]) => (
           <button
             key={key}
@@ -71,21 +71,25 @@ function TimeRangeSelector({ value, onChange, customRange, onCustomRangeChange }
         </button>
       </div>
       {value === 'custom' && customRange && (
-        <div className="flex items-center space-x-2 text-sm">
-          <label className="text-gray-600">From:</label>
-          <input
-            type="datetime-local"
-            value={formatDateTimeLocal(customRange.startTime)}
-            onChange={handleStartChange}
-            className="px-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-bramble-500"
-          />
-          <label className="text-gray-600">To:</label>
-          <input
-            type="datetime-local"
-            value={formatDateTimeLocal(customRange.endTime)}
-            onChange={handleEndChange}
-            className="px-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-bramble-500"
-          />
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 text-sm">
+          <div className="flex items-center gap-2">
+            <label className="text-gray-600 shrink-0">From:</label>
+            <input
+              type="datetime-local"
+              value={formatDateTimeLocal(customRange.startTime)}
+              onChange={handleStartChange}
+              className="px-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-bramble-500 min-w-0"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-gray-600 shrink-0">To:</label>
+            <input
+              type="datetime-local"
+              value={formatDateTimeLocal(customRange.endTime)}
+              onChange={handleEndChange}
+              className="px-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-bramble-500 min-w-0"
+            />
+          </div>
         </div>
       )}
     </div>
