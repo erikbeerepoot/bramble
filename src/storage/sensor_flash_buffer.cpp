@@ -62,9 +62,9 @@ bool SensorFlashBuffer::init()
 
     // Try to load existing metadata
     if (loadMetadata()) {
-        logger_.info("Loaded existing metadata: %lu records (%lu transmitted, %lu lost)",
-                     metadata_.total_records, metadata_.records_transmitted,
-                     metadata_.records_lost);
+        logger_.debug("Loaded existing metadata: %lu records (%lu transmitted, %lu lost)",
+                      metadata_.total_records, metadata_.records_transmitted,
+                      metadata_.records_lost);
         initialized_ = true;
         return true;
     }
@@ -146,8 +146,8 @@ bool SensorFlashBuffer::writeRecord(const SensorDataRecord &record)
     }
 
     // Write the record
-    logger_.info("Writing record at index %lu, addr 0x%08X, CRC=0x%04X", metadata_.write_index,
-                 address, record_with_crc.crc16);
+    logger_.debug("Writing record at index %lu, addr 0x%08X, CRC=0x%04X", metadata_.write_index,
+                  address, record_with_crc.crc16);
     ExternalFlashResult result = flash_.write(
         address, reinterpret_cast<const uint8_t *>(&record_with_crc), sizeof(record_with_crc));
     if (result != ExternalFlashResult::Success) {

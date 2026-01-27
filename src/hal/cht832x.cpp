@@ -24,7 +24,7 @@ bool CHT832X::init()
     gpio_pull_up(sda_pin_);
     gpio_pull_up(scl_pin_);
 
-    logger.info("I2C initialized on SDA=%d, SCL=%d", sda_pin_, scl_pin_);
+    logger.debug("I2C initialized on SDA=%d, SCL=%d", sda_pin_, scl_pin_);
 
     // Check if sensor responds
     if (!isConnected()) {
@@ -33,7 +33,7 @@ bool CHT832X::init()
     }
 
     initialized_ = true;
-    logger.info("Sensor initialized successfully");
+    logger.debug("Sensor initialized successfully");
     return true;
 }
 

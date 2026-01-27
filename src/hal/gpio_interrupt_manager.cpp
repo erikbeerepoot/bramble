@@ -31,7 +31,7 @@ void GpioInterruptManager::registerHandler(uint gpio, uint32_t events, Interrupt
         gpio_set_irq_enabled_with_callback(gpio, events, true,
                                            &GpioInterruptManager::globalInterruptHandler);
         global_handler_registered_ = true;
-        log.info("Registered global handler with pin %d", gpio);
+        log.debug("Registered global handler with pin %d", gpio);
     } else {
         // Subsequent registrations - just enable interrupts for this pin
         gpio_set_irq_enabled(gpio, events, true);

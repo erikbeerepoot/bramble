@@ -27,8 +27,7 @@ SensorMode::~SensorMode() = default;
 
 void SensorMode::onStart()
 {
-    logger.info("=== SENSOR MODE ACTIVE ===");
-    logger.info("LED: orange=init, yellow=sync, green=ok, orange=degraded, red=error");
+    logger.debug("LED: orange=init, yellow=sync, green=ok, orange=degraded, red=error");
 
     // Initialize external flash for sensor data storage
     external_flash_ = std::make_unique<ExternalFlash>();
@@ -44,7 +43,7 @@ void SensorMode::onStart()
             uint8_t saved_seq = flash_buffer_->getNextSeqNum();
             if (saved_seq >= 128) {
                 messenger_.setNextSeqNum(saved_seq);
-                logger.info("Restored LoRa seq num: %u", saved_seq);
+                logger.debug("Restored LoRa seq num: %u", saved_seq);
             }
         } else {
             logger.error("Failed to initialize flash buffer!");
@@ -55,7 +54,7 @@ void SensorMode::onStart()
 
     // Create CHT832X sensor object (lazy init on first read)
     sensor_ = std::make_unique<CHT832X>(i2c1, PIN_I2C_SDA, PIN_I2C_SCL);
-    logger.info("CHT832X sensor created (lazy init on first read)");
+    logger.debug("CHT832X sensor created (lazy init on first read)");
 
     // Initial LED pattern: orange blink while initializing/awaiting time
     // Patterns are switched dynamically in onStateChange based on state:
@@ -92,12 +91,12 @@ void SensorMode::onStart()
         });
 
         // Try to get time from PMU's battery-backed RTC (faster than waiting for hub sync)
-        pmu_logger.info("Requesting datetime from PMU...");
+        pmu_logger.debug("Requesting datetime from PMU...");
         reliable_pmu_->getDateTime([this](bool valid, const PMU::DateTime &datetime) {
             if (valid) {
-                pmu_logger.info("PMU has valid time: 20%02d-%02d-%02d %02d:%02d:%02d",
-                                datetime.year, datetime.month, datetime.day, datetime.hour,
-                                datetime.minute, datetime.second);
+                pmu_logger.debug("PMU has valid time: 20%02d-%02d-%02d %02d:%02d:%02d",
+                                 datetime.year, datetime.month, datetime.day, datetime.hour,
+                                 datetime.minute, datetime.second);
 
                 // Convert PMU datetime to Unix timestamp using mktime
                 uint16_t year = 2000 + datetime.year;
@@ -125,8 +124,8 @@ void SensorMode::onStart()
 
                 if (rtc_set_datetime(&dt)) {
                     sleep_us(64);  // Wait for RTC to propagate
-                    logger.info("RTC set from PMU: %04d-%02d-%02d %02d:%02d:%02d", dt.year,
-                                dt.month, dt.day, dt.hour, dt.min, dt.sec);
+                    Logger("SensorSM").info("RTC set from PMU: %04d-%02d-%02d %02d:%02d:%02d", dt.year,
+                                            dt.month, dt.day, dt.hour, dt.min, dt.sec);
 
                     // Report RTC sync - state callback handles LED pattern change
                     sensor_state_.reportRtcSynced();
@@ -399,7 +398,7 @@ void SensorMode::readAndStoreSensorData(uint32_t current_time)
         if (!flash_buffer_->writeRecord(record)) {
             logger.error("Failed to write record to flash!");
         } else {
-            logger.info("Stored sensor data to flash (temp=%d, hum=%d)", temp_fixed, hum_fixed);
+            logger.debug("Stored sensor data to flash (temp=%d, hum=%d)", temp_fixed, hum_fixed);
         }
     }
 }
@@ -829,19 +828,15 @@ bool SensorMode::tryInitSensor()
         return false;
     }
 
-    logger.info("Waiting 1s for sensor power-on stabilization...");
+    logger.debug("Waiting 1s for sensor power-on stabilization...");
     sleep_ms(1000);
 
     if (sensor_->init()) {
         // Report success to state machine (transitions to OPERATIONAL)
         sensor_state_.reportSensorInitSuccess();
-        logger.info("CHT832X sensor initialized on I2C1 (SDA=%d, SCL=%d)", PIN_I2C_SDA,
-                    PIN_I2C_SCL);
+        logger.debug("CHT832X sensor initialized on I2C1 (SDA=%d, SCL=%d)", PIN_I2C_SDA,
+                     PIN_I2C_SCL);
 
-        auto reading = sensor_->read();
-        if (reading.valid) {
-            logger.info("Initial reading: %.2fC, %.2f%%RH", reading.temperature, reading.humidity);
-        }
         return true;
     }
 

@@ -35,8 +35,8 @@ bool ExternalFlash::initGpio()
 
 bool ExternalFlash::init()
 {
-    logger_.info("Initializing external flash (hardware SPI)...");
-    logger_.info("  Pins: CS=%d, RST=%d (SPI shared with LoRa)", pins_.cs, pins_.reset);
+    logger_.debug("Initializing external flash (hardware SPI)...");
+    logger_.debug("  Pins: CS=%d, RST=%d (SPI shared with LoRa)", pins_.cs, pins_.reset);
 
     if (!initGpio()) {
         logger_.error("Failed to initialize GPIO");
@@ -60,8 +60,8 @@ bool ExternalFlash::init()
             continue;
         }
 
-        logger_.info("Flash ID: Manufacturer=0x%02X, Type=0x%02X, Capacity=0x%02X", manufacturer,
-                     memory_type, capacity);
+        logger_.debug("Flash ID: Manufacturer=0x%02X, Type=0x%02X, Capacity=0x%02X", manufacturer,
+                      memory_type, capacity);
 
         // If manufacturer ID is 0x00, flash is unresponsive - retry with hardware reset
         if (manufacturer == 0x00) {

@@ -34,21 +34,20 @@ SX1276::SX1276(spi_inst_t *spi_port, uint cs_pin, int rst_pin, int dio0_pin)
 
 bool SX1276::begin()
 {
-    logger_.info("begin() - Starting initialization, RST pin: %d, DIO0 pin: %d", rst_pin_,
-                 dio0_pin_);
+    logger_.debug("begin() - Starting initialization, RST pin: %d, DIO0 pin: %d", rst_pin_,
+                  dio0_pin_);
 
     // Reset module if reset pin connected
     if (rst_pin_ >= 0) {
-        logger_.info("Resetting module (RST pin %d)...", rst_pin_);
+        logger_.debug("Resetting module (RST pin %d)...", rst_pin_);
         reset();
         sleep_ms(10);
-        logger_.info("Reset complete");
+        logger_.debug("Reset complete");
     }
 
     // Check if module is responding
-    logger_.info("Checking if module is connected...");
     uint8_t version = readRegister(SX1276_REG_VERSION);
-    logger_.info("VERSION register (0x42) = 0x%02X (expected 0x12 for SX1276/RFM95W)", version);
+    logger_.debug("VERSION register (0x42) = 0x%02X (expected 0x12 for SX1276/RFM95W)", version);
 
     if (version != 0x12) {
         logger_.error("Failed to detect module! VERSION=0x%02X", version);
@@ -600,7 +599,7 @@ bool SX1276::enableInterruptMode(gpio_irq_callback_t callback)
     message_ready_ = false;
     tx_complete_ = false;
 
-    logger_.info("Interrupt mode enabled on DIO0 (GPIO %d)", dio0_pin_);
+    logger_.debug("Interrupt mode enabled on DIO0 (GPIO %d)", dio0_pin_);
     return true;
 }
 

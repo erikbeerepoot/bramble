@@ -21,7 +21,7 @@ void ApplicationMode::run()
 {
     // Initialize RTC for all nodes
     rtc_init();
-    logger.info("RTC initialized");
+    logger.debug("RTC initialized");
 
     // Set up actuator command callback
     messenger_.setActuatorCallback(

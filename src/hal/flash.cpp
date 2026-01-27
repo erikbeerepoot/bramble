@@ -19,7 +19,7 @@ Flash::Flash() : logger_("FLASH")
     // Initialize statistics
     resetStats();
 
-    logger_.info("Initialized with %lu MB flash", flash_size_ / (1024 * 1024));
+    logger_.debug("Initialized with %lu MB flash", flash_size_ / (1024 * 1024));
 }
 
 uint32_t Flash::getFlashSize() const
