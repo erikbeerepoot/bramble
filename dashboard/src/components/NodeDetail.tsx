@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { Node, NodeStatistics, SensorReading, TimeRange, NodeMetadata, CustomTimeRange, Zone } from '../types';
-import { TIME_RANGES, parseErrorFlags, formatUptime, getSignalQuality, getBatteryStatus } from '../types';
+import { TIME_RANGES, parseErrorFlags, formatUptime, getSignalQuality, getBatteryStatus, getHealthStatus } from '../types';
 import { getNodeSensorData, getNodeStatistics } from '../api/client';
 import NodeNameEditor from './NodeNameEditor';
 import SensorChart from './SensorChart';
@@ -109,6 +109,9 @@ function NodeDetail({ node, zones, onBack, onUpdate, onZoneCreated }: NodeDetail
   };
 
   const displayName = node.metadata?.name || `Node ${node.address}`;
+  const healthStatus = useMemo(() => getHealthStatus(node.status?.error_flags ?? null), [node.status?.error_flags]);
+  const isHealthy = healthStatus === 'healthy';
+  const [statusExpanded, setStatusExpanded] = useState(!isHealthy);
 
   return (
     <div>
@@ -143,80 +146,92 @@ function NodeDetail({ node, zones, onBack, onUpdate, onZoneCreated }: NodeDetail
         <div className="lg:col-span-1 space-y-4">
           <NodeNameEditor node={node} zones={zones} onUpdate={handleMetadataUpdate} onZoneCreated={onZoneCreated} />
 
-          {/* Node Status Panel */}
+          {/* Node Status Panel - collapsible */}
           {node.status && (
             <div className="card">
-              <h3 className="text-lg font-medium text-gray-900 mb-4">Node Status</h3>
-              <div className="space-y-4">
-                {/* Battery */}
-                <div>
-                  <dt className="text-sm text-gray-500 mb-1">Battery</dt>
-                  <dd className="flex items-center space-x-2">
-                    <BatteryGauge level={node.status.battery_level} size="md" />
-                    <span className="text-sm text-gray-600">
-                      {getBatteryStatus(node.status.battery_level).isExternal
-                        ? 'External Power'
-                        : node.status.battery_level !== null
-                          ? `${node.status.battery_level}%`
-                          : 'Unknown'}
-                    </span>
-                  </dd>
+              <button
+                onClick={() => setStatusExpanded(!statusExpanded)}
+                className="w-full flex items-center justify-between"
+              >
+                <div className="flex items-center space-x-2">
+                  <h3 className="text-lg font-medium text-gray-900">Node Status</h3>
+                  <HealthStatus errorFlags={node.status.error_flags} size="sm" showTooltip={false} />
                 </div>
+                <svg
+                  className={`w-5 h-5 text-gray-400 transition-transform ${statusExpanded ? 'rotate-180' : ''}`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
 
-                {/* Signal Strength */}
-                <div>
-                  <dt className="text-sm text-gray-500 mb-1">Signal Strength</dt>
-                  <dd className="flex items-center space-x-2">
-                    <SignalStrength rssi={node.status.signal_strength} size="md" />
-                    <span className="text-sm text-gray-600">
-                      {getSignalQuality(node.status.signal_strength).label}
-                    </span>
-                  </dd>
-                </div>
-
-                {/* Uptime */}
-                <div>
-                  <dt className="text-sm text-gray-500 mb-1">Uptime</dt>
-                  <dd className="text-lg font-medium text-gray-900">
-                    {formatUptime(node.status.uptime_seconds)}
-                  </dd>
-                </div>
-                {/* Health Status */}
-                <div>
-                  <dt className="text-sm text-gray-500 mb-1">Health</dt>
-                  <dd>
-                    <HealthStatus errorFlags={node.status.error_flags} size="md" showTooltip={false} />
-                  </dd>
-                </div>
-
-                {/* Active Issues */}
-                {node.status.error_flags !== null && node.status.error_flags !== 0 && (
-                  <div className="pt-3 border-t">
-                    <dt className="text-sm text-gray-500 mb-2">Active Issues</dt>
-                    <dd className="flex flex-wrap gap-1.5">
-                      {parseErrorFlags(node.status.error_flags).map((error) => (
-                        <span
-                          key={error.flag}
-                          className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                            error.severity === 'error'
-                              ? 'bg-red-100 text-red-800'
-                              : 'bg-yellow-100 text-yellow-800'
-                          }`}
-                        >
-                          {error.label}
-                        </span>
-                      ))}
+              {statusExpanded && (
+                <div className="space-y-4 mt-4">
+                  {/* Battery */}
+                  <div>
+                    <dt className="text-sm text-gray-500 mb-1">Battery</dt>
+                    <dd className="flex items-center space-x-2">
+                      <BatteryGauge level={node.status.battery_level} size="md" />
+                      <span className="text-sm text-gray-600">
+                        {getBatteryStatus(node.status.battery_level).isExternal
+                          ? 'External Power'
+                          : node.status.battery_level !== null
+                            ? `${node.status.battery_level}%`
+                            : 'Unknown'}
+                      </span>
                     </dd>
                   </div>
-                )}
 
-                {/* Last Updated */}
-                {node.status.updated_at && (
-                  <div className="text-xs text-gray-400 pt-2">
-                    Status updated: {new Date(node.status.updated_at * 1000).toLocaleString()}
+                  {/* Signal Strength */}
+                  <div>
+                    <dt className="text-sm text-gray-500 mb-1">Signal Strength</dt>
+                    <dd className="flex items-center space-x-2">
+                      <SignalStrength rssi={node.status.signal_strength} size="md" />
+                      <span className="text-sm text-gray-600">
+                        {getSignalQuality(node.status.signal_strength).label}
+                      </span>
+                    </dd>
                   </div>
-                )}
-              </div>
+
+                  {/* Uptime */}
+                  <div>
+                    <dt className="text-sm text-gray-500 mb-1">Uptime</dt>
+                    <dd className="text-lg font-medium text-gray-900">
+                      {formatUptime(node.status.uptime_seconds)}
+                    </dd>
+                  </div>
+
+                  {/* Active Issues */}
+                  {node.status.error_flags !== null && node.status.error_flags !== 0 && (
+                    <div className="pt-3 border-t">
+                      <dt className="text-sm text-gray-500 mb-2">Active Issues</dt>
+                      <dd className="flex flex-wrap gap-1.5">
+                        {parseErrorFlags(node.status.error_flags).map((error) => (
+                          <span
+                            key={error.flag}
+                            className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                              error.severity === 'error'
+                                ? 'bg-red-100 text-red-800'
+                                : 'bg-yellow-100 text-yellow-800'
+                            }`}
+                          >
+                            {error.label}
+                          </span>
+                        ))}
+                      </dd>
+                    </div>
+                  )}
+
+                  {/* Last Updated */}
+                  {node.status.updated_at && (
+                    <div className="text-xs text-gray-400 pt-2">
+                      Status updated: {new Date(node.status.updated_at * 1000).toLocaleString()}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 

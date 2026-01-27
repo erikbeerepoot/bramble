@@ -1,9 +1,4 @@
 import { useState } from 'react';
-import {
-  CheckCircle2,
-  AlertTriangle,
-  AlertCircle,
-} from 'lucide-react';
 import { parseErrorFlags, getHealthStatus } from '../types';
 
 interface HealthStatusProps {
@@ -11,6 +6,17 @@ interface HealthStatusProps {
   size?: 'sm' | 'md' | 'lg';
   showTooltip?: boolean;
 }
+
+const STATUS_DOT_COLOR: Record<string, string> = {
+  healthy: 'bg-green-500',
+  warning: 'bg-yellow-400',
+  error: 'bg-red-500',
+};
+
+const SEVERITY_DOT_COLOR: Record<string, string> = {
+  error: 'bg-red-400',
+  warning: 'bg-yellow-400',
+};
 
 function HealthStatus({ errorFlags, size = 'sm', showTooltip = true }: HealthStatusProps) {
   const [tooltipVisible, setTooltipVisible] = useState(false);
@@ -20,9 +26,9 @@ function HealthStatus({ errorFlags, size = 'sm', showTooltip = true }: HealthSta
 
   // Size configurations
   const sizeConfig = {
-    sm: { icon: 16, textSize: 'text-xs' },
-    md: { icon: 20, textSize: 'text-sm' },
-    lg: { icon: 24, textSize: 'text-base' },
+    sm: { dot: 'w-3 h-3', textSize: 'text-xs' },
+    md: { dot: 'w-3.5 h-3.5', textSize: 'text-sm' },
+    lg: { dot: 'w-4 h-4', textSize: 'text-base' },
   };
 
   const config = sizeConfig[size];
@@ -30,25 +36,13 @@ function HealthStatus({ errorFlags, size = 'sm', showTooltip = true }: HealthSta
   // Get primary error label (first error for display)
   const primaryLabel = status === 'healthy' ? 'Healthy' : errors[0]?.label || 'Unknown';
 
-  // Get status icon and color
-  const getStatusIcon = () => {
-    switch (status) {
-      case 'healthy':
-        return <CheckCircle2 size={config.icon} className="text-green-500" />;
-      case 'warning':
-        return <AlertTriangle size={config.icon} className="text-yellow-500" />;
-      case 'error':
-        return <AlertCircle size={config.icon} className="text-red-500" />;
-    }
-  };
-
   return (
     <div
       className="relative inline-flex items-center space-x-1.5"
       onMouseEnter={() => setTooltipVisible(true)}
       onMouseLeave={() => setTooltipVisible(false)}
     >
-      {getStatusIcon()}
+      <span className={`${config.dot} rounded-full flex-shrink-0 ${STATUS_DOT_COLOR[status]}`} />
       <span className={`${config.textSize} text-gray-600`}>{primaryLabel}</span>
 
       {/* Tooltip with full error list */}
@@ -59,11 +53,7 @@ function HealthStatus({ errorFlags, size = 'sm', showTooltip = true }: HealthSta
             <ul className="space-y-0.5">
               {errors.map((error) => (
                 <li key={error.flag} className="flex items-center space-x-1.5">
-                  {error.severity === 'error' ? (
-                    <AlertCircle size={10} className="text-red-400" />
-                  ) : (
-                    <AlertTriangle size={10} className="text-yellow-400" />
-                  )}
+                  <span className={`w-2 h-2 rounded-full flex-shrink-0 ${SEVERITY_DOT_COLOR[error.severity]}`} />
                   <span>{error.label}</span>
                 </li>
               ))}
