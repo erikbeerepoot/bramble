@@ -440,16 +440,6 @@ bool SensorFlashBuffer::loadMetadata()
         return false;
     }
 
-    // Migrate from older versions
-    if (metadata_.version < SENSOR_FLASH_VERSION) {
-        logger_.info("Migrating metadata from version %lu to %lu", metadata_.version,
-                     SENSOR_FLASH_VERSION);
-        // v1 -> v2: add next_seq_num field (reserved bytes were zeroed)
-        metadata_.next_seq_num = 0;
-        metadata_.version = SENSOR_FLASH_VERSION;
-        saveMetadata();
-    }
-
     return true;
 }
 
@@ -515,8 +505,8 @@ bool SensorFlashBuffer::validateMetadata() const
         return false;
     }
 
-    // Check version (accept current and previous versions for migration)
-    if (metadata_.version < 1 || metadata_.version > SENSOR_FLASH_VERSION) {
+    // Check version
+    if (metadata_.version != SENSOR_FLASH_VERSION) {
         logger_.warn("Unsupported version: %lu", metadata_.version);
         return false;
     }
