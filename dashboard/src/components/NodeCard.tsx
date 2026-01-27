@@ -1,8 +1,5 @@
 import type { Node, Zone } from '../types';
-import BatteryGauge from './BatteryGauge';
-import SignalStrength from './SignalStrength';
-import HealthStatus from './HealthStatus';
-import BacklogStatus from './BacklogStatus';
+import { getOverallNodeHealth } from '../types';
 
 interface NodeCardProps {
   node: Node;
@@ -17,8 +14,25 @@ function formatLastSeen(seconds: number): string {
   return `${Math.floor(seconds / 86400)}d ago`;
 }
 
+const HEALTH_DOT_COLOR: Record<string, string> = {
+  red: 'bg-red-500',
+  orange: 'bg-orange-500',
+  yellow: 'bg-yellow-400',
+  green: 'bg-green-500',
+  gray: 'bg-gray-400',
+};
+
+const HEALTH_LABEL: Record<string, string> = {
+  red: 'Error',
+  orange: 'Degraded',
+  yellow: 'Warning',
+  green: 'Healthy',
+  gray: 'Unknown',
+};
+
 function NodeCard({ node, zone, onClick }: NodeCardProps) {
   const displayName = node.metadata?.name || `Node ${node.address}`;
+  const health = getOverallNodeHealth(node);
 
   return (
     <div
@@ -52,24 +66,12 @@ function NodeCard({ node, zone, onClick }: NodeCardProps) {
           )}
         </div>
 
-        <div className={`flex-shrink-0 ml-4 w-3 h-3 rounded-full ${
-          node.online ? 'bg-green-500' : 'bg-red-500'
-        }`} />
+        {/* Overall health indicator */}
+        <div
+          className={`flex-shrink-0 ml-4 w-3 h-3 rounded-full ${HEALTH_DOT_COLOR[health]}`}
+          title={HEALTH_LABEL[health]}
+        />
       </div>
-
-      {/* Status row - battery, signal, health, backlog */}
-      {node.status && (
-        <div className="mt-3 pt-3 border-t border-gray-100 flex items-center space-x-4">
-          <BatteryGauge level={node.status.battery_level} size="sm" />
-          <SignalStrength rssi={node.status.signal_strength} size="sm" />
-          <HealthStatus errorFlags={node.status.error_flags} size="sm" />
-          <BacklogStatus
-            pendingRecords={node.status.pending_records}
-            hubQueueCount={node.hub_queue_count}
-            size="sm"
-          />
-        </div>
-      )}
 
       <div className="mt-3 flex items-center justify-between text-sm">
         <div className="text-gray-500">
@@ -78,19 +80,6 @@ function NodeCard({ node, zone, onClick }: NodeCardProps) {
         <div className="text-gray-400">
           Last seen: {formatLastSeen(node.last_seen_seconds)}
         </div>
-      </div>
-
-      <div className="mt-2 flex items-center justify-between text-xs text-gray-400 font-mono">
-        {node.device_id && (
-          <span className="truncate">
-            ID: {node.device_id.toString(16).toUpperCase()}
-          </span>
-        )}
-        {node.firmware_version && (
-          <span className="ml-2 flex-shrink-0">
-            v{node.firmware_version}
-          </span>
-        )}
       </div>
     </div>
   );
