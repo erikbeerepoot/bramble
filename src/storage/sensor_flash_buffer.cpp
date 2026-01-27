@@ -436,7 +436,21 @@ bool SensorFlashBuffer::loadMetadata()
         return false;
     }
 
-    return validateMetadata();
+    if (!validateMetadata()) {
+        return false;
+    }
+
+    // Migrate from older versions
+    if (metadata_.version < SENSOR_FLASH_VERSION) {
+        logger_.info("Migrating metadata from version %lu to %lu", metadata_.version,
+                     SENSOR_FLASH_VERSION);
+        // v1 -> v2: add next_seq_num field (reserved bytes were zeroed)
+        metadata_.next_seq_num = 0;
+        metadata_.version = SENSOR_FLASH_VERSION;
+        saveMetadata();
+    }
+
+    return true;
 }
 
 bool SensorFlashBuffer::saveMetadata()
@@ -475,11 +489,22 @@ void SensorFlashBuffer::initializeMetadata()
     metadata_.records_lost = 0;
     metadata_.last_sync_timestamp = 0;
     metadata_.initial_boot_timestamp = 0;
+    metadata_.next_seq_num = 0;
 }
 
 uint32_t SensorFlashBuffer::getRecordAddress(uint32_t index) const
 {
     return DATA_START_OFFSET + (index * sizeof(SensorDataRecord));
+}
+
+uint8_t SensorFlashBuffer::getNextSeqNum() const
+{
+    return metadata_.next_seq_num;
+}
+
+void SensorFlashBuffer::saveNextSeqNum(uint8_t seq_num)
+{
+    metadata_.next_seq_num = seq_num;
 }
 
 bool SensorFlashBuffer::validateMetadata() const
@@ -490,8 +515,8 @@ bool SensorFlashBuffer::validateMetadata() const
         return false;
     }
 
-    // Check version
-    if (metadata_.version != SENSOR_FLASH_VERSION) {
+    // Check version (accept current and previous versions for migration)
+    if (metadata_.version < 1 || metadata_.version > SENSOR_FLASH_VERSION) {
         logger_.warn("Unsupported version: %lu", metadata_.version);
         return false;
     }

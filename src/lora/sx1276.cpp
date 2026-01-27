@@ -230,6 +230,12 @@ bool SX1276::send(const uint8_t *data, size_t length)
         return false;
     }
 
+    // Switch DIO0 mapping to TxDone (01) before entering TX mode
+    uint8_t dio_mapping1 = readRegister(SX1276_REG_DIO_MAPPING_1);
+    dio_mapping1 &= 0x3F;              // Clear DIO0 bits [7:6]
+    dio_mapping1 |= SX1276_DIO0_TXDONE; // Set mapping to 01 (TxDone)
+    writeRegister(SX1276_REG_DIO_MAPPING_1, dio_mapping1);
+
     // Start transmission
     setMode(SX1276_MODE_LONG_RANGE_MODE | SX1276_MODE_TX);
     logger_.debug("Started transmission, waiting for TX done interrupt");
@@ -271,6 +277,12 @@ bool SX1276::sendAsync(const uint8_t *data, size_t length)
         logger_.error("Failed to write FIFO");
         return false;
     }
+
+    // Switch DIO0 mapping to TxDone (01) before entering TX mode
+    uint8_t dio_mapping1 = readRegister(SX1276_REG_DIO_MAPPING_1);
+    dio_mapping1 &= 0x3F;              // Clear DIO0 bits [7:6]
+    dio_mapping1 |= SX1276_DIO0_TXDONE; // Set mapping to 01 (TxDone)
+    writeRegister(SX1276_REG_DIO_MAPPING_1, dio_mapping1);
 
     // Start transmission - interrupt will fire when done
     setMode(SX1276_MODE_LONG_RANGE_MODE | SX1276_MODE_TX);
@@ -410,6 +422,11 @@ void SX1276::startReceive()
     // Set FIFO RX base address
     writeRegister(SX1276_REG_FIFO_RX_BASE_ADDR, 0x00);
     writeRegister(SX1276_REG_FIFO_ADDR_PTR, 0x00);
+
+    // Switch DIO0 mapping to RxDone (00) before entering RX mode
+    uint8_t dio_mapping1 = readRegister(SX1276_REG_DIO_MAPPING_1);
+    dio_mapping1 &= 0x3F;  // Clear DIO0 bits [7:6], leaving 00 = RxDone
+    writeRegister(SX1276_REG_DIO_MAPPING_1, dio_mapping1);
 
     // Start continuous receive
     setMode(SX1276_MODE_LONG_RANGE_MODE | SX1276_MODE_RXCONTINUOUS);
@@ -552,10 +569,10 @@ bool SX1276::enableInterruptMode(gpio_irq_callback_t callback)
     // Store callback if provided
     user_callback_ = callback;
 
-    // Configure DIO0 mapping for RxDone/TxDone (mapping = 00)
+    // Configure DIO0 default mapping for RxDone (mapping = 00)
+    // Note: TxDone requires mapping 01, set dynamically in send()/sendAsync()
     uint8_t dio_mapping1 = readRegister(SX1276_REG_DIO_MAPPING_1);
-    dio_mapping1 &= 0x3F;  // Clear DIO0 mapping bits [7:6]
-    dio_mapping1 |= 0x00;  // Set mapping to 00 (RxDone in RX mode, TxDone in TX mode)
+    dio_mapping1 &= 0x3F;  // Clear DIO0 mapping bits [7:6], leaving 00 = RxDone
     writeRegister(SX1276_REG_DIO_MAPPING_1, dio_mapping1);
 
     // Verify the mapping was set correctly
