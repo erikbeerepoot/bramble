@@ -272,6 +272,18 @@ public:
     bool wasAcknowledged(uint8_t seq_num);
 
     /**
+     * @brief Get the next sequence number (for persistence across sleep)
+     * @return Current next sequence number
+     */
+    uint8_t getNextSeqNum() const { return next_seq_num_; }
+
+    /**
+     * @brief Set the next sequence number (restore from persistent storage)
+     * @param seq_num Sequence number to restore
+     */
+    void setNextSeqNum(uint8_t seq_num) { next_seq_num_ = seq_num; }
+
+    /**
      * @brief Update the node address (used after successful registration)
      * @param new_addr New address to use for sending messages
      */

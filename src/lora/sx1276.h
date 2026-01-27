@@ -40,6 +40,11 @@
 #define SX1276_REG_MODEM_CONFIG_3 0x26
 #define SX1276_REG_DIO_MAPPING_1 0x40
 #define SX1276_REG_DIO_MAPPING_2 0x41
+
+// DIO0 mapping values (bits [7:6] of REG_DIO_MAPPING_1)
+#define SX1276_DIO0_RXDONE 0x00  // Mapping 00: RxDone
+#define SX1276_DIO0_TXDONE 0x40  // Mapping 01: TxDone
+#define SX1276_DIO0_CADDONE 0x80 // Mapping 10: CadDone
 #define SX1276_REG_VERSION 0x42
 #define SX1276_REG_PA_DAC 0x4D
 
