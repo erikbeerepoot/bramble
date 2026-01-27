@@ -4,9 +4,83 @@
 
 static Logger logger("IrrigationSM");
 
-void IrrigationStateMachine::update(const IrrigationHardwareState &hardware_state)
+void IrrigationStateMachine::reportValveOpened()
 {
-    IrrigationState new_state = deriveState(hardware_state);
+    if (!isOperational()) {
+        logger.warn("reportValveOpened() called in non-operational state: %s", stateName(state_));
+        return;
+    }
+    transitionTo(IrrigationState::VALVE_ACTIVE);
+}
+
+void IrrigationStateMachine::reportValveClosed()
+{
+    if (state_ != IrrigationState::VALVE_ACTIVE) {
+        logger.warn("reportValveClosed() called in unexpected state: %s", stateName(state_));
+        return;
+    }
+    transitionTo(IrrigationState::IDLE);
+}
+
+void IrrigationStateMachine::reportUpdatePullStarted()
+{
+    if (state_ == IrrigationState::CHECKING_UPDATES) {
+        return;  // Already checking - no-op (e.g. pulling next update after applying one)
+    }
+    if (!isOperational()) {
+        logger.warn("reportUpdatePullStarted() called in non-operational state: %s",
+                     stateName(state_));
+        return;
+    }
+    transitionTo(IrrigationState::CHECKING_UPDATES);
+}
+
+void IrrigationStateMachine::reportUpdateReceived()
+{
+    if (state_ != IrrigationState::CHECKING_UPDATES) {
+        logger.warn("reportUpdateReceived() called in unexpected state: %s", stateName(state_));
+        return;
+    }
+    transitionTo(IrrigationState::APPLYING_UPDATES);
+}
+
+void IrrigationStateMachine::reportUpdateApplied()
+{
+    if (state_ != IrrigationState::APPLYING_UPDATES) {
+        logger.warn("reportUpdateApplied() called in unexpected state: %s", stateName(state_));
+        return;
+    }
+    transitionTo(IrrigationState::CHECKING_UPDATES);
+}
+
+void IrrigationStateMachine::reportUpdatesComplete()
+{
+    if (state_ != IrrigationState::CHECKING_UPDATES &&
+        state_ != IrrigationState::APPLYING_UPDATES) {
+        logger.warn("reportUpdatesComplete() called in unexpected state: %s", stateName(state_));
+        return;
+    }
+    transitionTo(IrrigationState::IDLE);
+}
+
+void IrrigationStateMachine::updateState()
+{
+    IrrigationState new_state = state_;
+
+    if (error_) {
+        new_state = IrrigationState::ERROR;
+    } else if (!initialized_) {
+        new_state = IrrigationState::INITIALIZING;
+    } else if (!rtc_synced_) {
+        // Only transition to AWAITING_TIME from INITIALIZING
+        // Don't override workflow states (they handle RTC loss via reportRtcLost)
+        if (state_ == IrrigationState::INITIALIZING) {
+            new_state = IrrigationState::AWAITING_TIME;
+        }
+    } else if (state_ == IrrigationState::AWAITING_TIME) {
+        // RTC just synced — go to IDLE
+        new_state = IrrigationState::IDLE;
+    }
 
     if (new_state != state_) {
         logger.info("State: %s -> %s", stateName(state_), stateName(new_state));
@@ -18,35 +92,18 @@ void IrrigationStateMachine::update(const IrrigationHardwareState &hardware_stat
     }
 }
 
-IrrigationState IrrigationStateMachine::deriveState(
-    const IrrigationHardwareState &hardware_state) const
+void IrrigationStateMachine::transitionTo(IrrigationState newState)
 {
-    if (error_) {
-        return IrrigationState::ERROR;
+    if (newState == state_) {
+        return;
     }
 
-    if (!initialized_) {
-        return IrrigationState::INITIALIZING;
-    }
+    logger.info("State: %s -> %s", stateName(state_), stateName(newState));
+    state_ = newState;
 
-    if (!hardware_state.rtc_running) {
-        return IrrigationState::AWAITING_TIME;
+    if (callback_) {
+        callback_(state_);
     }
-
-    // RTC is running - check operational state
-    if (hardware_state.valve_open) {
-        return IrrigationState::VALVE_ACTIVE;
-    }
-
-    if (hardware_state.applying_update) {
-        return IrrigationState::APPLYING_UPDATES;
-    }
-
-    if (hardware_state.update_pending) {
-        return IrrigationState::CHECKING_UPDATES;
-    }
-
-    return IrrigationState::IDLE;
 }
 
 const char *IrrigationStateMachine::stateName(IrrigationState state)

@@ -92,11 +92,10 @@ void IrrigationMode::onStart()
 
                 if (rtc_set_datetime(&dt)) {
                     sleep_us(64);
-                    updateStateMachine();
+                    onRtcSynced();
                     logger.info("RTC synced from PMU: %04d-%02d-%02d %02d:%02d:%02d", dt.year,
                                 dt.month, dt.day, dt.hour, dt.min, dt.sec);
                     switchToOperationalPattern();
-                    work_tracker_.completeWork(WorkType::RtcSync);
                 } else {
                     logger.error("Failed to set RTC from PMU time");
                 }
@@ -165,7 +164,6 @@ void IrrigationMode::onStart()
         HEARTBEAT_INTERVAL_MS, "Heartbeat");
 
     irrigation_state_.markInitialized();
-    updateIrrigationState();
 }
 
 void IrrigationMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry *entry)
@@ -185,6 +183,7 @@ void IrrigationMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEn
 
                 if (entry->valveId < ValveController::NUM_VALVES) {
                     valve_controller_.openValve(entry->valveId);
+                    irrigation_state_.reportValveOpened();
                 } else {
                     logger.error("Invalid valve ID %d in schedule", entry->valveId);
                 }
@@ -230,6 +229,7 @@ void IrrigationMode::handleScheduleComplete()
     for (uint8_t i = 0; i < ValveController::NUM_VALVES; i++) {
         valve_controller_.closeValve(i);
     }
+    irrigation_state_.reportValveClosed();
 
     // Brief delay to ensure valves are closed
     sleep_ms(500);
@@ -262,9 +262,11 @@ void IrrigationMode::onActuatorCommand(const ActuatorPayload *payload)
         if (payload->command == CMD_TURN_ON) {
             logger.info("Opening valve %d", valve_id);
             valve_controller_.openValve(valve_id);
+            irrigation_state_.reportValveOpened();
         } else if (payload->command == CMD_TURN_OFF) {
             logger.info("Closing valve %d", valve_id);
             valve_controller_.closeValve(valve_id);
+            irrigation_state_.reportValveClosed();
         } else {
             logger.error("Unknown valve command %d", payload->command);
         }
@@ -273,14 +275,20 @@ void IrrigationMode::onActuatorCommand(const ActuatorPayload *payload)
     }
 }
 
+void IrrigationMode::onRtcSynced()
+{
+    irrigation_state_.reportRtcSynced();
+    work_tracker_.completeWork(WorkType::RtcSync);
+}
+
 void IrrigationMode::onHeartbeatResponse(const HeartbeatResponsePayload *payload)
 {
-    // Call base class implementation to update RP2040 RTC
+    // Base class sets RP2040 RTC and calls onRtcSynced() →
+    //   irrigation_state_.reportRtcSynced() + work_tracker_.completeWork(RtcSync)
     ApplicationMode::onHeartbeatResponse(payload);
 
-    // Also sync time to PMU if available
+    // Also sync time to PMU for persistence across power cycles
     if (pmu_available_ && pmu_client_ && payload) {
-        // Convert HeartbeatResponsePayload to PMU::DateTime
         PMU::DateTime datetime(payload->year % 100,  // PMU uses 2-digit year (e.g., 25 for 2025)
                                payload->month, payload->day, payload->dotw, payload->hour,
                                payload->min, payload->sec);
@@ -289,23 +297,14 @@ void IrrigationMode::onHeartbeatResponse(const HeartbeatResponsePayload *payload
                         datetime.month, datetime.day, datetime.hour, datetime.minute,
                         datetime.second);
 
-        // Send datetime to PMU - PMU decides if update is needed based on drift
         pmu_client_->getProtocol().setDateTime(
-            datetime, [this](bool success, PMU::ErrorCode error) {
+            datetime, [](bool success, PMU::ErrorCode error) {
                 if (success) {
                     pmu_logger.info("PMU time sync successful");
                 } else {
                     pmu_logger.error("PMU time sync failed: error %d", static_cast<int>(error));
                 }
-                // Complete RTC sync work regardless of PMU result - RP2040 RTC was synced by base
-                // class
-                work_tracker_.completeWork(WorkType::RtcSync);
-                updateIrrigationState();
             });
-    } else if (payload) {
-        // No PMU available, but RTC was synced by base class
-        work_tracker_.completeWork(WorkType::RtcSync);
-        updateIrrigationState();
     }
 }
 
@@ -319,6 +318,7 @@ void IrrigationMode::sendCheckUpdates()
     if (seq_num != 0) {
         // Store the sequence number so we can cancel it when we receive UPDATE_AVAILABLE
         update_state_.pending_check_seq = seq_num;
+        irrigation_state_.reportUpdatePullStarted();
 
         // Tell PMU to stay awake while we process updates
         if (pmu_available_ && pmu_client_) {
@@ -327,6 +327,7 @@ void IrrigationMode::sendCheckUpdates()
     } else {
         logger.error("Failed to send CHECK_UPDATES");
         // Complete update pull work on failure
+        irrigation_state_.reportUpdatesComplete();
         work_tracker_.completeWork(WorkType::UpdatePull);
     }
 }
@@ -336,6 +337,7 @@ void IrrigationMode::onUpdateAvailable(const UpdateAvailablePayload *payload)
     if (!payload) {
         logger.error("NULL update payload");
         update_state_.reset();
+        irrigation_state_.reportUpdatesComplete();
         work_tracker_.completeWork(WorkType::UpdatePull);
         return;
     }
@@ -356,7 +358,7 @@ void IrrigationMode::onUpdateAvailable(const UpdateAvailablePayload *payload)
     if (payload->has_update == 0) {
         logger.info("No more updates");
         update_state_.reset();
-        // Complete update pull work - idle callback will signal sleep if no other work
+        irrigation_state_.reportUpdatesComplete();
         work_tracker_.completeWork(WorkType::UpdatePull);
         return;
     }
@@ -366,6 +368,7 @@ void IrrigationMode::onUpdateAvailable(const UpdateAvailablePayload *payload)
     uint8_t hub_sequence = payload->sequence;
 
     logger.info("Received update: type=%d, seq=%d", payload->update_type, hub_sequence);
+    irrigation_state_.reportUpdateReceived();
 
     // Check if we've already processed this update (messages crossing in flight)
     if (hub_sequence <= update_state_.current_sequence) {
@@ -399,17 +402,13 @@ void IrrigationMode::onUpdateAvailable(const UpdateAvailablePayload *payload)
             protocol.setSchedule(entry, [this, hub_sequence](bool success, PMU::ErrorCode error) {
                 if (success) {
                     logger.info("  Schedule applied successfully");
-                    // Update our sequence and send ACK with success status
                     update_state_.current_sequence = hub_sequence;
-                    // Note: sendAck is private, we rely on automatic ACK from ReliableMessenger
-                    // The UPDATE_AVAILABLE message has MSG_FLAG_RELIABLE so it gets auto-ACKed
-
-                    // Immediately check for next update
+                    irrigation_state_.reportUpdateApplied();
                     sendCheckUpdates();
                 } else {
                     logger.error("  Failed to apply schedule: error %d", static_cast<int>(error));
-                    // For errors, we just don't update sequence and stop pulling updates
                     update_state_.reset();
+                    irrigation_state_.reportUpdatesComplete();
                     work_tracker_.completeWork(WorkType::UpdatePull);
                 }
             });
@@ -424,10 +423,12 @@ void IrrigationMode::onUpdateAvailable(const UpdateAvailablePayload *payload)
                 if (success) {
                     logger.info("  Schedule removed successfully");
                     update_state_.current_sequence = hub_sequence;
+                    irrigation_state_.reportUpdateApplied();
                     sendCheckUpdates();
                 } else {
                     logger.error("  Failed to remove schedule: error %d", static_cast<int>(error));
                     update_state_.reset();
+                    irrigation_state_.reportUpdatesComplete();
                     work_tracker_.completeWork(WorkType::UpdatePull);
                 }
             });
@@ -455,10 +456,12 @@ void IrrigationMode::onUpdateAvailable(const UpdateAvailablePayload *payload)
                     if (success) {
                         logger.info("  DateTime set successfully");
                         update_state_.current_sequence = hub_sequence;
+                        irrigation_state_.reportUpdateApplied();
                         sendCheckUpdates();
                     } else {
                         logger.error("  Failed to set datetime: error %d", static_cast<int>(error));
                         update_state_.reset();
+                        irrigation_state_.reportUpdatesComplete();
                         work_tracker_.completeWork(WorkType::UpdatePull);
                     }
                 });
@@ -475,11 +478,13 @@ void IrrigationMode::onUpdateAvailable(const UpdateAvailablePayload *payload)
                                          if (success) {
                                              logger.info("  Wake interval set successfully");
                                              update_state_.current_sequence = hub_sequence;
+                                             irrigation_state_.reportUpdateApplied();
                                              sendCheckUpdates();
                                          } else {
                                              logger.error("  Failed to set wake interval: error %d",
                                                           static_cast<int>(error));
                                              update_state_.reset();
+                                             irrigation_state_.reportUpdatesComplete();
                                              work_tracker_.completeWork(WorkType::UpdatePull);
                                          }
                                      });
@@ -489,6 +494,7 @@ void IrrigationMode::onUpdateAvailable(const UpdateAvailablePayload *payload)
         default:
             logger.error("Unknown update type %d", payload->update_type);
             update_state_.reset();
+            irrigation_state_.reportUpdatesComplete();
             work_tracker_.completeWork(WorkType::UpdatePull);
             break;
     }
@@ -569,14 +575,4 @@ void IrrigationMode::signalReadyForSleep()
         pmu_logger.warn("No response to ReadyForSleep (attempt %d/%d)", attempt + 1, MAX_RETRIES);
         sleep_ms(100);  // Small delay before retry
     }
-}
-
-void IrrigationMode::updateIrrigationState()
-{
-    IrrigationHardwareState hardware_state;
-    hardware_state.rtc_running = rtc_running();
-    hardware_state.valve_open = valve_controller_.getActiveValveMask() != 0;
-    hardware_state.update_pending = work_tracker_.hasWork(WorkType::UpdatePull);
-    hardware_state.applying_update = false;
-    irrigation_state_.update(hardware_state);
 }
