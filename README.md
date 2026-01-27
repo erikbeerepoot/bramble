@@ -170,6 +170,12 @@ Bramble uses a custom message protocol optimized for farm applications:
 - CMake 3.13+
 - ARM GCC toolchain
 
+### First-Time Setup
+After cloning, run the setup script to configure git hooks:
+```bash
+./setup.sh
+```
+
 ### Hardware Variants
 Bramble supports specialized builds for different hardware configurations:
 

@@ -195,6 +195,8 @@ class SensorDatabase:
         self._id_counter = 0
         self._id_lock = threading.Lock()
         self._write_buffer: Optional[WriteBuffer] = None
+        self._conn: Optional[duckdb.DuckDBPyConnection] = None
+        self._conn_lock = threading.Lock()
 
     def _ensure_directory(self):
         """Ensure the database directory exists."""
@@ -213,20 +215,46 @@ class SensorDatabase:
         if result and result[0]:
             self._id_counter = result[0]
 
+    def _open_connection(self) -> duckdb.DuckDBPyConnection:
+        """Open (or reopen) the persistent database connection."""
+        with self._conn_lock:
+            if self._conn is not None:
+                try:
+                    self._conn.close()
+                except Exception:
+                    pass
+            self._conn = duckdb.connect(self.db_path, config={
+                'memory_limit': Config.DB_MEMORY_LIMIT,
+                'threads': Config.DB_THREADS,
+            })
+            return self._conn
+
     @contextmanager
     def _get_connection(self):
-        """Context manager for database connections."""
-        conn = duckdb.connect(self.db_path, config={
-            'memory_limit': Config.DB_MEMORY_LIMIT,
-            'threads': Config.DB_THREADS,
-        })
+        """Get a cursor from the persistent connection.
+
+        Cursors are lightweight and allow concurrent reads from the
+        same underlying connection, sharing the single memory pool.
+        """
+        with self._conn_lock:
+            if self._conn is None:
+                self._open_connection()
+            conn = self._conn
+
+        cursor = conn.cursor()
         try:
-            yield conn
+            yield cursor
+        except duckdb.Error:
+            # Reset connection so the next call reopens it
+            with self._conn_lock:
+                self._conn = None
+            raise
         finally:
-            conn.close()
+            cursor.close()
 
     def init_db(self):
-        """Initialize database schema."""
+        """Initialize database schema and open the persistent connection."""
+        self._open_connection()
         with self._get_connection() as conn:
             # Execute schema statements one at a time
             for statement in self.SCHEMA.split(';'):
@@ -241,6 +269,16 @@ class SensorDatabase:
             except duckdb.Error:
                 pass  # Column already exists
             logger.info(f"Database initialized at {self.db_path}")
+
+    def close(self):
+        """Close the persistent database connection."""
+        with self._conn_lock:
+            if self._conn is not None:
+                try:
+                    self._conn.close()
+                except Exception:
+                    pass
+                self._conn = None
 
     def get_write_buffer(self) -> WriteBuffer:
         """Get or create the write buffer for batched inserts."""
@@ -624,34 +662,58 @@ class SensorDatabase:
             """, params)
             return result.fetchone()[0]
 
-    def export_csv(
+    def export_csv_iter(
         self,
         node_address: Optional[int] = None,
         start_time: Optional[int] = None,
         end_time: Optional[int] = None
-    ) -> str:
-        """Export readings as CSV string.
+    ):
+        """Export readings as a CSV line generator (streaming).
+
+        Yields one row at a time instead of building the full result
+        in memory, keeping memory usage constant regardless of data size.
 
         Args:
             node_address: Filter by node address (optional)
             start_time: Start timestamp (optional)
             end_time: End timestamp (optional)
 
-        Returns:
-            CSV formatted string
+        Yields:
+            CSV lines including header
         """
-        readings = self.query_readings(
-            node_address=node_address,
-            start_time=start_time,
-            end_time=end_time,
-            limit=100000  # Higher limit for export
-        )
+        yield "node_address,device_id,timestamp,temperature_celsius,humidity_percent,flags\n"
 
-        lines = ["node_address,device_id,timestamp,temperature_celsius,humidity_percent,flags"]
-        for r in readings:
-            lines.append(f"{r.node_address},{r.device_id or ''},{r.timestamp},{r.temperature_celsius:.2f},{r.humidity_percent:.2f},{r.flags}")
+        conditions = []
+        params = []
 
-        return "\n".join(lines)
+        if node_address is not None:
+            conditions.append("node_address = ?")
+            params.append(node_address)
+        if start_time is not None:
+            conditions.append("timestamp >= ?")
+            params.append(start_time)
+        if end_time is not None:
+            conditions.append("timestamp <= ?")
+            params.append(end_time)
+
+        where_clause = " AND ".join(conditions) if conditions else "1=1"
+
+        with self._get_connection() as conn:
+            result = conn.execute(f"""
+                SELECT node_address, device_id, timestamp, temperature_centidegrees,
+                       humidity_centipercent, flags
+                FROM sensor_readings
+                WHERE {where_clause}
+                ORDER BY timestamp DESC
+            """, params)
+
+            while True:
+                row = result.fetchone()
+                if row is None:
+                    break
+                temp_c = row[3] / 100.0
+                hum_p = row[4] / 100.0
+                yield f"{row[0]},{row[1] or ''},{row[2]},{temp_c:.2f},{hum_p:.2f},{row[5]}\n"
 
     def get_node_metadata(self, address: int) -> Optional[dict]:
         """Get metadata for a node.

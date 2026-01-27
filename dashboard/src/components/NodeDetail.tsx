@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Node, NodeStatistics, SensorReading, TimeRange, NodeMetadata, CustomTimeRange, Zone } from '../types';
 import { TIME_RANGES, parseErrorFlags, formatUptime, getSignalQuality, getBatteryStatus } from '../types';
 import { getNodeSensorData, getNodeStatistics } from '../api/client';
@@ -32,8 +32,17 @@ function NodeDetail({ node, zones, onBack, onUpdate, onZoneCreated }: NodeDetail
   const [loadingStatistics, setLoadingStatistics] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [timeBounds, setTimeBounds] = useState<{ start: number; end: number } | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const fetchData = useCallback(async () => {
+    // Abort any in-flight request before starting a new one
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    const { signal } = controller;
+
     setLoadingSensorData(true);
     setLoadingStatistics(true);
     setError(null);
@@ -58,6 +67,7 @@ function NodeDetail({ node, zones, onBack, onUpdate, onZoneCreated }: NodeDetail
       startTime,
       endTime,
       downsample: 500,
+      signal,
     }).then((sensorData) => {
       setReadings(sensorData.readings);
       setLoadingSensorData(false);
@@ -66,6 +76,7 @@ function NodeDetail({ node, zones, onBack, onUpdate, onZoneCreated }: NodeDetail
     const statisticsPromise = getNodeStatistics(node.address, {
       startTime,
       endTime,
+      signal,
     }).then((stats) => {
       setStatistics(stats);
       setLoadingStatistics(false);
@@ -73,15 +84,21 @@ function NodeDetail({ node, zones, onBack, onUpdate, onZoneCreated }: NodeDetail
 
     // Wait for both to settle so we can surface any errors
     const results = await Promise.allSettled([sensorDataPromise, statisticsPromise]);
+    if (signal.aborted) return; // Superseded by a newer request
+
     const failures = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
     if (failures.length > 0) {
       const reason = failures[0].reason;
+      if (reason instanceof DOMException && reason.name === 'AbortError') return;
       setError(reason instanceof Error ? reason.message : 'Failed to fetch data');
     }
   }, [node.address, timeRange, customRange]);
 
   useEffect(() => {
     fetchData();
+    return () => {
+      abortControllerRef.current?.abort();
+    };
   }, [fetchData]);
 
   const handleMetadataUpdate = (metadata: NodeMetadata) => {
@@ -164,17 +181,6 @@ function NodeDetail({ node, zones, onBack, onUpdate, onZoneCreated }: NodeDetail
                     {formatUptime(node.status.uptime_seconds)}
                   </dd>
                 </div>
-
-                {/* Firmware Version */}
-                {node.firmware_version && (
-                  <div>
-                    <dt className="text-sm text-gray-500 mb-1">Firmware</dt>
-                    <dd className="text-lg font-medium text-gray-900 font-mono">
-                      v{node.firmware_version}
-                    </dd>
-                  </div>
-                )}
-
                 {/* Health Status */}
                 <div>
                   <dt className="text-sm text-gray-500 mb-1">Health</dt>
