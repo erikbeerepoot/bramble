@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+#
+# Pre-commit hook: auto-stage VERSION if it has local changes.
+# The build system auto-increments the build number in VERSION,
+# so this hook ensures the updated file is never accidentally
+# left out of a commit.
+
+if git diff --name-only | grep -q '^VERSION$'; then
+    git add VERSION
+fi
