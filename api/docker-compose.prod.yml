@@ -18,7 +18,7 @@ services:
       - QUEUE_DB_PATH=/data/queue.db
       - DB_MEMORY_LIMIT=128MB
       - DB_THREADS=2
-    mem_limit: 256m
+    mem_limit: 128m
     restart: unless-stopped
     group_add:
       - dialout
