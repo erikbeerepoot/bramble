@@ -4,46 +4,6 @@
 
 static Logger logger("SensorSM");
 
-void SensorStateMachine::markInitialized()
-{
-    if (initialized_) {
-        return;  // Already initialized
-    }
-    initialized_ = true;
-    logger.debug("Hardware initialization complete");
-    updateState();
-}
-
-void SensorStateMachine::markError()
-{
-    if (error_) {
-        return;  // Already in error
-    }
-    error_ = true;
-    logger.error("Unrecoverable error reported");
-    updateState();
-}
-
-void SensorStateMachine::reportRtcSynced()
-{
-    if (rtc_synced_) {
-        return;  // Already synced
-    }
-    rtc_synced_ = true;
-    logger.info("RTC synchronized");
-    updateState();
-}
-
-void SensorStateMachine::reportRtcLost()
-{
-    if (!rtc_synced_) {
-        return;  // Already not synced
-    }
-    rtc_synced_ = false;
-    logger.warn("RTC synchronization lost");
-    updateState();
-}
-
 void SensorStateMachine::reportSensorInitSuccess()
 {
     sensor_init_attempted_ = true;

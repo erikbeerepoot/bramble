@@ -755,14 +755,18 @@ void SensorMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry 
     }
 }
 
+void SensorMode::onRtcSynced()
+{
+    sensor_state_.reportRtcSynced();
+}
+
 void SensorMode::onHeartbeatResponse(const HeartbeatResponsePayload *payload)
 {
-    // Call base class implementation to update RP2040 RTC
+    // Base class sets RP2040 RTC and calls onRtcSynced() → sensor_state_.reportRtcSynced()
     ApplicationMode::onHeartbeatResponse(payload);
 
-    // Also sync time to PMU if available
+    // Also sync time to PMU for persistence across power cycles
     if (pmu_available_ && reliable_pmu_ && payload) {
-        // Convert HeartbeatResponsePayload to PMU::DateTime
         PMU::DateTime datetime(payload->year % 100,  // PMU uses 2-digit year (e.g., 26 for 2026)
                                payload->month, payload->day, payload->dotw, payload->hour,
                                payload->min, payload->sec);
@@ -771,20 +775,13 @@ void SensorMode::onHeartbeatResponse(const HeartbeatResponsePayload *payload)
                         datetime.month, datetime.day, datetime.hour, datetime.minute,
                         datetime.second);
 
-        // Send datetime to PMU, then report RTC synced
-        reliable_pmu_->setDateTime(datetime, [this](bool success, PMU::ErrorCode error) {
+        reliable_pmu_->setDateTime(datetime, [](bool success, PMU::ErrorCode error) {
             if (success) {
                 pmu_logger.info("PMU time sync successful");
             } else {
                 pmu_logger.error("PMU time sync failed: error %d", static_cast<int>(error));
             }
-            // Report RTC synced (regardless of PMU sync - RP2040 RTC is set by base class)
-            // This triggers TIME_SYNCED -> onStateChange handles the rest
-            sensor_state_.reportRtcSynced();
         });
-    } else if (payload) {
-        // No PMU, but RTC was synced by base class - report event directly
-        sensor_state_.reportRtcSynced();
     }
 }
 

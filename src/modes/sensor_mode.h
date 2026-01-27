@@ -118,6 +118,11 @@ private:
     void onHeartbeatResponse(const HeartbeatResponsePayload *payload) override;
 
     /**
+     * @brief Called after RTC sync - notify sensor state machine
+     */
+    void onRtcSynced() override;
+
+    /**
      * @brief Check if enough time has elapsed since last transmission
      * @param current_timestamp Unix timestamp to use for comparison (0 = use RTC)
      * @return true if it's time to transmit backlog, false otherwise
