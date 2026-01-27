@@ -18,6 +18,7 @@ function NodeNameEditor({ node, zones, onUpdate, onZoneCreated }: NodeNameEditor
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showCreateZone, setShowCreateZone] = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
   const currentZone = zones.find(z => z.id === node.metadata?.zone_id);
 
@@ -62,57 +63,76 @@ function NodeNameEditor({ node, zones, onUpdate, onZoneCreated }: NodeNameEditor
   if (!editing) {
     return (
       <div className="card">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-medium text-gray-900">Node Info</h3>
-          <button
-            onClick={() => setEditing(true)}
-            className="text-bramble-600 hover:text-bramble-700 text-sm font-medium"
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="group w-full flex items-center justify-between"
+        >
+          <div className="flex items-center gap-1.5">
+            <h3 className="text-lg font-medium text-gray-900">Node Info</h3>
+            <svg
+              onClick={(e) => { e.stopPropagation(); setExpanded(true); setEditing(true); }}
+              className="w-4 h-4 text-gray-400 hover:text-bramble-600 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+            </svg>
+          </div>
+          <svg
+            className={`w-5 h-5 text-gray-400 transition-transform ${expanded ? 'rotate-180' : ''}`}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
           >
-            Edit
-          </button>
-        </div>
-        <dl className="space-y-2">
-          <div>
-            <dt className="text-sm text-gray-500">Name</dt>
-            <dd className="text-gray-900">{node.metadata?.name || <span className="text-gray-400 italic">Not set</span>}</dd>
-          </div>
-          <div>
-            <dt className="text-sm text-gray-500">Zone</dt>
-            <dd className="text-gray-900">
-              {currentZone ? (
-                <span className="flex items-center space-x-2">
-                  <span
-                    className="w-3 h-3 rounded-full"
-                    style={{ backgroundColor: currentZone.color }}
-                  />
-                  <span>{currentZone.name}</span>
-                </span>
-              ) : (
-                <span className="text-gray-400 italic">Not assigned</span>
-              )}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-sm text-gray-500">Notes</dt>
-            <dd className="text-gray-900">{node.metadata?.notes || <span className="text-gray-400 italic">Not set</span>}</dd>
-          </div>
-          <div>
-            <dt className="text-sm text-gray-500">Address</dt>
-            <dd className="text-gray-900 font-mono">{node.address}</dd>
-          </div>
-          {node.device_id && (
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+
+        {expanded && (
+          <dl className="space-y-2 mt-4">
             <div>
-              <dt className="text-sm text-gray-500">Device ID</dt>
-              <dd className="text-gray-900 font-mono text-sm">{node.device_id.toString(16).toUpperCase()}</dd>
+              <dt className="text-sm text-gray-500">Name</dt>
+              <dd className="text-gray-900">{node.metadata?.name || <span className="text-gray-400 italic">Not set</span>}</dd>
             </div>
-          )}
-          {node.firmware_version && (
             <div>
-              <dt className="text-sm text-gray-500">Firmware</dt>
-              <dd className="text-gray-900 font-mono text-sm">v{node.firmware_version}</dd>
+              <dt className="text-sm text-gray-500">Zone</dt>
+              <dd className="text-gray-900">
+                {currentZone ? (
+                  <span className="flex items-center space-x-2">
+                    <span
+                      className="w-3 h-3 rounded-full"
+                      style={{ backgroundColor: currentZone.color }}
+                    />
+                    <span>{currentZone.name}</span>
+                  </span>
+                ) : (
+                  <span className="text-gray-400 italic">Not assigned</span>
+                )}
+              </dd>
             </div>
-          )}
-        </dl>
+            <div>
+              <dt className="text-sm text-gray-500">Notes</dt>
+              <dd className="text-gray-900">{node.metadata?.notes || <span className="text-gray-400 italic">Not set</span>}</dd>
+            </div>
+            <div>
+              <dt className="text-sm text-gray-500">Address</dt>
+              <dd className="text-gray-900 font-mono">{node.address}</dd>
+            </div>
+            {node.device_id && (
+              <div>
+                <dt className="text-sm text-gray-500">Device ID</dt>
+                <dd className="text-gray-900 font-mono text-sm">{node.device_id.toString(16).toUpperCase()}</dd>
+              </div>
+            )}
+            {node.firmware_version && (
+              <div>
+                <dt className="text-sm text-gray-500">Firmware</dt>
+                <dd className="text-gray-900 font-mono text-sm">v{node.firmware_version}</dd>
+              </div>
+            )}
+          </dl>
+        )}
       </div>
     );
   }
