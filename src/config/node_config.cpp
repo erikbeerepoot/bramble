@@ -49,7 +49,7 @@ bool NodeConfigManager::loadConfiguration(NodeConfiguration &config)
         return attemptBackupRecovery(config);
     }
 
-    logger_.info("Configuration loaded successfully from primary location");
+    logger_.info("Configuration loaded");
     return true;
 }
 

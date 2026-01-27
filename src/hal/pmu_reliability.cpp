@@ -120,7 +120,7 @@ void ReliablePmuClient::handleAck(uint8_t seqNum, bool success, ErrorCode error)
         return;
     }
 
-    log.info("ACK received for seq %d, success=%d", seqNum, success);
+    log.debug("ACK received for seq %d, success=%d", seqNum, success);
 
     // Call the callback if set
     if (inFlight_->callback) {

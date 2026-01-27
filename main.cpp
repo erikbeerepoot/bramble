@@ -199,7 +199,6 @@ int main()
         if (config_manager.loadConfiguration(node_config) &&
             node_config.assigned_address != ADDRESS_UNREGISTERED) {
             current_address = node_config.assigned_address;
-            log.info("Found saved address: 0x%04X", current_address);
         }
 
         // Create messenger with current address
@@ -244,7 +243,7 @@ int main()
             }
         } else {
             log.info("Using saved address 0x%04X - skipping boot registration", current_address);
-            log.info("(Will re-register if PMU reports External wake)");
+            log.debug("(Will re-register if PMU reports External wake)");
         }
 
 // Create appropriate node mode
