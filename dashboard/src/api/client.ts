@@ -60,7 +60,7 @@ export async function getNodeMetadata(address: number): Promise<NodeMetadata> {
 
 export async function updateNodeMetadata(
   address: number,
-  metadata: Partial<Pick<NodeMetadata, 'name' | 'location' | 'notes'>>
+  metadata: Partial<Pick<NodeMetadata, 'name' | 'notes'>>
 ): Promise<NodeMetadata> {
   return fetchApi<NodeMetadata>(`/api/nodes/${address}/metadata`, {
     method: 'PUT',

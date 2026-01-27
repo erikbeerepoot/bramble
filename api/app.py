@@ -277,7 +277,6 @@ def get_node_metadata(address: int):
             return jsonify({
                 'address': address,
                 'name': None,
-                'location': None,
                 'notes': None,
                 'updated_at': None
             })
@@ -297,7 +296,6 @@ def update_node_metadata(address: int):
     Request body:
         {
             "name": "Greenhouse Sensor",
-            "location": "North greenhouse, row 3",
             "notes": "Replaced battery 2024-01"
         }
 
@@ -313,7 +311,6 @@ def update_node_metadata(address: int):
         metadata = db.update_node_metadata(
             address=address,
             name=data.get('name'),
-            location=data.get('location'),
             notes=data.get('notes')
         )
 
