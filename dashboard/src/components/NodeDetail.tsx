@@ -109,6 +109,7 @@ function NodeDetail({ node, zones, onBack, onUpdate, onZoneCreated }: NodeDetail
   };
 
   const displayName = node.metadata?.name || `Node ${node.address}`;
+  const currentZone = zones.find(z => z.id === node.metadata?.zone_id);
   const healthStatus = useMemo(() => getHealthStatus(node.status?.error_flags ?? null), [node.status?.error_flags]);
   const isHealthy = healthStatus === 'healthy';
   const [statusExpanded, setStatusExpanded] = useState(!isHealthy);
@@ -128,6 +129,15 @@ function NodeDetail({ node, zones, onBack, onUpdate, onZoneCreated }: NodeDetail
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">{displayName}</h2>
+          {currentZone && (
+            <div className="flex items-center space-x-2 mt-0.5">
+              <span
+                className="w-2.5 h-2.5 rounded-full"
+                style={{ backgroundColor: currentZone.color }}
+              />
+              <span className="text-sm text-gray-500">{currentZone.name}</span>
+            </div>
+          )}
           <div className="flex items-center space-x-3 mt-1">
             <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
               node.online ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
