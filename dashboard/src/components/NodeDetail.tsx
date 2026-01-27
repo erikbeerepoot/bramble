@@ -130,13 +130,16 @@ function NodeDetail({ node, zones, onBack, onUpdate, onZoneCreated }: NodeDetail
         <div>
           <h2 className="text-2xl font-bold text-gray-900">{displayName}</h2>
           {currentZone && (
-            <div className="flex items-center space-x-2 mt-0.5">
+            <span
+              className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium mt-1"
+              style={{ backgroundColor: currentZone.color + '18', color: currentZone.color }}
+            >
               <span
-                className="w-2.5 h-2.5 rounded-full"
+                className="w-2 h-2 rounded-full"
                 style={{ backgroundColor: currentZone.color }}
               />
-              <span className="text-sm text-gray-500">{currentZone.name}</span>
-            </div>
+              {currentZone.name}
+            </span>
           )}
           <div className="flex items-center space-x-3 mt-1">
             <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
