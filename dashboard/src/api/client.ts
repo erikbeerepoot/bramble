@@ -75,6 +75,7 @@ export async function getNodeSensorData(
     endTime?: number;
     limit?: number;
     downsample?: number;
+    signal?: AbortSignal;
   }
 ): Promise<SensorDataResponse> {
   const params = new URLSearchParams();
@@ -85,7 +86,7 @@ export async function getNodeSensorData(
 
   const query = params.toString();
   const endpoint = `/api/nodes/${address}/sensor-data${query ? `?${query}` : ''}`;
-  return fetchApi<SensorDataResponse>(endpoint);
+  return fetchApi<SensorDataResponse>(endpoint, { signal: options?.signal });
 }
 
 export async function getNodeStatistics(
@@ -93,6 +94,7 @@ export async function getNodeStatistics(
   options?: {
     startTime?: number;
     endTime?: number;
+    signal?: AbortSignal;
   }
 ): Promise<NodeStatistics> {
   const params = new URLSearchParams();
@@ -101,7 +103,7 @@ export async function getNodeStatistics(
 
   const query = params.toString();
   const endpoint = `/api/nodes/${address}/statistics${query ? `?${query}` : ''}`;
-  return fetchApi<NodeStatistics>(endpoint);
+  return fetchApi<NodeStatistics>(endpoint, { signal: options?.signal });
 }
 
 export async function checkHealth(): Promise<{
