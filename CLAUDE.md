@@ -95,9 +95,11 @@ The build system selects the appropriate mode based on hardware variant:
 - **IRRIGATION**: IrrigationMode - valve control, soil moisture sensing
 - **SENSOR**: SensorMode - temperature/humidity monitoring
 - **CONTROLLER**: ControllerMode (hub) or HubMode (node fallback)
+- **HUB**: HubMode - pure hub mode
 - **GENERIC**: GenericMode - basic node functionality
+- **ALL**: Build all variants in a single configure (targets built in parallel with `-j8`)
 
-Each variant includes only the code needed for that hardware type.
+Each variant produces a uniquely-named executable (e.g., `bramble_sensor`, `bramble_irrigation`).
 
 ## Process
 
@@ -147,18 +149,10 @@ Use the `/bramble-build` and `/bramble-flash` skills to build and flash RP2040 f
 Example: `/bramble-build SENSOR` then `/bramble-flash SENSOR`
 
 ### After Code Changes
-After making code changes, build all affected variants in parallel using the `/bramble-build` skill:
-- Changes to shared code (src/util/, src/lora/, src/hal/) affect ALL variants - build them all in parallel
-- Changes to mode-specific code (src/modes/sensor_mode.*) only affect that variant
-- Use parallel Skill tool calls to build multiple variants simultaneously
-
-Example for shared code changes:
-```
-[Call Skill: bramble-build SENSOR]
-[Call Skill: bramble-build IRRIGATION]
-[Call Skill: bramble-build CONTROLLER]
-```
-All three calls should be made in the same message for parallel execution.
+After making code changes, build all affected variants using the `/bramble-build` skill:
+- Changes to shared code (src/util/, src/lora/, src/hal/) affect ALL variants - use `/bramble-build ALL`
+- Changes to mode-specific code (src/modes/sensor_mode.*) only affect that variant - use `/bramble-build SENSOR`
+- `HARDWARE_VARIANT=ALL` configures all targets in one CMake run, so `-j8` parallelizes across variants automatically
 
 ### STM32 PMU
 **Do not attempt to run STM32 build/flash commands directly.** These require specific toolchains. Instead:
