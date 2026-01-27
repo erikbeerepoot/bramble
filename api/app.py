@@ -698,17 +698,14 @@ def export_sensor_data():
         if export_format != 'csv':
             return jsonify({'error': 'Only CSV format is currently supported'}), 400
 
-        # Generate CSV
-        csv_content = db.export_csv(
-            node_address=node_address,
-            start_time=start_time,
-            end_time=end_time
-        )
-
-        # Return as downloadable file
+        # Stream CSV rows to avoid loading all data into memory
         filename = f"sensor_data_{int(time.time())}.csv"
         return Response(
-            csv_content,
+            db.export_csv_iter(
+                node_address=node_address,
+                start_time=start_time,
+                end_time=end_time
+            ),
             mimetype='text/csv',
             headers={'Content-Disposition': f'attachment; filename={filename}'}
         )
