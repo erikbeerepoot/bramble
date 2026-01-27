@@ -110,15 +110,15 @@ function App() {
       <div className="min-h-screen bg-gray-50">
         <header className="bg-bramble-700 text-white shadow-lg">
           <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-4">
-                <h1 className="text-2xl font-bold">Bramble Dashboard</h1>
-                <div className={`flex items-center space-x-2 text-sm ${connected ? 'text-green-300' : 'text-red-300'}`}>
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3 min-w-0">
+                <h1 className="text-xl sm:text-2xl font-bold truncate">Bramble</h1>
+                <div className={`flex items-center space-x-2 text-sm shrink-0 ${connected ? 'text-green-300' : 'text-red-300'}`}>
                   <span className={`w-2 h-2 rounded-full ${connected ? 'bg-green-400' : 'bg-red-400'}`}></span>
-                  <span>{connected ? 'Connected' : 'Disconnected'}</span>
+                  <span className="hidden sm:inline">{connected ? 'Connected' : 'Disconnected'}</span>
                 </div>
               </div>
-              <nav className="flex space-x-4">
+              <nav className="flex space-x-2 sm:space-x-4 shrink-0">
                 <Link
                   to="/nodes"
                   className={`px-3 py-2 rounded-md text-sm font-medium ${
