@@ -232,7 +232,7 @@ void SensorMode::onStateChange(SensorState state)
                 [](void *ctx, uint32_t time) -> bool {
                     (void)time;
                     SensorMode *self = static_cast<SensorMode *>(ctx);
-                    bool needsTx = self->checkBacklog();
+                    bool needsTx = self->checkNeedsTransmission();
                     self->sensor_state_.reportCheckComplete(needsTx);
                     return true;
                 },
@@ -240,16 +240,29 @@ void SensorMode::onStateChange(SensorState state)
             break;
 
         case SensorState::TRANSMITTING:
-            // Transmit backlog
-            task_queue_.postOnce(
-                [](void *ctx, uint32_t time) -> bool {
-                    (void)time;
-                    SensorMode *self = static_cast<SensorMode *>(ctx);
-                    self->transmitBacklog();
-                    // Note: reportTransmitComplete called in transmitBatch callback
-                    return true;
-                },
-                this, TaskPriority::High);
+            // Branch based on flash availability
+            if (flash_buffer_) {
+                // Normal path: transmit from flash backlog
+                task_queue_.postOnce(
+                    [](void *ctx, uint32_t time) -> bool {
+                        (void)time;
+                        SensorMode *self = static_cast<SensorMode *>(ctx);
+                        self->transmitBacklog();
+                        // Note: reportTransmitComplete called in transmitBatch callback
+                        return true;
+                    },
+                    this, TaskPriority::High);
+            } else {
+                // Fallback path: direct transmit current reading
+                task_queue_.postOnce(
+                    [](void *ctx, uint32_t time) -> bool {
+                        (void)time;
+                        SensorMode *self = static_cast<SensorMode *>(ctx);
+                        self->transmitCurrentReading();
+                        return true;
+                    },
+                    this, TaskPriority::High);
+            }
             break;
 
         case SensorState::LISTENING:
@@ -277,7 +290,7 @@ void SensorMode::onStateChange(SensorState state)
                 [](void *ctx, uint32_t time) -> bool {
                     (void)time;
                     SensorMode *self = static_cast<SensorMode *>(ctx);
-                    bool needsTx = self->checkBacklog();
+                    bool needsTx = self->checkNeedsTransmission();
                     self->sensor_state_.reportCheckComplete(needsTx);
                     return true;
                 },
@@ -383,6 +396,14 @@ void SensorMode::readAndStoreSensorData(uint32_t current_time)
     // Humidity: uint16_t in 0.01% units (e.g., 6500 = 65.00%)
     int16_t temp_fixed = static_cast<int16_t>(reading.temperature * 100.0f);
     uint16_t hum_fixed = static_cast<uint16_t>(reading.humidity * 100.0f);
+
+    // Store reading in memory for direct transmit fallback (when flash unavailable)
+    current_reading_ = {.timestamp = unix_timestamp,
+                        .temperature = temp_fixed,
+                        .humidity = hum_fixed,
+                        .flags = 0,
+                        .reserved = 0,
+                        .crc16 = 0};
 
     // Write to flash only (no immediate TX - batch transmission handles delivery)
     if (flash_buffer_) {
@@ -542,10 +563,15 @@ bool SensorMode::isTimeToTransmit(uint32_t current_timestamp) const
     return elapsed >= TRANSMIT_INTERVAL_S;
 }
 
-bool SensorMode::checkBacklog()
+bool SensorMode::checkNeedsTransmission()
 {
+    // Direct transmit fallback: if flash unavailable but we have a valid reading
     if (!flash_buffer_) {
-        logger.debug("No flash buffer - no backlog to check");
+        if (current_reading_.timestamp > 0 && last_sensor_read_valid_) {
+            logger.info("No flash buffer - will transmit current reading directly");
+            return true;
+        }
+        logger.error("No flash buffer and no valid reading - nothing to transmit");
         return false;
     }
 
@@ -583,6 +609,49 @@ bool SensorMode::checkBacklog()
     logger.info("Backlog check: %lu untransmitted records - transmission needed",
                 untransmitted_count);
     return true;
+}
+
+void SensorMode::transmitCurrentReading()
+{
+    // Validate we have a reading to transmit
+    if (current_reading_.timestamp == 0 || !last_sensor_read_valid_) {
+        logger.error("No valid current reading to transmit");
+        sensor_state_.reportTransmitComplete();
+        return;
+    }
+
+    logger.info("Direct transmit: %.2fC (ts=%lu)", current_reading_.temperature / 100.0f,
+                current_reading_.timestamp);
+
+    BatchSensorRecord record = {.timestamp = current_reading_.timestamp,
+                                .temperature = current_reading_.temperature,
+                                .humidity = current_reading_.humidity,
+                                .flags = current_reading_.flags,
+                                .reserved = current_reading_.reserved,
+                                .crc16 = 0};
+
+    uint8_t seq = messenger_.sendSensorDataBatchWithCallback(
+        HUB_ADDRESS, 0, &record, 1, RELIABLE,
+        [this](uint8_t seq_num, uint8_t ack_status, uint64_t context) {
+            (void)context;
+            if (ack_status == 0) {
+                logger.info("Direct transmit ACK (seq=%d)", seq_num);
+                consecutive_tx_failures_ = 0;
+                current_reading_.timestamp = 0;  // Clear to avoid retransmit
+            } else {
+                logger.warn("Direct transmit failed (seq=%d, status=%d)", seq_num, ack_status);
+                if (consecutive_tx_failures_ < 255) {
+                    consecutive_tx_failures_++;
+                }
+            }
+            sensor_state_.reportTransmitComplete();
+        },
+        0);
+
+    if (seq == 0) {
+        logger.error("Failed to send direct transmit message");
+        sensor_state_.reportTransmitComplete();
+    }
 }
 
 void SensorMode::transmitBacklog()

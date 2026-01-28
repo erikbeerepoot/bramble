@@ -68,13 +68,14 @@ private:
     void sendHeartbeat(uint32_t current_time);
 
     /**
-     * @brief Check if there's backlog to transmit
+     * @brief Check if transmission is needed
      * @return true if transmission is needed, false if ready for sleep
      *
      * Pure function: only checks conditions, does not transmit.
+     * Handles both flash backlog and direct transmit fallback cases.
      * Caller should use result to report to state machine.
      */
-    bool checkBacklog();
+    bool checkNeedsTransmission();
 
     /**
      * @brief Transmit backlog to hub
@@ -83,6 +84,14 @@ private:
      * Reports reportTransmitComplete() when done (via callback).
      */
     void transmitBacklog();
+
+    /**
+     * @brief Direct transmit current reading (fallback when flash unavailable)
+     *
+     * Used when external flash fails - transmits the in-memory reading directly
+     * without flash storage. Reports reportTransmitComplete() when done.
+     */
+    void transmitCurrentReading();
 
     /**
      * @brief Transmit a batch of sensor records
@@ -143,6 +152,9 @@ private:
     bool last_sensor_read_valid_ = false;               // Track if last sensor read succeeded
     uint8_t consecutive_tx_failures_ = 0;               // Track consecutive transmission failures
     static constexpr uint8_t TX_FAILURE_THRESHOLD = 3;  // Failures before setting error flag
+
+    // Fallback storage for direct transmit when flash unavailable
+    SensorDataRecord current_reading_ = {};
 
     // Event-driven state machine - reports events, queries state
     // No external flags needed - state machine tracks everything internally
