@@ -262,7 +262,7 @@ bool SensorFlashBuffer::markTransmitted(uint32_t index)
 }
 
 bool SensorFlashBuffer::readUntransmittedRecords(SensorDataRecord *records, size_t max_count,
-                                                 size_t &actual_count)
+                                                 size_t &actual_count, size_t &records_scanned)
 {
     if (!initialized_) {
         logger_.error("Buffer not initialized");
@@ -270,23 +270,43 @@ bool SensorFlashBuffer::readUntransmittedRecords(SensorDataRecord *records, size
     }
 
     actual_count = 0;
+    records_scanned = 0;
     uint32_t current_index = metadata_.read_index;
+    size_t crc_errors = 0;
+    bool had_read_failure = false;
 
     while (actual_count < max_count && current_index != metadata_.write_index) {
         uint32_t address = getRecordAddress(current_index);
         SensorDataRecord record;
 
-        ExternalFlashResult result =
-            flash_.read(address, reinterpret_cast<uint8_t *>(&record), sizeof(record));
+        // Retry read up to 3 times on failure (transient flash issues)
+        ExternalFlashResult result = ExternalFlashResult::ErrorHardware;
+        for (int retry = 0; retry < 3; retry++) {
+            result = flash_.read(address, reinterpret_cast<uint8_t *>(&record), sizeof(record));
+            if (result == ExternalFlashResult::Success) {
+                break;
+            }
+            if (retry < 2) {
+                logger_.warn("Read retry %d for index %lu", retry + 1, current_index);
+            }
+        }
+
         if (result != ExternalFlashResult::Success) {
-            logger_.error("Failed to read record at index %lu", current_index);
+            // Persistent read failure after retries - stop here but don't fail
+            // The caller should only skip records_scanned, not the entire backlog
+            logger_.error("Failed to read record at index %lu after 3 retries", current_index);
+            had_read_failure = true;
             break;
         }
+
+        records_scanned++;
 
         // Verify CRC
         uint16_t calculated_crc = CRC16::calculateRecordCRC(record);
         if (calculated_crc != record.crc16) {
-            logger_.warn("CRC mismatch at index %lu, skipping", current_index);
+            logger_.warn("CRC mismatch at index %lu (expected 0x%04X, got 0x%04X), skipping",
+                         current_index, record.crc16, calculated_crc);
+            crc_errors++;
             current_index = (current_index + 1) % MAX_RECORDS;
             continue;
         }
@@ -304,6 +324,18 @@ bool SensorFlashBuffer::readUntransmittedRecords(SensorDataRecord *records, size
     // The caller must call advanceReadIndex() after successful transmission
     // is confirmed via ACK callback. This prevents data loss if transmission fails.
 
+    if (crc_errors > 0) {
+        logger_.warn("Encountered %zu records with CRC errors", crc_errors);
+    }
+
+    if (had_read_failure) {
+        logger_.warn("Read stopped early due to flash failure - %zu records scanned",
+                     records_scanned);
+    }
+
+    // Return false only if we couldn't read anything (not initialized or immediate failure)
+    // Return true if we scanned any records, even if all had CRC errors
+    // The caller uses records_scanned to know how many to skip
     return true;
 }
 

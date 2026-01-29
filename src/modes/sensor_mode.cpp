@@ -664,9 +664,10 @@ void SensorMode::transmitBacklog()
     // Read up to BATCH_SIZE records
     SensorDataRecord records[SensorFlashBuffer::BATCH_SIZE];
     size_t actual_count = 0;
+    size_t records_scanned = 0;
 
     if (!flash_buffer_->readUntransmittedRecords(records, SensorFlashBuffer::BATCH_SIZE,
-                                                 actual_count)) {
+                                                 actual_count, records_scanned)) {
         logger.error("Failed to read untransmitted records");
         sensor_state_.reportTransmitComplete();
         return;
@@ -674,10 +675,16 @@ void SensorMode::transmitBacklog()
 
     uint32_t untransmitted_count = flash_buffer_->getUntransmittedCount();
     if (actual_count == 0) {
-        logger.warn("No valid records to transmit - skipping %lu corrupt records",
-                    untransmitted_count);
-        // All remaining records are corrupt - advance past them
-        flash_buffer_->advanceReadIndex(untransmitted_count);
+        if (records_scanned > 0) {
+            // All scanned records had CRC errors - skip only those we verified as corrupt
+            logger.warn("No valid records found - skipping %zu corrupt records (of %lu pending)",
+                        records_scanned, untransmitted_count);
+            flash_buffer_->advanceReadIndex(static_cast<uint32_t>(records_scanned));
+        } else if (untransmitted_count > 0) {
+            // Couldn't scan any records (read failure) - don't skip, try again later
+            logger.warn("Flash read issues - %lu records pending, will retry later",
+                        untransmitted_count);
+        }
         sensor_state_.reportTransmitComplete();
         return;
     }
