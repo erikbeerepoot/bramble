@@ -82,6 +82,7 @@ constexpr uint8_t START_BYTE = 0xAA;
 constexpr uint8_t END_BYTE = 0x55;
 constexpr uint8_t MAX_MESSAGE_SIZE = 64;
 constexpr uint8_t SCHEDULE_ENTRY_SIZE = 7;
+constexpr uint8_t NODE_STATE_SIZE = 32;  // Opaque state blob stored in PMU RAM
 
 // Sequence number ranges (for deduplication)
 constexpr uint8_t SEQ_RP2040_MIN = 1;
@@ -206,7 +207,11 @@ private:
 
 // Callback types
 using UartSendCallback = std::function<void(const uint8_t *data, uint8_t length)>;
-using WakeNotificationCallback = std::function<void(WakeReason reason, const ScheduleEntry *entry)>;
+// Wake notification includes state blob from PMU (stored in PMU RAM across sleep cycles)
+// state_valid: false on cold start (PMU reset), true if state was preserved
+// state: 32-byte opaque blob, only meaningful when state_valid is true
+using WakeNotificationCallback = std::function<void(WakeReason reason, const ScheduleEntry *entry,
+                                                    bool state_valid, const uint8_t *state)>;
 using ScheduleCompleteCallback = std::function<void()>;
 using CommandResultCallback = std::function<void(bool success, ErrorCode error)>;
 using WakeIntervalCallback = std::function<void(uint32_t seconds)>;

@@ -40,12 +40,12 @@ bool ReliablePmuClient::init()
     });
 
     // Forward event callbacks to protocol
-    client_->getProtocol().onWakeNotification(
-        [this](WakeReason reason, const ScheduleEntry *entry) {
-            if (wakeCallback_) {
-                wakeCallback_(reason, entry);
-            }
-        });
+    client_->getProtocol().onWakeNotification([this](WakeReason reason, const ScheduleEntry *entry,
+                                                     bool state_valid, const uint8_t *state) {
+        if (wakeCallback_) {
+            wakeCallback_(reason, entry, state_valid, state);
+        }
+    });
 
     client_->getProtocol().onScheduleComplete([this]() {
         if (scheduleCompleteCallback_) {
@@ -275,8 +275,13 @@ bool ReliablePmuClient::keepAwake(uint16_t seconds, CommandCallback callback)
     return queueCommand(Command::KeepAwake, data, 2, callback);
 }
 
-bool ReliablePmuClient::readyForSleep(CommandCallback callback)
+bool ReliablePmuClient::readyForSleep(const uint8_t *state, CommandCallback callback)
 {
+    if (state != nullptr) {
+        // Send state blob with ReadyForSleep command
+        return queueCommand(Command::ReadyForSleep, state, NODE_STATE_SIZE, callback);
+    }
+    // No state blob - send empty command (backward compatible)
     return queueCommand(Command::ReadyForSleep, nullptr, 0, callback);
 }
 

@@ -117,8 +117,11 @@ private:
      * @brief Handle PMU wake notification
      * @param reason Wake reason from PMU
      * @param entry Schedule entry (if scheduled wake)
+     * @param state_valid true if state blob is valid (false on cold start)
+     * @param state 32-byte state blob from PMU RAM (or null)
      */
-    void handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry *entry);
+    void handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry *entry, bool state_valid,
+                       const uint8_t *state);
 
     /**
      * @brief Handle heartbeat response - sync time to PMU

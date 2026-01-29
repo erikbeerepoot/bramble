@@ -33,8 +33,11 @@ using CommandCallback = std::function<void(bool success, ErrorCode error)>;
  * @brief Callback for wake notifications from PMU
  * @param reason Why the device was woken
  * @param entry Schedule entry if wake was scheduled (may be nullptr)
+ * @param state_valid true if state blob is valid (false on cold start)
+ * @param state 32-byte opaque state blob stored in PMU RAM across sleep cycles
  */
-using WakeCallback = std::function<void(WakeReason reason, const ScheduleEntry *entry)>;
+using WakeCallback = std::function<void(WakeReason reason, const ScheduleEntry *entry,
+                                        bool state_valid, const uint8_t *state)>;
 
 /**
  * @brief Reliable PMU client with automatic retry
@@ -115,10 +118,11 @@ public:
 
     /**
      * @brief Signal ready for sleep/power down
+     * @param state 32-byte state blob to persist in PMU RAM (nullptr for no state)
      * @param callback Called when command completes (optional)
      * @return true if command queued successfully
      */
-    bool readyForSleep(CommandCallback callback = nullptr);
+    bool readyForSleep(const uint8_t *state = nullptr, CommandCallback callback = nullptr);
 
     /**
      * @brief Get the current wake interval

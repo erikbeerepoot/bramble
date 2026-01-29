@@ -1,6 +1,8 @@
 #include "pmu_protocol.h"
-#include "main.h"  // For RTC_HandleTypeDef and HAL functions
+
 #include <cstring>
+
+#include "main.h"  // For RTC_HandleTypeDef and HAL functions
 
 // External reference to RTC handle from main.cpp
 extern RTC_HandleTypeDef hrtc;
@@ -12,35 +14,47 @@ namespace PMU {
 // ============================================================================
 
 ScheduleEntry::ScheduleEntry()
-    : hour(0), minute(0), duration(0), daysMask(static_cast<DayOfWeek>(0)),
-      valveId(0), enabled(false) {
+    : hour(0), minute(0), duration(0), daysMask(static_cast<DayOfWeek>(0)), valveId(0),
+      enabled(false)
+{
 }
 
-bool ScheduleEntry::isValid() const {
-    if (!enabled) return true;  // Disabled entries are always valid
-    if (hour > 23) return false;
-    if (minute > 59) return false;
-    if (duration == 0 || duration > 65535) return false;
-    if (static_cast<uint8_t>(daysMask) == 0) return false;
+bool ScheduleEntry::isValid() const
+{
+    if (!enabled)
+        return true;  // Disabled entries are always valid
+    if (hour > 23)
+        return false;
+    if (minute > 59)
+        return false;
+    if (duration == 0 || duration > 65535)
+        return false;
+    if (static_cast<uint8_t>(daysMask) == 0)
+        return false;
     return true;
 }
 
-bool ScheduleEntry::overlapsWith(const ScheduleEntry& other) const {
-    if (!enabled || !other.enabled) return false;
+bool ScheduleEntry::overlapsWith(const ScheduleEntry &other) const
+{
+    if (!enabled || !other.enabled)
+        return false;
 
     // Check if they share any common days
     DayOfWeek commonDays = daysMask & other.daysMask;
-    if (!commonDays) return false;  // No common days, no overlap
+    if (!commonDays)
+        return false;  // No common days, no overlap
 
     // Check if time ranges overlap
-    return timeRangesOverlap(hour, minute, duration,
-                            other.hour, other.minute, other.duration);
+    return timeRangesOverlap(hour, minute, duration, other.hour, other.minute, other.duration);
 }
 
 uint32_t ScheduleEntry::minutesUntil(uint8_t currentDay, uint8_t currentHour,
-                                     uint8_t currentMinute) const {
-    if (!enabled) return 0xFFFFFFFF;
-    if (!matchesDay(currentDay)) return 0xFFFFFFFF;
+                                     uint8_t currentMinute) const
+{
+    if (!enabled)
+        return 0xFFFFFFFF;
+    if (!matchesDay(currentDay))
+        return 0xFFFFFFFF;
 
     uint32_t currentMinutes = currentHour * 60 + currentMinute;
     uint32_t scheduleMinutes = hour * 60 + minute;
@@ -52,10 +66,13 @@ uint32_t ScheduleEntry::minutesUntil(uint8_t currentDay, uint8_t currentHour,
     return 0xFFFFFFFF;  // Time has passed today
 }
 
-bool ScheduleEntry::isWithinWindow(uint8_t currentDay, uint8_t currentHour,
-                                   uint8_t currentMinute, uint32_t windowMinutes) const {
-    if (!enabled) return false;
-    if (!matchesDay(currentDay)) return false;
+bool ScheduleEntry::isWithinWindow(uint8_t currentDay, uint8_t currentHour, uint8_t currentMinute,
+                                   uint32_t windowMinutes) const
+{
+    if (!enabled)
+        return false;
+    if (!matchesDay(currentDay))
+        return false;
 
     uint32_t currentMinutes = currentHour * 60 + currentMinute;
     uint32_t scheduleMinutes = hour * 60 + minute;
@@ -76,14 +93,17 @@ bool ScheduleEntry::isWithinWindow(uint8_t currentDay, uint8_t currentHour,
     return false;
 }
 
-bool ScheduleEntry::matchesDay(uint8_t dayOfWeek) const {
-    if (dayOfWeek > 6) return false;  // Invalid day
+bool ScheduleEntry::matchesDay(uint8_t dayOfWeek) const
+{
+    if (dayOfWeek > 6)
+        return false;  // Invalid day
     uint8_t dayBit = 1 << dayOfWeek;
     return (static_cast<uint8_t>(daysMask) & dayBit) != 0;
 }
 
-bool ScheduleEntry::timeRangesOverlap(uint8_t h1, uint8_t m1, uint16_t d1,
-                                      uint8_t h2, uint8_t m2, uint16_t d2) const {
+bool ScheduleEntry::timeRangesOverlap(uint8_t h1, uint8_t m1, uint16_t d1, uint8_t h2, uint8_t m2,
+                                      uint16_t d2) const
+{
     // Convert to minutes since midnight
     uint32_t start1 = h1 * 60 + m1;
     uint32_t end1 = start1 + (d1 / 60);  // duration in seconds -> minutes
@@ -100,14 +120,16 @@ bool ScheduleEntry::timeRangesOverlap(uint8_t h1, uint8_t m1, uint16_t d1,
 // WateringSchedule Implementation
 // ============================================================================
 
-WateringSchedule::WateringSchedule() : count_(0) {
+WateringSchedule::WateringSchedule() : count_(0)
+{
     // Initialize all entries as disabled
-    for (auto& entry : entries_) {
+    for (auto &entry : entries_) {
         entry.enabled = false;
     }
 }
 
-ErrorCode WateringSchedule::addEntry(const ScheduleEntry& entry) {
+ErrorCode WateringSchedule::addEntry(const ScheduleEntry &entry)
+{
     if (!entry.isValid()) {
         return ErrorCode::InvalidParam;
     }
@@ -127,7 +149,8 @@ ErrorCode WateringSchedule::addEntry(const ScheduleEntry& entry) {
     return ErrorCode::NoError;
 }
 
-ErrorCode WateringSchedule::updateEntry(uint8_t index, const ScheduleEntry& entry) {
+ErrorCode WateringSchedule::updateEntry(uint8_t index, const ScheduleEntry &entry)
+{
     if (index >= count_) {
         return ErrorCode::InvalidIndex;
     }
@@ -144,7 +167,8 @@ ErrorCode WateringSchedule::updateEntry(uint8_t index, const ScheduleEntry& entr
     return ErrorCode::NoError;
 }
 
-ErrorCode WateringSchedule::removeEntry(uint8_t index) {
+ErrorCode WateringSchedule::removeEntry(uint8_t index)
+{
     if (index >= count_) {
         return ErrorCode::InvalidIndex;
     }
@@ -158,26 +182,29 @@ ErrorCode WateringSchedule::removeEntry(uint8_t index) {
     return ErrorCode::NoError;
 }
 
-void WateringSchedule::clear() {
+void WateringSchedule::clear()
+{
     count_ = 0;
 }
 
-const ScheduleEntry* WateringSchedule::getEntry(uint8_t index) const {
+const ScheduleEntry *WateringSchedule::getEntry(uint8_t index) const
+{
     if (index >= count_) {
         return nullptr;
     }
     return &entries_[index];
 }
 
-const ScheduleEntry* WateringSchedule::findNextEntry(uint8_t currentDay,
-                                                     uint8_t currentHour,
-                                                     uint8_t currentMinute) const {
-    const ScheduleEntry* nextEntry = nullptr;
+const ScheduleEntry *WateringSchedule::findNextEntry(uint8_t currentDay, uint8_t currentHour,
+                                                     uint8_t currentMinute) const
+{
+    const ScheduleEntry *nextEntry = nullptr;
     uint32_t minMinutes = 0xFFFFFFFF;
 
     for (uint8_t i = 0; i < count_; i++) {
-        const auto& entry = entries_[i];
-        if (!entry.enabled) continue;
+        const auto &entry = entries_[i];
+        if (!entry.enabled)
+            continue;
 
         uint32_t minutesUntil = entry.minutesUntil(currentDay, currentHour, currentMinute);
         if (minutesUntil < minMinutes) {
@@ -189,13 +216,16 @@ const ScheduleEntry* WateringSchedule::findNextEntry(uint8_t currentDay,
     return nextEntry;
 }
 
-uint8_t WateringSchedule::getCount() const {
+uint8_t WateringSchedule::getCount() const
+{
     return count_;
 }
 
-bool WateringSchedule::hasOverlap(const ScheduleEntry& entry, uint8_t excludeIndex) const {
+bool WateringSchedule::hasOverlap(const ScheduleEntry &entry, uint8_t excludeIndex) const
+{
     for (uint8_t i = 0; i < count_; i++) {
-        if (i == excludeIndex) continue;
+        if (i == excludeIndex)
+            continue;
 
         if (entry.overlapsWith(entries_[i])) {
             return true;
@@ -209,11 +239,13 @@ bool WateringSchedule::hasOverlap(const ScheduleEntry& entry, uint8_t excludeInd
 // ============================================================================
 
 MessageParser::MessageParser()
-    : state_(State::WaitStart), bytesRead_(0), expectedLength_(0),
-      calculatedChecksum_(0), sequenceNumber_(0), complete_(false) {
+    : state_(State::WaitStart), bytesRead_(0), expectedLength_(0), calculatedChecksum_(0),
+      sequenceNumber_(0), complete_(false)
+{
 }
 
-bool MessageParser::processByte(uint8_t byte) {
+bool MessageParser::processByte(uint8_t byte)
+{
     switch (state_) {
         case State::WaitStart:
             if (byte == START_BYTE) {
@@ -284,34 +316,43 @@ bool MessageParser::processByte(uint8_t byte) {
     return false;
 }
 
-bool MessageParser::isComplete() const {
+bool MessageParser::isComplete() const
+{
     return complete_;
 }
 
-uint8_t MessageParser::getSequenceNumber() const {
+uint8_t MessageParser::getSequenceNumber() const
+{
     return sequenceNumber_;
 }
 
-Command MessageParser::getCommand() const {
+Command MessageParser::getCommand() const
+{
     // buffer_[0] = length, buffer_[1] = seq, buffer_[2] = command
-    if (bytesRead_ < 3) return static_cast<Command>(0);
+    if (bytesRead_ < 3)
+        return static_cast<Command>(0);
     return static_cast<Command>(buffer_[2]);
 }
 
-const uint8_t* MessageParser::getData() const {
+const uint8_t *MessageParser::getData() const
+{
     // Data starts after length(1) + seq(1) + command(1)
-    if (bytesRead_ < 3) return nullptr;
+    if (bytesRead_ < 3)
+        return nullptr;
     return &buffer_[3];
 }
 
-uint8_t MessageParser::getDataLength() const {
-    if (bytesRead_ < 3) return 0;
+uint8_t MessageParser::getDataLength() const
+{
+    if (bytesRead_ < 3)
+        return 0;
     // expectedLength_ = seq(1) + command(1) + data(n)
     // dataLength = expectedLength_ - 2
     return (expectedLength_ > 2) ? (expectedLength_ - 2) : 0;
 }
 
-void MessageParser::reset() {
+void MessageParser::reset()
+{
     state_ = State::WaitStart;
     bytesRead_ = 0;
     expectedLength_ = 0;
@@ -320,7 +361,8 @@ void MessageParser::reset() {
     complete_ = false;
 }
 
-uint8_t MessageParser::calculateChecksum() const {
+uint8_t MessageParser::calculateChecksum() const
+{
     uint8_t checksum = 0;
     for (uint8_t i = 0; i < bytesRead_; i++) {
         checksum ^= buffer_[i];
@@ -332,30 +374,33 @@ uint8_t MessageParser::calculateChecksum() const {
 // MessageBuilder Implementation
 // ============================================================================
 
-MessageBuilder::MessageBuilder() : dataLength_(0), totalLength_(0) {
-}
+MessageBuilder::MessageBuilder() : dataLength_(0), totalLength_(0) {}
 
-void MessageBuilder::startMessage(uint8_t sequenceNumber, uint8_t response) {
+void MessageBuilder::startMessage(uint8_t sequenceNumber, uint8_t response)
+{
     buffer_[0] = START_BYTE;
     // buffer_[1] = length (set in finalize)
     buffer_[2] = sequenceNumber;
     buffer_[3] = response;
-    dataLength_ = 2;  // seq + response
-    totalLength_ = 4; // START + LENGTH + SEQ + RESPONSE
+    dataLength_ = 2;   // seq + response
+    totalLength_ = 4;  // START + LENGTH + SEQ + RESPONSE
 }
 
-void MessageBuilder::addByte(uint8_t data) {
+void MessageBuilder::addByte(uint8_t data)
+{
     buffer_[totalLength_++] = data;
     dataLength_++;
 }
 
-void MessageBuilder::addUint16(uint16_t data) {
+void MessageBuilder::addUint16(uint16_t data)
+{
     // Little-endian
     addByte(data & 0xFF);
     addByte((data >> 8) & 0xFF);
 }
 
-void MessageBuilder::addUint32(uint32_t data) {
+void MessageBuilder::addUint32(uint32_t data)
+{
     // Little-endian
     addByte(data & 0xFF);
     addByte((data >> 8) & 0xFF);
@@ -363,7 +408,8 @@ void MessageBuilder::addUint32(uint32_t data) {
     addByte((data >> 24) & 0xFF);
 }
 
-void MessageBuilder::addScheduleEntry(const ScheduleEntry& entry) {
+void MessageBuilder::addScheduleEntry(const ScheduleEntry &entry)
+{
     addByte(entry.hour);
     addByte(entry.minute);
     addUint16(entry.duration);
@@ -372,7 +418,8 @@ void MessageBuilder::addScheduleEntry(const ScheduleEntry& entry) {
     addByte(entry.enabled ? 1 : 0);
 }
 
-const uint8_t* MessageBuilder::finalize() {
+const uint8_t *MessageBuilder::finalize()
+{
     // Set length field
     buffer_[1] = dataLength_;
 
@@ -385,11 +432,13 @@ const uint8_t* MessageBuilder::finalize() {
     return buffer_;
 }
 
-uint8_t MessageBuilder::getLength() const {
+uint8_t MessageBuilder::getLength() const
+{
     return totalLength_;
 }
 
-uint8_t MessageBuilder::calculateChecksum() const {
+uint8_t MessageBuilder::calculateChecksum() const
+{
     uint8_t checksum = 0;
     // XOR length + command + data
     for (uint8_t i = 1; i < totalLength_; i++) {
@@ -402,47 +451,54 @@ uint8_t MessageBuilder::calculateChecksum() const {
 // Protocol Implementation
 // ============================================================================
 
-Protocol::Protocol(UartSendCallback uartSend, SetWakeCallback setWake,
-                   KeepAwakeCallback keepAwake, ReadyForSleepCallback readyForSleep,
-                   GetTickCallback getTick)
-    : wakeInterval_(60), nextSeqNum_(SEQ_STM32_MIN), currentSeqNum_(0),
-      uartSend_(uartSend), setWake_(setWake),
-      keepAwake_(keepAwake), readyForSleep_(readyForSleep), getTick_(getTick),
-      seenIndex_(0) {
+Protocol::Protocol(UartSendCallback uartSend, SetWakeCallback setWake, KeepAwakeCallback keepAwake,
+                   ReadyForSleepCallback readyForSleep, GetTickCallback getTick)
+    : wakeInterval_(60), nextSeqNum_(SEQ_STM32_MIN), currentSeqNum_(0), uartSend_(uartSend),
+      setWake_(setWake), keepAwake_(keepAwake), readyForSleep_(readyForSleep), getTick_(getTick),
+      seenIndex_(0), nodeStateValid_(false)
+{
     // Initialize deduplication buffer
-    for (auto& entry : seenBuffer_) {
+    for (auto &entry : seenBuffer_) {
         entry.seqNum = 0;
         entry.timestamp = 0;
     }
+    // Initialize node state to zeros
+    for (uint8_t i = 0; i < NODE_STATE_SIZE; i++) {
+        nodeState_[i] = 0;
+    }
 }
 
-bool Protocol::wasRecentlySeen(uint8_t seqNum) {
-    if (!getTick_) return false;  // No tick function, skip dedup
+bool Protocol::wasRecentlySeen(uint8_t seqNum)
+{
+    if (!getTick_)
+        return false;  // No tick function, skip dedup
 
     uint32_t now = getTick_();
     for (uint8_t i = 0; i < DEDUP_BUFFER_SIZE; i++) {
-        if (seenBuffer_[i].seqNum == seqNum &&
-            (now - seenBuffer_[i].timestamp) < DEDUP_WINDOW_MS) {
+        if (seenBuffer_[i].seqNum == seqNum && (now - seenBuffer_[i].timestamp) < DEDUP_WINDOW_MS) {
             return true;
         }
     }
     return false;
 }
 
-void Protocol::markAsSeen(uint8_t seqNum) {
-    if (!getTick_) return;  // No tick function, skip dedup
+void Protocol::markAsSeen(uint8_t seqNum)
+{
+    if (!getTick_)
+        return;  // No tick function, skip dedup
 
     seenBuffer_[seenIndex_].seqNum = seqNum;
     seenBuffer_[seenIndex_].timestamp = getTick_();
     seenIndex_ = (seenIndex_ + 1) % DEDUP_BUFFER_SIZE;
 }
 
-void Protocol::processReceivedByte(uint8_t byte) {
+void Protocol::processReceivedByte(uint8_t byte)
+{
     if (parser_.processByte(byte)) {
         // Complete message received
         uint8_t seqNum = parser_.getSequenceNumber();
         Command cmd = parser_.getCommand();
-        const uint8_t* data = parser_.getData();
+        const uint8_t *data = parser_.getData();
         uint8_t dataLen = parser_.getDataLength();
 
         // Store current sequence number for ACK/NACK responses
@@ -530,7 +586,8 @@ void Protocol::processReceivedByte(uint8_t byte) {
     }
 }
 
-uint8_t Protocol::getNextSeqNum() {
+uint8_t Protocol::getNextSeqNum()
+{
     uint8_t seq = nextSeqNum_++;
     if (nextSeqNum_ > SEQ_STM32_MAX) {
         nextSeqNum_ = SEQ_STM32_MIN;
@@ -538,35 +595,50 @@ uint8_t Protocol::getNextSeqNum() {
     return seq;
 }
 
-void Protocol::sendWakeNotification(WakeReason reason) {
+void Protocol::sendWakeNotification(WakeReason reason)
+{
     builder_.startMessage(getNextSeqNum(), static_cast<uint8_t>(Response::WakeReason));
     builder_.addByte(static_cast<uint8_t>(reason));
+    // Add state valid flag and state blob (new protocol)
+    builder_.addByte(nodeStateValid_ ? 0x01 : 0x00);
+    for (uint8_t i = 0; i < NODE_STATE_SIZE; i++) {
+        builder_.addByte(nodeState_[i]);
+    }
     sendMessage();
 }
 
-void Protocol::sendWakeNotificationWithSchedule(WakeReason reason, const ScheduleEntry* entry) {
+void Protocol::sendWakeNotificationWithSchedule(WakeReason reason, const ScheduleEntry *entry)
+{
     builder_.startMessage(getNextSeqNum(), static_cast<uint8_t>(Response::WakeReason));
     builder_.addByte(static_cast<uint8_t>(reason));
+    // Add state valid flag and state blob (new protocol)
+    builder_.addByte(nodeStateValid_ ? 0x01 : 0x00);
+    for (uint8_t i = 0; i < NODE_STATE_SIZE; i++) {
+        builder_.addByte(nodeState_[i]);
+    }
+    // Add schedule entry after state blob
     if (entry) {
         builder_.addScheduleEntry(*entry);
     }
     sendMessage();
 }
 
-void Protocol::sendScheduleComplete() {
+void Protocol::sendScheduleComplete()
+{
     builder_.startMessage(getNextSeqNum(), static_cast<uint8_t>(Response::ScheduleComplete));
     sendMessage();
 }
 
-const ScheduleEntry* Protocol::getNextScheduledEntry(uint8_t currentDay,
-                                                     uint8_t currentHour,
-                                                     uint8_t currentMinute) const {
+const ScheduleEntry *Protocol::getNextScheduledEntry(uint8_t currentDay, uint8_t currentHour,
+                                                     uint8_t currentMinute) const
+{
     return schedule_.findNextEntry(currentDay, currentHour, currentMinute);
 }
 
 // Command handlers
 
-void Protocol::handleSetWakeInterval(const uint8_t* data, uint8_t length) {
+void Protocol::handleSetWakeInterval(const uint8_t *data, uint8_t length)
+{
     if (length != 4) {
         sendNack(ErrorCode::InvalidParam);
         return;
@@ -591,11 +663,13 @@ void Protocol::handleSetWakeInterval(const uint8_t* data, uint8_t length) {
     }
 }
 
-void Protocol::handleGetWakeInterval() {
+void Protocol::handleGetWakeInterval()
+{
     sendWakeInterval();
 }
 
-void Protocol::handleSetSchedule(const uint8_t* data, uint8_t length) {
+void Protocol::handleSetSchedule(const uint8_t *data, uint8_t length)
+{
     if (length != SCHEDULE_ENTRY_SIZE) {
         sendNack(ErrorCode::InvalidParam);
         return;
@@ -618,7 +692,8 @@ void Protocol::handleSetSchedule(const uint8_t* data, uint8_t length) {
     }
 }
 
-void Protocol::handleGetSchedule(const uint8_t* data, uint8_t length) {
+void Protocol::handleGetSchedule(const uint8_t *data, uint8_t length)
+{
     if (length != 1) {
         sendNack(ErrorCode::InvalidParam);
         return;
@@ -628,7 +703,8 @@ void Protocol::handleGetSchedule(const uint8_t* data, uint8_t length) {
     sendScheduleEntry(index);
 }
 
-void Protocol::handleClearSchedule(const uint8_t* data, uint8_t length) {
+void Protocol::handleClearSchedule(const uint8_t *data, uint8_t length)
+{
     if (length != 1) {
         sendNack(ErrorCode::InvalidParam);
         return;
@@ -650,7 +726,8 @@ void Protocol::handleClearSchedule(const uint8_t* data, uint8_t length) {
     }
 }
 
-void Protocol::handleKeepAwake(const uint8_t* data, uint8_t length) {
+void Protocol::handleKeepAwake(const uint8_t *data, uint8_t length)
+{
     if (length != 2) {
         sendNack(ErrorCode::InvalidParam);
         return;
@@ -665,7 +742,8 @@ void Protocol::handleKeepAwake(const uint8_t* data, uint8_t length) {
     sendAck();
 }
 
-void Protocol::handleSetDateTime(const uint8_t* data, uint8_t length) {
+void Protocol::handleSetDateTime(const uint8_t *data, uint8_t length)
+{
     // Expected: 7 bytes (year, month, day, weekday, hour, minute, second)
     if (length != 7) {
         sendNack(ErrorCode::InvalidParam);
@@ -690,12 +768,8 @@ void Protocol::handleSetDateTime(const uint8_t* data, uint8_t length) {
     time.StoreOperation = RTC_STOREOPERATION_RESET;
 
     // Validate ranges
-    if (date.Month < 1 || date.Month > 12 ||
-        date.Date < 1 || date.Date > 31 ||
-        date.WeekDay > 6 ||
-        time.Hours > 23 ||
-        time.Minutes > 59 ||
-        time.Seconds > 59) {
+    if (date.Month < 1 || date.Month > 12 || date.Date < 1 || date.Date > 31 || date.WeekDay > 6 ||
+        time.Hours > 23 || time.Minutes > 59 || time.Seconds > 59) {
         sendNack(ErrorCode::InvalidParam);
         return;
     }
@@ -714,7 +788,21 @@ void Protocol::handleSetDateTime(const uint8_t* data, uint8_t length) {
     sendAck();
 }
 
-void Protocol::handleReadyForSleep() {
+void Protocol::handleReadyForSleep()
+{
+    // Extract state blob from payload if present (new protocol)
+    const uint8_t *data = parser_.getData();
+    uint8_t dataLen = parser_.getDataLength();
+
+    if (dataLen >= NODE_STATE_SIZE) {
+        // New protocol: state blob is included in payload
+        for (uint8_t i = 0; i < NODE_STATE_SIZE; i++) {
+            nodeState_[i] = data[i];
+        }
+        nodeStateValid_ = true;
+    }
+    // If no state blob, keep previous state (backward compatibility)
+
     // RP2040 signals it's done with work and ready for power down
     // Send ACK first, then call the callback
     sendAck();
@@ -724,7 +812,8 @@ void Protocol::handleReadyForSleep() {
     }
 }
 
-void Protocol::handleGetDateTime() {
+void Protocol::handleGetDateTime()
+{
     // Send ACK first (confirms command received, enables retry on RP2040)
     sendAck();
 
@@ -744,34 +833,38 @@ void Protocol::handleGetDateTime() {
     bool valid = (magic == TIME_VALID_MAGIC);
 
     // Send response with valid flag and datetime
-    sendDateTimeResponse(valid, date.Year, date.Month, date.Date,
-                         date.WeekDay, time.Hours, time.Minutes, time.Seconds);
+    sendDateTimeResponse(valid, date.Year, date.Month, date.Date, date.WeekDay, time.Hours,
+                         time.Minutes, time.Seconds);
 }
 
 // Response senders (echo the command's sequence number)
 
-void Protocol::sendAck() {
+void Protocol::sendAck()
+{
     // Echo the sequence number from the received command
     builder_.startMessage(currentSeqNum_, static_cast<uint8_t>(Response::Ack));
     sendMessage();
 }
 
-void Protocol::sendNack(ErrorCode error) {
+void Protocol::sendNack(ErrorCode error)
+{
     // Echo the sequence number from the received command
     builder_.startMessage(currentSeqNum_, static_cast<uint8_t>(Response::Nack));
     builder_.addByte(static_cast<uint8_t>(error));
     sendMessage();
 }
 
-void Protocol::sendWakeInterval() {
+void Protocol::sendWakeInterval()
+{
     // Echo the sequence number from the received command
     builder_.startMessage(currentSeqNum_, static_cast<uint8_t>(Response::WakeInterval));
     builder_.addUint32(wakeInterval_);
     sendMessage();
 }
 
-void Protocol::sendScheduleEntry(uint8_t index) {
-    const ScheduleEntry* entry = schedule_.getEntry(index);
+void Protocol::sendScheduleEntry(uint8_t index)
+{
+    const ScheduleEntry *entry = schedule_.getEntry(index);
 
     if (entry == nullptr) {
         sendNack(ErrorCode::InvalidIndex);
@@ -785,7 +878,8 @@ void Protocol::sendScheduleEntry(uint8_t index) {
 }
 
 void Protocol::sendDateTimeResponse(bool valid, uint8_t year, uint8_t month, uint8_t day,
-                                    uint8_t weekday, uint8_t hour, uint8_t minute, uint8_t second) {
+                                    uint8_t weekday, uint8_t hour, uint8_t minute, uint8_t second)
+{
     // Echo the sequence number from the received command
     builder_.startMessage(currentSeqNum_, static_cast<uint8_t>(Response::DateTimeResponse));
     builder_.addByte(valid ? 0x01 : 0x00);
@@ -799,8 +893,9 @@ void Protocol::sendDateTimeResponse(bool valid, uint8_t year, uint8_t month, uin
     sendMessage();
 }
 
-void Protocol::sendMessage() {
-    const uint8_t* msg = builder_.finalize();
+void Protocol::sendMessage()
+{
+    const uint8_t *msg = builder_.finalize();
     uint8_t len = builder_.getLength();
 
     if (uartSend_) {
