@@ -182,6 +182,19 @@ class SensorDatabase:
 
     CREATE INDEX IF NOT EXISTS idx_node_status_updated
         ON node_status(updated_at);
+
+    CREATE TABLE IF NOT EXISTS node_status_history (
+        id INTEGER PRIMARY KEY,
+        address INTEGER NOT NULL,
+        error_flags INTEGER NOT NULL,
+        battery_level INTEGER,
+        uptime_seconds INTEGER,
+        pending_records INTEGER,
+        timestamp INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_nsh_address_time
+        ON node_status_history(address, timestamp);
     """
 
     def __init__(self, db_path: str = Config.SENSOR_DB_PATH):
@@ -1027,6 +1040,9 @@ class SensorDatabase:
     ) -> dict:
         """Update status for a node (upsert).
 
+        Also records history when error_flags change, enabling analysis
+        of when errors occurred over time.
+
         Args:
             address: Node address
             device_id: Hardware device ID
@@ -1047,6 +1063,9 @@ class SensorDatabase:
                 "SELECT device_id, battery_level, error_flags, signal_strength, uptime_seconds, pending_records FROM node_status WHERE address = ?",
                 (address,)
             ).fetchone()
+
+            # Track previous error_flags for history
+            previous_error_flags = existing[2] if existing else None
 
             if existing:
                 # Update existing - only update fields that are provided
@@ -1073,7 +1092,34 @@ class SensorDatabase:
                 """, (address, device_id, battery_level, error_flags,
                       signal_strength, uptime_seconds, pending_records, updated_at))
 
+            # Record history if error_flags changed (or first status report)
+            if error_flags is not None and error_flags != previous_error_flags:
+                self._record_status_history(
+                    conn, address, error_flags, battery_level, uptime_seconds, pending_records, updated_at
+                )
+
         return self.get_node_status(address)
+
+    def _record_status_history(
+        self,
+        conn,
+        address: int,
+        error_flags: int,
+        battery_level: Optional[int],
+        uptime_seconds: Optional[int],
+        pending_records: Optional[int],
+        timestamp: int
+    ) -> None:
+        """Record a status history entry (internal helper)."""
+        # Get next history ID
+        result = conn.execute("SELECT COALESCE(MAX(id), 0) + 1 FROM node_status_history")
+        next_id = result.fetchone()[0]
+
+        conn.execute("""
+            INSERT INTO node_status_history
+            (id, address, error_flags, battery_level, uptime_seconds, pending_records, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (next_id, address, error_flags, battery_level, uptime_seconds, pending_records, timestamp))
 
     def get_node_status(self, address: int) -> Optional[dict]:
         """Get status for a node.
@@ -1132,3 +1178,42 @@ class SensorDatabase:
                     'updated_at': row[7]
                 }
             return status
+
+    def get_node_error_history(
+        self,
+        address: int,
+        start_time: int,
+        end_time: int
+    ) -> list[dict]:
+        """Get error flag changes for a node in time range.
+
+        Returns history entries where error_flags changed, useful for
+        tracking when errors like flash failures occurred.
+
+        Args:
+            address: Node address
+            start_time: Start timestamp (inclusive)
+            end_time: End timestamp (inclusive)
+
+        Returns:
+            List of dicts with error_flags, battery_level, uptime_seconds,
+            pending_records, and timestamp
+        """
+        with self._get_connection() as conn:
+            result = conn.execute("""
+                SELECT error_flags, battery_level, uptime_seconds, pending_records, timestamp
+                FROM node_status_history
+                WHERE address = ? AND timestamp BETWEEN ? AND ?
+                ORDER BY timestamp ASC
+            """, (address, start_time, end_time))
+
+            return [
+                {
+                    'error_flags': row[0],
+                    'battery_level': row[1],
+                    'uptime_seconds': row[2],
+                    'pending_records': row[3],
+                    'timestamp': row[4]
+                }
+                for row in result.fetchall()
+            ]
