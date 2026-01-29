@@ -215,10 +215,22 @@ public:
      */
     bool reset();
 
+    /**
+     * @brief Check if flash is healthy (no recent write failures)
+     *
+     * Returns false if the most recent write operation failed,
+     * indicating flash may be unreliable and direct transmit
+     * fallback should be used.
+     *
+     * @return true if flash is healthy, false if last write failed
+     */
+    bool isHealthy() const { return healthy_; }
+
 private:
     ExternalFlash &flash_;
     SensorFlashMetadata metadata_;
     bool initialized_;
+    bool healthy_ = true;  // Track flash write health for fallback decisions
     Logger logger_;
 
     // Sector buffer for read-modify-write operations
