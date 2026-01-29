@@ -231,8 +231,8 @@ bool SX1276::send(const uint8_t *data, size_t length)
 
     // Switch DIO0 mapping to TxDone (01) before entering TX mode
     uint8_t dio_mapping1 = readRegister(SX1276_REG_DIO_MAPPING_1);
-    dio_mapping1 &= 0x3F;              // Clear DIO0 bits [7:6]
-    dio_mapping1 |= SX1276_DIO0_TXDONE; // Set mapping to 01 (TxDone)
+    dio_mapping1 &= 0x3F;                // Clear DIO0 bits [7:6]
+    dio_mapping1 |= SX1276_DIO0_TXDONE;  // Set mapping to 01 (TxDone)
     writeRegister(SX1276_REG_DIO_MAPPING_1, dio_mapping1);
 
     // Start transmission
@@ -279,8 +279,8 @@ bool SX1276::sendAsync(const uint8_t *data, size_t length)
 
     // Switch DIO0 mapping to TxDone (01) before entering TX mode
     uint8_t dio_mapping1 = readRegister(SX1276_REG_DIO_MAPPING_1);
-    dio_mapping1 &= 0x3F;              // Clear DIO0 bits [7:6]
-    dio_mapping1 |= SX1276_DIO0_TXDONE; // Set mapping to 01 (TxDone)
+    dio_mapping1 &= 0x3F;                // Clear DIO0 bits [7:6]
+    dio_mapping1 |= SX1276_DIO0_TXDONE;  // Set mapping to 01 (TxDone)
     writeRegister(SX1276_REG_DIO_MAPPING_1, dio_mapping1);
 
     // Start transmission - interrupt will fire when done
