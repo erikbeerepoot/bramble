@@ -177,17 +177,13 @@ bool SensorFlashBuffer::writeRecord(const SensorDataRecord &record)
         metadata_.read_index = (metadata_.read_index + 1) % MAX_RECORDS;
     }
 
-    // Update metadata
+    // Update metadata (in-memory only - persisted via PMU state blob on sleep)
     metadata_.write_index = (metadata_.write_index + 1) % MAX_RECORDS;
     metadata_.total_records++;
 
-    // Save metadata periodically (every 10 records to reduce flash wear)
-    if (metadata_.total_records % 10 == 0) {
-        if (!saveMetadata()) {
-            logger_.warn("Failed to save metadata after write");
-            // Continue anyway - metadata will be saved later
-        }
-    }
+    // Note: Metadata is NOT saved to flash here to avoid wearing out the metadata sector.
+    // State is persisted via PMU RAM on sleep, and restored on wake.
+    // On cold start (PMU reset), scanForWriteIndex() reconstructs write_index from data.
 
     // Mark flash as healthy after successful write
     healthy_ = true;
@@ -391,7 +387,9 @@ bool SensorFlashBuffer::advanceReadIndex(uint32_t count)
     metadata_.read_index = new_read_index;
     logger_.debug("Advanced read_index by %lu to %lu", count, new_read_index);
 
-    return saveMetadata();
+    // Note: Metadata is NOT saved to flash here to avoid wearing out the metadata sector.
+    // State is persisted via PMU RAM on sleep, and restored on wake.
+    return true;
 }
 
 bool SensorFlashBuffer::updateLastSync(uint32_t timestamp)
@@ -565,6 +563,87 @@ bool SensorFlashBuffer::validateMetadata() const
                      metadata_.read_index);
         return false;
     }
+
+    return true;
+}
+
+bool SensorFlashBuffer::scanForWriteIndex()
+{
+    if (!initialized_) {
+        logger_.error("Buffer not initialized");
+        return false;
+    }
+
+    logger_.info("Scanning flash for write index (cold start recovery)...");
+
+    // Strategy: Binary search to find the boundary between valid and invalid records.
+    // Valid records have correct CRC and RECORD_FLAG_VALID set.
+    // The write_index is the first invalid record (or 0 if all are invalid).
+
+    // First, check if flash is empty (first record invalid)
+    SensorDataRecord record;
+    uint32_t address = getRecordAddress(0);
+    ExternalFlashResult result =
+        flash_.read(address, reinterpret_cast<uint8_t *>(&record), sizeof(record));
+
+    if (result != ExternalFlashResult::Success) {
+        logger_.error("Failed to read first record during scan");
+        return false;
+    }
+
+    uint16_t crc = CRC16::calculateRecordCRC(record);
+    bool first_valid = (crc == record.crc16) && (record.flags & RECORD_FLAG_VALID);
+
+    if (!first_valid) {
+        // Flash is empty or corrupted from the start
+        logger_.info("Flash appears empty, setting write_index to 0");
+        metadata_.write_index = 0;
+        metadata_.read_index = 0;
+        return true;
+    }
+
+    // Binary search for the transition point from valid to invalid records
+    // This assumes records are written sequentially and there's a single transition point
+    uint32_t low = 0;
+    uint32_t high = MAX_RECORDS - 1;
+    uint32_t last_valid = 0;
+
+    while (low <= high) {
+        uint32_t mid = low + (high - low) / 2;
+
+        address = getRecordAddress(mid);
+        result = flash_.read(address, reinterpret_cast<uint8_t *>(&record), sizeof(record));
+
+        if (result != ExternalFlashResult::Success) {
+            logger_.warn("Read error at index %lu during scan", mid);
+            // Treat read error as invalid
+            high = mid - 1;
+            continue;
+        }
+
+        crc = CRC16::calculateRecordCRC(record);
+        bool is_valid = (crc == record.crc16) && (record.flags & RECORD_FLAG_VALID);
+
+        if (is_valid) {
+            last_valid = mid;
+            low = mid + 1;
+        } else {
+            if (mid == 0) {
+                break;
+            }
+            high = mid - 1;
+        }
+    }
+
+    // Write index is one past the last valid record
+    metadata_.write_index = (last_valid + 1) % MAX_RECORDS;
+
+    // For cold start, set read_index to 0 (retransmit everything)
+    // The hub will deduplicate based on timestamps
+    metadata_.read_index = 0;
+
+    logger_.info("Scan complete: write_index=%lu (last_valid=%lu)", metadata_.write_index,
+                 last_valid);
 
     return true;
 }

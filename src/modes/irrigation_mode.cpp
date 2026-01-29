@@ -61,10 +61,12 @@ void IrrigationMode::onStart()
         // Set up PMU callback handlers
         auto &protocol = pmu_client_->getProtocol();
 
-        protocol.onWakeNotification(
-            [this](PMU::WakeReason reason, const PMU::ScheduleEntry *entry) {
-                this->handlePmuWake(reason, entry);
-            });
+        protocol.onWakeNotification([this](PMU::WakeReason reason, const PMU::ScheduleEntry *entry,
+                                           bool state_valid, const uint8_t *state) {
+            (void)state_valid;  // Irrigation mode doesn't use PMU state storage
+            (void)state;
+            this->handlePmuWake(reason, entry);
+        });
 
         protocol.onScheduleComplete([this]() { this->handleScheduleComplete(); });
 

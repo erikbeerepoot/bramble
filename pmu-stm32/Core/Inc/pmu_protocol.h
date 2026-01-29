@@ -1,8 +1,8 @@
 #ifndef PMU_PROTOCOL_H
 #define PMU_PROTOCOL_H
 
-#include <cstdint>
 #include <array>
+#include <cstdint>
 
 namespace PMU {
 
@@ -14,9 +14,10 @@ enum class Command : uint8_t {
     GetSchedule = 0x13,
     ClearSchedule = 0x14,
     KeepAwake = 0x15,
-    SetDateTime = 0x16,  // Set RTC date/time (7 bytes: year, month, day, weekday, hour, minute, second)
+    SetDateTime =
+        0x16,  // Set RTC date/time (7 bytes: year, month, day, weekday, hour, minute, second)
     ReadyForSleep = 0x17,  // RP2040 signals work complete, ready for power down
-    GetDateTime = 0x18   // Get RTC date/time from PMU (returns DateTimeResponse)
+    GetDateTime = 0x18     // Get RTC date/time from PMU (returns DateTimeResponse)
 };
 
 // Response codes (STM32 → RP2040)
@@ -61,15 +62,18 @@ enum class DayOfWeek : uint8_t {
 };
 
 // Bitwise operators for DayOfWeek
-inline DayOfWeek operator|(DayOfWeek a, DayOfWeek b) {
+inline DayOfWeek operator|(DayOfWeek a, DayOfWeek b)
+{
     return static_cast<DayOfWeek>(static_cast<uint8_t>(a) | static_cast<uint8_t>(b));
 }
 
-inline DayOfWeek operator&(DayOfWeek a, DayOfWeek b) {
+inline DayOfWeek operator&(DayOfWeek a, DayOfWeek b)
+{
     return static_cast<DayOfWeek>(static_cast<uint8_t>(a) & static_cast<uint8_t>(b));
 }
 
-inline bool operator!(DayOfWeek a) {
+inline bool operator!(DayOfWeek a)
+{
     return static_cast<uint8_t>(a) == 0;
 }
 
@@ -77,8 +81,9 @@ inline bool operator!(DayOfWeek a) {
 constexpr uint8_t START_BYTE = 0xAA;
 constexpr uint8_t END_BYTE = 0x55;
 constexpr uint8_t MAX_SCHEDULE_ENTRIES = 2;  // Reduced to 2 to fit in 2KB RAM
-constexpr uint8_t MAX_MESSAGE_SIZE = 32;     // Reduced from 64 to save RAM
+constexpr uint8_t MAX_MESSAGE_SIZE = 48;     // Increased to accommodate state blob (was 32)
 constexpr uint8_t SCHEDULE_ENTRY_SIZE = 7;
+constexpr uint8_t NODE_STATE_SIZE = 32;  // Opaque state blob stored in PMU RAM
 
 // Sequence number ranges (for deduplication)
 constexpr uint8_t SEQ_RP2040_MIN = 1;
@@ -110,7 +115,7 @@ public:
     bool isValid() const;
 
     // Check if this entry overlaps with another
-    bool overlapsWith(const ScheduleEntry& other) const;
+    bool overlapsWith(const ScheduleEntry &other) const;
 
     // Calculate minutes until this entry triggers
     // Returns 0xFFFFFFFF if entry doesn't match the given day
@@ -126,8 +131,8 @@ public:
 
 private:
     // Helper: check if time ranges overlap
-    bool timeRangesOverlap(uint8_t h1, uint8_t m1, uint16_t d1,
-                          uint8_t h2, uint8_t m2, uint16_t d2) const;
+    bool timeRangesOverlap(uint8_t h1, uint8_t m1, uint16_t d1, uint8_t h2, uint8_t m2,
+                           uint16_t d2) const;
 };
 
 // Watering schedule manager
@@ -136,10 +141,10 @@ public:
     WateringSchedule();
 
     // Add or update a schedule entry at the first available slot
-    ErrorCode addEntry(const ScheduleEntry& entry);
+    ErrorCode addEntry(const ScheduleEntry &entry);
 
     // Update entry at specific index
-    ErrorCode updateEntry(uint8_t index, const ScheduleEntry& entry);
+    ErrorCode updateEntry(uint8_t index, const ScheduleEntry &entry);
 
     // Remove entry at index
     ErrorCode removeEntry(uint8_t index);
@@ -148,11 +153,11 @@ public:
     void clear();
 
     // Get entry at index (returns nullptr if invalid)
-    const ScheduleEntry* getEntry(uint8_t index) const;
+    const ScheduleEntry *getEntry(uint8_t index) const;
 
     // Find the next schedule entry that should trigger
-    const ScheduleEntry* findNextEntry(uint8_t currentDay, uint8_t currentHour,
-                                      uint8_t currentMinute) const;
+    const ScheduleEntry *findNextEntry(uint8_t currentDay, uint8_t currentHour,
+                                       uint8_t currentMinute) const;
 
     // Get count of active entries
     uint8_t getCount() const;
@@ -162,7 +167,7 @@ private:
     uint8_t count_;
 
     // Check if entry would overlap with existing entries
-    bool hasOverlap(const ScheduleEntry& entry, uint8_t excludeIndex = 0xFF) const;
+    bool hasOverlap(const ScheduleEntry &entry, uint8_t excludeIndex = 0xFF) const;
 };
 
 // Message parser (state machine for robust parsing)
@@ -183,7 +188,7 @@ public:
     Command getCommand() const;
 
     // Get pointer to data payload
-    const uint8_t* getData() const;
+    const uint8_t *getData() const;
 
     // Get length of data payload
     uint8_t getDataLength() const;
@@ -225,19 +230,19 @@ public:
     void addByte(uint8_t data);
     void addUint16(uint16_t data);
     void addUint32(uint32_t data);
-    void addScheduleEntry(const ScheduleEntry& entry);
+    void addScheduleEntry(const ScheduleEntry &entry);
 
     // Finalize message (adds checksum and end byte)
     // Returns pointer to complete message buffer
-    const uint8_t* finalize();
+    const uint8_t *finalize();
 
     // Get total message length (including framing)
     uint8_t getLength() const;
 
 private:
     uint8_t buffer_[MAX_MESSAGE_SIZE];
-    uint8_t dataLength_;  // Length of seq + response + data (for LENGTH field)
-    uint8_t totalLength_; // Total message length including framing
+    uint8_t dataLength_;   // Length of seq + response + data (for LENGTH field)
+    uint8_t totalLength_;  // Total message length including framing
 
     uint8_t calculateChecksum() const;
 };
@@ -252,11 +257,11 @@ struct SeenMessage {
 class Protocol {
 public:
     // Callback types
-    using UartSendCallback = void(*)(const uint8_t* data, uint8_t length);
-    using SetWakeCallback = void(*)(uint32_t seconds);
-    using KeepAwakeCallback = void(*)(uint16_t seconds);
-    using ReadyForSleepCallback = void(*)();
-    using GetTickCallback = uint32_t(*)();
+    using UartSendCallback = void (*)(const uint8_t *data, uint8_t length);
+    using SetWakeCallback = void (*)(uint32_t seconds);
+    using KeepAwakeCallback = void (*)(uint16_t seconds);
+    using ReadyForSleepCallback = void (*)();
+    using GetTickCallback = uint32_t (*)();
 
     Protocol(UartSendCallback uartSend, SetWakeCallback setWake, KeepAwakeCallback keepAwake,
              ReadyForSleepCallback readyForSleep = nullptr, GetTickCallback getTick = nullptr);
@@ -268,7 +273,7 @@ public:
     void sendWakeNotification(WakeReason reason);
 
     // Send wake notification with schedule entry (for scheduled watering events)
-    void sendWakeNotificationWithSchedule(WakeReason reason, const ScheduleEntry* entry);
+    void sendWakeNotificationWithSchedule(WakeReason reason, const ScheduleEntry *entry);
 
     // Send schedule complete notification (RP2040 should be ready for power down)
     void sendScheduleComplete();
@@ -276,7 +281,7 @@ public:
     uint32_t getWakeInterval() const { return wakeInterval_; }
 
     // Get the next scheduled entry (for RTC wakeup checking)
-    const ScheduleEntry* getNextScheduledEntry(uint8_t currentDay, uint8_t currentHour,
+    const ScheduleEntry *getNextScheduledEntry(uint8_t currentDay, uint8_t currentHour,
                                                uint8_t currentMinute) const;
 
 private:
@@ -297,18 +302,23 @@ private:
     SeenMessage seenBuffer_[DEDUP_BUFFER_SIZE];
     uint8_t seenIndex_;
 
+    // Node state storage (persists in PMU RAM across RP2040 sleep cycles)
+    // state_valid_ is false after power-on reset (cold start detection)
+    uint8_t nodeState_[NODE_STATE_SIZE];
+    bool nodeStateValid_;
+
     // Deduplication helpers
     bool wasRecentlySeen(uint8_t seqNum);
     void markAsSeen(uint8_t seqNum);
 
     // Command handlers
-    void handleSetWakeInterval(const uint8_t* data, uint8_t length);
+    void handleSetWakeInterval(const uint8_t *data, uint8_t length);
     void handleGetWakeInterval();
-    void handleSetSchedule(const uint8_t* data, uint8_t length);
-    void handleGetSchedule(const uint8_t* data, uint8_t length);
-    void handleClearSchedule(const uint8_t* data, uint8_t length);
-    void handleKeepAwake(const uint8_t* data, uint8_t length);
-    void handleSetDateTime(const uint8_t* data, uint8_t length);
+    void handleSetSchedule(const uint8_t *data, uint8_t length);
+    void handleGetSchedule(const uint8_t *data, uint8_t length);
+    void handleClearSchedule(const uint8_t *data, uint8_t length);
+    void handleKeepAwake(const uint8_t *data, uint8_t length);
+    void handleSetDateTime(const uint8_t *data, uint8_t length);
     void handleReadyForSleep();
     void handleGetDateTime();
 
@@ -317,8 +327,8 @@ private:
     void sendNack(ErrorCode error);
     void sendWakeInterval();
     void sendScheduleEntry(uint8_t index);
-    void sendDateTimeResponse(bool valid, uint8_t year, uint8_t month, uint8_t day,
-                              uint8_t weekday, uint8_t hour, uint8_t minute, uint8_t second);
+    void sendDateTimeResponse(bool valid, uint8_t year, uint8_t month, uint8_t day, uint8_t weekday,
+                              uint8_t hour, uint8_t minute, uint8_t second);
 
     // Helper to send built message
     void sendMessage();
@@ -329,4 +339,4 @@ private:
 
 }  // namespace PMU
 
-#endif // PMU_PROTOCOL_H
+#endif  // PMU_PROTOCOL_H

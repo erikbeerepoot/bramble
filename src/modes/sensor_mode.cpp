@@ -23,6 +23,29 @@ constexpr uint16_t HUB_ADDRESS = ADDRESS_HUB;
 static Logger logger("SENSOR");
 static Logger pmu_logger("PMU");
 
+/**
+ * @brief Persisted state stored in PMU RAM across sleep cycles
+ *
+ * This struct is packed into a 32-byte opaque blob and sent to the PMU
+ * with ReadyForSleep. The PMU stores it in RAM (always powered from battery)
+ * and returns it in the WakeReason notification.
+ *
+ * On cold start (battery disconnect), state_valid=false and we reconstruct
+ * from flash scan.
+ */
+struct __attribute__((packed)) SensorPersistedState {
+    uint8_t version;       // Format version (for future compatibility)
+    uint8_t next_seq_num;  // LoRa sequence number
+    uint16_t reserved;     // Alignment padding
+    uint32_t read_index;   // Flash buffer read position
+    uint32_t write_index;  // Flash buffer write position
+    uint8_t padding[20];   // Reserved for future use
+};
+static_assert(sizeof(SensorPersistedState) == 32, "SensorPersistedState must be 32 bytes");
+
+// Current state format version
+constexpr uint8_t STATE_VERSION = 1;
+
 SensorMode::~SensorMode() = default;
 
 void SensorMode::onStart()
@@ -84,8 +107,9 @@ void SensorMode::onStart()
         pmu_logger.info("PMU client initialized successfully");
 
         // Set up PMU callback handler
-        reliable_pmu_->onWake([this](PMU::WakeReason reason, const PMU::ScheduleEntry *entry) {
-            this->handlePmuWake(reason, entry);
+        reliable_pmu_->onWake([this](PMU::WakeReason reason, const PMU::ScheduleEntry *entry,
+                                     bool state_valid, const uint8_t *state) {
+            this->handlePmuWake(reason, entry, state_valid, state);
         });
 
         // Try to get time from PMU's battery-backed RTC (faster than waiting for hub sync)
@@ -773,12 +797,20 @@ void SensorMode::signalReadyForSleep()
         return;
     }
 
-    // Save LoRa sequence number and flush flash buffer metadata before power down
-    // Without this, write_index isn't persisted and records get corrupted on next boot
+    // Pack state into blob for PMU storage
+    // Note: We no longer flush to flash - state is persisted in PMU RAM instead
+    static SensorPersistedState state_to_persist;
+    memset(&state_to_persist, 0, sizeof(state_to_persist));
+    state_to_persist.version = STATE_VERSION;
+    state_to_persist.next_seq_num = messenger_.getNextSeqNum();
+
     if (flash_buffer_) {
-        flash_buffer_->saveNextSeqNum(messenger_.getNextSeqNum());
-        flash_buffer_->flush();
+        state_to_persist.read_index = flash_buffer_->getReadIndex();
+        state_to_persist.write_index = flash_buffer_->getWriteIndex();
     }
+
+    pmu_logger.debug("Packing state: seq=%u, read=%lu, write=%lu", state_to_persist.next_seq_num,
+                     state_to_persist.read_index, state_to_persist.write_index);
 
     // Post deferred task to send sleep signal in main loop
     // This avoids calling PMU protocol directly from callback chains (stack safety)
@@ -792,22 +824,71 @@ void SensorMode::signalReadyForSleep()
             (void)time;
             SensorMode *self = static_cast<SensorMode *>(ctx);
 
-            pmu_logger.info("Sending ReadyForSleep via reliable client");
-            self->reliable_pmu_->readyForSleep([](bool success, PMU::ErrorCode error) {
-                if (success) {
-                    pmu_logger.info("Ready for sleep acknowledged");
-                } else {
-                    pmu_logger.error("Ready for sleep failed: error %d", static_cast<int>(error));
-                }
-            });
+            // Repack state fresh in case it changed since signalReadyForSleep was called
+            static SensorPersistedState state;
+            memset(&state, 0, sizeof(state));
+            state.version = STATE_VERSION;
+            state.next_seq_num = self->messenger_.getNextSeqNum();
+            if (self->flash_buffer_) {
+                state.read_index = self->flash_buffer_->getReadIndex();
+                state.write_index = self->flash_buffer_->getWriteIndex();
+            }
+
+            pmu_logger.info("Sending ReadyForSleep with state (seq=%u, read=%lu, write=%lu)",
+                            state.next_seq_num, state.read_index, state.write_index);
+
+            self->reliable_pmu_->readyForSleep(
+                reinterpret_cast<const uint8_t *>(&state), [](bool success, PMU::ErrorCode error) {
+                    if (success) {
+                        pmu_logger.info("Ready for sleep acknowledged");
+                    } else {
+                        pmu_logger.error("Ready for sleep failed: error %d",
+                                         static_cast<int>(error));
+                    }
+                });
             return true;  // Task complete
         },
         this, TaskPriority::Low);
 }
 
-void SensorMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry *entry)
+void SensorMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry *entry,
+                               bool state_valid, const uint8_t *state)
 {
     (void)entry;
+
+    // Restore state from PMU RAM if valid
+    if (state_valid && state != nullptr && flash_buffer_) {
+        const SensorPersistedState *persisted =
+            reinterpret_cast<const SensorPersistedState *>(state);
+
+        // Check version compatibility
+        if (persisted->version == STATE_VERSION) {
+            // Restore flash buffer indices
+            flash_buffer_->setReadIndex(persisted->read_index);
+            // Note: write_index is tracked by flash_buffer_ internally from last write
+
+            // Restore LoRa sequence number
+            messenger_.setNextSeqNum(persisted->next_seq_num);
+
+            pmu_logger.info("Restored state: read_index=%lu, seq=%u", persisted->read_index,
+                            persisted->next_seq_num);
+        } else {
+            pmu_logger.warn("State version mismatch (got %u, expected %u) - cold start",
+                            persisted->version, STATE_VERSION);
+            state_valid = false;
+        }
+    }
+
+    // Cold start: reconstruct state from flash scan
+    if (!state_valid && flash_buffer_) {
+        pmu_logger.info("Cold start detected - scanning flash for state");
+        if (flash_buffer_->scanForWriteIndex()) {
+            pmu_logger.info("Flash scan complete: write_index=%lu, read_index=%lu",
+                            flash_buffer_->getWriteIndex(), flash_buffer_->getReadIndex());
+        } else {
+            pmu_logger.error("Flash scan failed - starting fresh");
+        }
+    }
 
     switch (reason) {
         case PMU::WakeReason::Periodic:

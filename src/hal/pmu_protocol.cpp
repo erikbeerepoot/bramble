@@ -483,22 +483,41 @@ void Protocol::handleWakeNotification(const uint8_t *data, uint8_t length)
     WakeReason reason = static_cast<WakeReason>(data[0]);
     log.debug("WakeReason=%d", static_cast<int>(reason));
 
+    // New format: [reason, state_valid, state[32], optional schedule_entry...]
+    // Old format fallback: [reason] or [reason, schedule_entry...]
+    // Minimum new format length: 1 (reason) + 1 (state_valid) + 32 (state) = 34 bytes
+    static constexpr uint8_t MIN_NEW_FORMAT_LEN = 1 + 1 + NODE_STATE_SIZE;
+
+    bool state_valid = false;
+    static uint8_t state_blob[NODE_STATE_SIZE];
+    memset(state_blob, 0, NODE_STATE_SIZE);
+
+    // Parse state blob if present (new format)
+    size_t schedule_offset = 1;  // Default: schedule starts after reason byte (old format)
+    if (length >= MIN_NEW_FORMAT_LEN) {
+        // New format with state blob
+        state_valid = (data[1] != 0);
+        memcpy(state_blob, &data[2], NODE_STATE_SIZE);
+        schedule_offset = MIN_NEW_FORMAT_LEN;  // Schedule starts after state blob
+        log.debug("State valid=%d", state_valid);
+    }
+
     // Parse schedule entry data (sent with scheduled wake events)
     static ScheduleEntry entry;
-    if (length >= 1 + SCHEDULE_ENTRY_SIZE) {
+    if (length >= schedule_offset + SCHEDULE_ENTRY_SIZE) {
         // Has schedule data - parse it
-        entry.hour = data[1];
-        entry.minute = data[2];
-        entry.duration = data[3] | (data[4] << 8);
-        entry.daysMask = static_cast<DayOfWeek>(data[5]);
-        entry.valveId = data[6];
-        entry.enabled = (data[7] != 0);
+        entry.hour = data[schedule_offset];
+        entry.minute = data[schedule_offset + 1];
+        entry.duration = data[schedule_offset + 2] | (data[schedule_offset + 3] << 8);
+        entry.daysMask = static_cast<DayOfWeek>(data[schedule_offset + 4]);
+        entry.valveId = data[schedule_offset + 5];
+        entry.enabled = (data[schedule_offset + 6] != 0);
         log.debug("ValveId=%d", entry.valveId);
-        wakeNotificationCallback_(reason, &entry);
+        wakeNotificationCallback_(reason, &entry, state_valid, state_blob);
         log.debug("Callback done");
     } else {
         // Periodic or external wake (no schedule data)
-        wakeNotificationCallback_(reason, nullptr);
+        wakeNotificationCallback_(reason, nullptr, state_valid, state_blob);
     }
 }
 

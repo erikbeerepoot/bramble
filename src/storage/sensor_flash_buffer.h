@@ -222,6 +222,39 @@ public:
     bool reset();
 
     /**
+     * @brief Scan flash to find write index (cold start recovery)
+     *
+     * Used on cold start when PMU state is invalid. Scans the data region
+     * to find the last valid record and sets write_index accordingly.
+     * This is expensive (reads entire flash) but only happens on cold start.
+     *
+     * @return true if scan successful, write_index updated
+     */
+    bool scanForWriteIndex();
+
+    /**
+     * @brief Set read index directly (restore from PMU state)
+     *
+     * Used when restoring state from PMU RAM on warm start. No validation
+     * is performed - caller must ensure the index is valid.
+     *
+     * @param index Read index to set
+     */
+    void setReadIndex(uint32_t index) { metadata_.read_index = index; }
+
+    /**
+     * @brief Get current read index
+     * @return Current read index
+     */
+    uint32_t getReadIndex() const { return metadata_.read_index; }
+
+    /**
+     * @brief Get current write index
+     * @return Current write index
+     */
+    uint32_t getWriteIndex() const { return metadata_.write_index; }
+
+    /**
      * @brief Check if flash is healthy (no recent write failures)
      *
      * Returns false if the most recent write operation failed,
