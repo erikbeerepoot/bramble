@@ -65,9 +65,7 @@ void SensorMode::onStart()
     led_pattern_ = std::make_unique<BlinkingPattern>(led_, 255, 165, 0, 250, 250);
 
     // Set up state change handler - centralizes all reactions to state changes
-    sensor_state_.setCallback([this](SensorState state) {
-        onStateChange(state);
-    });
+    sensor_state_.setCallback([this](SensorState state) { onStateChange(state); });
 
     // Initialize PMU client at 9600 baud to match STM32 LPUART configuration
     pmu_client_ = new PmuClient(PMU_UART_ID, PMU_UART_TX_PIN, PMU_UART_RX_PIN, 9600);
@@ -124,8 +122,9 @@ void SensorMode::onStart()
 
                 if (rtc_set_datetime(&dt)) {
                     sleep_us(64);  // Wait for RTC to propagate
-                    Logger("SensorSM").info("RTC set from PMU: %04d-%02d-%02d %02d:%02d:%02d", dt.year,
-                                            dt.month, dt.day, dt.hour, dt.min, dt.sec);
+                    Logger("SensorSM")
+                        .info("RTC set from PMU: %04d-%02d-%02d %02d:%02d:%02d", dt.year, dt.month,
+                              dt.day, dt.hour, dt.min, dt.sec);
 
                     // Report RTC sync - state callback handles LED pattern change
                     sensor_state_.reportRtcSynced();
@@ -146,7 +145,8 @@ void SensorMode::onStart()
                     } else {
                         // PMU time is good enough, proceed directly
                         pmu_logger.info("Not time to transmit - using PMU time, skipping hub sync");
-                        // reportRtcSynced will trigger TIME_SYNCED -> onStateChange handles the rest
+                        // reportRtcSynced will trigger TIME_SYNCED -> onStateChange handles the
+                        // rest
                     }
                 } else {
                     logger.error("Failed to set RTC from PMU time");
@@ -308,7 +308,6 @@ void SensorMode::onStateChange(SensorState state)
             break;
     }
 }
-
 
 void SensorMode::onLoop()
 {
@@ -804,14 +803,10 @@ void SensorMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry 
 
     switch (reason) {
         case PMU::WakeReason::Periodic:
-            pmu_logger.info("Periodic wake - restarting sensor cycle");
-            // Report wake to state machine - it handles the appropriate transition
-            if (!sensor_state_.reportWakeFromSleep()) {
-                // Need time sync first
-                pmu_logger.warn("RTC not synced on periodic wake - requesting time");
-                sendHeartbeat(0);
-                sensor_state_.reportHeartbeatSent();
-            }
+            // The valid wake is the power-on itself (onStart handles the cycle).
+            // The STM32 sends this UART message ~500ms after enabling DC-DC, but
+            // by then onStart() has already started the cycle. Ignore it.
+            pmu_logger.debug("Periodic wake ignored - already awake");
             break;
 
         case PMU::WakeReason::Scheduled:

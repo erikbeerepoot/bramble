@@ -70,17 +70,17 @@ constexpr uint PIN_A1 = 27;  // A1 analog/digital input
 /**
  * @brief Node configuration info for registration
  */
-struct NodeConfigInfo {
+struct VariantInfo {
     uint8_t node_type;
     uint8_t capabilities;
-    const char *device_name;
+    const char *variant_name;
 };
 
 /**
- * @brief Get node configuration based on hardware variant
- * @return NodeConfigInfo with type, capabilities, and name
+ * @brief Get variant info based on hardware variant
+ * @return VariantInfo with type, capabilities, and name
  */
-inline NodeConfigInfo getNodeConfiguration()
+inline VariantInfo getVariantInfo()
 {
 #ifdef HARDWARE_IRRIGATION
     return {NODE_TYPE_HYBRID, CAP_VALVE_CONTROL | CAP_SOIL_MOISTURE, "Irrigation Node"};
@@ -198,7 +198,14 @@ int main()
         // Check for saved configuration
         if (config_manager.loadConfiguration(node_config) &&
             node_config.assigned_address != ADDRESS_UNREGISTERED) {
-            current_address = node_config.assigned_address;
+            // Force re-registration if firmware version changed
+            if (node_config.firmware_version != BRAMBLE_FIRMWARE_VERSION) {
+                log.info("Firmware changed (0x%08lX -> 0x%08lX) - will re-register",
+                         node_config.firmware_version, BRAMBLE_FIRMWARE_VERSION);
+                // Keep ADDRESS_UNREGISTERED to trigger registration
+            } else {
+                current_address = node_config.assigned_address;
+            }
         }
 
         // Create messenger with current address
@@ -207,15 +214,15 @@ int main()
         // Get device ID for registration
         uint64_t device_id = getDeviceId();
 
-        // Get node configuration for registration
-        auto config = getNodeConfiguration();
+        // Get variant info for registration
+        VariantInfo variant = getVariantInfo();
 
         // Set up re-registration callback (hub doesn't recognize us)
-        messenger.setReregistrationCallback([&messenger, device_id, config]() {
+        messenger.setReregistrationCallback([&messenger, device_id, variant]() {
             printf("Re-registering with hub...\n");
-            messenger.sendRegistrationRequest(ADDRESS_HUB, device_id, config.node_type,
-                                              config.capabilities, BRAMBLE_FIRMWARE_VERSION,
-                                              config.device_name);
+            messenger.sendRegistrationRequest(ADDRESS_HUB, device_id, variant.node_type,
+                                              variant.capabilities, BRAMBLE_FIRMWARE_VERSION,
+                                              variant.variant_name);
         });
 
         // Set up registration success callback (save new address to flash)
@@ -342,13 +349,13 @@ bool attemptRegistration(ReliableMessenger &messenger, SX1276 &lora,
     log.info("Attempting registration with hub...");
     log.info("Device ID: 0x%016llX", device_id);
 
-    // Get node configuration
-    auto config = getNodeConfiguration();
+    // Get variant info
+    VariantInfo variant = getVariantInfo();
 
     // Send registration request and store sequence number
     uint8_t registration_seq = messenger.sendRegistrationRequest(
-        ADDRESS_HUB, device_id, config.node_type, config.capabilities, BRAMBLE_FIRMWARE_VERSION,
-        config.device_name);
+        ADDRESS_HUB, device_id, variant.node_type, variant.capabilities, BRAMBLE_FIRMWARE_VERSION,
+        variant.variant_name);
     if (registration_seq == 0) {
         log.error("Failed to send registration request");
         return false;
@@ -386,12 +393,14 @@ bool attemptRegistration(ReliableMessenger &messenger, SX1276 &lora,
                         // mode
                         messenger.cancelPendingMessage(registration_seq);
 
-                        // Save to flash
-                        NodeConfiguration config;
-                        config.assigned_address = new_addr;
-                        config.device_id = device_id;
+                        // Save to flash with runtime-assigned fields only
+                        // (node_type, capabilities, variant_name come from getVariantInfo())
+                        NodeConfiguration save_config = {};
+                        save_config.assigned_address = new_addr;
+                        save_config.device_id = device_id;
+                        save_config.firmware_version = BRAMBLE_FIRMWARE_VERSION;
 
-                        if (config_manager.saveConfiguration(config)) {
+                        if (config_manager.saveConfiguration(save_config)) {
                             log.debug("Configuration saved to flash");
                         }
 

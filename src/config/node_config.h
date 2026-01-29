@@ -16,17 +16,16 @@
  */
 
 // Configuration data structure (exactly one flash page)
+// NOTE: node_type, capabilities, and variant_name are compile-time constants
+// available from getVariantInfo() in main.cpp, so they are not stored here.
 struct __attribute__((packed)) NodeConfiguration {
     uint32_t magic;              // Magic number to validate data (0xBEEF1234)
     uint16_t assigned_address;   // Assigned network address
     uint64_t device_id;          // Device unique ID
     uint32_t registration_time;  // DEPRECATED - kept for flash compatibility, always 0
-    char device_name[16];        // Device name
-    uint8_t node_type;           // Node type
-    uint8_t capabilities;        // Node capabilities
     uint32_t firmware_version;   // Firmware version at registration
     uint32_t crc32;              // CRC32 of all above fields
-    uint8_t padding[212];        // Pad to 256 bytes (1 flash page)
+    uint8_t padding[230];        // Pad to 256 bytes (1 flash page)
 };
 
 static_assert(sizeof(NodeConfiguration) == FLASH_PAGE_SIZE,
@@ -74,14 +73,10 @@ public:
     /**
      * @brief Create default configuration
      * @param device_id Device unique ID
-     * @param device_name Device name
-     * @param node_type Node type
-     * @param capabilities Node capabilities
      * @param firmware_version Firmware version
      * @return Default configuration structure
      */
-    static NodeConfiguration createDefaultConfiguration(uint64_t device_id, const char *device_name,
-                                                        uint8_t node_type, uint8_t capabilities,
+    static NodeConfiguration createDefaultConfiguration(uint64_t device_id,
                                                         uint32_t firmware_version);
 
 private:

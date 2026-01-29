@@ -77,7 +77,7 @@ bool NodeConfigManager::saveConfiguration(const NodeConfiguration &config)
     // Compare key fields to ensure integrity
     if (verify_config.device_id != config_copy.device_id ||
         verify_config.assigned_address != config_copy.assigned_address ||
-        verify_config.node_type != config_copy.node_type) {
+        verify_config.firmware_version != config_copy.firmware_version) {
         logger_.error("Configuration save verification failed - data mismatch");
         return attemptBackupSave(config_copy);
     }
@@ -122,9 +122,6 @@ bool NodeConfigManager::clearConfiguration()
 }
 
 NodeConfiguration NodeConfigManager::createDefaultConfiguration(uint64_t device_id,
-                                                                const char *device_name,
-                                                                uint8_t node_type,
-                                                                uint8_t capabilities,
                                                                 uint32_t firmware_version)
 {
     NodeConfiguration config = {};  // Zero-initialize
@@ -132,18 +129,8 @@ NodeConfiguration NodeConfigManager::createDefaultConfiguration(uint64_t device_
     config.magic = NODE_CONFIG_MAGIC;
     config.assigned_address = ADDRESS_UNREGISTERED;  // Will be assigned by hub
     config.device_id = device_id;
-    config.registration_time = to_ms_since_boot(get_absolute_time());
-    config.node_type = node_type;
-    config.capabilities = capabilities;
+    config.registration_time = 0;  // Deprecated field, always 0
     config.firmware_version = firmware_version;
-
-    // Copy device name
-    if (device_name) {
-        strncpy(config.device_name, device_name, sizeof(config.device_name) - 1);
-        config.device_name[sizeof(config.device_name) - 1] = '\0';
-    } else {
-        strcpy(config.device_name, "Unknown");
-    }
 
     // CRC will be calculated when saving
     config.crc32 = 0;

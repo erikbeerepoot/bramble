@@ -18,7 +18,8 @@ void IrrigationStateMachine::update(const IrrigationHardwareState &hardware_stat
     }
 }
 
-IrrigationState IrrigationStateMachine::deriveState(const IrrigationHardwareState &hardware_state) const
+IrrigationState IrrigationStateMachine::deriveState(
+    const IrrigationHardwareState &hardware_state) const
 {
     if (error_) {
         return IrrigationState::ERROR;
