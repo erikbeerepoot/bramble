@@ -240,8 +240,8 @@ void SensorMode::onStateChange(SensorState state)
             break;
 
         case SensorState::TRANSMITTING:
-            // Branch based on flash availability
-            if (flash_buffer_) {
+            // Branch based on flash availability and health
+            if (flash_buffer_ && flash_buffer_->isHealthy()) {
                 // Normal path: transmit from flash backlog
                 task_queue_.postOnce(
                     [](void *ctx, uint32_t time) -> bool {
@@ -253,7 +253,7 @@ void SensorMode::onStateChange(SensorState state)
                     },
                     this, TaskPriority::High);
             } else {
-                // Fallback path: direct transmit current reading
+                // Fallback path: direct transmit current reading (flash unavailable/unhealthy)
                 task_queue_.postOnce(
                     [](void *ctx, uint32_t time) -> bool {
                         (void)time;
@@ -469,8 +469,8 @@ uint16_t SensorMode::collectErrorFlags()
         flags |= ERR_FLAG_SENSOR_FAILURE;
     }
 
-    // Check flash status
-    if (!external_flash_ || !flash_buffer_) {
+    // Check flash status - include health check for write failures
+    if (!external_flash_ || !flash_buffer_ || !flash_buffer_->isHealthy()) {
         flags |= ERR_FLAG_FLASH_FAILURE;
     } else {
         SensorFlashMetadata stats;
@@ -564,13 +564,14 @@ bool SensorMode::isTimeToTransmit(uint32_t current_timestamp) const
 
 bool SensorMode::checkNeedsTransmission()
 {
-    // Direct transmit fallback: if flash unavailable but we have a valid reading
-    if (!flash_buffer_) {
+    // Direct transmit fallback: if flash unavailable or unhealthy but we have a valid reading
+    bool flash_available = flash_buffer_ && flash_buffer_->isHealthy();
+    if (!flash_available) {
         if (current_reading_.timestamp > 0 && last_sensor_read_valid_) {
-            logger.info("No flash buffer - will transmit current reading directly");
+            logger.info("Flash unavailable/unhealthy - will transmit current reading directly");
             return true;
         }
-        logger.error("No flash buffer and no valid reading - nothing to transmit");
+        logger.error("Flash unavailable/unhealthy and no valid reading - nothing to transmit");
         return false;
     }
 

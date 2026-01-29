@@ -256,6 +256,49 @@ def get_node_status(address: int):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/nodes/<int:address>/error-history', methods=['GET'])
+def get_node_error_history(address: int):
+    """Get error flag history for a specific node.
+
+    Returns history of error_flags changes over time, useful for
+    tracking when errors like flash failures occurred.
+
+    Args:
+        address: Node address
+
+    Query parameters:
+        start: Start timestamp (required)
+        end: End timestamp (required)
+
+    Returns:
+        JSON array of error history entries
+    """
+    try:
+        start_time = request.args.get('start', type=int)
+        end_time = request.args.get('end', type=int)
+
+        if start_time is None or end_time is None:
+            return jsonify({'error': 'start and end query parameters are required'}), 400
+
+        if start_time > end_time:
+            return jsonify({'error': 'start must be <= end'}), 400
+
+        db = get_database()
+        history = db.get_node_error_history(address, start_time, end_time)
+
+        return jsonify({
+            'address': address,
+            'start': start_time,
+            'end': end_time,
+            'count': len(history),
+            'history': history
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting error history for node {address}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/nodes/<int:address>/metadata', methods=['GET'])
 def get_node_metadata(address: int):
     """Get metadata for a specific node.

@@ -132,6 +132,7 @@ bool SensorFlashBuffer::writeRecord(const SensorDataRecord &record)
         ExternalFlashResult result = flash_.eraseSector(sector_start);
         if (result != ExternalFlashResult::Success) {
             logger_.error("Failed to erase sector at 0x%08X", sector_start);
+            healthy_ = false;
             return false;
         }
     }
@@ -141,6 +142,7 @@ bool SensorFlashBuffer::writeRecord(const SensorDataRecord &record)
         ExternalFlashResult result = flash_.eraseSector(end_sector_start);
         if (result != ExternalFlashResult::Success) {
             logger_.error("Failed to erase sector at 0x%08X", end_sector_start);
+            healthy_ = false;
             return false;
         }
     }
@@ -152,6 +154,7 @@ bool SensorFlashBuffer::writeRecord(const SensorDataRecord &record)
         address, reinterpret_cast<const uint8_t *>(&record_with_crc), sizeof(record_with_crc));
     if (result != ExternalFlashResult::Success) {
         logger_.error("Failed to write record at index %lu", metadata_.write_index);
+        healthy_ = false;
         return false;
     }
 
@@ -186,6 +189,8 @@ bool SensorFlashBuffer::writeRecord(const SensorDataRecord &record)
         }
     }
 
+    // Mark flash as healthy after successful write
+    healthy_ = true;
     return true;
 }
 
@@ -485,6 +490,7 @@ bool SensorFlashBuffer::saveMetadata()
     ExternalFlashResult result = flash_.eraseSector(METADATA_SECTOR);
     if (result != ExternalFlashResult::Success) {
         logger_.error("Failed to erase metadata sector");
+        healthy_ = false;
         return false;
     }
 
@@ -493,6 +499,7 @@ bool SensorFlashBuffer::saveMetadata()
                           sizeof(metadata_));
     if (result != ExternalFlashResult::Success) {
         logger_.error("Failed to write metadata");
+        healthy_ = false;
         return false;
     }
 
