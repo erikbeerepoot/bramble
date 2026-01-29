@@ -420,6 +420,7 @@ The Raspberry Pi runs a Flask-based REST API for querying sensor data.
 | GET | `/api/nodes/<addr>/sensor-data` | Get readings for specific node |
 | GET | `/api/nodes/<addr>/latest` | Get most recent reading |
 | GET | `/api/nodes/<addr>/statistics` | Get node statistics |
+| GET | `/api/nodes/<addr>/error-history` | Get error flag history for a node (requires start/end params) |
 
 #### Query Parameters
 
@@ -443,6 +444,9 @@ curl http://pi:5000/api/sensor-data/export > sensor_data.csv
 
 # Get statistics for node 0x0001
 curl http://pi:5000/api/nodes/1/stats
+
+# Get error history for node 0x0001 from last 7 days
+curl "http://pi:5000/api/nodes/1/error-history?start=$(date -d '7 days ago' +%s)&end=$(date +%s)"
 ```
 
 #### Response Format
