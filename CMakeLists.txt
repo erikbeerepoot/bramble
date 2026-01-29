@@ -275,6 +275,9 @@ if(NOT BUILD_TESTS)
             BRAMBLE_VERSION_BUILD=${BRAMBLE_VERSION_BUILD}
         )
 
+        # Suppress GCC ARM ABI notes (safe for standalone firmware)
+        target_compile_options(${TARGET_NAME} PRIVATE -Wno-psabi)
+
         # Libraries and configuration for the target
         target_link_libraries(${TARGET_NAME} pico_stdlib)
 
