@@ -65,9 +65,7 @@ void SensorMode::onStart()
     led_pattern_ = std::make_unique<BlinkingPattern>(led_, 255, 165, 0, 250, 250);
 
     // Set up state change handler - centralizes all reactions to state changes
-    sensor_state_.setCallback([this](SensorState state) {
-        onStateChange(state);
-    });
+    sensor_state_.setCallback([this](SensorState state) { onStateChange(state); });
 
     // Initialize PMU client at 9600 baud to match STM32 LPUART configuration
     pmu_client_ = new PmuClient(PMU_UART_ID, PMU_UART_TX_PIN, PMU_UART_RX_PIN, 9600);
@@ -124,8 +122,9 @@ void SensorMode::onStart()
 
                 if (rtc_set_datetime(&dt)) {
                     sleep_us(64);  // Wait for RTC to propagate
-                    Logger("SensorSM").info("RTC set from PMU: %04d-%02d-%02d %02d:%02d:%02d", dt.year,
-                                            dt.month, dt.day, dt.hour, dt.min, dt.sec);
+                    Logger("SensorSM")
+                        .info("RTC set from PMU: %04d-%02d-%02d %02d:%02d:%02d", dt.year, dt.month,
+                              dt.day, dt.hour, dt.min, dt.sec);
 
                     // Report RTC sync - state callback handles LED pattern change
                     sensor_state_.reportRtcSynced();
@@ -146,7 +145,8 @@ void SensorMode::onStart()
                     } else {
                         // PMU time is good enough, proceed directly
                         pmu_logger.info("Not time to transmit - using PMU time, skipping hub sync");
-                        // reportRtcSynced will trigger TIME_SYNCED -> onStateChange handles the rest
+                        // reportRtcSynced will trigger TIME_SYNCED -> onStateChange handles the
+                        // rest
                     }
                 } else {
                     logger.error("Failed to set RTC from PMU time");
@@ -308,7 +308,6 @@ void SensorMode::onStateChange(SensorState state)
             break;
     }
 }
-
 
 void SensorMode::onLoop()
 {
@@ -665,9 +664,10 @@ void SensorMode::transmitBacklog()
     // Read up to BATCH_SIZE records
     SensorDataRecord records[SensorFlashBuffer::BATCH_SIZE];
     size_t actual_count = 0;
+    size_t records_scanned = 0;
 
     if (!flash_buffer_->readUntransmittedRecords(records, SensorFlashBuffer::BATCH_SIZE,
-                                                 actual_count)) {
+                                                 actual_count, records_scanned)) {
         logger.error("Failed to read untransmitted records");
         sensor_state_.reportTransmitComplete();
         return;
@@ -675,10 +675,16 @@ void SensorMode::transmitBacklog()
 
     uint32_t untransmitted_count = flash_buffer_->getUntransmittedCount();
     if (actual_count == 0) {
-        logger.warn("No valid records to transmit - skipping %lu corrupt records",
-                    untransmitted_count);
-        // All remaining records are corrupt - advance past them
-        flash_buffer_->advanceReadIndex(untransmitted_count);
+        if (records_scanned > 0) {
+            // All scanned records had CRC errors - skip only those we verified as corrupt
+            logger.warn("No valid records found - skipping %zu corrupt records (of %lu pending)",
+                        records_scanned, untransmitted_count);
+            flash_buffer_->advanceReadIndex(static_cast<uint32_t>(records_scanned));
+        } else if (untransmitted_count > 0) {
+            // Couldn't scan any records (read failure) - don't skip, try again later
+            logger.warn("Flash read issues - %lu records pending, will retry later",
+                        untransmitted_count);
+        }
         sensor_state_.reportTransmitComplete();
         return;
     }

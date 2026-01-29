@@ -23,8 +23,8 @@
 #define BRAMBLE_VERSION_BUILD 0
 #endif
 
-#define BRAMBLE_FIRMWARE_VERSION                                                                    \
-    ((uint32_t)((BRAMBLE_VERSION_MAJOR << 24) | (BRAMBLE_VERSION_MINOR << 16) |                    \
+#define BRAMBLE_FIRMWARE_VERSION                                                \
+    ((uint32_t)((BRAMBLE_VERSION_MAJOR << 24) | (BRAMBLE_VERSION_MINOR << 16) | \
                 BRAMBLE_VERSION_BUILD))
 
 // Extract version components from packed uint32_t
