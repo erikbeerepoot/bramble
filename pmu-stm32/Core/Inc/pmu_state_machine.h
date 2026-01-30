@@ -7,69 +7,93 @@
 #include "pmu_protocol.h"
 
 /**
+ * @brief Events that can be dispatched to the PMU state machine
+ */
+enum class PmuEvent : uint8_t {
+    BOOT_COMPLETE,       ///< Boot animation finished
+    RTC_WAKE_SCHEDULED,  ///< RTC woke us for a schedule entry
+    RTC_WAKE_PERIODIC,   ///< RTC woke us on interval
+    CTS_RECEIVED,        ///< RP2040 sent ClearToSend
+    CTS_TIMEOUT,         ///< Waited too long for CTS
+    READY_FOR_SLEEP,     ///< RP2040 signaled work complete
+    WAKE_TIMEOUT,        ///< Overall wake timeout expired
+    ERROR_OCCURRED       ///< Unrecoverable error
+};
+
+/**
  * @brief PMU operating states
  *
- * State transitions:
+ * State transitions (reducer pattern):
  *
  * [Power On]
  *     |
  *     v
- *  BOOTING -----> reportBootComplete() -----> SLEEPING
- *     |                                           |
- *     v (error)                                   |
- *   ERROR                      +------------------+
- *                              |                  |
- *                 (RTC wake, schedule entry)   (RTC wake, no schedule)
- *                              |                  |
- *                              v                  v
- *                      SCHEDULED_WAKE      PERIODIC_WAKE
- *                              |                  |
- *                              +--------+---------+
- *                                       |
- *                         reportReadyForSleep() or timeout
- *                                       |
- *                                       v
- *                                   SLEEPING
+ *  BOOTING ---> BOOT_COMPLETE ---> SLEEPING
+ *     |                               |
+ *     v (error)                       |
+ *   ERROR <--------------------+      |
+ *                              |      |
+ *                    RTC_WAKE_*       |
+ *                              |      |
+ *                              v      v
+ *  SLEEPING <-------------- AWAITING_CTS
+ *     ^                        |
+ *     |            CTS_RECEIVED/CTS_TIMEOUT
+ *     |                        |
+ *     |                        v
+ *     +---------------- WAKE_ACTIVE
+ *         READY_FOR_SLEEP
+ *         or WAKE_TIMEOUT
  */
 enum class PmuState : uint8_t {
-    BOOTING,         ///< Boot animation in progress
-    SLEEPING,        ///< Low power STOP mode (or about to enter)
-    SCHEDULED_WAKE,  ///< Woke due to schedule entry, RP2040 decides what to do
-    PERIODIC_WAKE,   ///< Periodic interval wake, RP2040 decides what to do
-    ERROR            ///< Unrecoverable error
+    BOOTING,       ///< Boot animation in progress
+    SLEEPING,      ///< Low power STOP mode (or about to enter)
+    AWAITING_CTS,  ///< DC/DC on, waiting for RP2040 CTS signal
+    WAKE_ACTIVE,   ///< Wake notification sent, RP2040 working
+    ERROR          ///< Unrecoverable error
+};
+
+/**
+ * @brief Type of wake event (context, not encoded in state)
+ */
+enum class WakeType : uint8_t {
+    NONE,       ///< Not in a wake cycle
+    SCHEDULED,  ///< Woke due to schedule entry
+    PERIODIC    ///< Woke on periodic interval
 };
 
 /**
  * @brief Context for wake sessions
  *
  * Holds information about the current wake session: when it started,
- * whether we've notified RP2040, and the timeout duration.
+ * what type of wake it is, and timeout information.
  */
 struct WakeContext {
-    uint32_t startTime = 0;         ///< HAL tick when wake started
-    bool notificationSent = false;  ///< True if wake notification sent to RP2040
-    uint32_t timeoutMs = 0;         ///< Maximum wake duration in ms
+    WakeType type = WakeType::NONE;  ///< Type of wake event
+    uint32_t startTime = 0;          ///< HAL tick when wake started
+    uint32_t timeoutMs = 0;          ///< Maximum wake duration in ms
+    uint32_t ctsWaitStartTime = 0;   ///< HAL tick when CTS wait started
 
-    // Optional schedule entry (only valid for SCHEDULED_WAKE)
+    // Optional schedule entry (only valid when type == SCHEDULED)
     bool hasScheduleEntry = false;
     PMU::ScheduleEntry scheduleEntry;
 
     void reset()
     {
+        type = WakeType::NONE;
         startTime = 0;
-        notificationSent = false;
         timeoutMs = 0;
+        ctsWaitStartTime = 0;
         hasScheduleEntry = false;
         scheduleEntry = PMU::ScheduleEntry();
     }
 };
 
 /**
- * @brief Event-driven state machine for PMU operation
+ * @brief Event-driven state machine for PMU operation using reducer pattern
  *
- * Manages PMU state transitions and eliminates scattered boolean flags.
- * State is managed internally - report events and the state machine
- * updates automatically.
+ * Manages PMU state transitions through a central reducer function.
+ * Events are dispatched to the reducer which returns the next state.
  *
  * Usage:
  *   PmuStateMachine pmu(HAL_GetTick);
@@ -78,23 +102,27 @@ struct WakeContext {
  *   });
  *
  *   // After boot animation:
- *   pmu.reportBootComplete();
+ *   pmu.dispatch(PmuEvent::BOOT_COMPLETE);
  *
  *   // On RTC wakeup with schedule:
- *   pmu.reportScheduledWake(entry);
+ *   pmu.dispatchScheduledWake(entry);
  *
  *   // On RTC wakeup without schedule:
- *   pmu.reportPeriodicWake();
+ *   pmu.dispatch(PmuEvent::RTC_WAKE_PERIODIC);
  *
- *   // In main loop:
- *   bool stayAwake = pmu.update();
- *   if (!stayAwake) enterStopMode();
+ *   // When CTS received:
+ *   pmu.dispatch(PmuEvent::CTS_RECEIVED);
+ *
+ *   // In main loop (checks timeouts):
+ *   pmu.tick();
  */
 class PmuStateMachine {
 public:
     using GetTickCallback = uint32_t (*)();
     using StateCallback = std::function<void(PmuState)>;
 
+    // CTS timeout - fallback for old firmware that doesn't send CTS
+    static constexpr uint32_t CTS_TIMEOUT_MS = 2000;  // 2 seconds
     // Grace period added to schedule duration for timeouts
     static constexpr uint32_t SCHEDULED_GRACE_PERIOD_MS = 30000;  // 30 seconds
     // Default timeout for periodic wakes
@@ -107,68 +135,34 @@ public:
     explicit PmuStateMachine(GetTickCallback getTick);
 
     // =========================================================================
-    // Event Methods - call these to report state changes
+    // Event Dispatch Methods
     // =========================================================================
 
     /**
-     * @brief Report that boot animation is complete
+     * @brief Dispatch an event to the state machine
      *
-     * Transitions BOOTING -> SLEEPING
+     * The reducer processes the event and transitions to the appropriate state.
+     *
+     * @param event The event to dispatch
      */
-    void reportBootComplete();
+    void dispatch(PmuEvent event);
 
     /**
-     * @brief Report a scheduled wake event (RTC woke us for a schedule entry)
+     * @brief Dispatch a scheduled wake event with schedule entry data
      *
-     * Transitions SLEEPING -> SCHEDULED_WAKE
-     * Timeout = entry.duration + 30s grace period
+     * Stores the schedule entry in context before dispatching RTC_WAKE_SCHEDULED.
      *
      * @param entry The schedule entry that triggered this wake
      */
-    void reportScheduledWake(const PMU::ScheduleEntry &entry);
+    void dispatchScheduledWake(const PMU::ScheduleEntry &entry);
 
     /**
-     * @brief Report a periodic wake event (RTC woke us on interval)
+     * @brief Check timeouts and dispatch timeout events
      *
-     * Transitions SLEEPING -> PERIODIC_WAKE
-     * Timeout = 2 minutes
+     * Call this periodically in the main loop. Generates CTS_TIMEOUT
+     * or WAKE_TIMEOUT events when appropriate.
      */
-    void reportPeriodicWake();
-
-    /**
-     * @brief Report that RP2040 signaled ready for sleep
-     *
-     * Transitions SCHEDULED_WAKE|PERIODIC_WAKE -> SLEEPING
-     */
-    void reportReadyForSleep();
-
-    /**
-     * @brief Report an unrecoverable error
-     *
-     * Transitions any state -> ERROR
-     */
-    void reportError();
-
-    /**
-     * @brief Mark that wake notification has been sent to RP2040
-     *
-     * Call after successfully sending wake notification.
-     */
-    void markWakeNotificationSent();
-
-    // =========================================================================
-    // Update Method - call in main loop
-    // =========================================================================
-
-    /**
-     * @brief Update state machine and check timeouts
-     *
-     * Call this periodically in the main loop. Handles timeout
-     * transitions when RP2040 doesn't respond in time.
-     *
-     * @return true if should stay awake, false if can enter STOP mode
-     */
-    bool update();
+    void tick();
 
     // =========================================================================
     // Query Methods
@@ -180,18 +174,16 @@ public:
     PmuState state() const { return state_; }
 
     /**
-     * @brief Check if RP2040 power (DC/DC) should be enabled
-     *
-     * True during BOOTING, SCHEDULED_WAKE, and PERIODIC_WAKE.
+     * @brief Get current wake type
      */
-    bool shouldPowerRp2040() const;
+    WakeType wakeType() const { return context_.type; }
 
     /**
-     * @brief Check if wake notification should be sent
+     * @brief Check if RP2040 power (DC/DC) should be enabled
      *
-     * True if in a wake state and notification hasn't been sent yet.
+     * True during BOOTING, AWAITING_CTS, and WAKE_ACTIVE states.
      */
-    bool shouldSendWakeNotification() const;
+    bool shouldPowerRp2040() const;
 
     /**
      * @brief Get the schedule entry for current wake (if any)
@@ -206,11 +198,11 @@ public:
     const WakeContext &wakeContext() const { return context_; }
 
     /**
-     * @brief Check if in an active wake state
+     * @brief Check if in an active wake state (AWAITING_CTS or WAKE_ACTIVE)
      */
     bool isAwake() const
     {
-        return state_ == PmuState::SCHEDULED_WAKE || state_ == PmuState::PERIODIC_WAKE;
+        return state_ == PmuState::AWAITING_CTS || state_ == PmuState::WAKE_ACTIVE;
     }
 
     /**
@@ -222,6 +214,11 @@ public:
      * @brief Get human-readable state name
      */
     static const char *stateName(PmuState state);
+
+    /**
+     * @brief Get human-readable event name
+     */
+    static const char *eventName(PmuEvent event);
 
     // =========================================================================
     // Callback
@@ -236,11 +233,29 @@ public:
 
 private:
     /**
+     * @brief Pure reducer function - computes next state from current state and event
+     *
+     * This function has no side effects. It only computes the next state.
+     *
+     * @param state Current state
+     * @param event Event to process
+     * @return Next state
+     */
+    static PmuState reduce(PmuState state, PmuEvent event);
+
+    /**
      * @brief Transition to a new state
      *
      * Updates state and invokes callback if state changed.
      */
     void transitionTo(PmuState newState);
+
+    /**
+     * @brief Handle entry actions for a state
+     *
+     * Called when entering a new state. Sets up context as needed.
+     */
+    void onEnterState(PmuState newState, PmuEvent event);
 
     PmuState state_ = PmuState::BOOTING;
     WakeContext context_;

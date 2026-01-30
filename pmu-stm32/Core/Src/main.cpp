@@ -60,9 +60,6 @@ static uint8_t uartRxByte;
 // RTC wakeup flag - set by interrupt, handled in main loop
 static volatile bool rtcWakeupFlag = false;
 
-// CTS timeout - fallback for old firmware that doesn't send CTS
-static constexpr uint32_t CTS_TIMEOUT_MS = 2000;  // 2 second timeout waiting for CTS
-
 // Boot animation parameters
 namespace BootAnimationConfig {
 constexpr int TOTAL_FLICKERS = 5;  // 5 flickers = 1 second total
@@ -104,8 +101,9 @@ static void enterStopMode(void);
 static void wakeupFromStopMode(void);
 static void handleRTCWakeup(void);
 static bool updateBootAnimation(void);
-static void updateLedForState(PmuState state);
+static void updateLedForState(PmuState state, WakeType wakeType);
 static void onStateChange(PmuState newState);
+static void sendWakeNotification();
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -194,9 +192,9 @@ int main(void)
             continue;  // Don't enter sleep mode while boot animation is running
         }
 
-        // Boot animation complete - transition to SLEEPING state
+        // Boot animation complete - dispatch BOOT_COMPLETE event
         if (pmuState.state() == PmuState::BOOTING) {
-            pmuState.reportBootComplete();
+            pmuState.dispatch(PmuEvent::BOOT_COMPLETE);
         }
 
         // Check if RTC wakeup flag is set and handle it
@@ -205,47 +203,31 @@ int main(void)
             handleRTCWakeup();
         }
 
-        // Update state machine (handles timeouts)
-        bool stayAwake = pmuState.update();
-
-        // Handle CTS -> wake notification (for wake states)
-        if (pmuState.shouldSendWakeNotification()) {
-            uint32_t elapsed = HAL_GetTick() - pmuState.wakeContext().startTime;
-
+        // Handle CTS reception (only in AWAITING_CTS state)
+        if (pmuState.state() == PmuState::AWAITING_CTS) {
             if (protocol.isCtsReceived()) {
-                // RP2040 sent CTS - send appropriate wake notification
-                if (pmuState.state() == PmuState::SCHEDULED_WAKE) {
-                    const PMU::ScheduleEntry *entry = pmuState.getScheduleEntry();
-                    if (entry) {
-                        protocol.sendWakeNotificationWithSchedule(PMU::WakeReason::Scheduled,
-                                                                  entry);
-                    } else {
-                        protocol.sendWakeNotification(PMU::WakeReason::Scheduled);
-                    }
-                } else {
-                    protocol.sendWakeNotification(PMU::WakeReason::Periodic);
-                }
+                // RP2040 sent CTS - transition to WAKE_ACTIVE and send notification
+                pmuState.dispatch(PmuEvent::CTS_RECEIVED);
                 protocol.clearCtsReceived();
-                pmuState.markWakeNotificationSent();
-            } else if (elapsed >= CTS_TIMEOUT_MS) {
-                // CTS timeout - send wake notification anyway for backward compatibility
-                if (pmuState.state() == PmuState::SCHEDULED_WAKE) {
-                    const PMU::ScheduleEntry *entry = pmuState.getScheduleEntry();
-                    if (entry) {
-                        protocol.sendWakeNotificationWithSchedule(PMU::WakeReason::Scheduled,
-                                                                  entry);
-                    } else {
-                        protocol.sendWakeNotification(PMU::WakeReason::Scheduled);
-                    }
-                } else {
-                    protocol.sendWakeNotification(PMU::WakeReason::Periodic);
-                }
-                pmuState.markWakeNotificationSent();
+                sendWakeNotification();
             }
         }
 
-        // Update LED based on current state
-        updateLedForState(pmuState.state());
+        // Remember state before tick to detect CTS timeout transition
+        PmuState stateBeforeTick = pmuState.state();
+
+        // Tick state machine (handles CTS timeout and wake timeout)
+        pmuState.tick();
+
+        // If we transitioned from AWAITING_CTS to WAKE_ACTIVE via CTS_TIMEOUT,
+        // send the wake notification for backward compatibility
+        if (stateBeforeTick == PmuState::AWAITING_CTS &&
+            pmuState.state() == PmuState::WAKE_ACTIVE) {
+            sendWakeNotification();
+        }
+
+        // Update LED based on current state and wake type
+        updateLedForState(pmuState.state(), pmuState.wakeType());
 
         // DC/DC control based on state
         if (pmuState.shouldPowerRp2040()) {
@@ -254,8 +236,8 @@ int main(void)
             dcdc.disable();
         }
 
-        // Enter STOP mode if state machine says we can sleep
-        if (!stayAwake) {
+        // Enter STOP mode when in SLEEPING state
+        if (pmuState.state() == PmuState::SLEEPING) {
 #ifndef DEBUG_NO_SLEEP
             // Brief green pulse before sleep
             led.setColor(LED::GREEN);
@@ -597,8 +579,8 @@ static void handleRTCWakeup(void)
     if (entry &&
         entry->isWithinWindow(date.WeekDay, time.Hours, time.Minutes, wakeIntervalMinutes)) {
         // This is a scheduled watering event (or we're within the wake window of one)
-        // Transition to SCHEDULED_WAKE state - state machine handles DC/DC control
-        pmuState.reportScheduledWake(*entry);
+        // Dispatch scheduled wake event with schedule entry data
+        pmuState.dispatchScheduledWake(*entry);
 
         // Small delay to allow RP2040 to power up and boot
         HAL_Delay(100);
@@ -606,8 +588,8 @@ static void handleRTCWakeup(void)
         // Note: Wake notification will be sent when CTS is received (handled in main loop)
     } else {
         // Normal periodic wake
-        // Transition to PERIODIC_WAKE state - state machine handles DC/DC control
-        pmuState.reportPeriodicWake();
+        // Dispatch periodic wake event
+        pmuState.dispatch(PmuEvent::RTC_WAKE_PERIODIC);
 
         // Minimal delay for UART hardware init only (50ms)
         HAL_Delay(50);
@@ -684,31 +666,53 @@ static uint32_t getTickCallback()
  */
 static void readyForSleepCallback()
 {
-    // RP2040 is done with its work - transition to SLEEPING state
-    // State machine will handle DC/DC disable via shouldPowerRp2040()
-    pmuState.reportReadyForSleep();
+    // RP2040 is done with its work - dispatch READY_FOR_SLEEP event
+    // State machine will transition to SLEEPING and handle DC/DC disable
+    pmuState.dispatch(PmuEvent::READY_FOR_SLEEP);
 }
 
 /**
- * @brief Update LED based on current PMU state
- * @param state Current PMU state
+ * @brief Send wake notification to RP2040 based on current wake type
+ * Called after CTS is received or CTS timeout in AWAITING_CTS state
  */
-static void updateLedForState(PmuState state)
+static void sendWakeNotification()
+{
+    if (pmuState.wakeType() == WakeType::SCHEDULED) {
+        const PMU::ScheduleEntry *entry = pmuState.getScheduleEntry();
+        if (entry) {
+            protocol.sendWakeNotificationWithSchedule(PMU::WakeReason::Scheduled, entry);
+        } else {
+            protocol.sendWakeNotification(PMU::WakeReason::Scheduled);
+        }
+    } else {
+        protocol.sendWakeNotification(PMU::WakeReason::Periodic);
+    }
+}
+
+/**
+ * @brief Update LED based on current PMU state and wake type
+ * @param state Current PMU state
+ * @param wakeType Current wake type (for color selection)
+ */
+static void updateLedForState(PmuState state, WakeType wakeType)
 {
     // LED blinking is done inline in the main loop during wake states
     // This function handles the blink pattern
     static uint32_t lastBlinkTime = 0;
     static bool ledOn = false;
 
+    // Select color based on wake type
+    LED::Color wakeColor = (wakeType == WakeType::SCHEDULED) ? LED::RED : LED::ORANGE;
+
     switch (state) {
-        case PmuState::SCHEDULED_WAKE: {
-            // Red blink (1s cycle) for scheduled wake
+        case PmuState::AWAITING_CTS: {
+            // Fast blink (250ms cycle) while waiting for CTS
             uint32_t now = HAL_GetTick();
-            if (now - lastBlinkTime >= 500) {
+            if (now - lastBlinkTime >= 125) {
                 lastBlinkTime = now;
                 ledOn = !ledOn;
                 if (ledOn) {
-                    led.setColor(LED::RED);
+                    led.setColor(wakeColor);
                 } else {
                     led.off();
                 }
@@ -716,14 +720,14 @@ static void updateLedForState(PmuState state)
             break;
         }
 
-        case PmuState::PERIODIC_WAKE: {
-            // Orange blink (1s cycle) for periodic wake
+        case PmuState::WAKE_ACTIVE: {
+            // Slow blink (1s cycle) while RP2040 is working
             uint32_t now = HAL_GetTick();
             if (now - lastBlinkTime >= 500) {
                 lastBlinkTime = now;
                 ledOn = !ledOn;
                 if (ledOn) {
-                    led.setColor(LED::ORANGE);
+                    led.setColor(wakeColor);
                 } else {
                     led.off();
                 }

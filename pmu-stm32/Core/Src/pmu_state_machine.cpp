@@ -2,106 +2,178 @@
 
 PmuStateMachine::PmuStateMachine(GetTickCallback getTick) : getTick_(getTick) {}
 
-void PmuStateMachine::reportBootComplete()
+// =============================================================================
+// Pure Reducer Function
+// =============================================================================
+
+PmuState PmuStateMachine::reduce(PmuState state, PmuEvent event)
 {
-    if (state_ != PmuState::BOOTING) {
-        return;  // Ignore if not in BOOTING state
-    }
-
-    context_.reset();
-    transitionTo(PmuState::SLEEPING);
-}
-
-void PmuStateMachine::reportScheduledWake(const PMU::ScheduleEntry &entry)
-{
-    if (state_ != PmuState::SLEEPING) {
-        return;  // Can only wake from SLEEPING
-    }
-
-    context_.reset();
-    context_.startTime = getTick_();
-    context_.hasScheduleEntry = true;
-    context_.scheduleEntry = entry;
-    // Timeout = duration (seconds) * 1000 + grace period
-    context_.timeoutMs = static_cast<uint32_t>(entry.duration) * 1000 + SCHEDULED_GRACE_PERIOD_MS;
-
-    transitionTo(PmuState::SCHEDULED_WAKE);
-}
-
-void PmuStateMachine::reportPeriodicWake()
-{
-    if (state_ != PmuState::SLEEPING) {
-        return;  // Can only wake from SLEEPING
-    }
-
-    context_.reset();
-    context_.startTime = getTick_();
-    context_.timeoutMs = PERIODIC_WAKE_TIMEOUT_MS;
-
-    transitionTo(PmuState::PERIODIC_WAKE);
-}
-
-void PmuStateMachine::reportReadyForSleep()
-{
-    if (state_ != PmuState::SCHEDULED_WAKE && state_ != PmuState::PERIODIC_WAKE) {
-        return;  // Only valid during wake states
-    }
-
-    context_.reset();
-    transitionTo(PmuState::SLEEPING);
-}
-
-void PmuStateMachine::reportError()
-{
-    context_.reset();
-    transitionTo(PmuState::ERROR);
-}
-
-void PmuStateMachine::markWakeNotificationSent()
-{
-    context_.notificationSent = true;
-}
-
-bool PmuStateMachine::update()
-{
-    switch (state_) {
+    switch (state) {
         case PmuState::BOOTING:
-            // Stay awake during boot animation
-            return true;
+            switch (event) {
+                case PmuEvent::BOOT_COMPLETE:
+                    return PmuState::SLEEPING;
+                case PmuEvent::ERROR_OCCURRED:
+                    return PmuState::ERROR;
+                default:
+                    return state;
+            }
 
         case PmuState::SLEEPING:
-            // Can enter STOP mode
-            return false;
-
-        case PmuState::SCHEDULED_WAKE:
-        case PmuState::PERIODIC_WAKE: {
-            // Check for timeout
-            uint32_t elapsed = getTick_() - context_.startTime;
-            if (elapsed >= context_.timeoutMs) {
-                // Timeout - force return to sleep
-                context_.reset();
-                transitionTo(PmuState::SLEEPING);
-                return false;
+            switch (event) {
+                case PmuEvent::RTC_WAKE_SCHEDULED:
+                case PmuEvent::RTC_WAKE_PERIODIC:
+                    return PmuState::AWAITING_CTS;
+                case PmuEvent::ERROR_OCCURRED:
+                    return PmuState::ERROR;
+                default:
+                    return state;
             }
-            // Stay awake
-            return true;
-        }
+
+        case PmuState::AWAITING_CTS:
+            switch (event) {
+                case PmuEvent::CTS_RECEIVED:
+                case PmuEvent::CTS_TIMEOUT:
+                    return PmuState::WAKE_ACTIVE;
+                case PmuEvent::WAKE_TIMEOUT:
+                    return PmuState::SLEEPING;
+                case PmuEvent::ERROR_OCCURRED:
+                    return PmuState::ERROR;
+                default:
+                    return state;
+            }
+
+        case PmuState::WAKE_ACTIVE:
+            switch (event) {
+                case PmuEvent::READY_FOR_SLEEP:
+                case PmuEvent::WAKE_TIMEOUT:
+                    return PmuState::SLEEPING;
+                case PmuEvent::ERROR_OCCURRED:
+                    return PmuState::ERROR;
+                default:
+                    return state;
+            }
 
         case PmuState::ERROR:
-            // Stay awake in error state (for debugging)
-            return true;
+            // Terminal state - no transitions out
+            return state;
 
         default:
-            return false;
+            return state;
     }
 }
+
+// =============================================================================
+// Event Dispatch Methods
+// =============================================================================
+
+void PmuStateMachine::dispatch(PmuEvent event)
+{
+    PmuState newState = reduce(state_, event);
+
+    if (newState != state_) {
+        onEnterState(newState, event);
+        transitionTo(newState);
+    }
+}
+
+void PmuStateMachine::dispatchScheduledWake(const PMU::ScheduleEntry &entry)
+{
+    // Store schedule entry before dispatching
+    context_.hasScheduleEntry = true;
+    context_.scheduleEntry = entry;
+
+    dispatch(PmuEvent::RTC_WAKE_SCHEDULED);
+}
+
+void PmuStateMachine::tick()
+{
+    uint32_t now = getTick_();
+
+    switch (state_) {
+        case PmuState::AWAITING_CTS: {
+            // Check CTS timeout
+            uint32_t ctsElapsed = now - context_.ctsWaitStartTime;
+            if (ctsElapsed >= CTS_TIMEOUT_MS) {
+                dispatch(PmuEvent::CTS_TIMEOUT);
+                return;
+            }
+
+            // Also check overall wake timeout as safety
+            uint32_t wakeElapsed = now - context_.startTime;
+            if (wakeElapsed >= context_.timeoutMs) {
+                dispatch(PmuEvent::WAKE_TIMEOUT);
+            }
+            break;
+        }
+
+        case PmuState::WAKE_ACTIVE: {
+            // Check wake timeout
+            uint32_t elapsed = now - context_.startTime;
+            if (elapsed >= context_.timeoutMs) {
+                dispatch(PmuEvent::WAKE_TIMEOUT);
+            }
+            break;
+        }
+
+        default:
+            // No timeout handling in other states
+            break;
+    }
+}
+
+// =============================================================================
+// State Entry Actions
+// =============================================================================
+
+void PmuStateMachine::onEnterState(PmuState newState, PmuEvent event)
+{
+    uint32_t now = getTick_();
+
+    switch (newState) {
+        case PmuState::SLEEPING:
+            // Reset context when entering sleep
+            context_.reset();
+            break;
+
+        case PmuState::AWAITING_CTS:
+            // Set up wake context
+            context_.startTime = now;
+            context_.ctsWaitStartTime = now;
+
+            if (event == PmuEvent::RTC_WAKE_SCHEDULED) {
+                context_.type = WakeType::SCHEDULED;
+                // Timeout = duration (seconds) * 1000 + grace period
+                context_.timeoutMs = static_cast<uint32_t>(context_.scheduleEntry.duration) * 1000 +
+                                     SCHEDULED_GRACE_PERIOD_MS;
+            } else {
+                context_.type = WakeType::PERIODIC;
+                context_.timeoutMs = PERIODIC_WAKE_TIMEOUT_MS;
+            }
+            break;
+
+        case PmuState::WAKE_ACTIVE:
+            // Keep existing context, just note we're now active
+            // CTS timeout or received - notification should be sent now
+            break;
+
+        case PmuState::BOOTING:
+        case PmuState::ERROR:
+            // No special entry actions
+            break;
+    }
+}
+
+// =============================================================================
+// Query Methods
+// =============================================================================
 
 bool PmuStateMachine::shouldPowerRp2040() const
 {
     switch (state_) {
         case PmuState::BOOTING:
-        case PmuState::SCHEDULED_WAKE:
-        case PmuState::PERIODIC_WAKE:
+        case PmuState::AWAITING_CTS:
+        case PmuState::WAKE_ACTIVE:
             return true;
 
         case PmuState::SLEEPING:
@@ -111,17 +183,9 @@ bool PmuStateMachine::shouldPowerRp2040() const
     }
 }
 
-bool PmuStateMachine::shouldSendWakeNotification() const
-{
-    if (state_ != PmuState::SCHEDULED_WAKE && state_ != PmuState::PERIODIC_WAKE) {
-        return false;
-    }
-    return !context_.notificationSent;
-}
-
 const PMU::ScheduleEntry *PmuStateMachine::getScheduleEntry() const
 {
-    if (state_ == PmuState::SCHEDULED_WAKE && context_.hasScheduleEntry) {
+    if (context_.type == WakeType::SCHEDULED && context_.hasScheduleEntry) {
         return &context_.scheduleEntry;
     }
     return nullptr;
@@ -134,16 +198,44 @@ const char *PmuStateMachine::stateName(PmuState state)
             return "BOOTING";
         case PmuState::SLEEPING:
             return "SLEEPING";
-        case PmuState::SCHEDULED_WAKE:
-            return "SCHEDULED_WAKE";
-        case PmuState::PERIODIC_WAKE:
-            return "PERIODIC_WAKE";
+        case PmuState::AWAITING_CTS:
+            return "AWAITING_CTS";
+        case PmuState::WAKE_ACTIVE:
+            return "WAKE_ACTIVE";
         case PmuState::ERROR:
             return "ERROR";
         default:
             return "UNKNOWN";
     }
 }
+
+const char *PmuStateMachine::eventName(PmuEvent event)
+{
+    switch (event) {
+        case PmuEvent::BOOT_COMPLETE:
+            return "BOOT_COMPLETE";
+        case PmuEvent::RTC_WAKE_SCHEDULED:
+            return "RTC_WAKE_SCHEDULED";
+        case PmuEvent::RTC_WAKE_PERIODIC:
+            return "RTC_WAKE_PERIODIC";
+        case PmuEvent::CTS_RECEIVED:
+            return "CTS_RECEIVED";
+        case PmuEvent::CTS_TIMEOUT:
+            return "CTS_TIMEOUT";
+        case PmuEvent::READY_FOR_SLEEP:
+            return "READY_FOR_SLEEP";
+        case PmuEvent::WAKE_TIMEOUT:
+            return "WAKE_TIMEOUT";
+        case PmuEvent::ERROR_OCCURRED:
+            return "ERROR_OCCURRED";
+        default:
+            return "UNKNOWN";
+    }
+}
+
+// =============================================================================
+// State Transition
+// =============================================================================
 
 void PmuStateMachine::transitionTo(PmuState newState)
 {
