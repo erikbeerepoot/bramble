@@ -385,6 +385,13 @@ void Protocol::getDateTime(DateTimeCallback callback)
     sendMessage();
 }
 
+void Protocol::clearToSend(CommandResultCallback callback)
+{
+    pendingCommandCallback_ = callback;
+    builder_.startMessage(getNextSequenceNumber(), Command::ClearToSend);
+    sendMessage();
+}
+
 // Callback setters for unsolicited messages
 
 void Protocol::onWakeNotification(WakeNotificationCallback callback)

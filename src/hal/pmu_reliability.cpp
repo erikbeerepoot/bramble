@@ -317,6 +317,11 @@ bool ReliablePmuClient::getDateTime(DateTimeCallback callback)
     });
 }
 
+bool ReliablePmuClient::clearToSend(CommandCallback callback)
+{
+    return queueCommand(Command::ClearToSend, nullptr, 0, callback);
+}
+
 // ============================================================================
 // Event callbacks
 // ============================================================================

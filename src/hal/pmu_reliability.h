@@ -150,6 +150,16 @@ public:
     bool getDateTime(DateTimeCallback callback);
 
     /**
+     * @brief Signal clear to send - RP2040 is ready to receive wake info
+     * @param callback Called when command completes (optional)
+     * @return true if command queued successfully
+     *
+     * This command tells the PMU that the RP2040 has initialized and is
+     * ready to receive the wake notification with persisted state.
+     */
+    bool clearToSend(CommandCallback callback = nullptr);
+
+    /**
      * @brief Get access to the underlying PmuClient
      * Useful for accessing the protocol directly for operations
      * not covered by the reliable client.

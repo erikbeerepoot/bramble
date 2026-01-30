@@ -34,6 +34,9 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+// Debug flag: Define to disable STOP mode so breakpoints work
+// Uncomment this line to debug UART receive issues
+// #define DEBUG_NO_SLEEP
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -69,7 +72,9 @@ static constexpr uint32_t UART_ACTIVITY_TIMEOUT_MS = 500;  // Stay awake 500ms a
 // Periodic wake state tracking
 static bool periodicWakeActive = false;
 static uint32_t periodicWakeStartTime = 0;
+static bool wakeNotificationSent = false;  // Track if wake notification was sent this cycle
 static constexpr uint32_t PERIODIC_WAKE_TIMEOUT_MS = 120000;  // 2 minutes
+static constexpr uint32_t CTS_TIMEOUT_MS = 2000;  // 2 second timeout waiting for CTS
 
 // Boot animation parameters
 namespace BootAnimationConfig {
@@ -91,9 +96,10 @@ static void uartSendCallback(const uint8_t* data, uint8_t length);
 static void setWakeIntervalCallback(uint32_t seconds);
 static void keepAwakeCallback(uint16_t seconds);
 static void readyForSleepCallback();
+static uint32_t getTickCallback();
 
 // Protocol instance
-static PMU::Protocol protocol(uartSendCallback, setWakeIntervalCallback, keepAwakeCallback, readyForSleepCallback);
+static PMU::Protocol protocol(uartSendCallback, setWakeIntervalCallback, keepAwakeCallback, readyForSleepCallback, getTickCallback);
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -195,7 +201,7 @@ int main(void)
     }
 
     // Check if RTC wakeup flag is set and handle it
-    if (rtcWakeupFlag) {
+    if (rtcWakeupFlag) {  
       rtcWakeupFlag = false;
       handleRTCWakeup();
     }
@@ -232,6 +238,20 @@ int main(void)
       // Waiting for RP2040 to signal ready for sleep
       uint32_t elapsed = HAL_GetTick() - periodicWakeStartTime;
 
+      // Handle CTS → send wake notification with state
+      if (protocol.isCtsReceived() && !wakeNotificationSent) {
+        protocol.sendWakeNotification(PMU::WakeReason::Periodic);
+        protocol.clearCtsReceived();
+        wakeNotificationSent = true;
+      }
+
+      // Handle CTS timeout (2 seconds after wake) - fallback for old firmware
+      if (elapsed >= CTS_TIMEOUT_MS && !wakeNotificationSent) {
+        // RP2040 didn't send CTS - send wake notification anyway for backward compatibility
+        protocol.sendWakeNotification(PMU::WakeReason::Periodic);
+        wakeNotificationSent = true;
+      }
+
       if (elapsed >= PERIODIC_WAKE_TIMEOUT_MS) {
         // Timeout - RP2040 didn't signal ready in time, force power down
         dcdc.disable();
@@ -246,6 +266,14 @@ int main(void)
       }
     } else if (uartActivityFlag) {
       // UART activity detected - stay awake to process data
+
+      // Handle CTS during initial boot (not periodic wake)
+      // Send wake notification with state_valid=false on cold start
+      if (protocol.isCtsReceived()) {
+        protocol.sendWakeNotification(PMU::WakeReason::Periodic);
+        protocol.clearCtsReceived();
+      }
+
       uint32_t elapsed = HAL_GetTick() - uartLastActivityTime;
       if (elapsed >= UART_ACTIVITY_TIMEOUT_MS) {
         // Timeout - no more UART activity, can go back to sleep
@@ -266,10 +294,15 @@ int main(void)
 
       // Enter low power STOP mode
       // Will wake up on RTC interrupt or LPUART data
+#ifndef DEBUG_NO_SLEEP
       enterStopMode();
 
       // We're back! RTC or LPUART woke us up
       wakeupFromStopMode();
+#else
+      // Debug mode: just wait instead of sleeping
+      HAL_Delay(100);
+#endif
     }
   }
   /* USER CODE END 3 */
@@ -592,6 +625,10 @@ static void handleRTCWakeup(void) {
         // Enable DC/DC to power up RP2040
         dcdc.enable();
 
+        // Clear dedup buffer for new boot cycle - HAL tick was suspended during STOP mode
+        // so old sequence numbers may still appear "recent"
+        protocol.clearDedupBuffer();
+
         // Small delay to allow RP2040 to power up and boot
         HAL_Delay(100);
 
@@ -606,13 +643,19 @@ static void handleRTCWakeup(void) {
         // Normal periodic wake - enable DC/DC to power up RP2040
         dcdc.enable();
 
-        // Short delay to allow RP2040 to initialize UART (~400ms from boot log)
-        HAL_Delay(500);
+        // Clear dedup buffer for new boot cycle - HAL tick was suspended during STOP mode
+        // so old sequence numbers may still appear "recent"
+        protocol.clearDedupBuffer();
 
-        // Send periodic wake notification
-        protocol.sendWakeNotification(PMU::WakeReason::Periodic);
+        // Reset flags for this wake cycle
+        protocol.clearCtsReceived();
+        wakeNotificationSent = false;
+        
+        // Minimal delay for UART hardware init only (50ms)
+        HAL_Delay(50);
 
         // Start periodic wake tracking - RP2040 will signal when done
+        // Note: Do NOT send wake notification here - wait for CTS from RP2040
         periodicWakeActive = true;
         periodicWakeStartTime = HAL_GetTick();
     }
@@ -675,6 +718,14 @@ static void keepAwakeCallback(uint16_t seconds)
     // TODO: Implement keep-awake timer
     // For now, we could just delay, but better to use a timer
     // This prevents entering sleep mode for the specified duration
+}
+
+/**
+ * @brief Get tick callback for protocol deduplication
+ */
+static uint32_t getTickCallback()
+{
+    return HAL_GetTick();
 }
 
 /**

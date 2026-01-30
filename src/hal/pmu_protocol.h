@@ -17,7 +17,8 @@ enum class Command : uint8_t {
     SetDateTime =
         0x16,  // Set RTC date/time (7 bytes: year, month, day, weekday, hour, minute, second)
     ReadyForSleep = 0x17,  // RP2040 signals work complete, ready for power down
-    GetDateTime = 0x18     // Get RTC date/time from PMU (returns DateTimeResponse)
+    GetDateTime = 0x18,    // Get RTC date/time from PMU (returns DateTimeResponse)
+    ClearToSend = 0x19     // RP2040 signals ready to receive wake info
 };
 
 // Response codes (STM32 → RP2040)
@@ -247,6 +248,8 @@ public:
     void readyForSleep(
         CommandResultCallback callback = nullptr);  // Signal work complete, ready for power down
     void getDateTime(DateTimeCallback callback = nullptr);  // Get RTC date/time from PMU
+    void clearToSend(
+        CommandResultCallback callback = nullptr);  // Signal ready to receive wake info
 
     // Set callback handlers for unsolicited responses
     void onWakeNotification(WakeNotificationCallback callback);

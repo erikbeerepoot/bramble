@@ -17,7 +17,8 @@ enum class Command : uint8_t {
     SetDateTime =
         0x16,  // Set RTC date/time (7 bytes: year, month, day, weekday, hour, minute, second)
     ReadyForSleep = 0x17,  // RP2040 signals work complete, ready for power down
-    GetDateTime = 0x18     // Get RTC date/time from PMU (returns DateTimeResponse)
+    GetDateTime = 0x18,    // Get RTC date/time from PMU (returns DateTimeResponse)
+    ClearToSend = 0x19     // RP2040 signals ready to receive wake info
 };
 
 // Response codes (STM32 → RP2040)
@@ -280,6 +281,21 @@ public:
 
     uint32_t getWakeInterval() const { return wakeInterval_; }
 
+    // Clear-to-send state management
+    bool isCtsReceived() const { return clearToSendReceived_; }
+    void clearCtsReceived() { clearToSendReceived_ = false; }
+
+    // Clear deduplication buffer - call when starting a new RP2040 boot cycle
+    // This is needed because HAL tick is suspended during STOP mode, so old
+    // sequence numbers may still appear "recent" after waking up
+    void clearDedupBuffer()
+    {
+        for (auto &entry : seenBuffer_) {
+            entry.seqNum = 0;
+            entry.timestamp = 0;
+        }
+    }
+
     // Get the next scheduled entry (for RTC wakeup checking)
     const ScheduleEntry *getNextScheduledEntry(uint8_t currentDay, uint8_t currentHour,
                                                uint8_t currentMinute) const;
@@ -306,6 +322,9 @@ private:
     // state_valid_ is false after power-on reset (cold start detection)
     uint8_t nodeState_[NODE_STATE_SIZE];
     bool nodeStateValid_;
+
+    // Clear-to-send flag - set when RP2040 signals ready to receive wake info
+    bool clearToSendReceived_;
 
     // Deduplication helpers
     bool wasRecentlySeen(uint8_t seqNum);
