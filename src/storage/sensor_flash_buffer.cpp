@@ -147,6 +147,18 @@ bool SensorFlashBuffer::writeRecord(const SensorDataRecord &record)
         }
     }
 
+    // Verify target location is erased before writing
+    // This catches pre-existing data that wasn't erased during init
+    if (!isLocationErased(address, sizeof(SensorDataRecord))) {
+        logger_.warn("Target location 0x%08X not erased, forcing sector erase", address);
+        ExternalFlashResult result = flash_.eraseSector(sector_start);
+        if (result != ExternalFlashResult::Success) {
+            logger_.error("Failed to erase sector at 0x%08X", sector_start);
+            healthy_ = false;
+            return false;
+        }
+    }
+
     // Write the record
     logger_.debug("Writing record at index %lu, addr 0x%08X, CRC=0x%04X", metadata_.write_index,
                   address, record_with_crc.crc16);
@@ -651,4 +663,25 @@ bool SensorFlashBuffer::scanForWriteIndex()
 bool SensorFlashBuffer::isFull() const
 {
     return ((metadata_.write_index + 1) % MAX_RECORDS) == metadata_.read_index;
+}
+
+bool SensorFlashBuffer::isLocationErased(uint32_t address, size_t length)
+{
+    uint8_t buffer[sizeof(SensorDataRecord)];
+    if (length > sizeof(buffer)) {
+        length = sizeof(buffer);
+    }
+
+    ExternalFlashResult result = flash_.read(address, buffer, length);
+    if (result != ExternalFlashResult::Success) {
+        logger_.error("Failed to read location 0x%08X for erase check", address);
+        return false;  // Assume not erased on read failure
+    }
+
+    for (size_t i = 0; i < length; i++) {
+        if (buffer[i] != 0xFF) {
+            return false;
+        }
+    }
+    return true;
 }

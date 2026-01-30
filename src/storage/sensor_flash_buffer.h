@@ -243,6 +243,16 @@ public:
     void setReadIndex(uint32_t index) { metadata_.read_index = index; }
 
     /**
+     * @brief Set write index directly (restore from PMU state)
+     *
+     * Used when restoring state from PMU RAM on warm start. No validation
+     * is performed - caller must ensure the index is valid.
+     *
+     * @param index Write index to set
+     */
+    void setWriteIndex(uint32_t index) { metadata_.write_index = index; }
+
+    /**
      * @brief Get current read index
      * @return Current read index
      */
@@ -311,4 +321,12 @@ private:
      * @return true if buffer is full
      */
     bool isFull() const;
+
+    /**
+     * @brief Check if a flash location is erased (all 0xFF)
+     * @param address Flash address to check
+     * @param length Number of bytes to verify
+     * @return true if all bytes are 0xFF (erased state)
+     */
+    bool isLocationErased(uint32_t address, size_t length);
 };
