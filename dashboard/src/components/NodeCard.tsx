@@ -1,6 +1,5 @@
 import type { Node, Zone } from '../types';
 import { getOverallNodeHealth } from '../types';
-import BacklogStatus from './BacklogStatus';
 
 interface NodeCardProps {
   node: Node;
@@ -70,10 +69,7 @@ function NodeCard({ node, zone, onClick }: NodeCardProps) {
       </div>
 
       <div className="mt-3 flex items-center justify-between text-sm">
-        <div className="flex items-center space-x-3">
-          <span className="text-gray-500 font-medium">{node.type}</span>
-          <BacklogStatus pendingRecords={node.status?.pending_records} size="sm" />
-        </div>
+        <span className="text-gray-500 font-medium">{node.type}</span>
         <div className="text-gray-400">
           Last seen: {formatLastSeen(node.last_seen_seconds)}
         </div>

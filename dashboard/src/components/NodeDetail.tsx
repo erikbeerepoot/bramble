@@ -8,6 +8,7 @@ import TimeRangeSelector from './TimeRangeSelector';
 import BatteryGauge from './BatteryGauge';
 import SignalStrength from './SignalStrength';
 import HealthStatus from './HealthStatus';
+import BacklogStatus from './BacklogStatus';
 
 interface NodeDetailProps {
   node: Node;
@@ -215,6 +216,16 @@ function NodeDetail({ node, zones, onBack, onUpdate, onZoneCreated }: NodeDetail
                       {formatUptime(node.status.uptime_seconds)}
                     </dd>
                   </div>
+
+                  {/* Pending Records */}
+                  {node.status.pending_records !== null && node.status.pending_records !== undefined && (
+                    <div>
+                      <dt className="text-sm text-gray-500 mb-1">Unsent Records</dt>
+                      <dd className="flex items-center space-x-2">
+                        <BacklogStatus pendingRecords={node.status.pending_records} size="md" />
+                      </dd>
+                    </div>
+                  )}
 
                   {/* Active Issues */}
                   {node.status.error_flags !== null && node.status.error_flags !== 0 && (
