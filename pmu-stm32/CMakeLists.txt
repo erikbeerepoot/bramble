@@ -29,6 +29,12 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
     set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
 endif()
 
+# Enable debug symbols and no optimization for debug builds
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g3 -ggdb")
+    set(CMAKE_C_FLAGS_DEBUG "-O0 -g3 -ggdb")
+endif()
+
 # Set the project name
 set(CMAKE_PROJECT_NAME pmu-stm32)
 
