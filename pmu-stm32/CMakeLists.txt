@@ -65,6 +65,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/led.cpp
     Core/Src/dcdc.cpp
     Core/Src/pmu_protocol.cpp
+    Core/Src/pmu_state_machine.cpp
 )
 
 # Add include paths
