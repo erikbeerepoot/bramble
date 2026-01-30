@@ -224,6 +224,9 @@ void SensorMode::onStateChange(SensorState state)
             break;
 
         case SensorState::TRANSMITTING:
+            // Reset batch counter for this wake cycle
+            batches_this_cycle_ = 0;
+
             // Branch based on flash availability and health
             if (flash_buffer_ && flash_buffer_->isHealthy()) {
                 // Normal path: transmit from flash backlog
@@ -737,22 +740,32 @@ bool SensorMode::transmitBatch(const SensorDataRecord *records, size_t count)
     uint8_t seq = messenger_.sendSensorDataBatchWithCallback(
         HUB_ADDRESS, start_index, batch_records, static_cast<uint8_t>(count), RELIABLE,
         [this, count](uint8_t seq_num, uint8_t ack_status, uint64_t context) {
+            batches_this_cycle_++;
+
             if (ack_status == 0 && flash_buffer_) {
                 // ACK received - advance read index past transmitted records
                 if (flash_buffer_->advanceReadIndex(static_cast<uint32_t>(count))) {
-                    logger.info("Batch ACK received (seq=%d): %zu records transmitted", seq_num,
-                                count);
+                    logger.info("Batch %u/%u ACK (seq=%d): %zu records transmitted",
+                                batches_this_cycle_, MAX_BATCHES_PER_CYCLE, seq_num, count);
                     consecutive_tx_failures_ = 0;  // Reset failure counter on success
                     flash_buffer_->updateLastSync(getUnixTimestamp());
 
-                    // Check if we've cleared all backlog
-                    if (flash_buffer_->getUntransmittedCount() == 0) {
+                    // Check if we should send another batch
+                    uint32_t remaining = flash_buffer_->getUntransmittedCount();
+                    if (remaining > 0 && batches_this_cycle_ < MAX_BATCHES_PER_CYCLE) {
+                        logger.info("More backlog (%lu records) - sending next batch", remaining);
+                        transmitBacklog();
+                        return;  // Don't report complete yet
+                    } else if (remaining == 0) {
                         logger.info("All backlog transmitted");
+                    } else {
+                        logger.info("Batch limit reached (%u/%u), %lu records remaining",
+                                    batches_this_cycle_, MAX_BATCHES_PER_CYCLE, remaining);
                     }
                 }
             } else {
-                logger.warn("Batch transmission failed (seq=%d, status=%d), will retry", seq_num,
-                            ack_status);
+                logger.warn("Batch transmission failed (seq=%d, status=%d), will retry next cycle",
+                            seq_num, ack_status);
                 if (consecutive_tx_failures_ < 255) {
                     consecutive_tx_failures_++;
                 }

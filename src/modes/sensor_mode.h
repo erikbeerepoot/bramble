@@ -160,6 +160,10 @@ private:
     uint8_t consecutive_tx_failures_ = 0;               // Track consecutive transmission failures
     static constexpr uint8_t TX_FAILURE_THRESHOLD = 3;  // Failures before setting error flag
 
+    // Batch transmission tracking - send multiple batches per wake cycle to clear backlog faster
+    uint8_t batches_this_cycle_ = 0;
+    static constexpr uint8_t MAX_BATCHES_PER_CYCLE = 5;  // Send up to 5 batches before sleeping
+
     // Sleep pending flag - when set, onLoop() enters halt state
     // This prevents UART activity when USB is keeping RP2040 powered after dcdc.disable()
     bool sleep_pending_ = false;
