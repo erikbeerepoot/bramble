@@ -200,7 +200,7 @@ int main()
             node_config.assigned_address != ADDRESS_UNREGISTERED) {
             // Force re-registration if firmware version changed
             if (node_config.firmware_version != BRAMBLE_FIRMWARE_VERSION) {
-                log.info("Firmware changed (0x%08lX -> 0x%08lX) - will re-register",
+                log.info("Firmware changed (0x%08lX -> 0x%08lX) - forcing re-registration",
                          node_config.firmware_version, BRAMBLE_FIRMWARE_VERSION);
                 // Keep ADDRESS_UNREGISTERED to trigger registration
             } else {
@@ -242,7 +242,7 @@ int main()
         // Skip registration if we have a saved address
         // IrrigationMode will handle deferred registration based on PMU wake reason
         if (current_address == ADDRESS_UNREGISTERED) {
-            log.info("No saved address - attempting registration...");
+            log.info("Registering node with hub...");
             if (attemptRegistration(messenger, lora, config_manager, device_id)) {
                 log.info("Registration successful!");
             } else {
