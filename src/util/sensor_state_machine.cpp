@@ -131,6 +131,14 @@ void SensorStateMachine::reportListenComplete()
 
 bool SensorStateMachine::reportWakeFromSleep()
 {
+    // Only restart cycle if we're actually in READY_FOR_SLEEP
+    // The PMU wake notification can arrive asynchronously after the state machine
+    // has already started processing (e.g., via getDateTime callback path)
+    if (state_ != SensorState::READY_FOR_SLEEP) {
+        logger.debug("Wake notification ignored - already active (state: %s)", stateName(state_));
+        return true;  // Return true since we're already awake and processing
+    }
+
     // Reset per-cycle state
     expected_responses_ = 0;
 
@@ -140,7 +148,7 @@ bool SensorStateMachine::reportWakeFromSleep()
         return false;
     }
 
-    // Restart the sensor cycle based on current state
+    // Restart the sensor cycle based on hardware state
     if (sensor_initialized_) {
         // Sensor working - read it
         logger.info("Wake from sleep - starting sensor read");

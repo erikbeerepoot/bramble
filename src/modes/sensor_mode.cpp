@@ -98,6 +98,9 @@ void SensorMode::onStart()
     if (pmu_available_) {
         reliable_pmu_ = new PMU::ReliablePmuClient(pmu_client_);
         reliable_pmu_->init();
+
+        // Allow UART to stabilize before first message - prevents parser desync
+        sleep_ms(150);
     }
 
     // Note: Task queue is used to coordinate RTC sync -> backlog -> sleep flow
@@ -106,89 +109,36 @@ void SensorMode::onStart()
     if (pmu_available_ && reliable_pmu_) {
         pmu_logger.info("PMU client initialized successfully");
 
-        // Set up PMU callback handler
+        // Set up PMU callback handler - this receives state and completes initialization
         reliable_pmu_->onWake([this](PMU::WakeReason reason, const PMU::ScheduleEntry *entry,
                                      bool state_valid, const uint8_t *state) {
             this->handlePmuWake(reason, entry, state_valid, state);
         });
 
-        // Try to get time from PMU's battery-backed RTC (faster than waiting for hub sync)
-        pmu_logger.debug("Requesting datetime from PMU...");
-        reliable_pmu_->getDateTime([this](bool valid, const PMU::DateTime &datetime) {
-            if (valid) {
-                pmu_logger.debug("PMU has valid time: 20%02d-%02d-%02d %02d:%02d:%02d",
-                                 datetime.year, datetime.month, datetime.day, datetime.hour,
-                                 datetime.minute, datetime.second);
-
-                // Convert PMU datetime to Unix timestamp using mktime
-                uint16_t year = 2000 + datetime.year;
-                std::tm tm = {};
-                tm.tm_year = year - 1900;        // years since 1900
-                tm.tm_mon = datetime.month - 1;  // 0-based month
-                tm.tm_mday = datetime.day;
-                tm.tm_hour = datetime.hour;
-                tm.tm_min = datetime.minute;
-                tm.tm_sec = datetime.second;
-                uint32_t pmu_timestamp = static_cast<uint32_t>(std::mktime(&tm));
-
-                // Check if it's time to transmit BEFORE setting RTC
-                bool time_to_transmit = isTimeToTransmit(pmu_timestamp);
-
-                // Set RP2040 RTC from PMU time
-                datetime_t dt;
-                dt.year = year;
-                dt.month = datetime.month;
-                dt.day = datetime.day;
-                dt.dotw = datetime.weekday;
-                dt.hour = datetime.hour;
-                dt.min = datetime.minute;
-                dt.sec = datetime.second;
-
-                if (rtc_set_datetime(&dt)) {
-                    sleep_us(64);  // Wait for RTC to propagate
-                    Logger("SensorSM")
-                        .info("RTC set from PMU: %04d-%02d-%02d %02d:%02d:%02d", dt.year, dt.month,
-                              dt.day, dt.hour, dt.min, dt.sec);
-
-                    // Report RTC sync - state callback handles LED pattern change
-                    sensor_state_.reportRtcSynced();
-                    if (flash_buffer_ && flash_buffer_->getInitialBootTimestamp() == 0) {
-                        uint32_t now = getUnixTimestamp();
-                        flash_buffer_->setInitialBootTimestamp(now);
-                        logger.info("Set initial_boot_timestamp to %lu (from PMU sync)", now);
-                    }
-
-                    // Only sync from hub if it's time to transmit
-                    // This avoids unnecessary LoRa traffic between transmission intervals
-                    if (time_to_transmit) {
-                        pmu_logger.info("Time to transmit - sending heartbeat for hub sync");
-                        heartbeat_request_time_ = to_ms_since_boot(get_absolute_time());
-                        sendHeartbeat(0);
-                        // Note: state is already TIME_SYNCED from reportRtcSynced() above,
-                        // so reportHeartbeatSent() would be rejected (wrong source state)
-                    } else {
-                        // PMU time is good enough, proceed directly
-                        pmu_logger.info("Not time to transmit - using PMU time, skipping hub sync");
-                        // reportRtcSynced will trigger TIME_SYNCED -> onStateChange handles the
-                        // rest
-                    }
-                } else {
-                    logger.error("Failed to set RTC from PMU time");
-                }
+        // Signal ready to receive wake info - PMU will respond with wake notification
+        // containing persisted state (write_index, read_index, etc.)
+        // The getDateTime call is deferred to handlePmuWake() to ensure state is restored first.
+        pmu_logger.debug("Sending ClearToSend to PMU...");
+        cts_sent_time_ = to_ms_since_boot(get_absolute_time());
+        reliable_pmu_->clearToSend([this](bool success, PMU::ErrorCode error) {
+            if (!success) {
+                pmu_logger.error("ClearToSend failed: %d", static_cast<int>(error));
+                // Fall back to proceeding without waiting for PMU state
+                // markInitialized() will trigger AWAITING_TIME which handles getDateTime
+                sensor_state_.markInitialized();
             } else {
-                // PMU doesn't have valid time - need to sync from hub
-                pmu_logger.info(
-                    "PMU time not valid (first boot?) - sending heartbeat for hub sync");
-                heartbeat_request_time_ = to_ms_since_boot(get_absolute_time());
-                sendHeartbeat(0);
-                sensor_state_.reportHeartbeatSent();
+                pmu_logger.info("ClearToSend ACK received - waiting for WakeNotification");
             }
+            // On success, handlePmuWake() will call markInitialized()
+            // AWAITING_TIME state handler will then call getDateTime
         });
     } else {
         logger.warn("PMU client not available - sending heartbeat for time sync");
         heartbeat_request_time_ = to_ms_since_boot(get_absolute_time());
         sendHeartbeat(0);
         sensor_state_.reportHeartbeatSent();
+        // No PMU, so mark initialized immediately (no state to restore)
+        sensor_state_.markInitialized();
     }
 
     // Note: Periodic tasks are no longer used - state machine drives all work.
@@ -196,8 +146,9 @@ void SensorMode::onStart()
     // TRANSMITTING -> READY_FOR_SLEEP) handles sensor reads and transmissions.
     // Heartbeats are sent on each wake cycle as part of time sync.
 
-    // Mark sensor state machine as initialized (transitions to AWAITING_TIME)
-    sensor_state_.markInitialized();
+    // Note: markInitialized() is now called in handlePmuWake() after state is restored
+    // from PMU. This ensures write_index is correct BEFORE any sensor writes happen.
+    // The state machine stays in INITIALIZING until handlePmuWake() fires.
 }
 
 void SensorMode::onStateChange(SensorState state)
@@ -205,8 +156,17 @@ void SensorMode::onStateChange(SensorState state)
     // Centralized task scheduler - reacts to state changes by posting work
     switch (state) {
         case SensorState::AWAITING_TIME:
-            // Schedule heartbeat for time sync (if PMU doesn't have time)
-            // Note: PMU time check happens in onStart, this is the fallback path
+            // Request time sync (PMU first, then hub fallback)
+            // Called after state is restored (markInitialized triggers this state)
+            // Use task queue to defer - avoids reentrancy issues when called from PMU callback
+            task_queue_.postOnce(
+                [](void *ctx, uint32_t time) -> bool {
+                    (void)time;
+                    SensorMode *self = static_cast<SensorMode *>(ctx);
+                    self->requestTimeSync();
+                    return true;
+                },
+                this, TaskPriority::High);
             break;
 
         case SensorState::SYNCING_TIME:
@@ -335,9 +295,31 @@ void SensorMode::onStateChange(SensorState state)
 
 void SensorMode::onLoop()
 {
+    // If sleep is pending, halt to prevent UART activity from keeping STM32 awake
+    // This handles the case where USB power keeps RP2040 running after dcdc.disable()
+    if (sleep_pending_) {
+        // Enter tight loop - do nothing until power is cut or device is reset
+        // Using tight_loop_contents() allows debugger to interrupt if attached
+        tight_loop_contents();
+        return;
+    }
+
     // Process any pending PMU messages and handle retries
     if (pmu_available_ && reliable_pmu_) {
         reliable_pmu_->update();
+    }
+
+    // WakeNotification timeout - if we sent CTS but never got WakeNotification, proceed anyway
+    if (cts_sent_time_ > 0 && sensor_state_.state() == SensorState::INITIALIZING) {
+        uint32_t elapsed = to_ms_since_boot(get_absolute_time()) - cts_sent_time_;
+        if (elapsed >= WAKE_NOTIFICATION_TIMEOUT_MS) {
+            pmu_logger.warn("WakeNotification timeout (%lu ms) - proceeding without PMU state",
+                            elapsed);
+            cts_sent_time_ = 0;
+            // Proceed without restored state - flash scan will happen in handlePmuWake
+            // or we just proceed fresh
+            sensor_state_.markInitialized();
+        }
     }
 
     // Hub sync timeout - check if PMU already set RTC and we can proceed
@@ -838,9 +820,12 @@ void SensorMode::signalReadyForSleep()
                             state.next_seq_num, state.read_index, state.write_index);
 
             self->reliable_pmu_->readyForSleep(
-                reinterpret_cast<const uint8_t *>(&state), [](bool success, PMU::ErrorCode error) {
+                reinterpret_cast<const uint8_t *>(&state), [self](bool success, PMU::ErrorCode error) {
                     if (success) {
-                        pmu_logger.info("Ready for sleep acknowledged");
+                        pmu_logger.info("Ready for sleep acknowledged - halting");
+                        // Set flag to halt main loop - prevents UART activity from keeping
+                        // STM32 awake when USB power keeps RP2040 running after dcdc.disable()
+                        self->sleep_pending_ = true;
                     } else {
                         pmu_logger.error("Ready for sleep failed: error %d",
                                          static_cast<int>(error));
@@ -865,12 +850,13 @@ void SensorMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry 
         if (persisted->version == STATE_VERSION) {
             // Restore flash buffer indices
             flash_buffer_->setReadIndex(persisted->read_index);
-            // Note: write_index is tracked by flash_buffer_ internally from last write
+            flash_buffer_->setWriteIndex(persisted->write_index);
 
             // Restore LoRa sequence number
             messenger_.setNextSeqNum(persisted->next_seq_num);
 
-            pmu_logger.info("Restored state: read_index=%lu, seq=%u", persisted->read_index,
+            pmu_logger.info("Restored state: read_index=%lu, write_index=%lu, seq=%u",
+                            persisted->read_index, persisted->write_index,
                             persisted->next_seq_num);
         } else {
             pmu_logger.warn("State version mismatch (got %u, expected %u) - cold start",
@@ -890,9 +876,16 @@ void SensorMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry 
         }
     }
 
+    // Complete initialization now that state is restored
+    // This transitions INITIALIZING → AWAITING_TIME, enabling the rest of the flow
+    if (sensor_state_.state() == SensorState::INITIALIZING) {
+        pmu_logger.debug("Marking initialized after state restoration");
+        sensor_state_.markInitialized();
+    }
+
     switch (reason) {
         case PMU::WakeReason::Periodic:
-            pmu_logger.info("Periodic wake - restarting sensor cycle");
+            pmu_logger.info("Periodic wake.");
             // Report wake to state machine - it handles the appropriate transition
             if (!sensor_state_.reportWakeFromSleep()) {
                 // Need time sync first
@@ -1003,4 +996,81 @@ bool SensorMode::tryInitSensor()
     logger.error("Check wiring: Red=3.3V, Black=GND, Green=GPIO%d, Yellow=GPIO%d", PIN_I2C_SCL,
                  PIN_I2C_SDA);
     return false;
+}
+
+void SensorMode::requestTimeSync()
+{
+    if (pmu_available_ && reliable_pmu_) {
+        // Try PMU's battery-backed RTC first
+        pmu_logger.debug("Requesting datetime from PMU...");
+        reliable_pmu_->getDateTime([this](bool valid, const PMU::DateTime &datetime) {
+            if (valid) {
+                pmu_logger.debug("PMU has valid time: 20%02d-%02d-%02d %02d:%02d:%02d",
+                                 datetime.year, datetime.month, datetime.day, datetime.hour,
+                                 datetime.minute, datetime.second);
+
+                // Convert PMU datetime to Unix timestamp using mktime
+                uint16_t year = 2000 + datetime.year;
+                std::tm tm = {};
+                tm.tm_year = year - 1900;        // years since 1900
+                tm.tm_mon = datetime.month - 1;  // 0-based month
+                tm.tm_mday = datetime.day;
+                tm.tm_hour = datetime.hour;
+                tm.tm_min = datetime.minute;
+                tm.tm_sec = datetime.second;
+                uint32_t pmu_timestamp = static_cast<uint32_t>(std::mktime(&tm));
+
+                // Check if it's time to transmit BEFORE setting RTC
+                bool time_to_transmit = isTimeToTransmit(pmu_timestamp);
+
+                // Set RP2040 RTC from PMU time
+                datetime_t dt;
+                dt.year = year;
+                dt.month = datetime.month;
+                dt.day = datetime.day;
+                dt.dotw = datetime.weekday;
+                dt.hour = datetime.hour;
+                dt.min = datetime.minute;
+                dt.sec = datetime.second;
+
+                if (rtc_set_datetime(&dt)) {
+                    sleep_us(64);  // Wait for RTC to propagate
+                    Logger("SensorSM")
+                        .info("RTC set from PMU: %04d-%02d-%02d %02d:%02d:%02d", dt.year, dt.month,
+                              dt.day, dt.hour, dt.min, dt.sec);
+
+                    // Report RTC sync - state callback handles LED pattern change
+                    sensor_state_.reportRtcSynced();
+                    if (flash_buffer_ && flash_buffer_->getInitialBootTimestamp() == 0) {
+                        uint32_t now = getUnixTimestamp();
+                        flash_buffer_->setInitialBootTimestamp(now);
+                        logger.info("Set initial_boot_timestamp to %lu (from PMU sync)", now);
+                    }
+
+                    // Only sync from hub if it's time to transmit
+                    if (time_to_transmit) {
+                        pmu_logger.info("Syncing time by sending heartbeat.");
+                        heartbeat_request_time_ = to_ms_since_boot(get_absolute_time());
+                        sendHeartbeat(0);
+                    } else {
+                        pmu_logger.info("Skip hub sync: not time to transmit yet.");
+                    }
+                } else {
+                    logger.error("Failed to set RTC from PMU time");
+                }
+            } else {
+                // PMU doesn't have valid time - need to sync from hub
+                pmu_logger.info("PMU time not valid - sending heartbeat for hub sync");
+                heartbeat_request_time_ = to_ms_since_boot(get_absolute_time());
+                sendHeartbeat(0);
+                sensor_state_.reportHeartbeatSent();
+            }
+        });
+    } else {
+        // No PMU - send heartbeat to sync from hub
+        logger.info("No PMU - sending heartbeat for time sync");
+        heartbeat_request_time_ = to_ms_since_boot(get_absolute_time());
+        sendHeartbeat(0);
+        sensor_state_.reportHeartbeatSent();
+    }
 }

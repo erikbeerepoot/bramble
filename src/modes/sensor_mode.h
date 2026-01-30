@@ -41,6 +41,10 @@ private:
     static constexpr uint32_t HEARTBEAT_TIMEOUT_MS =
         250;  // Aggressive timeout for low-power operation
 
+    // CTS/WakeNotification timeout tracking
+    uint32_t cts_sent_time_ = 0;
+    static constexpr uint32_t WAKE_NOTIFICATION_TIMEOUT_MS = 1000;  // 1 second timeout
+
     // Listen window tracking - receive window before sleep for hub responses
     uint32_t listen_window_start_time_ = 0;
     static constexpr uint32_t LISTEN_WINDOW_MS = 500;
@@ -156,6 +160,10 @@ private:
     uint8_t consecutive_tx_failures_ = 0;               // Track consecutive transmission failures
     static constexpr uint8_t TX_FAILURE_THRESHOLD = 3;  // Failures before setting error flag
 
+    // Sleep pending flag - when set, onLoop() enters halt state
+    // This prevents UART activity when USB is keeping RP2040 powered after dcdc.disable()
+    bool sleep_pending_ = false;
+
     // Fallback storage for direct transmit when flash unavailable
     SensorDataRecord current_reading_ = {};
 
@@ -180,4 +188,11 @@ private:
      * @return true if sensor initialized successfully
      */
     bool tryInitSensor();
+
+    /**
+     * @brief Request time sync from PMU or hub
+     * Tries PMU's battery-backed RTC first. If PMU unavailable or has no valid time,
+     * falls back to sending heartbeat to sync from hub.
+     */
+    void requestTimeSync();
 };
