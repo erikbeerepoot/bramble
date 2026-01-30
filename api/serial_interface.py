@@ -455,7 +455,11 @@ class SerialInterface:
                 logger.info(f"Batch stored: inserted={inserted}, duplicates={duplicates}")
 
                 # Send acknowledgment to hub
-                self._send_batch_ack(node_addr, inserted, 0 if inserted > 0 else 1)
+                # Success (status=0) if any records were processed (inserted OR duplicates)
+                # Duplicates mean we already have the data, so sensor should advance read_index
+                total_processed = inserted + duplicates
+                status = 0 if total_processed > 0 else 1
+                self._send_batch_ack(node_addr, total_processed, status)
             else:
                 logger.warning("No records to store or database not configured")
                 self._send_batch_ack(node_addr, 0, 1)
