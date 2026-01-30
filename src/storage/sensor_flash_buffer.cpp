@@ -650,12 +650,21 @@ bool SensorFlashBuffer::scanForWriteIndex()
     // Write index is one past the last valid record
     metadata_.write_index = (last_valid + 1) % MAX_RECORDS;
 
-    // For cold start, set read_index to 0 (retransmit everything)
-    // The hub will deduplicate based on timestamps
-    metadata_.read_index = 0;
+    // Preserve read_index from flash metadata (loaded in init())
+    // This prevents re-transmitting already-ACKed records after cold start.
+    // Validate that read_index is still valid (not past write_index).
+    uint32_t untransmitted = getUntransmittedCount();
+    if (untransmitted > MAX_RECORDS) {
+        // read_index is invalid (wrapped past write_index) - reset to write_index
+        logger_.warn("read_index invalid (untransmitted=%lu), resetting to write_index",
+                     untransmitted);
+        metadata_.read_index = metadata_.write_index;
+    } else {
+        logger_.info("Preserved read_index=%lu from flash metadata", metadata_.read_index);
+    }
 
-    logger_.info("Scan complete: write_index=%lu (last_valid=%lu)", metadata_.write_index,
-                 last_valid);
+    logger_.info("Scan complete: write_index=%lu, read_index=%lu, untransmitted=%lu",
+                 metadata_.write_index, metadata_.read_index, getUntransmittedCount());
 
     return true;
 }

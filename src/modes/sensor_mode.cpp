@@ -854,6 +854,16 @@ void SensorMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry 
 {
     (void)entry;
 
+    // Ignore duplicate wake notifications if already active
+    // This can happen if PMU sends multiple notifications (e.g., during LISTENING window)
+    // We must check this BEFORE doing flash scan, as scan resets read_index
+    if (sensor_state_.state() != SensorState::INITIALIZING &&
+        sensor_state_.state() != SensorState::READY_FOR_SLEEP) {
+        pmu_logger.debug("Ignoring wake notification - already active (state: %s)",
+                         SensorStateMachine::stateName(sensor_state_.state()));
+        return;
+    }
+
     // Restore state from PMU RAM if valid
     if (state_valid && state != nullptr && flash_buffer_) {
         const SensorPersistedState *persisted =
