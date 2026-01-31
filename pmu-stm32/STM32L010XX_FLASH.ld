@@ -62,8 +62,8 @@ FLASH (rx)      : ORIGIN = 0x8000000, LENGTH = 16K
 /* Highest address of the user mode stack */
 _estack = ORIGIN(RAM) + LENGTH(RAM);    /* end of RAM */
 /* Generate a link error if heap and stack don't fit into RAM */
-_Min_Heap_Size = 0x80;      /* required amount of heap (128 bytes) */
-_Min_Stack_Size = 0x500; /* required amount of stack (1280 bytes) */
+_Min_Heap_Size = 0x0;       /* no heap - PMU doesn't use dynamic allocation */
+_Min_Stack_Size = 0x300;    /* required amount of stack (768 bytes) */
 
 /* Define output sections */
 SECTIONS
