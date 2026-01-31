@@ -8,7 +8,6 @@
 #include "led_patterns.h"
 #include "lora/message.h"
 #include "periodic_task_manager.h"
-#include "util/base_state_machine.h"
 
 // Forward declarations
 class ReliableMessenger;
@@ -33,7 +32,6 @@ protected:
     std::unique_ptr<LEDPattern> led_pattern_;
     std::unique_ptr<LEDPattern> operational_pattern_;  // Pattern to switch to after RTC sync
     PeriodicTaskManager task_manager_;
-    BaseStateMachine state_machine_;  // Centralized state management
 
 public:
     ApplicationMode(ReliableMessenger &messenger, SX1276 &lora, NeoPixel &led,
@@ -121,10 +119,10 @@ protected:
     void switchToOperationalPattern();
 
     /**
-     * @brief Update state machine based on current hardware state
+     * @brief Called after RTC is successfully synchronized
      *
-     * Reads hardware state (rtc_running) and updates the state machine.
-     * Call this after any hardware state changes (RTC set, etc).
+     * Override in derived modes to notify their mode-specific state machine.
+     * Called automatically from onHeartbeatResponse() after setting RP2040 RTC.
      */
-    void updateStateMachine();
+    virtual void onRtcSynced() {}
 };

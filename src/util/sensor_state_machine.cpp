@@ -4,46 +4,6 @@
 
 static Logger logger("SensorSM");
 
-void SensorStateMachine::markInitialized()
-{
-    if (initialized_) {
-        return;  // Already initialized
-    }
-    initialized_ = true;
-    logger.debug("Hardware initialization complete");
-    updateState();
-}
-
-void SensorStateMachine::markError()
-{
-    if (error_) {
-        return;  // Already in error
-    }
-    error_ = true;
-    logger.error("Unrecoverable error reported");
-    updateState();
-}
-
-void SensorStateMachine::reportRtcSynced()
-{
-    if (rtc_synced_) {
-        return;  // Already synced
-    }
-    rtc_synced_ = true;
-    logger.info("RTC synchronized");
-    updateState();
-}
-
-void SensorStateMachine::reportRtcLost()
-{
-    if (!rtc_synced_) {
-        return;  // Already not synced
-    }
-    rtc_synced_ = false;
-    logger.warn("RTC synchronization lost");
-    updateState();
-}
-
 void SensorStateMachine::reportSensorInitSuccess()
 {
     sensor_init_attempted_ = true;
@@ -89,7 +49,7 @@ void SensorStateMachine::reportCheckComplete(bool needsTransmit)
     if (needsTransmit) {
         logger.debug("Backlog needs transmission");
         transitionTo(SensorState::TRANSMITTING);
-    } else if (hasExpectedResponses()) {
+    } else if (shouldListen()) {
         logger.debug("No transmission needed, listening for responses");
         transitionTo(SensorState::LISTENING);
     } else {
@@ -104,7 +64,7 @@ void SensorStateMachine::reportTransmitComplete()
         logger.warn("reportTransmitComplete() called in unexpected state: %s", stateName(state_));
         return;
     }
-    if (hasExpectedResponses()) {
+    if (shouldListen()) {
         logger.debug("Transmission complete, listening for responses");
         transitionTo(SensorState::LISTENING);
     } else {
@@ -115,8 +75,8 @@ void SensorStateMachine::reportTransmitComplete()
 
 void SensorStateMachine::expectResponse()
 {
-    expected_responses_++;
-    logger.debug("Expected responses: %d", expected_responses_);
+    SleepAware::expectResponse();
+    logger.debug("Expecting response");
 }
 
 void SensorStateMachine::reportListenComplete()
@@ -140,7 +100,7 @@ bool SensorStateMachine::reportWakeFromSleep()
     }
 
     // Reset per-cycle state
-    expected_responses_ = 0;
+    resetExpectedResponses();
 
     if (!rtc_synced_) {
         // Need time sync first - caller should send heartbeat

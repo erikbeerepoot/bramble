@@ -38,9 +38,9 @@ private:
     bool needs_registration_;  // True if we need to register with hub
 
     /**
-     * @brief Update irrigation state machine with current hardware state
+     * @brief Called after RTC sync - notify irrigation state machine
      */
-    void updateIrrigationState();
+    void onRtcSynced() override;
 
     // PMU callback handlers
     void handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry *entry);

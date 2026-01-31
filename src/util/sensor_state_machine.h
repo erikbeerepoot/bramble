@@ -3,6 +3,9 @@
 #include <cstdint>
 #include <functional>
 
+#include "mode_state_machine_base.h"
+#include "sleep_aware.h"
+
 /**
  * @brief Sensor-specific states (wake-cycle-aware)
  *
@@ -92,48 +95,18 @@ enum class SensorState : uint8_t {
  *       // Can read sensor
  *   }
  */
-class SensorStateMachine {
+class SensorStateMachine : public ModeStateMachineBase, public SleepAware {
 public:
     using StateCallback = std::function<void(SensorState)>;
 
     // =========================================================================
-    // Lifecycle Events
+    // Lifecycle Events (markInitialized, markError) inherited from base
     // =========================================================================
 
-    /**
-     * @brief Mark hardware initialization complete
-     *
-     * Call after all hardware setup is done (flash, sensor object created, etc.)
-     * Transitions from INITIALIZING to AWAITING_TIME.
-     */
-    void markInitialized();
-
-    /**
-     * @brief Mark unrecoverable error
-     *
-     * Transitions to ERROR state. Only recoverable via reset.
-     */
-    void markError();
-
     // =========================================================================
-    // Hardware Events - report these when hardware state changes
+    // Hardware Events
+    // RTC events (reportRtcSynced, reportRtcLost) inherited from base
     // =========================================================================
-
-    /**
-     * @brief Report that RTC has been successfully synchronized
-     *
-     * Call after rtc_set_datetime() succeeds.
-     * Transitions to TIME_SYNCED (or OPERATIONAL/DEGRADED if sensor state known).
-     */
-    void reportRtcSynced();
-
-    /**
-     * @brief Report that RTC synchronization was lost
-     *
-     * Call if RTC stops running unexpectedly.
-     * Transitions back to AWAITING_TIME.
-     */
-    void reportRtcLost();
 
     /**
      * @brief Report successful sensor initialization
@@ -195,7 +168,7 @@ public:
      * Call after the receive window timeout expires.
      * Transitions LISTENING → READY_FOR_SLEEP.
      */
-    void reportListenComplete();
+    void reportListenComplete() override;
 
     /**
      * @brief Note that an outgoing message expects a response
@@ -205,13 +178,10 @@ public:
      * uses this to decide whether to enter LISTENING before sleep.
      *
      * Counter is reset automatically on reportWakeFromSleep().
+     *
+     * Delegates to SleepAware::expectResponse() and logs.
      */
     void expectResponse();
-
-    /**
-     * @brief Check if any responses are expected this wake cycle
-     */
-    bool hasExpectedResponses() const { return expected_responses_ > 0; }
 
     /**
      * @brief Report wake from sleep (restart the sensor cycle)
@@ -227,7 +197,7 @@ public:
      *
      * @return true if cycle was restarted, false if time sync needed first
      */
-    bool reportWakeFromSleep();
+    bool reportWakeFromSleep() override;
 
     // =========================================================================
     // State Queries - the ONLY way to check state
@@ -285,7 +255,7 @@ public:
     /**
      * @brief Check if ready for sleep
      */
-    bool isReadyForSleep() const { return state_ == SensorState::READY_FOR_SLEEP; }
+    bool isReadyForSleep() const override { return state_ == SensorState::READY_FOR_SLEEP; }
 
     /**
      * @brief Check if currently transmitting
@@ -295,7 +265,7 @@ public:
     /**
      * @brief Check if in listen window (awaiting hub responses before sleep)
      */
-    bool isListening() const { return state_ == SensorState::LISTENING; }
+    bool isListening() const override { return state_ == SensorState::LISTENING; }
 
     /**
      * @brief Get previous state (before last transition)
@@ -319,15 +289,16 @@ public:
      */
     static const char *stateName(SensorState state);
 
-private:
+protected:
     /**
      * @brief Derive state from internal flags and transition if changed
      *
      * Used for flag-based states (INITIALIZING, AWAITING_TIME, TIME_SYNCED,
-     * DEGRADED_NO_SENSOR, ERROR).
+     * DEGRADED_NO_SENSOR, ERROR). Called by base class when common flags change.
      */
-    void updateState();
+    void updateState() override;
 
+private:
     /**
      * @brief Directly transition to a new state
      *
@@ -340,11 +311,7 @@ private:
     SensorState previous_state_ = SensorState::INITIALIZING;
     StateCallback callback_;
 
-    // Internal state tracking - not accessible from outside
-    bool initialized_ = false;
-    bool error_ = false;
-    bool rtc_synced_ = false;
+    // Sensor-specific state tracking
     bool sensor_initialized_ = false;
     bool sensor_init_attempted_ = false;
-    uint8_t expected_responses_ = 0;
 };
