@@ -1001,8 +1001,8 @@ bool SensorMode::tryInitSensor()
         return false;
     }
 
-    logger.debug("Waiting 1s for sensor power-on stabilization...");
-    sleep_ms(1000);
+    logger.debug("Waiting for sensor power-on stabilization...");
+    sleep_ms(2);  // Datasheet specifies 1ms max power-up time
 
     if (sensor_->init()) {
         // Report success to state machine (transitions to OPERATIONAL)
