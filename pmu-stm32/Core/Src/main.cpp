@@ -1,30 +1,31 @@
 /* USER CODE BEGIN Header */
 /**
-  ******************************************************************************
-  * @file           : main.c
-  * @brief          : Main program body
-  ******************************************************************************
-  * @attention
-  *
-  * <h2><center>&copy; Copyright (c) 2025 STMicroelectronics.
-  * All rights reserved.</center></h2>
-  *
-  * This software component is licensed by ST under BSD 3-Clause license,
-  * the "License"; You may not use this file except in compliance with the
-  * License. You may obtain a copy of the License at:
-  *                        opensource.org/licenses/BSD-3-Clause
-  *
-  ******************************************************************************
-  */
+ ******************************************************************************
+ * @file           : main.c
+ * @brief          : Main program body
+ ******************************************************************************
+ * @attention
+ *
+ * <h2><center>&copy; Copyright (c) 2025 STMicroelectronics.
+ * All rights reserved.</center></h2>
+ *
+ * This software component is licensed by ST under BSD 3-Clause license,
+ * the "License"; You may not use this file except in compliance with the
+ * License. You may obtain a copy of the License at:
+ *                        opensource.org/licenses/BSD-3-Clause
+ *
+ ******************************************************************************
+ */
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "led.h"
 #include "dcdc.h"
+#include "led.h"
 #include "pmu_protocol.h"
+#include "pmu_state_machine.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -34,9 +35,6 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-// Debug flag: Define to disable STOP mode so breakpoints work
-// Uncomment this line to debug UART receive issues
-// #define DEBUG_NO_SLEEP
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -56,50 +54,29 @@ DCDC dcdc;
 // UART receive buffer
 static uint8_t uartRxByte;
 
-// Active watering session tracking
-static bool wateringActive = false;
-static uint32_t wateringStartTime = 0;
-static uint16_t wateringDuration = 0;
-
 // RTC wakeup flag - set by interrupt, handled in main loop
 static volatile bool rtcWakeupFlag = false;
 
-// UART activity tracking - stay awake while receiving data
-static volatile bool uartActivityFlag = false;
-static volatile uint32_t uartLastActivityTime = 0;
-static constexpr uint32_t UART_ACTIVITY_TIMEOUT_MS = 500;  // Stay awake 500ms after last UART byte
-
-// Periodic wake state tracking
-static bool periodicWakeActive = false;
-static uint32_t periodicWakeStartTime = 0;
-static bool wakeNotificationSent = false;  // Track if wake notification was sent this cycle
-static constexpr uint32_t PERIODIC_WAKE_TIMEOUT_MS = 120000;  // 2 minutes
-static constexpr uint32_t CTS_TIMEOUT_MS = 2000;  // 2 second timeout waiting for CTS
-
 // Boot animation parameters
 namespace BootAnimationConfig {
-    constexpr int TOTAL_FLICKERS = 5;       // 5 flickers = 1 second total
-    constexpr uint32_t FLICKER_ON_MS = 100;
-    constexpr uint32_t FLICKER_OFF_MS = 100;
-}
-
-// Boot animation runtime state (non-blocking)
-static struct {
-    bool active;
-    uint32_t lastToggleTime;
-    bool ledOn;
-    int flickerCount;
-} bootAnimationState = {false, 0, false, 0};
+constexpr int TOTAL_FLICKERS = 5;  // 5 flickers = 1 second total
+constexpr uint32_t FLICKER_ON_MS = 100;
+constexpr uint32_t FLICKER_OFF_MS = 100;
+}  // namespace BootAnimationConfig
 
 // Protocol callbacks
-static void uartSendCallback(const uint8_t* data, uint8_t length);
+static void uartSendCallback(const uint8_t *data, uint8_t length);
 static void setWakeIntervalCallback(uint32_t seconds);
 static void keepAwakeCallback(uint16_t seconds);
 static void readyForSleepCallback();
 static uint32_t getTickCallback();
 
 // Protocol instance
-static PMU::Protocol protocol(uartSendCallback, setWakeIntervalCallback, keepAwakeCallback, readyForSleepCallback, getTickCallback);
+static PMU::Protocol protocol(uartSendCallback, setWakeIntervalCallback, keepAwakeCallback,
+                              readyForSleepCallback, getTickCallback);
+
+// PMU state machine instance
+static PmuStateMachine pmuState(getTickCallback);
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -111,8 +88,11 @@ static void MX_RTC_Init(void);
 static void configureRTCWakeup(uint32_t seconds);
 static void enterStopMode(void);
 static void wakeupFromStopMode(void);
-static void handleRTCWakeup(void);
-static bool updateBootAnimation(void);
+static void determineWakeType(void);
+static void runBootAnimation(void);
+static void updateLedForState(PmuState state, WakeType wakeType);
+static void onStateChange(PmuState newState);
+static void sendWakeNotification();
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -121,397 +101,312 @@ static bool updateBootAnimation(void);
 /* USER CODE END 0 */
 
 /**
-  * @brief  The application entry point.
-  * @retval int
-  */
+ * @brief  The application entry point.
+ * @retval int
+ */
 int main(void)
 {
+    /* USER CODE BEGIN 1 */
 
-  /* USER CODE BEGIN 1 */
+    /* USER CODE END 1 */
 
-  /* USER CODE END 1 */
+    /* MCU Configuration--------------------------------------------------------*/
 
-  /* MCU Configuration--------------------------------------------------------*/
+    /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+    HAL_Init();
 
-  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-  HAL_Init();
+    /* USER CODE BEGIN Init */
 
-  /* USER CODE BEGIN Init */
+    /* USER CODE END Init */
 
-  /* USER CODE END Init */
+    /* Configure the system clock */
+    SystemClock_Config();
 
-  /* Configure the system clock */
-  SystemClock_Config();
+    /* Update SystemCoreClock variable after clock configuration */
+    SystemCoreClockUpdate();
 
-  /* Update SystemCoreClock variable after clock configuration */
-  SystemCoreClockUpdate();
+    /* Reconfigure SysTick with updated clock frequency */
+    HAL_InitTick(TICK_INT_PRIORITY);
 
-  /* Reconfigure SysTick with updated clock frequency */
-  HAL_InitTick(TICK_INT_PRIORITY);
+    /* Enable global interrupts explicitly */
+    __enable_irq();
 
-  /* Enable global interrupts explicitly */
-  __enable_irq();
+    /* USER CODE BEGIN SysInit */
 
-  /* USER CODE BEGIN SysInit */
+    /* USER CODE END SysInit */
 
-  /* USER CODE END SysInit */
+    /* Initialize all configured peripherals */
+    MX_GPIO_Init();
+    MX_LPUART1_UART_Init();
+    MX_RTC_Init();
 
-  /* Initialize all configured peripherals */
-  MX_GPIO_Init();
-  MX_LPUART1_UART_Init();
-  MX_RTC_Init();
+    /* USER CODE BEGIN 2 */
+    // Start UART receive interrupt IMMEDIATELY after UART init
+    // This ensures PMU is ready to receive commands as early as possible
+    HAL_UART_Receive_IT(&hlpuart1, &uartRxByte, 1);
 
-  /* USER CODE BEGIN 2 */
-  // Start UART receive interrupt IMMEDIATELY after UART init
-  // This ensures PMU is ready to receive commands as early as possible
-  HAL_UART_Receive_IT(&hlpuart1, &uartRxByte, 1);
+    led.init();
+    led.off();
 
-  led.init();
-  led.off();
+    // Initialize DC/DC converter (start enabled, then we can program the rp2040)
+    dcdc.init();
+    dcdc.enable();
 
-  // Initialize DC/DC converter (start enabled, then we can program the rp2040)
-  dcdc.init();
-  dcdc.enable();
+    // Set up state machine callback for LED updates
+    pmuState.setStateCallback(onStateChange);
 
-  // Start non-blocking boot animation (green LED flicker)
-  // This runs in the main loop while UART remains responsive
-  bootAnimationState.active = true;
-  bootAnimationState.lastToggleTime = HAL_GetTick();
-  bootAnimationState.ledOn = true;
-  bootAnimationState.flickerCount = 0;
-  led.setColor(LED::GREEN);
+    // Configure RTC wakeup timer with default wake interval (300 seconds)
+    configureRTCWakeup(protocol.getWakeInterval());
 
-  // Configure RTC wakeup timer with default wake interval (300 seconds)
-  configureRTCWakeup(protocol.getWakeInterval());
+    // Boot animation (blocking) - UART interrupt still receives bytes
+    runBootAnimation();
 
-  /* USER CODE END 2 */
+    // Boot complete - transition out of BOOTING state
+    pmuState.dispatch(PmuEvent::BOOT_COMPLETE);
 
-  /* Infinite loop */
-  /* USER CODE BEGIN WHILE */
-
-  while (1)
-  {
-    /* USER CODE END WHILE */
-
-    /* USER CODE BEGIN 3 */
-
-    // Handle non-blocking boot animation (returns true while still animating)
-    if (updateBootAnimation()) {
-      continue;  // Don't enter sleep mode while boot animation is running
-    }
-
-    // Check if RTC wakeup flag is set and handle it
-    if (rtcWakeupFlag) {  
-      rtcWakeupFlag = false;
-      handleRTCWakeup();
-    }
-
-    // Check if we're in an active watering session
-    if (wateringActive) {
-      // Calculate elapsed time in seconds
-      uint32_t elapsed = (HAL_GetTick() - wateringStartTime) / 1000;
-
-      // Add 5 second grace period for RP2040 to complete watering
-      if (elapsed >= (static_cast<uint32_t>(wateringDuration) + 5U)) {
-        // Watering duration complete + grace period elapsed
-        // Send schedule complete notification
-        protocol.sendScheduleComplete();
-
-        // Small delay to ensure message is sent
-        HAL_Delay(5000);
-
-        // Disable DC/DC to power down RP2040
-        dcdc.disable();
-
-        // End watering session
-        wateringActive = false;
-        wateringStartTime = 0;
-        wateringDuration = 0;
-      } else {
-        // Still watering - stay awake, blink RED to show active watering
-        led.setColor(LED::RED);
-        HAL_Delay(100);
-        led.off();
-        HAL_Delay(900);  // Check every second
-      }
-    } else if (periodicWakeActive) {
-      // Waiting for RP2040 to signal ready for sleep
-      uint32_t elapsed = HAL_GetTick() - periodicWakeStartTime;
-
-      // Handle CTS → send wake notification with state
-      if (protocol.isCtsReceived() && !wakeNotificationSent) {
-        protocol.sendWakeNotification(PMU::WakeReason::Periodic);
+    // Handle CTS that arrived during boot (RP2040 boots alongside STM32)
+    if (protocol.isCtsReceived()) {
+        pmuState.dispatch(PmuEvent::RTC_WAKEUP);
+        // determineWakeType() was called by onStateChange callback
+        pmuState.dispatch(PmuEvent::CTS_RECEIVED);
         protocol.clearCtsReceived();
-        wakeNotificationSent = true;
-      }
-
-      // Handle CTS timeout (2 seconds after wake) - fallback for old firmware
-      if (elapsed >= CTS_TIMEOUT_MS && !wakeNotificationSent) {
-        // RP2040 didn't send CTS - send wake notification anyway for backward compatibility
-        protocol.sendWakeNotification(PMU::WakeReason::Periodic);
-        wakeNotificationSent = true;
-      }
-
-      if (elapsed >= PERIODIC_WAKE_TIMEOUT_MS) {
-        // Timeout - RP2040 didn't signal ready in time, force power down
-        dcdc.disable();
-        periodicWakeActive = false;
-        periodicWakeStartTime = 0;
-      } else {
-        // Still waiting - blink ORANGE to show periodic wake in progress
-        led.setColor(LED::ORANGE);
-        HAL_Delay(100);
-        led.off();
-        HAL_Delay(900);  // Check every second
-      }
-    } else if (uartActivityFlag) {
-      // UART activity detected - stay awake to process data
-
-      // Handle CTS during initial boot (not periodic wake)
-      // Send wake notification with state_valid=false on cold start
-      if (protocol.isCtsReceived()) {
-        protocol.sendWakeNotification(PMU::WakeReason::Periodic);
-        protocol.clearCtsReceived();
-      }
-
-      uint32_t elapsed = HAL_GetTick() - uartLastActivityTime;
-      if (elapsed >= UART_ACTIVITY_TIMEOUT_MS) {
-        // Timeout - no more UART activity, can go back to sleep
-        uartActivityFlag = false;
-      } else {
-        // Fast blink to show UART processing active
-        led.setColor(LED::GREEN);
-        HAL_Delay(50);
-        led.off();
-        HAL_Delay(50);
-      }
-    } else {
-      // Not watering or periodic wake - normal sleep/wake cycle
-      // Quick LED pulse to show we're awake
-      led.setColor(LED::GREEN);
-      HAL_Delay(100);
-      led.off();
-
-      // Enter low power STOP mode
-      // Will wake up on RTC interrupt or LPUART data
-#ifndef DEBUG_NO_SLEEP
-      enterStopMode();
-
-      // We're back! RTC or LPUART woke us up
-      wakeupFromStopMode();
-#else
-      // Debug mode: just wait instead of sleeping
-      HAL_Delay(100);
-#endif
     }
-  }
-  /* USER CODE END 3 */
+
+    /* USER CODE END 2 */
+
+    /* Infinite loop */
+    /* USER CODE BEGIN WHILE */
+
+    while (1) {
+        /* USER CODE END WHILE */
+
+        /* USER CODE BEGIN 3 */
+
+        // =====================================================================
+        // Event Processing
+        // =====================================================================
+        if (rtcWakeupFlag) {
+            rtcWakeupFlag = false;
+            pmuState.dispatch(PmuEvent::RTC_WAKEUP);
+        }
+
+        if (protocol.isCtsReceived()) {
+            pmuState.dispatch(PmuEvent::CTS_RECEIVED);
+            protocol.clearCtsReceived();
+        }
+
+        pmuState.tick();
+
+        // =====================================================================
+        // Output Control (pure - no side effects except outputs)
+        // =====================================================================
+        PmuState state = pmuState.state();
+        updateLedForState(state, pmuState.wakeType());
+
+        switch (state) {
+            case PmuState::BOOTING:
+                // Boot animation handled before loop
+                break;
+
+            case PmuState::AWAITING_CTS:
+            case PmuState::WAKE_ACTIVE:
+                dcdc.enable();
+                break;
+
+            case PmuState::SLEEPING:
+                dcdc.disable();
+                led.setColor(LED::GREEN);
+                HAL_Delay(100);
+                led.off();
+                enterStopMode();
+                wakeupFromStopMode();
+                break;
+
+            case PmuState::ERROR:
+            default:
+                dcdc.disable();
+                break;
+        }
+    }
+    /* USER CODE END 3 */
 }
 
 /**
-  * @brief System Clock Configuration
-  * @retval None
-  */
+ * @brief System Clock Configuration
+ * @retval None
+ */
 void SystemClock_Config(void)
 {
-  RCC_OscInitTypeDef RCC_OscInitStruct = {0};
-  RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
-  RCC_PeriphCLKInitTypeDef PeriphClkInit = {0};
+    RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+    RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+    RCC_PeriphCLKInitTypeDef PeriphClkInit = {0};
 
-  /** Configure the main internal regulator output voltage
-  */
-  __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
+    /** Configure the main internal regulator output voltage
+     */
+    __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
 
-  /** Initializes the RCC Oscillators according to the specified parameters
-  * in the RCC_OscInitTypeDef structure.
-  */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI|RCC_OSCILLATORTYPE_LSI|RCC_OSCILLATORTYPE_MSI;
-  RCC_OscInitStruct.HSIState = RCC_HSI_ON;  // Enable HSI for LPUART in STOP mode
-  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
-  RCC_OscInitStruct.LSIState = RCC_LSI_ON;
-  RCC_OscInitStruct.MSIState = RCC_MSI_ON;
-  RCC_OscInitStruct.MSICalibrationValue = 0;
-  RCC_OscInitStruct.MSIClockRange = RCC_MSIRANGE_5;
-  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_NONE;
-  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
-  {
-    Error_Handler();
-  }
+    /** Initializes the RCC Oscillators according to the specified parameters
+     * in the RCC_OscInitTypeDef structure.
+     */
+    RCC_OscInitStruct.OscillatorType =
+        RCC_OSCILLATORTYPE_HSI | RCC_OSCILLATORTYPE_LSI | RCC_OSCILLATORTYPE_MSI;
+    RCC_OscInitStruct.HSIState = RCC_HSI_ON;  // Enable HSI for LPUART in STOP mode
+    RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
+    RCC_OscInitStruct.LSIState = RCC_LSI_ON;
+    RCC_OscInitStruct.MSIState = RCC_MSI_ON;
+    RCC_OscInitStruct.MSICalibrationValue = 0;
+    RCC_OscInitStruct.MSIClockRange = RCC_MSIRANGE_5;
+    RCC_OscInitStruct.PLL.PLLState = RCC_PLL_NONE;
+    if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK) {
+        Error_Handler();
+    }
 
-  // Explicitly disable HSI divider to ensure 16 MHz clock for LPUART
-  // Without this, HSI might be divided by 4 (4 MHz) causing wrong baud rate
-  CLEAR_BIT(RCC->CR, RCC_CR_HSIDIVEN);
+    // Explicitly disable HSI divider to ensure 16 MHz clock for LPUART
+    // Without this, HSI might be divided by 4 (4 MHz) causing wrong baud rate
+    CLEAR_BIT(RCC->CR, RCC_CR_HSIDIVEN);
 
-  /** Initializes the CPU, AHB and APB buses clocks
-  */
-  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
-                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
-  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_MSI;
-  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
-  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
-  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
+    /** Initializes the CPU, AHB and APB buses clocks
+     */
+    RCC_ClkInitStruct.ClockType =
+        RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
+    RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_MSI;
+    RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+    RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
+    RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_0) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_LPUART1|RCC_PERIPHCLK_RTC;
-  // Use HSI (16 MHz) for LPUART - more accurate than MSI-derived PCLK1
-  // HSI is factory-calibrated with ±1% accuracy over temperature range
-  // MSI has wider tolerance which caused baud rate to be ~7.5% off (2218 instead of 2400)
-  PeriphClkInit.Lpuart1ClockSelection = RCC_LPUART1CLKSOURCE_HSI;
-  PeriphClkInit.RTCClockSelection = RCC_RTCCLKSOURCE_LSI;
-  if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
-  {
-    Error_Handler();
-  }
+    if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_0) != HAL_OK) {
+        Error_Handler();
+    }
+    PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_LPUART1 | RCC_PERIPHCLK_RTC;
+    // Use HSI (16 MHz) for LPUART - more accurate than MSI-derived PCLK1
+    // HSI is factory-calibrated with ±1% accuracy over temperature range
+    // MSI has wider tolerance which caused baud rate to be ~7.5% off (2218 instead of 2400)
+    PeriphClkInit.Lpuart1ClockSelection = RCC_LPUART1CLKSOURCE_HSI;
+    PeriphClkInit.RTCClockSelection = RCC_RTCCLKSOURCE_LSI;
+    if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK) {
+        Error_Handler();
+    }
 }
 
 /**
-  * @brief LPUART1 Initialization Function
-  * @param None
-  * @retval None
-  */
+ * @brief LPUART1 Initialization Function
+ * @param None
+ * @retval None
+ */
 static void MX_LPUART1_UART_Init(void)
 {
+    /* USER CODE BEGIN LPUART1_Init 0 */
 
-  /* USER CODE BEGIN LPUART1_Init 0 */
+    /* USER CODE END LPUART1_Init 0 */
 
-  /* USER CODE END LPUART1_Init 0 */
+    /* USER CODE BEGIN LPUART1_Init 1 */
 
-  /* USER CODE BEGIN LPUART1_Init 1 */
+    /* USER CODE END LPUART1_Init 1 */
+    hlpuart1.Instance = LPUART1;
+    hlpuart1.Init.BaudRate = 9600;  // Standard rate, requires HSI (16 MHz) clock source
+    hlpuart1.Init.WordLength = UART_WORDLENGTH_8B;
+    hlpuart1.Init.StopBits = UART_STOPBITS_2;  // 2 stop bits for better timing margin
+    hlpuart1.Init.Parity = UART_PARITY_NONE;
+    hlpuart1.Init.Mode = UART_MODE_TX_RX;
+    hlpuart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+    hlpuart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+    hlpuart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+    if (HAL_UART_Init(&hlpuart1) != HAL_OK) {
+        Error_Handler();
+    }
+    /* USER CODE BEGIN LPUART1_Init 2 */
 
-  /* USER CODE END LPUART1_Init 1 */
-  hlpuart1.Instance = LPUART1;
-  hlpuart1.Init.BaudRate = 9600;  // Standard rate, requires HSI (16 MHz) clock source
-  hlpuart1.Init.WordLength = UART_WORDLENGTH_8B;
-  hlpuart1.Init.StopBits = UART_STOPBITS_2;  // 2 stop bits for better timing margin
-  hlpuart1.Init.Parity = UART_PARITY_NONE;
-  hlpuart1.Init.Mode = UART_MODE_TX_RX;
-  hlpuart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  hlpuart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
-  hlpuart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
-  if (HAL_UART_Init(&hlpuart1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN LPUART1_Init 2 */
-
-  /* USER CODE END LPUART1_Init 2 */
-
+    /* USER CODE END LPUART1_Init 2 */
 }
 
 /**
-  * @brief RTC Initialization Function
-  * @param None
-  * @retval None
-  */
+ * @brief RTC Initialization Function
+ * @param None
+ * @retval None
+ */
 static void MX_RTC_Init(void)
 {
+    /* USER CODE BEGIN RTC_Init 0 */
 
-  /* USER CODE BEGIN RTC_Init 0 */
+    /* USER CODE END RTC_Init 0 */
 
-  /* USER CODE END RTC_Init 0 */
+    /* USER CODE BEGIN RTC_Init 1 */
 
-  /* USER CODE BEGIN RTC_Init 1 */
+    /* USER CODE END RTC_Init 1 */
 
-  /* USER CODE END RTC_Init 1 */
+    /** Initialize RTC Only
+     */
+    hrtc.Instance = RTC;
+    hrtc.Init.HourFormat = RTC_HOURFORMAT_24;
+    // LSI is ~37kHz, so we need prescalers that divide to 1 Hz for ck_spre
+    // 37000 Hz / (125 × 296) = 37000 / 37000 = 1 Hz
+    hrtc.Init.AsynchPrediv = 124;  // AsynchPrediv + 1 = 125
+    hrtc.Init.SynchPrediv = 295;   // SynchPrediv + 1 = 296
+    hrtc.Init.OutPut = RTC_OUTPUT_DISABLE;
+    hrtc.Init.OutPutRemap = RTC_OUTPUT_REMAP_NONE;
+    hrtc.Init.OutPutPolarity = RTC_OUTPUT_POLARITY_HIGH;
+    hrtc.Init.OutPutType = RTC_OUTPUT_TYPE_OPENDRAIN;
+    if (HAL_RTC_Init(&hrtc) != HAL_OK) {
+        Error_Handler();
+    }
 
-  /** Initialize RTC Only
-  */
-  hrtc.Instance = RTC;
-  hrtc.Init.HourFormat = RTC_HOURFORMAT_24;
-  // LSI is ~37kHz, so we need prescalers that divide to 1 Hz for ck_spre
-  // 37000 Hz / (125 × 296) = 37000 / 37000 = 1 Hz
-  hrtc.Init.AsynchPrediv = 124;  // AsynchPrediv + 1 = 125
-  hrtc.Init.SynchPrediv = 295;   // SynchPrediv + 1 = 296
-  hrtc.Init.OutPut = RTC_OUTPUT_DISABLE;
-  hrtc.Init.OutPutRemap = RTC_OUTPUT_REMAP_NONE;
-  hrtc.Init.OutPutPolarity = RTC_OUTPUT_POLARITY_HIGH;
-  hrtc.Init.OutPutType = RTC_OUTPUT_TYPE_OPENDRAIN;
-  if (HAL_RTC_Init(&hrtc) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /* USER CODE BEGIN RTC_Init 2 */
-  // Wakeup timer will be configured later with interrupt enabled
-  /* USER CODE END RTC_Init 2 */
-
+    /* USER CODE BEGIN RTC_Init 2 */
+    // Wakeup timer will be configured later with interrupt enabled
+    /* USER CODE END RTC_Init 2 */
 }
 
 /**
-  * @brief GPIO Initialization Function
-  * @param None
-  * @retval None
-  */
+ * @brief GPIO Initialization Function
+ * @param None
+ * @retval None
+ */
 static void MX_GPIO_Init(void)
 {
-  GPIO_InitTypeDef GPIO_InitStruct = {0};
-  /* USER CODE BEGIN MX_GPIO_Init_1 */
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+    /* USER CODE BEGIN MX_GPIO_Init_1 */
 
-  /* USER CODE END MX_GPIO_Init_1 */
+    /* USER CODE END MX_GPIO_Init_1 */
 
-  /* GPIO Ports Clock Enable */
-  __HAL_RCC_GPIOA_CLK_ENABLE();
+    /* GPIO Ports Clock Enable */
+    __HAL_RCC_GPIOA_CLK_ENABLE();
 
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1|GPIO_PIN_4|GPIO_PIN_5, GPIO_PIN_RESET);
+    /*Configure GPIO pin Output Level */
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1 | GPIO_PIN_4 | GPIO_PIN_5, GPIO_PIN_RESET);
 
-  /*Configure GPIO pins : PA1 PA4 PA5 */
-  GPIO_InitStruct.Pin = GPIO_PIN_1|GPIO_PIN_4|GPIO_PIN_5;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+    /*Configure GPIO pins : PA1 PA4 PA5 */
+    GPIO_InitStruct.Pin = GPIO_PIN_1 | GPIO_PIN_4 | GPIO_PIN_5;
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /* USER CODE BEGIN MX_GPIO_Init_2 */
+    /* USER CODE BEGIN MX_GPIO_Init_2 */
 
-  /* USER CODE END MX_GPIO_Init_2 */
+    /* USER CODE END MX_GPIO_Init_2 */
 }
 
 /* USER CODE BEGIN 4 */
 
 /**
- * @brief Update non-blocking boot animation
- * @return true if animation is still running, false when complete
+ * @brief Run boot animation (blocking)
+ * Green LED flickers to indicate successful boot
  */
-static bool updateBootAnimation(void) {
-    if (!bootAnimationState.active) {
-        return false;
-    }
-
-    uint32_t now = HAL_GetTick();
-    uint32_t elapsed = now - bootAnimationState.lastToggleTime;
-
-    if (bootAnimationState.ledOn && elapsed >= BootAnimationConfig::FLICKER_ON_MS) {
-        // Turn off
+static void runBootAnimation(void)
+{
+    for (int i = 0; i < BootAnimationConfig::TOTAL_FLICKERS; i++) {
+        led.setColor(LED::GREEN);
+        HAL_Delay(BootAnimationConfig::FLICKER_ON_MS);
         led.off();
-        bootAnimationState.ledOn = false;
-        bootAnimationState.lastToggleTime = now;
-    } else if (!bootAnimationState.ledOn && elapsed >= BootAnimationConfig::FLICKER_OFF_MS) {
-        // Turn on or finish
-        bootAnimationState.flickerCount++;
-        if (bootAnimationState.flickerCount >= BootAnimationConfig::TOTAL_FLICKERS) {
-            // Animation complete
-            bootAnimationState.active = false;
-            led.off();
-            return false;
-        } else {
-            led.setColor(LED::GREEN);
-            bootAnimationState.ledOn = true;
-            bootAnimationState.lastToggleTime = now;
-        }
+        HAL_Delay(BootAnimationConfig::FLICKER_OFF_MS);
     }
-
-    return true;
 }
 
 /**
  * @brief Configure RTC wakeup timer
  * @param seconds Number of seconds between wakeups
  */
-static void configureRTCWakeup(uint32_t seconds) {
+static void configureRTCWakeup(uint32_t seconds)
+{
     // Disable wakeup timer first
     HAL_RTCEx_DeactivateWakeUpTimer(&hrtc);
 
@@ -556,7 +451,8 @@ static void configureRTCWakeup(uint32_t seconds) {
     }
 
     // Enable wakeup timer with interrupt using 1 Hz clock
-    if (HAL_RTCEx_SetWakeUpTimer_IT(&hrtc, wakeupCounter, RTC_WAKEUPCLOCK_CK_SPRE_16BITS) != HAL_OK) {
+    if (HAL_RTCEx_SetWakeUpTimer_IT(&hrtc, wakeupCounter, RTC_WAKEUPCLOCK_CK_SPRE_16BITS) !=
+        HAL_OK) {
         // Flash LED to indicate error but don't halt
         led.setColor(LED::RED);
         HAL_Delay(2000);
@@ -567,7 +463,8 @@ static void configureRTCWakeup(uint32_t seconds) {
 /**
  * @brief Enter STOP mode for low power sleep
  */
-static void enterStopMode(void) {
+static void enterStopMode(void)
+{
     // Enable LPUART wakeup from STOP mode (sets UESM bit in CR1)
     HAL_UARTEx_EnableStopMode(&hlpuart1);
 
@@ -586,7 +483,8 @@ static void enterStopMode(void) {
 /**
  * @brief Re-initialize system after waking from STOP mode
  */
-static void wakeupFromStopMode(void) {
+static void wakeupFromStopMode(void)
+{
     // Disable LPUART STOP mode after waking
     HAL_UARTEx_DisableStopMode(&hlpuart1);
 
@@ -602,10 +500,19 @@ static void wakeupFromStopMode(void) {
 }
 
 /**
- * @brief Handle RTC wakeup event (called from main loop, not interrupt)
- * This does the actual work when RTC wakes up
+ * @brief Determine wake type from RTC time and schedule
+ * Called by onStateChange callback when entering AWAITING_CTS state.
+ * Sets wake type in state machine and applies appropriate boot delay.
  */
-static void handleRTCWakeup(void) {
+static void determineWakeType(void)
+{
+    // Clear dedup buffer for new boot cycle - HAL tick was suspended during STOP mode
+    // so old sequence numbers may still appear "recent"
+    protocol.clearDedupBuffer();
+
+    // Reset CTS flag for this wake cycle
+    protocol.clearCtsReceived();
+
     // Get current RTC time and date
     RTC_TimeTypeDef time;
     RTC_DateTypeDef date;
@@ -613,52 +520,24 @@ static void handleRTCWakeup(void) {
     HAL_RTC_GetDate(&hrtc, &date, RTC_FORMAT_BIN);
 
     // Check if this is a scheduled event
-    const PMU::ScheduleEntry* entry = protocol.getNextScheduledEntry(
-        date.WeekDay, time.Hours, time.Minutes);
+    const PMU::ScheduleEntry *entry =
+        protocol.getNextScheduledEntry(date.WeekDay, time.Hours, time.Minutes);
 
     // Check if we're within the wake interval window of a scheduled event
     // This handles the case where RTC doesn't wake exactly at the scheduled time
     uint32_t wakeIntervalMinutes = protocol.getWakeInterval() / 60;
 
-    if (entry && entry->isWithinWindow(date.WeekDay, time.Hours, time.Minutes, wakeIntervalMinutes)) {
-        // This is a scheduled watering event (or we're within the wake window of one)
-        // Enable DC/DC to power up RP2040
-        dcdc.enable();
-
-        // Clear dedup buffer for new boot cycle - HAL tick was suspended during STOP mode
-        // so old sequence numbers may still appear "recent"
-        protocol.clearDedupBuffer();
-
-        // Small delay to allow RP2040 to power up and boot
-        HAL_Delay(100);
-
-        // Start watering session
-        wateringActive = true;
-        wateringStartTime = HAL_GetTick();
-        wateringDuration = entry->duration;
-
-        // Send wake notification with schedule entry data
-        protocol.sendWakeNotificationWithSchedule(PMU::WakeReason::Scheduled, entry);
+    if (entry &&
+        entry->isWithinWindow(date.WeekDay, time.Hours, time.Minutes, wakeIntervalMinutes)) {
+        // This is a scheduled watering event
+        pmuState.setWakeType(WakeType::SCHEDULED, entry);
     } else {
-        // Normal periodic wake - enable DC/DC to power up RP2040
-        dcdc.enable();
-
-        // Clear dedup buffer for new boot cycle - HAL tick was suspended during STOP mode
-        // so old sequence numbers may still appear "recent"
-        protocol.clearDedupBuffer();
-
-        // Reset flags for this wake cycle
-        protocol.clearCtsReceived();
-        wakeNotificationSent = false;
-        
-        // Minimal delay for UART hardware init only (50ms)
-        HAL_Delay(50);
-
-        // Start periodic wake tracking - RP2040 will signal when done
-        // Note: Do NOT send wake notification here - wait for CTS from RP2040
-        periodicWakeActive = true;
-        periodicWakeStartTime = HAL_GetTick();
+        // Normal periodic wake
+        pmuState.setWakeType(WakeType::PERIODIC, nullptr);
     }
+
+    // Small delay for RP2040 boot (scheduled needs more time)
+    HAL_Delay(pmuState.wakeType() == WakeType::SCHEDULED ? 100 : 50);
 }
 
 /**
@@ -679,10 +558,6 @@ void HAL_RTCEx_WakeUpTimerEventCallback(RTC_HandleTypeDef *hrtc)
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
     if (huart->Instance == LPUART1) {
-        // Mark UART activity to keep MCU awake while receiving data
-        uartActivityFlag = true;
-        uartLastActivityTime = HAL_GetTick();
-
         // Process received byte through protocol
         protocol.processReceivedByte(uartRxByte);
 
@@ -694,9 +569,9 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 /**
  * @brief UART send callback for protocol
  */
-static void uartSendCallback(const uint8_t* data, uint8_t length)
+static void uartSendCallback(const uint8_t *data, uint8_t length)
 {
-    HAL_UART_Transmit(&hlpuart1, (uint8_t*)data, length, 1000);
+    HAL_UART_Transmit(&hlpuart1, (uint8_t *)data, length, 1000);
 }
 
 /**
@@ -733,48 +608,132 @@ static uint32_t getTickCallback()
  */
 static void readyForSleepCallback()
 {
-    // RP2040 is done with its work - power it down
-    dcdc.disable();
+    // RP2040 is done with its work - dispatch READY_FOR_SLEEP event
+    // State machine will transition to SLEEPING and handle DC/DC disable
+    pmuState.dispatch(PmuEvent::READY_FOR_SLEEP);
+}
 
-    // Clear any active wake state
-    if (periodicWakeActive) {
-        periodicWakeActive = false;
-        periodicWakeStartTime = 0;
+/**
+ * @brief Send wake notification to RP2040 based on current wake type
+ * Called after CTS is received or CTS timeout in AWAITING_CTS state
+ */
+static void sendWakeNotification()
+{
+    if (pmuState.wakeType() == WakeType::SCHEDULED) {
+        const PMU::ScheduleEntry *entry = pmuState.getScheduleEntry();
+        if (entry) {
+            protocol.sendWakeNotificationWithSchedule(PMU::WakeReason::Scheduled, entry);
+        } else {
+            protocol.sendWakeNotification(PMU::WakeReason::Scheduled);
+        }
+    } else {
+        protocol.sendWakeNotification(PMU::WakeReason::Periodic);
+    }
+}
+
+/**
+ * @brief Update LED based on current PMU state and wake type
+ * @param state Current PMU state
+ * @param wakeType Current wake type (for color selection)
+ */
+static void updateLedForState(PmuState state, WakeType wakeType)
+{
+    // LED blinking is done inline in the main loop during wake states
+    // This function handles the blink pattern
+    static uint32_t lastBlinkTime = 0;
+    static bool ledOn = false;
+
+    // Select color based on wake type
+    LED::Color wakeColor = (wakeType == WakeType::SCHEDULED) ? LED::RED : LED::ORANGE;
+
+    switch (state) {
+        case PmuState::AWAITING_CTS: {
+            // Fast blink (250ms cycle) while waiting for CTS
+            uint32_t now = HAL_GetTick();
+            if (now - lastBlinkTime >= 125) {
+                lastBlinkTime = now;
+                ledOn = !ledOn;
+                if (ledOn) {
+                    led.setColor(wakeColor);
+                } else {
+                    led.off();
+                }
+            }
+            break;
+        }
+
+        case PmuState::WAKE_ACTIVE: {
+            // Slow blink (1s cycle) while RP2040 is working
+            uint32_t now = HAL_GetTick();
+            if (now - lastBlinkTime >= 500) {
+                lastBlinkTime = now;
+                ledOn = !ledOn;
+                if (ledOn) {
+                    led.setColor(wakeColor);
+                } else {
+                    led.off();
+                }
+            }
+            break;
+        }
+
+        case PmuState::ERROR:
+            led.setColor(LED::RED);
+            break;
+
+        case PmuState::SLEEPING:
+        default:
+            led.off();
+            break;
+    }
+}
+
+/**
+ * @brief State change callback for PMU state machine
+ * @param newState The new state after transition
+ */
+static void onStateChange(PmuState newState)
+{
+    // Determine wake type when entering AWAITING_CTS
+    // This checks RTC time and schedule to set the correct wake type
+    if (newState == PmuState::AWAITING_CTS) {
+        determineWakeType();
     }
 
-    // Clear UART activity flag so we can go to sleep
-    uartActivityFlag = false;
+    // Send wake notification when entering WAKE_ACTIVE
+    // This centralizes the notification logic - no need to call it explicitly
+    if (newState == PmuState::WAKE_ACTIVE) {
+        sendWakeNotification();
+    }
 }
 
 /* USER CODE END 4 */
 
 /**
-  * @brief  This function is executed in case of error occurrence.
-  * @retval None
-  */
+ * @brief  This function is executed in case of error occurrence.
+ * @retval None
+ */
 void Error_Handler(void)
 {
-  /* USER CODE BEGIN Error_Handler_Debug */
-  /* User can add his own implementation to report the HAL error return state */
-  __disable_irq();
-  while (1)
-  {
-  }
-  /* USER CODE END Error_Handler_Debug */
+    /* USER CODE BEGIN Error_Handler_Debug */
+    /* User can add his own implementation to report the HAL error return state */
+    __disable_irq();
+    while (1) {}
+    /* USER CODE END Error_Handler_Debug */
 }
 #ifdef USE_FULL_ASSERT
 /**
-  * @brief  Reports the name of the source file and the source line number
-  *         where the assert_param error has occurred.
-  * @param  file: pointer to the source file name
-  * @param  line: assert_param error line source number
-  * @retval None
-  */
+ * @brief  Reports the name of the source file and the source line number
+ *         where the assert_param error has occurred.
+ * @param  file: pointer to the source file name
+ * @param  line: assert_param error line source number
+ * @retval None
+ */
 void assert_failed(uint8_t *file, uint32_t line)
 {
-  /* USER CODE BEGIN 6 */
-  /* User can add his own implementation to report the file name and line number,
-     ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
-  /* USER CODE END 6 */
+    /* USER CODE BEGIN 6 */
+    /* User can add his own implementation to report the file name and line number,
+       ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
+    /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */

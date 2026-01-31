@@ -22,11 +22,10 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 # Enable size optimization for release builds
+# Note: Core flags (-Os etc) are set in the toolchain file
+# LTO is disabled due to GCC bug with spaces in paths (Application Support)
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
-    set(CMAKE_CXX_FLAGS_RELEASE "-Os -DNDEBUG")
-    set(CMAKE_C_FLAGS_RELEASE "-Os -DNDEBUG")
-    # Enable Link Time Optimization
-    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+    add_compile_definitions(NDEBUG)
 endif()
 
 # Enable debug symbols and no optimization for debug builds
@@ -65,6 +64,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/led.cpp
     Core/Src/dcdc.cpp
     Core/Src/pmu_protocol.cpp
+    Core/Src/pmu_state_machine.cpp
 )
 
 # Add include paths
@@ -85,4 +85,18 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
     stm32cubemx
 
     # Add user defined libraries
+)
+
+# Generate .bin file from .elf for flashing
+add_custom_command(TARGET ${CMAKE_PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_OBJCOPY} -O binary $<TARGET_FILE:${CMAKE_PROJECT_NAME}> ${CMAKE_PROJECT_NAME}.bin
+    COMMENT "Generating ${CMAKE_PROJECT_NAME}.bin"
+)
+
+# Flash target using st-flash (ST-Link V2)
+add_custom_target(flash
+    COMMAND st-flash --connect-under-reset write ${CMAKE_PROJECT_NAME}.bin 0x08000000
+    DEPENDS ${CMAKE_PROJECT_NAME}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    COMMENT "Flashing ${CMAKE_PROJECT_NAME}.bin to STM32 via ST-Link V2"
 )

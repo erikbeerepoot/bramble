@@ -833,7 +833,8 @@ void SensorMode::signalReadyForSleep()
                             state.next_seq_num, state.read_index, state.write_index);
 
             self->reliable_pmu_->readyForSleep(
-                reinterpret_cast<const uint8_t *>(&state), [self](bool success, PMU::ErrorCode error) {
+                reinterpret_cast<const uint8_t *>(&state),
+                [self](bool success, PMU::ErrorCode error) {
                     if (success) {
                         pmu_logger.info("Ready for sleep acknowledged - halting");
                         // Set flag to halt main loop - prevents UART activity from keeping
@@ -879,8 +880,7 @@ void SensorMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry 
             messenger_.setNextSeqNum(persisted->next_seq_num);
 
             pmu_logger.info("Restored state: read_index=%lu, write_index=%lu, seq=%u",
-                            persisted->read_index, persisted->write_index,
-                            persisted->next_seq_num);
+                            persisted->read_index, persisted->write_index, persisted->next_seq_num);
         } else {
             pmu_logger.warn("State version mismatch (got %u, expected %u) - cold start",
                             persisted->version, STATE_VERSION);
