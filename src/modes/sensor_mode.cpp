@@ -1058,6 +1058,7 @@ void SensorMode::requestTimeSync()
 
                 if (rtc_set_datetime(&dt)) {
                     sleep_us(64);  // Wait for RTC to propagate
+                    Logger::onRtcSynced();
                     Logger("SensorSM")
                         .info("RTC set from PMU: %04d-%02d-%02d %02d:%02d:%02d", dt.year, dt.month,
                               dt.day, dt.hour, dt.min, dt.sec);
