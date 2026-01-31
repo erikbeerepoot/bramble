@@ -28,7 +28,7 @@ class Logger {
 private:
     const char *module_name_;
     static LogLevel global_level_;
-    static bool check_usb_;      // Enable USB checking for power savings
+    static bool check_usb_;        // Enable USB checking for power savings
     static uint64_t rtc_sync_us_;  // System time (us) when RTC was last synced
 
     /**
@@ -53,8 +53,8 @@ private:
                     uint64_t elapsed_us = to_us_since_boot(get_absolute_time()) - rtc_sync_us_;
                     ms_in_second = (elapsed_us / 1000) % 1000;
                 }
-                printf("[%04d-%02d-%02d %02d:%02d:%02d.%03lu] ", dt.year, dt.month, dt.day,
-                       dt.hour, dt.min, dt.sec, ms_in_second);
+                printf("[%04d-%02d-%02d %02d:%02d:%02d.%03lu] ", dt.year, dt.month, dt.day, dt.hour,
+                       dt.min, dt.sec, ms_in_second);
             } else {
                 // RTC not running - use milliseconds since boot
                 uint32_t ms = to_ms_since_boot(get_absolute_time());
