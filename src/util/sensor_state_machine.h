@@ -4,6 +4,7 @@
 #include <functional>
 
 #include "mode_state_machine_base.h"
+#include "sleep_aware.h"
 
 /**
  * @brief Sensor-specific states (wake-cycle-aware)
@@ -94,7 +95,7 @@ enum class SensorState : uint8_t {
  *       // Can read sensor
  *   }
  */
-class SensorStateMachine : public ModeStateMachineBase {
+class SensorStateMachine : public ModeStateMachineBase, public SleepAware {
 public:
     using StateCallback = std::function<void(SensorState)>;
 
@@ -167,7 +168,7 @@ public:
      * Call after the receive window timeout expires.
      * Transitions LISTENING → READY_FOR_SLEEP.
      */
-    void reportListenComplete();
+    void reportListenComplete() override;
 
     /**
      * @brief Note that an outgoing message expects a response
@@ -177,13 +178,10 @@ public:
      * uses this to decide whether to enter LISTENING before sleep.
      *
      * Counter is reset automatically on reportWakeFromSleep().
+     *
+     * Delegates to SleepAware::expectResponse() and logs.
      */
     void expectResponse();
-
-    /**
-     * @brief Check if any responses are expected this wake cycle
-     */
-    bool hasExpectedResponses() const { return expected_responses_ > 0; }
 
     /**
      * @brief Report wake from sleep (restart the sensor cycle)
@@ -199,7 +197,7 @@ public:
      *
      * @return true if cycle was restarted, false if time sync needed first
      */
-    bool reportWakeFromSleep();
+    bool reportWakeFromSleep() override;
 
     // =========================================================================
     // State Queries - the ONLY way to check state
@@ -257,7 +255,7 @@ public:
     /**
      * @brief Check if ready for sleep
      */
-    bool isReadyForSleep() const { return state_ == SensorState::READY_FOR_SLEEP; }
+    bool isReadyForSleep() const override { return state_ == SensorState::READY_FOR_SLEEP; }
 
     /**
      * @brief Check if currently transmitting
@@ -267,7 +265,7 @@ public:
     /**
      * @brief Check if in listen window (awaiting hub responses before sleep)
      */
-    bool isListening() const { return state_ == SensorState::LISTENING; }
+    bool isListening() const override { return state_ == SensorState::LISTENING; }
 
     /**
      * @brief Get previous state (before last transition)
@@ -316,5 +314,4 @@ private:
     // Sensor-specific state tracking
     bool sensor_initialized_ = false;
     bool sensor_init_attempted_ = false;
-    uint8_t expected_responses_ = 0;
 };
