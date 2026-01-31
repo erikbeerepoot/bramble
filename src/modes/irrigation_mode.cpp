@@ -297,14 +297,13 @@ void IrrigationMode::onHeartbeatResponse(const HeartbeatResponsePayload *payload
                         datetime.month, datetime.day, datetime.hour, datetime.minute,
                         datetime.second);
 
-        pmu_client_->getProtocol().setDateTime(
-            datetime, [](bool success, PMU::ErrorCode error) {
-                if (success) {
-                    pmu_logger.info("PMU time sync successful");
-                } else {
-                    pmu_logger.error("PMU time sync failed: error %d", static_cast<int>(error));
-                }
-            });
+        pmu_client_->getProtocol().setDateTime(datetime, [](bool success, PMU::ErrorCode error) {
+            if (success) {
+                pmu_logger.info("PMU time sync successful");
+            } else {
+                pmu_logger.error("PMU time sync failed: error %d", static_cast<int>(error));
+            }
+        });
     }
 }
 

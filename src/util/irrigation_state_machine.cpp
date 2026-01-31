@@ -29,7 +29,7 @@ void IrrigationStateMachine::reportUpdatePullStarted()
     }
     if (!isOperational()) {
         logger.warn("reportUpdatePullStarted() called in non-operational state: %s",
-                     stateName(state_));
+                    stateName(state_));
         return;
     }
     transitionTo(IrrigationState::CHECKING_UPDATES);
