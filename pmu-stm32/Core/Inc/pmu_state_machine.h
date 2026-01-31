@@ -10,14 +10,13 @@
  * @brief Events that can be dispatched to the PMU state machine
  */
 enum class PmuEvent : uint8_t {
-    BOOT_COMPLETE,       ///< Boot animation finished
-    RTC_WAKE_SCHEDULED,  ///< RTC woke us for a schedule entry
-    RTC_WAKE_PERIODIC,   ///< RTC woke us on interval
-    CTS_RECEIVED,        ///< RP2040 sent ClearToSend
-    CTS_TIMEOUT,         ///< Waited too long for CTS
-    READY_FOR_SLEEP,     ///< RP2040 signaled work complete
-    WAKE_TIMEOUT,        ///< Overall wake timeout expired
-    ERROR_OCCURRED       ///< Unrecoverable error
+    BOOT_COMPLETE,    ///< Boot animation finished
+    RTC_WAKEUP,       ///< RTC woke us (any type - scheduled or periodic)
+    CTS_RECEIVED,     ///< RP2040 sent ClearToSend
+    CTS_TIMEOUT,      ///< Waited too long for CTS
+    READY_FOR_SLEEP,  ///< RP2040 signaled work complete
+    WAKE_TIMEOUT,     ///< Overall wake timeout expired
+    ERROR_OCCURRED    ///< Unrecoverable error
 };
 
 /**
@@ -33,7 +32,7 @@ enum class PmuEvent : uint8_t {
  *     v (error)                       |
  *   ERROR <--------------------+      |
  *                              |      |
- *                    RTC_WAKE_*       |
+ *                    RTC_WAKEUP       |
  *                              |      |
  *                              v      v
  *  SLEEPING <-------------- AWAITING_CTS
@@ -104,11 +103,8 @@ struct WakeContext {
  *   // After boot animation:
  *   pmu.dispatch(PmuEvent::BOOT_COMPLETE);
  *
- *   // On RTC wakeup with schedule:
- *   pmu.dispatchScheduledWake(entry);
- *
- *   // On RTC wakeup without schedule:
- *   pmu.dispatch(PmuEvent::RTC_WAKE_PERIODIC);
+ *   // On RTC wakeup (callback determines wake type):
+ *   pmu.dispatch(PmuEvent::RTC_WAKEUP);
  *
  *   // When CTS received:
  *   pmu.dispatch(PmuEvent::CTS_RECEIVED);
@@ -148,21 +144,23 @@ public:
     void dispatch(PmuEvent event);
 
     /**
-     * @brief Dispatch a scheduled wake event with schedule entry data
-     *
-     * Stores the schedule entry in context before dispatching RTC_WAKE_SCHEDULED.
-     *
-     * @param entry The schedule entry that triggered this wake
-     */
-    void dispatchScheduledWake(const PMU::ScheduleEntry &entry);
-
-    /**
      * @brief Check timeouts and dispatch timeout events
      *
      * Call this periodically in the main loop. Generates CTS_TIMEOUT
      * or WAKE_TIMEOUT events when appropriate.
      */
     void tick();
+
+    /**
+     * @brief Set the wake type and optional schedule entry
+     *
+     * Called by the state change callback when entering AWAITING_CTS
+     * to configure the wake context based on RTC/schedule analysis.
+     *
+     * @param type The type of wake (SCHEDULED or PERIODIC)
+     * @param entry Optional schedule entry (only for SCHEDULED type)
+     */
+    void setWakeType(WakeType type, const PMU::ScheduleEntry *entry = nullptr);
 
     // =========================================================================
     // Query Methods

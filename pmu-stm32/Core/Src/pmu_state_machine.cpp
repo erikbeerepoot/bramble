@@ -21,8 +21,7 @@ PmuState PmuStateMachine::reduce(PmuState state, PmuEvent event)
 
         case PmuState::SLEEPING:
             switch (event) {
-                case PmuEvent::RTC_WAKE_SCHEDULED:
-                case PmuEvent::RTC_WAKE_PERIODIC:
+                case PmuEvent::RTC_WAKEUP:
                     return PmuState::AWAITING_CTS;
                 case PmuEvent::ERROR_OCCURRED:
                     return PmuState::ERROR;
@@ -77,13 +76,20 @@ void PmuStateMachine::dispatch(PmuEvent event)
     }
 }
 
-void PmuStateMachine::dispatchScheduledWake(const PMU::ScheduleEntry &entry)
+void PmuStateMachine::setWakeType(WakeType type, const PMU::ScheduleEntry *entry)
 {
-    // Store schedule entry before dispatching
-    context_.hasScheduleEntry = true;
-    context_.scheduleEntry = entry;
+    context_.type = type;
 
-    dispatch(PmuEvent::RTC_WAKE_SCHEDULED);
+    if (type == WakeType::SCHEDULED && entry != nullptr) {
+        context_.hasScheduleEntry = true;
+        context_.scheduleEntry = *entry;
+        // Timeout = duration (seconds) * 1000 + grace period
+        context_.timeoutMs =
+            static_cast<uint32_t>(context_.scheduleEntry.duration) * 1000 + SCHEDULED_GRACE_PERIOD_MS;
+    } else {
+        context_.hasScheduleEntry = false;
+        context_.timeoutMs = PERIODIC_WAKE_TIMEOUT_MS;
+    }
 }
 
 void PmuStateMachine::tick()
@@ -126,7 +132,7 @@ void PmuStateMachine::tick()
 // State Entry Actions
 // =============================================================================
 
-void PmuStateMachine::onEnterState(PmuState newState, PmuEvent event)
+void PmuStateMachine::onEnterState(PmuState newState, PmuEvent /* event */)
 {
     uint32_t now = getTick_();
 
@@ -137,19 +143,10 @@ void PmuStateMachine::onEnterState(PmuState newState, PmuEvent event)
             break;
 
         case PmuState::AWAITING_CTS:
-            // Set up wake context
+            // Set up timing for wake context
+            // Wake type and timeout are set by callback via setWakeType()
             context_.startTime = now;
             context_.ctsWaitStartTime = now;
-
-            if (event == PmuEvent::RTC_WAKE_SCHEDULED) {
-                context_.type = WakeType::SCHEDULED;
-                // Timeout = duration (seconds) * 1000 + grace period
-                context_.timeoutMs = static_cast<uint32_t>(context_.scheduleEntry.duration) * 1000 +
-                                     SCHEDULED_GRACE_PERIOD_MS;
-            } else {
-                context_.type = WakeType::PERIODIC;
-                context_.timeoutMs = PERIODIC_WAKE_TIMEOUT_MS;
-            }
             break;
 
         case PmuState::WAKE_ACTIVE:
@@ -214,10 +211,8 @@ const char *PmuStateMachine::eventName(PmuEvent event)
     switch (event) {
         case PmuEvent::BOOT_COMPLETE:
             return "BOOT_COMPLETE";
-        case PmuEvent::RTC_WAKE_SCHEDULED:
-            return "RTC_WAKE_SCHEDULED";
-        case PmuEvent::RTC_WAKE_PERIODIC:
-            return "RTC_WAKE_PERIODIC";
+        case PmuEvent::RTC_WAKEUP:
+            return "RTC_WAKEUP";
         case PmuEvent::CTS_RECEIVED:
             return "CTS_RECEIVED";
         case PmuEvent::CTS_TIMEOUT:

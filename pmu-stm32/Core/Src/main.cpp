@@ -35,9 +35,6 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-// Debug flag: Define to disable STOP mode so breakpoints work
-// Uncomment this line to debug UART receive issues
-// #define DEBUG_NO_SLEEP
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -67,14 +64,6 @@ constexpr uint32_t FLICKER_ON_MS = 100;
 constexpr uint32_t FLICKER_OFF_MS = 100;
 }  // namespace BootAnimationConfig
 
-// Boot animation runtime state (non-blocking)
-static struct {
-    bool active;
-    uint32_t lastToggleTime;
-    bool ledOn;
-    int flickerCount;
-} bootAnimationState = {false, 0, false, 0};
-
 // Protocol callbacks
 static void uartSendCallback(const uint8_t *data, uint8_t length);
 static void setWakeIntervalCallback(uint32_t seconds);
@@ -99,8 +88,8 @@ static void MX_RTC_Init(void);
 static void configureRTCWakeup(uint32_t seconds);
 static void enterStopMode(void);
 static void wakeupFromStopMode(void);
-static void handleRTCWakeup(void);
-static bool updateBootAnimation(void);
+static void determineWakeType(void);
+static void runBootAnimation(void);
 static void updateLedForState(PmuState state, WakeType wakeType);
 static void onStateChange(PmuState newState);
 static void sendWakeNotification();
@@ -166,16 +155,22 @@ int main(void)
     // Set up state machine callback for LED updates
     pmuState.setStateCallback(onStateChange);
 
-    // Start non-blocking boot animation (green LED flicker)
-    // This runs in the main loop while UART remains responsive
-    bootAnimationState.active = true;
-    bootAnimationState.lastToggleTime = HAL_GetTick();
-    bootAnimationState.ledOn = true;
-    bootAnimationState.flickerCount = 0;
-    led.setColor(LED::GREEN);
-
     // Configure RTC wakeup timer with default wake interval (300 seconds)
     configureRTCWakeup(protocol.getWakeInterval());
+
+    // Boot animation (blocking) - UART interrupt still receives bytes
+    runBootAnimation();
+
+    // Boot complete - transition out of BOOTING state
+    pmuState.dispatch(PmuEvent::BOOT_COMPLETE);
+
+    // Handle CTS that arrived during boot (RP2040 boots alongside STM32)
+    if (protocol.isCtsReceived()) {
+        pmuState.dispatch(PmuEvent::RTC_WAKEUP);
+        // determineWakeType() was called by onStateChange callback
+        pmuState.dispatch(PmuEvent::CTS_RECEIVED);
+        protocol.clearCtsReceived();
+    }
 
     /* USER CODE END 2 */
 
@@ -187,73 +182,50 @@ int main(void)
 
         /* USER CODE BEGIN 3 */
 
-        // Handle non-blocking boot animation (returns true while still animating)
-        if (updateBootAnimation()) {
-            continue;  // Don't enter sleep mode while boot animation is running
-        }
-
-        // Boot animation complete - dispatch BOOT_COMPLETE event
-        if (pmuState.state() == PmuState::BOOTING) {
-            pmuState.dispatch(PmuEvent::BOOT_COMPLETE);
-        }
-
-        // Check if RTC wakeup flag is set and handle it
+        // =====================================================================
+        // Event Processing
+        // =====================================================================
         if (rtcWakeupFlag) {
             rtcWakeupFlag = false;
-            handleRTCWakeup();
+            pmuState.dispatch(PmuEvent::RTC_WAKEUP);
         }
 
-        // Handle CTS reception (only in AWAITING_CTS state)
-        if (pmuState.state() == PmuState::AWAITING_CTS) {
-            if (protocol.isCtsReceived()) {
-                // RP2040 sent CTS - transition to WAKE_ACTIVE and send notification
-                pmuState.dispatch(PmuEvent::CTS_RECEIVED);
-                protocol.clearCtsReceived();
-                sendWakeNotification();
-            }
+        if (protocol.isCtsReceived()) {
+            pmuState.dispatch(PmuEvent::CTS_RECEIVED);
+            protocol.clearCtsReceived();
         }
 
-        // Remember state before tick to detect CTS timeout transition
-        PmuState stateBeforeTick = pmuState.state();
-
-        // Tick state machine (handles CTS timeout and wake timeout)
         pmuState.tick();
 
-        // If we transitioned from AWAITING_CTS to WAKE_ACTIVE via CTS_TIMEOUT,
-        // send the wake notification for backward compatibility
-        if (stateBeforeTick == PmuState::AWAITING_CTS &&
-            pmuState.state() == PmuState::WAKE_ACTIVE) {
-            sendWakeNotification();
-        }
+        // =====================================================================
+        // Output Control (pure - no side effects except outputs)
+        // =====================================================================
+        PmuState state = pmuState.state();
+        updateLedForState(state, pmuState.wakeType());
 
-        // Update LED based on current state and wake type
-        updateLedForState(pmuState.state(), pmuState.wakeType());
+        switch (state) {
+            case PmuState::BOOTING:
+                // Boot animation handled before loop
+                break;
 
-        // DC/DC control based on state
-        if (pmuState.shouldPowerRp2040()) {
-            dcdc.enable();
-        } else {
-            dcdc.disable();
-        }
+            case PmuState::AWAITING_CTS:
+            case PmuState::WAKE_ACTIVE:
+                dcdc.enable();
+                break;
 
-        // Enter STOP mode when in SLEEPING state
-        if (pmuState.state() == PmuState::SLEEPING) {
-#ifndef DEBUG_NO_SLEEP
-            // Brief green pulse before sleep
-            led.setColor(LED::GREEN);
-            HAL_Delay(100);
-            led.off();
+            case PmuState::SLEEPING:
+                dcdc.disable();
+                led.setColor(LED::GREEN);
+                HAL_Delay(100);
+                led.off();
+                enterStopMode();
+                wakeupFromStopMode();
+                break;
 
-            // Enter low power STOP mode
-            // Will wake up on RTC interrupt or LPUART data
-            enterStopMode();
-
-            // We're back! RTC or LPUART woke us up
-            wakeupFromStopMode();
-#else
-            // Debug mode: just wait instead of sleeping
-            HAL_Delay(100);
-#endif
+            case PmuState::ERROR:
+            default:
+                dcdc.disable();
+                break;
         }
     }
     /* USER CODE END 3 */
@@ -416,39 +388,17 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 
 /**
- * @brief Update non-blocking boot animation
- * @return true if animation is still running, false when complete
+ * @brief Run boot animation (blocking)
+ * Green LED flickers to indicate successful boot
  */
-static bool updateBootAnimation(void)
+static void runBootAnimation(void)
 {
-    if (!bootAnimationState.active) {
-        return false;
-    }
-
-    uint32_t now = HAL_GetTick();
-    uint32_t elapsed = now - bootAnimationState.lastToggleTime;
-
-    if (bootAnimationState.ledOn && elapsed >= BootAnimationConfig::FLICKER_ON_MS) {
-        // Turn off
+    for (int i = 0; i < BootAnimationConfig::TOTAL_FLICKERS; i++) {
+        led.setColor(LED::GREEN);
+        HAL_Delay(BootAnimationConfig::FLICKER_ON_MS);
         led.off();
-        bootAnimationState.ledOn = false;
-        bootAnimationState.lastToggleTime = now;
-    } else if (!bootAnimationState.ledOn && elapsed >= BootAnimationConfig::FLICKER_OFF_MS) {
-        // Turn on or finish
-        bootAnimationState.flickerCount++;
-        if (bootAnimationState.flickerCount >= BootAnimationConfig::TOTAL_FLICKERS) {
-            // Animation complete
-            bootAnimationState.active = false;
-            led.off();
-            return false;
-        } else {
-            led.setColor(LED::GREEN);
-            bootAnimationState.ledOn = true;
-            bootAnimationState.lastToggleTime = now;
-        }
+        HAL_Delay(BootAnimationConfig::FLICKER_OFF_MS);
     }
-
-    return true;
 }
 
 /**
@@ -550,11 +500,19 @@ static void wakeupFromStopMode(void)
 }
 
 /**
- * @brief Handle RTC wakeup event (called from main loop, not interrupt)
- * This does the actual work when RTC wakes up
+ * @brief Determine wake type from RTC time and schedule
+ * Called by onStateChange callback when entering AWAITING_CTS state.
+ * Sets wake type in state machine and applies appropriate boot delay.
  */
-static void handleRTCWakeup(void)
+static void determineWakeType(void)
 {
+    // Clear dedup buffer for new boot cycle - HAL tick was suspended during STOP mode
+    // so old sequence numbers may still appear "recent"
+    protocol.clearDedupBuffer();
+
+    // Reset CTS flag for this wake cycle
+    protocol.clearCtsReceived();
+
     // Get current RTC time and date
     RTC_TimeTypeDef time;
     RTC_DateTypeDef date;
@@ -569,33 +527,17 @@ static void handleRTCWakeup(void)
     // This handles the case where RTC doesn't wake exactly at the scheduled time
     uint32_t wakeIntervalMinutes = protocol.getWakeInterval() / 60;
 
-    // Clear dedup buffer for new boot cycle - HAL tick was suspended during STOP mode
-    // so old sequence numbers may still appear "recent"
-    protocol.clearDedupBuffer();
-
-    // Reset CTS flag for this wake cycle
-    protocol.clearCtsReceived();
-
     if (entry &&
         entry->isWithinWindow(date.WeekDay, time.Hours, time.Minutes, wakeIntervalMinutes)) {
-        // This is a scheduled watering event (or we're within the wake window of one)
-        // Dispatch scheduled wake event with schedule entry data
-        pmuState.dispatchScheduledWake(*entry);
-
-        // Small delay to allow RP2040 to power up and boot
-        HAL_Delay(100);
-
-        // Note: Wake notification will be sent when CTS is received (handled in main loop)
+        // This is a scheduled watering event
+        pmuState.setWakeType(WakeType::SCHEDULED, entry);
     } else {
         // Normal periodic wake
-        // Dispatch periodic wake event
-        pmuState.dispatch(PmuEvent::RTC_WAKE_PERIODIC);
-
-        // Minimal delay for UART hardware init only (50ms)
-        HAL_Delay(50);
-
-        // Note: Wake notification will be sent when CTS is received (handled in main loop)
+        pmuState.setWakeType(WakeType::PERIODIC, nullptr);
     }
+
+    // Small delay for RP2040 boot (scheduled needs more time)
+    HAL_Delay(pmuState.wakeType() == WakeType::SCHEDULED ? 100 : 50);
 }
 
 /**
@@ -736,19 +678,10 @@ static void updateLedForState(PmuState state, WakeType wakeType)
         }
 
         case PmuState::ERROR:
-            // Solid red for error
             led.setColor(LED::RED);
             break;
 
-        case PmuState::BOOTING:
-            // Boot animation handled separately
-            break;
-
         case PmuState::SLEEPING:
-            // LED off when sleeping (brief pulse handled before entering STOP)
-            led.off();
-            break;
-
         default:
             led.off();
             break;
@@ -761,11 +694,17 @@ static void updateLedForState(PmuState state, WakeType wakeType)
  */
 static void onStateChange(PmuState newState)
 {
-    // Reset LED blink timing on state change
-    // (actual LED update happens in updateLedForState)
+    // Determine wake type when entering AWAITING_CTS
+    // This checks RTC time and schedule to set the correct wake type
+    if (newState == PmuState::AWAITING_CTS) {
+        determineWakeType();
+    }
 
-    // Could add logging here if needed
-    (void)newState;
+    // Send wake notification when entering WAKE_ACTIVE
+    // This centralizes the notification logic - no need to call it explicitly
+    if (newState == PmuState::WAKE_ACTIVE) {
+        sendWakeNotification();
+    }
 }
 
 /* USER CODE END 4 */
