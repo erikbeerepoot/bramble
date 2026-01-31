@@ -28,7 +28,8 @@ class Logger {
 private:
     const char *module_name_;
     static LogLevel global_level_;
-    static bool check_usb_;  // Enable USB checking for power savings
+    static bool check_usb_;      // Enable USB checking for power savings
+    static uint64_t rtc_sync_us_;  // System time (us) when RTC was last synced
 
     /**
      * @brief Unified logging implementation
@@ -46,9 +47,14 @@ private:
             // Print timestamp prefix
             datetime_t dt;
             if (rtc_running() && rtc_get_datetime(&dt)) {
-                // RTC is running - use datetime format
-                printf("[%04d-%02d-%02d %02d:%02d:%02d] ", dt.year, dt.month, dt.day, dt.hour,
-                       dt.min, dt.sec);
+                // RTC is running - use datetime format with subsecond precision
+                uint32_t ms_in_second = 0;
+                if (rtc_sync_us_ > 0) {
+                    uint64_t elapsed_us = to_us_since_boot(get_absolute_time()) - rtc_sync_us_;
+                    ms_in_second = (elapsed_us / 1000) % 1000;
+                }
+                printf("[%04d-%02d-%02d %02d:%02d:%02d.%03lu] ", dt.year, dt.month, dt.day,
+                       dt.hour, dt.min, dt.sec, ms_in_second);
             } else {
                 // RTC not running - use milliseconds since boot
                 uint32_t ms = to_ms_since_boot(get_absolute_time());
@@ -127,4 +133,12 @@ public:
      * @param enable If true, only log when USB is connected
      */
     static void checkForUsbConnection(bool enable) { check_usb_ = enable; }
+
+    /**
+     * @brief Call immediately after rtc_set_datetime() to sync subsecond precision
+     *
+     * This records the system timer value at the moment the RTC is set,
+     * allowing accurate millisecond calculation within each RTC second.
+     */
+    static void onRtcSynced() { rtc_sync_us_ = to_us_since_boot(get_absolute_time()); }
 };

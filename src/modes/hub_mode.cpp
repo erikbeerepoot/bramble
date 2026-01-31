@@ -508,6 +508,7 @@ void HubMode::handleDateTimeResponse(const char *args)
     dt.sec = second;
 
     if (rtc_set_datetime(&dt)) {
+        Logger::onRtcSynced();
         logger.info("RTC set to: %04d-%02d-%02d %02d:%02d:%02d (dow=%d)", year, month, day, hour,
                     minute, second, weekday);
     } else {
