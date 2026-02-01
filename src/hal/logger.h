@@ -140,5 +140,5 @@ public:
      * This records the system timer value at the moment the RTC is set,
      * allowing accurate millisecond calculation within each RTC second.
      */
-    static void onRtcSynced() { rtc_sync_us_ = to_us_since_boot(get_absolute_time()); }
+    static void syncSubsecondCounter() { rtc_sync_us_ = to_us_since_boot(get_absolute_time()); }
 };

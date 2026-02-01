@@ -92,7 +92,7 @@ void IrrigationMode::onStart()
 
                 if (rtc_set_datetime(&dt)) {
                     sleep_us(64);
-                    Logger::onRtcSynced();
+                    Logger::syncSubsecondCounter();
                     updateStateMachine();
                     logger.info("RTC synced from PMU: %04d-%02d-%02d %02d:%02d:%02d", dt.year,
                                 dt.month, dt.day, dt.hour, dt.min, dt.sec);

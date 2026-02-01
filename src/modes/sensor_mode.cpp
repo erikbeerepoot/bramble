@@ -185,6 +185,14 @@ void SensorMode::onStateChange(SensorState state)
                 sendHeartbeat(to_ms_since_boot(get_absolute_time()));
             }
 
+            // Now that we a valid time, sync the subsecond timer
+            task_queue_.postOnce(
+                [](void *ctx, uint32_t) -> bool {
+                    (void)time;
+                    Logger::syncSubsecondCounter();
+                }
+            )
+
             // Try to initialize sensor
             task_queue_.postOnce(
                 [](void *ctx, uint32_t time) -> bool {
@@ -1057,8 +1065,7 @@ void SensorMode::requestTimeSync()
                 dt.sec = datetime.second;
 
                 if (rtc_set_datetime(&dt)) {
-                    sleep_us(64);  // Wait for RTC to propagate
-                    Logger::onRtcSynced();
+                    sleep_us(64);  // Wait for RTC to propagate                    
                     Logger("SensorSM")
                         .info("RTC set from PMU: %04d-%02d-%02d %02d:%02d:%02d", dt.year, dt.month,
                               dt.day, dt.hour, dt.min, dt.sec);
