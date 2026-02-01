@@ -185,14 +185,6 @@ void SensorMode::onStateChange(SensorState state)
                 sendHeartbeat(to_ms_since_boot(get_absolute_time()));
             }
 
-            // Now that we a valid time, sync the subsecond timer
-            task_queue_.postOnce(
-                [](void *ctx, uint32_t) -> bool {
-                    (void)time;
-                    Logger::syncSubsecondCounter();
-                }
-            )
-
             // Try to initialize sensor
             task_queue_.postOnce(
                 [](void *ctx, uint32_t time) -> bool {
@@ -1064,8 +1056,15 @@ void SensorMode::requestTimeSync()
                 dt.min = datetime.minute;
                 dt.sec = datetime.second;
 
-                if (rtc_set_datetime(&dt)) {
-                    sleep_us(64);  // Wait for RTC to propagate                    
+                if (rtc_set_datetime(&dt)) {                    
+                    // The RTC on the RP2040 runs on a separate clock domain 
+                    // (typically derived from a 32kHz source). When you call 
+                    //rtc_set_datetime(), the write to the RTC registers needs 
+                    // to cross clock domains and propagate. Sync our subsecond 
+                    // counter for logging purposes here to align the start of a second
+                    sleep_us(64);  
+                    Logger::syncSubsecondCounter();
+
                     Logger("SensorSM")
                         .info("RTC set from PMU: %04d-%02d-%02d %02d:%02d:%02d", dt.year, dt.month,
                               dt.day, dt.hour, dt.min, dt.sec);
