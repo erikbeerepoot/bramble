@@ -703,6 +703,9 @@ static void onStateChange(PmuState newState)
     // Send wake notification when entering WAKE_ACTIVE
     // This centralizes the notification logic - no need to call it explicitly
     if (newState == PmuState::WAKE_ACTIVE) {
+        // If we came directly from SLEEPING (CTS woke us), determine wake type first
+        // This is safe to call even if already called in AWAITING_CTS
+        determineWakeType();
         sendWakeNotification();
     }
 }
