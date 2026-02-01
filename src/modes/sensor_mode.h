@@ -43,7 +43,7 @@ private:
 
     // CTS/WakeNotification timeout tracking
     uint32_t cts_sent_time_ = 0;
-    static constexpr uint32_t WAKE_NOTIFICATION_TIMEOUT_MS = 1000;  
+    static constexpr uint32_t WAKE_NOTIFICATION_TIMEOUT_MS = 1000;
 
     // Listen window tracking - receive window before sleep for hub responses
     uint32_t listen_window_start_time_ = 0;
@@ -54,10 +54,10 @@ private:
     static constexpr uint PIN_I2C_SCL = 27;  // GPIO27 (A1)
 
     // Timing configuration
-    static constexpr uint32_t SENSOR_READ_INTERVAL_MS = 30000; 
-    static constexpr uint32_t HEARTBEAT_INTERVAL_MS = 60000;   
-    static constexpr uint32_t BACKLOG_TX_INTERVAL_MS = 120000; 
-    static constexpr uint32_t TRANSMIT_INTERVAL_S = 600;       
+    static constexpr uint32_t SENSOR_READ_INTERVAL_MS = 30000;
+    static constexpr uint32_t HEARTBEAT_INTERVAL_MS = 60000;
+    static constexpr uint32_t BACKLOG_TX_INTERVAL_MS = 120000;
+    static constexpr uint32_t TRANSMIT_INTERVAL_S = 600;
 
     /**
      * @brief Read sensor and store data to flash (no immediate TX)

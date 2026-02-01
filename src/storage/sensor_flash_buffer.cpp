@@ -666,9 +666,8 @@ bool SensorFlashBuffer::scanForWriteIndex()
         // Check if the record at read_index is actually valid
         uint32_t read_address = getRecordAddress(metadata_.read_index);
         SensorDataRecord read_record;
-        ExternalFlashResult result =
-            flash_.read(read_address, reinterpret_cast<uint8_t *>(&read_record),
-                        sizeof(read_record));
+        ExternalFlashResult result = flash_.read(
+            read_address, reinterpret_cast<uint8_t *>(&read_record), sizeof(read_record));
 
         if (result == ExternalFlashResult::Success) {
             uint16_t read_crc = CRC16::calculateRecordCRC(read_record);
@@ -687,7 +686,8 @@ bool SensorFlashBuffer::scanForWriteIndex()
     }
 
     if (!read_index_valid) {
-        logger_.warn("Resetting read_index to write_index=%lu (stale metadata)", metadata_.write_index);
+        logger_.warn("Resetting read_index to write_index=%lu (stale metadata)",
+                     metadata_.write_index);
         metadata_.read_index = metadata_.write_index;
     }
 
