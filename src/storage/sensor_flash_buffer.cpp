@@ -652,15 +652,43 @@ bool SensorFlashBuffer::scanForWriteIndex()
 
     // Preserve read_index from flash metadata (loaded in init())
     // This prevents re-transmitting already-ACKed records after cold start.
-    // Validate that read_index is still valid (not past write_index).
-    uint32_t untransmitted = getUntransmittedCount();
-    if (untransmitted > MAX_RECORDS) {
-        // read_index is invalid (wrapped past write_index) - reset to write_index
-        logger_.warn("read_index invalid (untransmitted=%lu), resetting to write_index",
-                     untransmitted);
-        metadata_.read_index = metadata_.write_index;
+    // Validate that read_index is still valid by checking:
+    // 1. If read_index == write_index, buffer is empty (valid)
+    // 2. If read_index != write_index, the record at read_index must be valid
+    bool read_index_valid = false;
+
+    if (metadata_.read_index == metadata_.write_index) {
+        // Buffer appears empty from read perspective - valid state
+        read_index_valid = true;
+        logger_.info("read_index equals write_index (%lu) - no pending records",
+                     metadata_.read_index);
     } else {
-        logger_.info("Preserved read_index=%lu from flash metadata", metadata_.read_index);
+        // Check if the record at read_index is actually valid
+        uint32_t read_address = getRecordAddress(metadata_.read_index);
+        SensorDataRecord read_record;
+        ExternalFlashResult result = flash_.read(
+            read_address, reinterpret_cast<uint8_t *>(&read_record), sizeof(read_record));
+
+        if (result == ExternalFlashResult::Success) {
+            uint16_t read_crc = CRC16::calculateRecordCRC(read_record);
+            if (read_crc == read_record.crc16 && (read_record.flags & RECORD_FLAG_VALID)) {
+                read_index_valid = true;
+                logger_.info("Preserved read_index=%lu from flash metadata (record valid)",
+                             metadata_.read_index);
+            } else {
+                logger_.warn("Record at read_index=%lu is invalid (CRC: expected 0x%04X, got "
+                             "0x%04X, flags=0x%02X)",
+                             metadata_.read_index, read_record.crc16, read_crc, read_record.flags);
+            }
+        } else {
+            logger_.warn("Failed to read record at read_index=%lu", metadata_.read_index);
+        }
+    }
+
+    if (!read_index_valid) {
+        logger_.warn("Resetting read_index to write_index=%lu (stale metadata)",
+                     metadata_.write_index);
+        metadata_.read_index = metadata_.write_index;
     }
 
     logger_.info("Scan complete: write_index=%lu, read_index=%lu, untransmitted=%lu",
