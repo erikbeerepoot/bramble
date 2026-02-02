@@ -654,7 +654,8 @@ bool SensorFlashBuffer::scanForWriteIndex()
     // This prevents re-transmitting already-ACKed records after cold start.
     // Validate that read_index is still valid by checking:
     // 1. If read_index == write_index, buffer is empty (valid)
-    // 2. If read_index != write_index, the record at read_index must be valid
+    // 2. If read_index < write_index, normal case - verify record at read_index is valid
+    // 3. If read_index > write_index, buffer claims to have wrapped - verify this is true
     bool read_index_valid = false;
 
     if (metadata_.read_index == metadata_.write_index) {
@@ -662,8 +663,39 @@ bool SensorFlashBuffer::scanForWriteIndex()
         read_index_valid = true;
         logger_.info("read_index equals write_index (%lu) - no pending records",
                      metadata_.read_index);
+    } else if (metadata_.read_index > metadata_.write_index) {
+        // read_index > write_index implies buffer wrapped. Verify by checking if
+        // the location at write_index is erased (if erased, we haven't wrapped yet)
+        uint32_t write_address = getRecordAddress(metadata_.write_index);
+        if (isLocationErased(write_address, sizeof(SensorDataRecord))) {
+            // Location at write_index is erased - buffer hasn't wrapped, read_index is stale
+            logger_.warn("read_index=%lu > write_index=%lu but buffer hasn't wrapped (write "
+                         "location erased)",
+                         metadata_.read_index, metadata_.write_index);
+            read_index_valid = false;
+        } else {
+            // Buffer has wrapped - verify record at read_index is valid
+            uint32_t read_address = getRecordAddress(metadata_.read_index);
+            SensorDataRecord read_record;
+            ExternalFlashResult result = flash_.read(
+                read_address, reinterpret_cast<uint8_t *>(&read_record), sizeof(read_record));
+
+            if (result == ExternalFlashResult::Success) {
+                uint16_t read_crc = CRC16::calculateRecordCRC(read_record);
+                if (read_crc == read_record.crc16 && (read_record.flags & RECORD_FLAG_VALID)) {
+                    read_index_valid = true;
+                    logger_.info("Preserved read_index=%lu (buffer wrapped, record valid)",
+                                 metadata_.read_index);
+                } else {
+                    logger_.warn("Record at read_index=%lu is invalid (wrapped buffer)",
+                                 metadata_.read_index);
+                }
+            } else {
+                logger_.warn("Failed to read record at read_index=%lu", metadata_.read_index);
+            }
+        }
     } else {
-        // Check if the record at read_index is actually valid
+        // Normal case: read_index < write_index - verify record at read_index is valid
         uint32_t read_address = getRecordAddress(metadata_.read_index);
         SensorDataRecord read_record;
         ExternalFlashResult result = flash_.read(
