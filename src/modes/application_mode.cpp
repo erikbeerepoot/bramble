@@ -124,8 +124,9 @@ void ApplicationMode::onHeartbeatResponse(const HeartbeatResponsePayload *payloa
 
     // Set RP2040 RTC
     if (rtc_set_datetime(&dt)) {
-        // Wait for RTC to propagate, then update state machine
+        // Wait for RTC to propagate, sync logger timestamp, then update state machine
         sleep_us(64);
+        Logger::syncSubsecondCounter();
         updateStateMachine();
         logger.info("RTC synchronized: %04d-%02d-%02d %02d:%02d:%02d (dow=%d)", dt.year, dt.month,
                     dt.day, dt.hour, dt.min, dt.sec, dt.dotw);

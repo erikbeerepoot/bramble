@@ -23,6 +23,9 @@ PmuState PmuStateMachine::reduce(PmuState state, PmuEvent event)
             switch (event) {
                 case PmuEvent::RTC_WAKEUP:
                     return PmuState::AWAITING_CTS;
+                case PmuEvent::CTS_RECEIVED:
+                    // CTS can wake us from sleep (UART interrupt) - go directly to WAKE_ACTIVE
+                    return PmuState::WAKE_ACTIVE;
                 case PmuEvent::ERROR_OCCURRED:
                     return PmuState::ERROR;
                 default:

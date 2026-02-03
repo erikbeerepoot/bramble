@@ -1057,7 +1057,14 @@ void SensorMode::requestTimeSync()
                 dt.sec = datetime.second;
 
                 if (rtc_set_datetime(&dt)) {
-                    sleep_us(64);  // Wait for RTC to propagate
+                    // The RTC on the RP2040 runs on a separate clock domain
+                    // (typically derived from a 32kHz source). When you call
+                    // rtc_set_datetime(), the write to the RTC registers needs
+                    // to cross clock domains and propagate. Sync our subsecond
+                    // counter for logging purposes here to align the start of a second
+                    sleep_us(64);
+                    Logger::syncSubsecondCounter();
+
                     Logger("SensorSM")
                         .info("RTC set from PMU: %04d-%02d-%02d %02d:%02d:%02d", dt.year, dt.month,
                               dt.day, dt.hour, dt.min, dt.sec);
