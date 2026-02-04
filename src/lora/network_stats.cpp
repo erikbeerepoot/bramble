@@ -259,7 +259,7 @@ NodeStatistics &NetworkStats::getOrCreateNodeStats(uint16_t address)
 }
 
 void NetworkStats::updateLinkQuality(NodeStatistics &stats, int16_t rssi, int8_t snr,
-                                      uint32_t current_time)
+                                     uint32_t current_time)
 {
     LinkQuality new_quality = stats.calculateLinkQuality(rssi, snr);
 
