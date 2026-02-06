@@ -170,6 +170,11 @@ int main()
         // Hub uses address 0x0000
         ReliableMessenger messenger(&lora, ADDRESS_HUB, &network_stats);
         AddressManager address_manager;
+        if (address_manager.load(flash)) {
+            log.info("Loaded %zu registered nodes from flash", address_manager.getRegisteredNodeCount());
+        } else {
+            log.info("No saved registry found - starting fresh");
+        }
         HubRouter hub_router(address_manager, messenger);
 
 // Create appropriate hub mode
@@ -239,18 +244,23 @@ int main()
                 }
             });
 
-        // Skip registration if we have a saved address
-        // IrrigationMode will handle deferred registration based on PMU wake reason
-        if (current_address == ADDRESS_UNREGISTERED) {
-            log.info("Registering node with hub...");
-            if (attemptRegistration(messenger, lora, config_manager, device_id)) {
-                log.info("Registration successful!");
-            } else {
-                log.warn("Registration failed - will retry after PMU init");
+        // Always register on boot - hub returns correct address for our device_id
+        // This ensures address conflicts are detected and resolved
+        log.info("Registering node with hub...");
+        if (attemptRegistration(messenger, lora, config_manager, device_id)) {
+            uint16_t assigned = messenger.getNodeAddress();
+            if (assigned != current_address && current_address != ADDRESS_UNREGISTERED) {
+                log.info("Address changed: 0x%04X -> 0x%04X", current_address, assigned);
             }
+            current_address = assigned;
+            log.info("Registration successful - using address 0x%04X", current_address);
         } else {
-            log.info("Using saved address 0x%04X - skipping boot registration", current_address);
-            log.debug("(Will re-register if PMU reports External wake)");
+            if (current_address != ADDRESS_UNREGISTERED) {
+                log.warn("Registration failed - using saved address 0x%04X", current_address);
+                messenger.setNodeAddress(current_address);
+            } else {
+                log.error("Registration failed and no saved address!");
+            }
         }
 
 // Create appropriate node mode
