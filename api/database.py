@@ -188,6 +188,7 @@ class SensorDatabase:
         address INTEGER NOT NULL,
         error_flags INTEGER NOT NULL,
         battery_level INTEGER,
+        signal_strength INTEGER,
         uptime_seconds INTEGER,
         pending_records INTEGER,
         timestamp INTEGER NOT NULL
@@ -279,6 +280,12 @@ class SensorDatabase:
             try:
                 conn.execute("ALTER TABLE node_metadata ADD COLUMN zone_id INTEGER")
                 logger.info("Added zone_id column to node_metadata table")
+            except duckdb.Error:
+                pass  # Column already exists
+            # Migration: add signal_strength column to node_status_history if it doesn't exist
+            try:
+                conn.execute("ALTER TABLE node_status_history ADD COLUMN signal_strength INTEGER")
+                logger.info("Added signal_strength column to node_status_history table")
             except duckdb.Error:
                 pass  # Column already exists
             logger.info(f"Database initialized at {self.db_path}")
@@ -1095,7 +1102,7 @@ class SensorDatabase:
             # Record history if error_flags changed (or first status report)
             if error_flags is not None and error_flags != previous_error_flags:
                 self._record_status_history(
-                    conn, address, error_flags, battery_level, uptime_seconds, pending_records, updated_at
+                    conn, address, error_flags, battery_level, signal_strength, uptime_seconds, pending_records, updated_at
                 )
 
         return self.get_node_status(address)
@@ -1106,6 +1113,7 @@ class SensorDatabase:
         address: int,
         error_flags: int,
         battery_level: Optional[int],
+        signal_strength: Optional[int],
         uptime_seconds: Optional[int],
         pending_records: Optional[int],
         timestamp: int
@@ -1117,9 +1125,9 @@ class SensorDatabase:
 
         conn.execute("""
             INSERT INTO node_status_history
-            (id, address, error_flags, battery_level, uptime_seconds, pending_records, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (next_id, address, error_flags, battery_level, uptime_seconds, pending_records, timestamp))
+            (id, address, error_flags, battery_level, signal_strength, uptime_seconds, pending_records, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (next_id, address, error_flags, battery_level, signal_strength, uptime_seconds, pending_records, timestamp))
 
     def get_node_status(self, address: int) -> Optional[dict]:
         """Get status for a node.
@@ -1196,12 +1204,12 @@ class SensorDatabase:
             end_time: End timestamp (inclusive)
 
         Returns:
-            List of dicts with error_flags, battery_level, uptime_seconds,
-            pending_records, and timestamp
+            List of dicts with error_flags, battery_level, signal_strength,
+            uptime_seconds, pending_records, and timestamp
         """
         with self._get_connection() as conn:
             result = conn.execute("""
-                SELECT error_flags, battery_level, uptime_seconds, pending_records, timestamp
+                SELECT error_flags, battery_level, signal_strength, uptime_seconds, pending_records, timestamp
                 FROM node_status_history
                 WHERE address = ? AND timestamp BETWEEN ? AND ?
                 ORDER BY timestamp ASC
@@ -1211,9 +1219,10 @@ class SensorDatabase:
                 {
                     'error_flags': row[0],
                     'battery_level': row[1],
-                    'uptime_seconds': row[2],
-                    'pending_records': row[3],
-                    'timestamp': row[4]
+                    'signal_strength': row[2],
+                    'uptime_seconds': row[3],
+                    'pending_records': row[4],
+                    'timestamp': row[5]
                 }
                 for row in result.fetchall()
             ]
