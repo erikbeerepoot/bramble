@@ -171,7 +171,8 @@ int main()
         ReliableMessenger messenger(&lora, ADDRESS_HUB, &network_stats);
         AddressManager address_manager;
         if (address_manager.load(flash)) {
-            log.info("Loaded %zu registered nodes from flash", address_manager.getRegisteredNodeCount());
+            log.info("Loaded %zu registered nodes from flash",
+                     address_manager.getRegisteredNodeCount());
         } else {
             log.info("No saved registry found - starting fresh");
         }
