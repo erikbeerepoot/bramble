@@ -36,6 +36,7 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
   const [timeBounds, setTimeBounds] = useState<{ start: number; end: number } | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [dangerZoneExpanded, setDangerZoneExpanded] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const fetchData = useCallback(async () => {
@@ -175,23 +176,83 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-1 space-y-4">
+          {/* 1. Statistics */}
+          {loadingStatistics ? (
+            <div className="card animate-pulse">
+              <div className="h-5 w-24 bg-gray-200 rounded mb-4" />
+              <div className="space-y-3">
+                <div>
+                  <div className="h-3 w-24 bg-gray-200 rounded mb-1" />
+                  <div className="h-6 w-16 bg-gray-200 rounded" />
+                </div>
+                <div className="border-t pt-3">
+                  <div className="h-3 w-20 bg-gray-200 rounded mb-2" />
+                  <div className="grid grid-cols-3 gap-2">
+                    <div><div className="h-3 w-8 bg-gray-200 rounded mb-1" /><div className="h-4 w-12 bg-gray-200 rounded" /></div>
+                    <div><div className="h-3 w-8 bg-gray-200 rounded mb-1" /><div className="h-4 w-12 bg-gray-200 rounded" /></div>
+                    <div><div className="h-3 w-8 bg-gray-200 rounded mb-1" /><div className="h-4 w-12 bg-gray-200 rounded" /></div>
+                  </div>
+                </div>
+                <div className="border-t pt-3">
+                  <div className="h-3 w-16 bg-gray-200 rounded mb-2" />
+                  <div className="grid grid-cols-3 gap-2">
+                    <div><div className="h-3 w-8 bg-gray-200 rounded mb-1" /><div className="h-4 w-12 bg-gray-200 rounded" /></div>
+                    <div><div className="h-3 w-8 bg-gray-200 rounded mb-1" /><div className="h-4 w-12 bg-gray-200 rounded" /></div>
+                    <div><div className="h-3 w-8 bg-gray-200 rounded mb-1" /><div className="h-4 w-12 bg-gray-200 rounded" /></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : statistics && (
+            <div className="card">
+              <h3 className="text-lg font-medium text-gray-900 mb-4">Statistics</h3>
+              <dl className="space-y-3">
+                <div>
+                  <dt className="text-sm text-gray-500">Total Readings</dt>
+                  <dd className="text-xl font-semibold text-gray-900">{statistics.total_readings.toLocaleString()}</dd>
+                </div>
+                <div className="border-t pt-3">
+                  <dt className="text-sm text-gray-500 mb-2">Temperature</dt>
+                  <div className="grid grid-cols-3 gap-2 text-sm">
+                    <div>
+                      <div className="text-gray-400">Min</div>
+                      <div className="font-medium">{statistics.temperature.min_celsius?.toFixed(1) ?? '-'}C</div>
+                    </div>
+                    <div>
+                      <div className="text-gray-400">Avg</div>
+                      <div className="font-medium">{statistics.temperature.avg_celsius?.toFixed(1) ?? '-'}C</div>
+                    </div>
+                    <div>
+                      <div className="text-gray-400">Max</div>
+                      <div className="font-medium">{statistics.temperature.max_celsius?.toFixed(1) ?? '-'}C</div>
+                    </div>
+                  </div>
+                </div>
+                <div className="border-t pt-3">
+                  <dt className="text-sm text-gray-500 mb-2">Humidity</dt>
+                  <div className="grid grid-cols-3 gap-2 text-sm">
+                    <div>
+                      <div className="text-gray-400">Min</div>
+                      <div className="font-medium">{statistics.humidity.min_percent?.toFixed(1) ?? '-'}%</div>
+                    </div>
+                    <div>
+                      <div className="text-gray-400">Avg</div>
+                      <div className="font-medium">{statistics.humidity.avg_percent?.toFixed(1) ?? '-'}%</div>
+                    </div>
+                    <div>
+                      <div className="text-gray-400">Max</div>
+                      <div className="font-medium">{statistics.humidity.max_percent?.toFixed(1) ?? '-'}%</div>
+                    </div>
+                  </div>
+                </div>
+              </dl>
+            </div>
+          )}
+
+          {/* 2. Node Info */}
           <NodeNameEditor node={node} zones={zones} onUpdate={handleMetadataUpdate} onZoneCreated={onZoneCreated} />
 
-          {/* Delete Node */}
-          <div className="card">
-            <h3 className="text-lg font-medium text-gray-900 mb-3">Danger Zone</h3>
-            <p className="text-sm text-gray-500 mb-3">
-              Permanently delete this node and all its sensor data history.
-            </p>
-            <button
-              onClick={() => setShowDeleteConfirm(true)}
-              className="btn bg-red-600 text-white hover:bg-red-700 w-full"
-            >
-              Delete Node
-            </button>
-          </div>
-
-          {/* Node Status Panel - collapsible */}
+          {/* 3. Node Status Panel - collapsible */}
           {node.status && (
             <div className="card">
               <button
@@ -290,77 +351,37 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
             </div>
           )}
 
-          {loadingStatistics ? (
-            <div className="card animate-pulse">
-              <div className="h-5 w-24 bg-gray-200 rounded mb-4" />
-              <div className="space-y-3">
-                <div>
-                  <div className="h-3 w-24 bg-gray-200 rounded mb-1" />
-                  <div className="h-6 w-16 bg-gray-200 rounded" />
-                </div>
-                <div className="border-t pt-3">
-                  <div className="h-3 w-20 bg-gray-200 rounded mb-2" />
-                  <div className="grid grid-cols-3 gap-2">
-                    <div><div className="h-3 w-8 bg-gray-200 rounded mb-1" /><div className="h-4 w-12 bg-gray-200 rounded" /></div>
-                    <div><div className="h-3 w-8 bg-gray-200 rounded mb-1" /><div className="h-4 w-12 bg-gray-200 rounded" /></div>
-                    <div><div className="h-3 w-8 bg-gray-200 rounded mb-1" /><div className="h-4 w-12 bg-gray-200 rounded" /></div>
-                  </div>
-                </div>
-                <div className="border-t pt-3">
-                  <div className="h-3 w-16 bg-gray-200 rounded mb-2" />
-                  <div className="grid grid-cols-3 gap-2">
-                    <div><div className="h-3 w-8 bg-gray-200 rounded mb-1" /><div className="h-4 w-12 bg-gray-200 rounded" /></div>
-                    <div><div className="h-3 w-8 bg-gray-200 rounded mb-1" /><div className="h-4 w-12 bg-gray-200 rounded" /></div>
-                    <div><div className="h-3 w-8 bg-gray-200 rounded mb-1" /><div className="h-4 w-12 bg-gray-200 rounded" /></div>
-                  </div>
-                </div>
+          {/* 4. Danger Zone - collapsible, collapsed by default */}
+          <div className="card">
+            <button
+              onClick={() => setDangerZoneExpanded(!dangerZoneExpanded)}
+              className="w-full flex items-center justify-between"
+            >
+              <h3 className="text-lg font-medium text-gray-900">Danger Zone</h3>
+              <svg
+                className={`w-5 h-5 text-gray-400 transition-transform ${dangerZoneExpanded ? 'rotate-180' : ''}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+
+            {dangerZoneExpanded && (
+              <div className="mt-4">
+                <p className="text-sm text-gray-500 mb-3">
+                  Permanently delete this node and all its sensor data history.
+                </p>
+                <button
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="btn bg-red-600 text-white hover:bg-red-700 w-full"
+                >
+                  Delete Node
+                </button>
               </div>
-            </div>
-          ) : statistics && (
-            <div className="card">
-              <h3 className="text-lg font-medium text-gray-900 mb-4">Statistics</h3>
-              <dl className="space-y-3">
-                <div>
-                  <dt className="text-sm text-gray-500">Total Readings</dt>
-                  <dd className="text-xl font-semibold text-gray-900">{statistics.total_readings.toLocaleString()}</dd>
-                </div>
-                <div className="border-t pt-3">
-                  <dt className="text-sm text-gray-500 mb-2">Temperature</dt>
-                  <div className="grid grid-cols-3 gap-2 text-sm">
-                    <div>
-                      <div className="text-gray-400">Min</div>
-                      <div className="font-medium">{statistics.temperature.min_celsius?.toFixed(1) ?? '-'}C</div>
-                    </div>
-                    <div>
-                      <div className="text-gray-400">Avg</div>
-                      <div className="font-medium">{statistics.temperature.avg_celsius?.toFixed(1) ?? '-'}C</div>
-                    </div>
-                    <div>
-                      <div className="text-gray-400">Max</div>
-                      <div className="font-medium">{statistics.temperature.max_celsius?.toFixed(1) ?? '-'}C</div>
-                    </div>
-                  </div>
-                </div>
-                <div className="border-t pt-3">
-                  <dt className="text-sm text-gray-500 mb-2">Humidity</dt>
-                  <div className="grid grid-cols-3 gap-2 text-sm">
-                    <div>
-                      <div className="text-gray-400">Min</div>
-                      <div className="font-medium">{statistics.humidity.min_percent?.toFixed(1) ?? '-'}%</div>
-                    </div>
-                    <div>
-                      <div className="text-gray-400">Avg</div>
-                      <div className="font-medium">{statistics.humidity.avg_percent?.toFixed(1) ?? '-'}%</div>
-                    </div>
-                    <div>
-                      <div className="text-gray-400">Max</div>
-                      <div className="font-medium">{statistics.humidity.max_percent?.toFixed(1) ?? '-'}%</div>
-                    </div>
-                  </div>
-                </div>
-              </dl>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         <div className="lg:col-span-2 space-y-4">
