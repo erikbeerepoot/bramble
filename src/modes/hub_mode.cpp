@@ -143,36 +143,38 @@ void HubMode::processIncomingMessage(uint8_t *rx_buffer, int rx_len, uint32_t cu
         const MessageHeader *header = reinterpret_cast<const MessageHeader *>(rx_buffer);
 
         // Check if message is from an unregistered node (not a registration request)
-        // and request re-registration if needed
+        // Auto-register if the address is free, otherwise request re-registration
         if (header->src_addr >= ADDRESS_MIN_NODE && header->src_addr <= ADDRESS_MAX_NODE &&
             header->type != MSG_TYPE_REGISTRATION) {
             const NodeInfo *node = address_manager_->getNodeInfo(header->src_addr);
             if (!node) {
-                // Node is not registered - check if we should send reregister request
-                auto it = last_reregister_request_time_.find(header->src_addr);
-                bool should_send = (it == last_reregister_request_time_.end()) ||
-                                   (current_time - it->second >= REREGISTER_REQUEST_INTERVAL_MS);
+                // Node is not registered - try to auto-register at its current address
+                // This handles cases where hub registry was cleared but nodes kept their addresses
+                if (address_manager_->registerNodeAtAddress(header->src_addr)) {
+                    // Successfully auto-registered, persist to flash
+                    Flash flash_hal;
+                    address_manager_->persist(flash_hal);
+                    logger.info("Auto-registered node 0x%04X", header->src_addr);
+                } else {
+                    // Address conflict - another device has this address, request re-registration
+                    auto it = last_reregister_request_time_.find(header->src_addr);
+                    bool should_send = (it == last_reregister_request_time_.end()) ||
+                                       (current_time - it->second >= REREGISTER_REQUEST_INTERVAL_MS);
 
-                if (should_send) {
-                    printf("Unknown node 0x%04X - sending reregister request\n", header->src_addr);
-
-                    // Send REG_RESPONSE with REG_REREGISTER_REQUIRED status
-                    // device_id=0 since we don't know it, assigned_addr=0 to indicate no valid
-                    // address
-                    messenger_.sendRegistrationResponse(
-                        header->src_addr,  // Send to the unknown node
-                        0,                 // device_id unknown
-                        0,                 // No assigned address
-                        REG_REREGISTER_REQUIRED,
-                        30,           // Retry interval in seconds
-                        current_time  // Network time
-                    );
-
-                    last_reregister_request_time_[header->src_addr] = current_time;
+                    if (should_send) {
+                        logger.warn("Address conflict for 0x%04X - sending reregister request",
+                                    header->src_addr);
+                        messenger_.sendRegistrationResponse(
+                            header->src_addr,  // Send to the unknown node
+                            0,                 // device_id unknown
+                            0,                 // No assigned address
+                            REG_REREGISTER_REQUIRED,
+                            30,           // Retry interval in seconds
+                            current_time  // Network time
+                        );
+                        last_reregister_request_time_[header->src_addr] = current_time;
+                    }
                 }
-
-                // Still process the message (sensor data is useful even from unknown nodes)
-                // But don't call updateLastSeen since the node isn't in the registry
             }
         }
 

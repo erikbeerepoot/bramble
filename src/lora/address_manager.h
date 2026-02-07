@@ -85,6 +85,17 @@ public:
     bool unregisterNode(uint16_t address);
 
     /**
+     * @brief Register a node at a specific address (for auto-registration of unknown nodes)
+     *
+     * Used when hub receives messages from an unregistered node that already has an address.
+     * Registers with device_id=0 (unknown) - will be updated on proper registration.
+     *
+     * @param address The address to register at
+     * @return true if registered successfully, false if address already taken
+     */
+    bool registerNodeAtAddress(uint16_t address);
+
+    /**
      * @brief Get list of all active nodes
      * @return Vector of active node addresses
      */

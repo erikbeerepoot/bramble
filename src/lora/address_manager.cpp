@@ -169,6 +169,42 @@ bool AddressManager::unregisterNode(uint16_t address)
     return false;
 }
 
+bool AddressManager::registerNodeAtAddress(uint16_t address)
+{
+    // Validate address range
+    if (address < ADDRESS_MIN_NODE || address > ADDRESS_MAX_NODE) {
+        logger.error("Invalid address 0x%04x for auto-registration", address);
+        return false;
+    }
+
+    // Check if address is already taken
+    if (node_registry_.find(address) != node_registry_.end()) {
+        logger.warn("Address 0x%04x already registered, cannot auto-register", address);
+        return false;
+    }
+
+    // Create node info with unknown device_id
+    // Will be updated when node does proper registration
+    NodeInfo new_node;
+    new_node.device_id = 0;  // Unknown - will be populated on proper registration
+    new_node.assigned_address = address;
+    new_node.node_type = NODE_TYPE_SENSOR;  // Assume sensor, will be updated
+    new_node.capabilities = 0;
+    new_node.firmware_version = 0;
+    strcpy(new_node.device_name, "Unknown");
+    uint32_t current_time = TimeUtils::getCurrentTimeMs();
+    new_node.last_seen_time = current_time;
+    new_node.last_check_time = current_time;
+    new_node.inactive_duration_ms = 0;
+    new_node.is_active = true;
+
+    // Register the node (don't add to device_to_address_ since device_id=0)
+    node_registry_[address] = new_node;
+
+    logger.info("Auto-registered unknown node at address 0x%04x", address);
+    return true;
+}
+
 std::vector<uint16_t> AddressManager::getActiveNodes()
 {
     std::vector<uint16_t> active_nodes;
