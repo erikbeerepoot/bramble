@@ -170,6 +170,12 @@ int main()
         // Hub uses address 0x0000
         ReliableMessenger messenger(&lora, ADDRESS_HUB, &network_stats);
         AddressManager address_manager;
+        if (address_manager.load(flash)) {
+            log.info("Loaded %zu registered nodes from flash",
+                     address_manager.getRegisteredNodeCount());
+        } else {
+            log.info("No saved registry found - starting fresh");
+        }
         HubRouter hub_router(address_manager, messenger);
 
 // Create appropriate hub mode
@@ -192,6 +198,38 @@ int main()
         Flash flash;
         NodeConfigManager config_manager(flash);
 
+#ifdef HARDWARE_SENSOR
+        // Sensor nodes get address from PMU RAM, not flash
+        // SensorMode handles registration on cold start via attemptDeferredRegistration()
+        uint16_t current_address = ADDRESS_UNREGISTERED;
+        log.info("Sensor node - address managed by PMU state");
+
+        // Create messenger with unregistered address - will be set by SensorMode
+        ReliableMessenger messenger(&lora, current_address, &network_stats);
+
+        // Get device ID for re-registration callback
+        uint64_t device_id = getDeviceId();
+        VariantInfo variant = getVariantInfo();
+
+        // Set up re-registration callback (hub doesn't recognize us)
+        messenger.setReregistrationCallback([&messenger, device_id, variant]() {
+            printf("Re-registering with hub...\n");
+            messenger.sendRegistrationRequest(ADDRESS_HUB, device_id, variant.node_type,
+                                              variant.capabilities, BRAMBLE_FIRMWARE_VERSION,
+                                              variant.variant_name);
+        });
+
+        // Set up registration success callback (update messenger address only, not flash)
+        messenger.setRegistrationSuccessCallback([](uint16_t new_address) {
+            printf("Registered with address 0x%04X (stored in PMU RAM)\n", new_address);
+        });
+
+        // No registration attempt here - SensorMode handles it on cold start
+        log.info("Starting SENSOR mode");
+        SensorMode mode(messenger, lora, led, nullptr, nullptr, &network_stats);
+        mode.run();
+#else
+        // Non-sensor nodes: use flash-based address management
         // Start with unregistered address
         uint16_t current_address = ADDRESS_UNREGISTERED;
 
@@ -239,28 +277,29 @@ int main()
                 }
             });
 
-        // Skip registration if we have a saved address
-        // IrrigationMode will handle deferred registration based on PMU wake reason
-        if (current_address == ADDRESS_UNREGISTERED) {
-            log.info("Registering node with hub...");
-            if (attemptRegistration(messenger, lora, config_manager, device_id)) {
-                log.info("Registration successful!");
-            } else {
-                log.warn("Registration failed - will retry after PMU init");
+        // Always register on boot - hub returns correct address for our device_id
+        // This ensures address conflicts are detected and resolved
+        log.info("Registering node with hub...");
+        if (attemptRegistration(messenger, lora, config_manager, device_id)) {
+            uint16_t assigned = messenger.getNodeAddress();
+            if (assigned != current_address && current_address != ADDRESS_UNREGISTERED) {
+                log.info("Address changed: 0x%04X -> 0x%04X", current_address, assigned);
             }
+            current_address = assigned;
+            log.info("Registration successful - using address 0x%04X", current_address);
         } else {
-            log.info("Using saved address 0x%04X - skipping boot registration", current_address);
-            log.debug("(Will re-register if PMU reports External wake)");
+            if (current_address != ADDRESS_UNREGISTERED) {
+                log.warn("Registration failed - using saved address 0x%04X", current_address);
+                messenger.setNodeAddress(current_address);
+            } else {
+                log.error("Registration failed and no saved address!");
+            }
         }
 
 // Create appropriate node mode
 #ifdef HARDWARE_IRRIGATION
         log.info("Starting IRRIGATION mode");
         IrrigationMode mode(messenger, lora, led, nullptr, nullptr, &network_stats, false);
-        mode.run();
-#elif HARDWARE_SENSOR
-        log.info("Starting SENSOR mode");
-        SensorMode mode(messenger, lora, led, nullptr, nullptr, &network_stats);
         mode.run();
 #elif HARDWARE_CONTROLLER
         // Controller hardware running as node (unusual but possible)
@@ -274,6 +313,7 @@ int main()
         ApplicationMode mode(messenger, lora, led, nullptr, nullptr, &network_stats);
         mode.run();
 #endif
+#endif  // HARDWARE_SENSOR
     }
 
     return 0;  // Should never reach here

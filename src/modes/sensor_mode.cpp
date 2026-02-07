@@ -1,8 +1,10 @@
 #include "sensor_mode.h"
 
+#include <cstring>
 #include <ctime>
 
 #include "pico/stdlib.h"
+#include "pico/unique_id.h"
 
 #include "hardware/i2c.h"
 
@@ -12,6 +14,7 @@
 #include "../lora/message.h"
 #include "../lora/network_stats.h"
 #include "../lora/reliable_messenger.h"
+#include "../version.h"
 
 constexpr uint16_t HUB_ADDRESS = ADDRESS_HUB;
 
@@ -34,17 +37,17 @@ static Logger pmu_logger("PMU");
  * from flash scan.
  */
 struct __attribute__((packed)) SensorPersistedState {
-    uint8_t version;       // Format version (for future compatibility)
-    uint8_t next_seq_num;  // LoRa sequence number
-    uint16_t reserved;     // Alignment padding
-    uint32_t read_index;   // Flash buffer read position
-    uint32_t write_index;  // Flash buffer write position
-    uint8_t padding[20];   // Reserved for future use
+    uint8_t version;            // Format version (for future compatibility)
+    uint8_t next_seq_num;       // LoRa sequence number
+    uint16_t assigned_address;  // Node address (survives warm reboot, lost on cold start)
+    uint32_t read_index;        // Flash buffer read position
+    uint32_t write_index;       // Flash buffer write position
+    uint8_t padding[20];        // Reserved for future use
 };
 static_assert(sizeof(SensorPersistedState) == 32, "SensorPersistedState must be 32 bytes");
 
-// Current state format version
-constexpr uint8_t STATE_VERSION = 1;
+// Current state format version - bumped for assigned_address field
+constexpr uint8_t STATE_VERSION = 2;
 
 SensorMode::~SensorMode() = default;
 
@@ -119,7 +122,6 @@ void SensorMode::onStart()
         // containing persisted state (write_index, read_index, etc.)
         // The getDateTime call is deferred to handlePmuWake() to ensure state is restored first.
         pmu_logger.debug("Sending ClearToSend to PMU...");
-        cts_sent_time_ = to_ms_since_boot(get_absolute_time());
         reliable_pmu_->clearToSend([this](bool success, PMU::ErrorCode error) {
             if (!success) {
                 pmu_logger.error("ClearToSend failed: %d", static_cast<int>(error));
@@ -128,6 +130,8 @@ void SensorMode::onStart()
                 sensor_state_.markInitialized();
             } else {
                 pmu_logger.info("ClearToSend ACK received - waiting for WakeNotification");
+                // Start timeout timer AFTER ACK received, not when command queued
+                cts_sent_time_ = to_ms_since_boot(get_absolute_time());
             }
             // On success, handlePmuWake() will call markInitialized()
             // AWAITING_TIME state handler will then call getDateTime
@@ -459,8 +463,9 @@ void SensorMode::sendHeartbeat(uint32_t /* current_time */)
     logger.debug("Sending heartbeat (uptime=%lu s, battery=%u, errors=0x%04X, pending=%u)", uptime,
                  battery_level, error_flags, pending_records);
 
+    // Use RELIABLE delivery - heartbeat is for time sync, we need the response
     messenger_.sendHeartbeat(HUB_ADDRESS, uptime, battery_level, signal_strength, active_sensors,
-                             error_flags, pending_records);
+                             error_flags, pending_records, RELIABLE);
 
     // Heartbeat expects a HEARTBEAT_RESPONSE from the hub
     sensor_state_.expectResponse();
@@ -824,13 +829,15 @@ void SensorMode::signalReadyForSleep()
             memset(&state, 0, sizeof(state));
             state.version = STATE_VERSION;
             state.next_seq_num = self->messenger_.getNextSeqNum();
+            state.assigned_address = self->messenger_.getNodeAddress();
             if (self->flash_buffer_) {
                 state.read_index = self->flash_buffer_->getReadIndex();
                 state.write_index = self->flash_buffer_->getWriteIndex();
             }
 
-            pmu_logger.info("Sending ReadyForSleep with state (seq=%u, read=%lu, write=%lu)",
-                            state.next_seq_num, state.read_index, state.write_index);
+            pmu_logger.info(
+                "Sending ReadyForSleep with state (seq=%u, addr=0x%04X, read=%lu, write=%lu)",
+                state.next_seq_num, state.assigned_address, state.read_index, state.write_index);
 
             self->reliable_pmu_->readyForSleep(
                 reinterpret_cast<const uint8_t *>(&state),
@@ -866,21 +873,32 @@ void SensorMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry 
     }
 
     // Restore state from PMU RAM if valid
-    if (state_valid && state != nullptr && flash_buffer_) {
+    // Note: address and seq_num are restored even if flash is unavailable
+    if (state_valid && state != nullptr) {
         const SensorPersistedState *persisted =
             reinterpret_cast<const SensorPersistedState *>(state);
 
         // Check version compatibility
         if (persisted->version == STATE_VERSION) {
-            // Restore flash buffer indices
-            flash_buffer_->setReadIndex(persisted->read_index);
-            flash_buffer_->setWriteIndex(persisted->write_index);
-
-            // Restore LoRa sequence number
+            // Restore LoRa sequence number (no flash dependency)
             messenger_.setNextSeqNum(persisted->next_seq_num);
 
-            pmu_logger.info("Restored state: read_index=%lu, write_index=%lu, seq=%u",
-                            persisted->read_index, persisted->write_index, persisted->next_seq_num);
+            // Restore assigned address from PMU RAM (no flash dependency)
+            if (persisted->assigned_address != ADDRESS_UNREGISTERED) {
+                messenger_.setNodeAddress(persisted->assigned_address);
+            }
+
+            // Restore flash buffer indices only if flash is available
+            if (flash_buffer_) {
+                flash_buffer_->setReadIndex(persisted->read_index);
+                flash_buffer_->setWriteIndex(persisted->write_index);
+                pmu_logger.info("Restored state: read=%lu, write=%lu, seq=%u, addr=0x%04X",
+                                persisted->read_index, persisted->write_index,
+                                persisted->next_seq_num, persisted->assigned_address);
+            } else {
+                pmu_logger.info("Restored state: seq=%u, addr=0x%04X (flash unavailable)",
+                                persisted->next_seq_num, persisted->assigned_address);
+            }
         } else {
             pmu_logger.warn("State version mismatch (got %u, expected %u) - cold start",
                             persisted->version, STATE_VERSION);
@@ -897,6 +915,14 @@ void SensorMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry 
         } else {
             pmu_logger.error("Flash scan failed - starting fresh");
         }
+    }
+
+    // If we don't have an address, register now
+    // This can happen on:
+    // - Cold start: PMU RAM lost (battery disconnect)
+    // - Warm wake from unregistered state: first boot after flash, never registered yet
+    if (messenger_.getNodeAddress() == ADDRESS_UNREGISTERED) {
+        attemptDeferredRegistration();
     }
 
     // Complete initialization now that state is restored
@@ -1102,5 +1128,27 @@ void SensorMode::requestTimeSync()
         heartbeat_request_time_ = to_ms_since_boot(get_absolute_time());
         sendHeartbeat(0);
         sensor_state_.reportHeartbeatSent();
+    }
+}
+
+void SensorMode::attemptDeferredRegistration()
+{
+    pico_unique_board_id_t board_id;
+    pico_get_unique_board_id(&board_id);
+    uint64_t device_id = 0;
+    memcpy(&device_id, board_id.id, sizeof(device_id));
+
+    pmu_logger.info("Unregistered - sending registration (device_id=0x%016llX)", device_id);
+
+    uint8_t seq = messenger_.sendRegistrationRequest(ADDRESS_HUB, device_id, NODE_TYPE_SENSOR,
+                                                     CAP_TEMPERATURE | CAP_HUMIDITY,
+                                                     BRAMBLE_FIRMWARE_VERSION, "Sensor Node");
+
+    if (seq != 0) {
+        pmu_logger.info("Registration request sent (seq=%d)", seq);
+        // Expect registration response - ensures we enter LISTENING before sleep
+        sensor_state_.expectResponse();
+    } else {
+        pmu_logger.error("Failed to send registration request");
     }
 }
