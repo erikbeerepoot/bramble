@@ -910,9 +910,11 @@ void SensorMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry 
         }
     }
 
-    // On cold start, if we don't have an address, register now
-    // This happens when PMU RAM is lost (battery disconnect) - address is not persisted in flash
-    if (!state_valid && messenger_.getNodeAddress() == ADDRESS_UNREGISTERED) {
+    // If we don't have an address, register now
+    // This can happen on:
+    // - Cold start: PMU RAM lost (battery disconnect)
+    // - Warm wake from unregistered state: first boot after flash, never registered yet
+    if (messenger_.getNodeAddress() == ADDRESS_UNREGISTERED) {
         attemptDeferredRegistration();
     }
 
