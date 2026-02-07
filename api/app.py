@@ -222,6 +222,38 @@ def get_node(address: int):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/nodes/<int:address>', methods=['DELETE'])
+def delete_node(address: int):
+    """Delete a node and all its associated data.
+
+    Removes the node from:
+    - nodes table
+    - node_metadata table
+    - node_status table
+    - node_status_history table
+    - sensor_readings table
+
+    Args:
+        address: Node address
+
+    Returns:
+        JSON success message or 404 if not found
+    """
+    try:
+        db = get_database()
+        deleted = db.delete_node(address)
+
+        if deleted:
+            logger.info(f"Deleted node {address}")
+            return jsonify({'message': f'Node {address} deleted'})
+        else:
+            return jsonify({'error': f'Node {address} not found'}), 404
+
+    except Exception as e:
+        logger.error(f"Error deleting node {address}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/nodes/<int:address>/status', methods=['GET'])
 def get_node_status(address: int):
     """Get status for a specific node.

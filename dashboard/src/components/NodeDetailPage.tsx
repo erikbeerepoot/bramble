@@ -8,7 +8,7 @@ import NodeDetail from './NodeDetail';
 function NodeDetailPage() {
   const { address } = useParams<{ address: string }>();
   const navigate = useNavigate();
-  const { nodes, zones, updateNode, addZone } = useAppContext();
+  const { nodes, zones, updateNode, removeNode, addZone } = useAppContext();
   const [node, setNode] = useState<Node | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -99,6 +99,7 @@ function NodeDetailPage() {
       zones={zones}
       onBack={handleBack}
       onUpdate={handleUpdate}
+      onDelete={removeNode}
       onZoneCreated={addZone}
     />
   );

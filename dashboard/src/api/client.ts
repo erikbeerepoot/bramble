@@ -59,6 +59,12 @@ export async function getNodeMetadata(address: number): Promise<NodeMetadata> {
   return fetchApi<NodeMetadata>(`/api/nodes/${address}/metadata`);
 }
 
+export async function deleteNode(address: number): Promise<void> {
+  await fetchApi<{ message: string }>(`/api/nodes/${address}`, {
+    method: 'DELETE',
+  });
+}
+
 export async function updateNodeMetadata(
   address: number,
   metadata: Partial<Pick<NodeMetadata, 'name' | 'notes'>>

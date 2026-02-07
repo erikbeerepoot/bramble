@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { Node, NodeStatistics, SensorReading, TimeRange, NodeMetadata, CustomTimeRange, Zone } from '../types';
 import { TIME_RANGES, parseErrorFlags, formatUptime, getSignalQuality, getBatteryStatus, getHealthStatus } from '../types';
-import { getNodeSensorData, getNodeStatistics } from '../api/client';
+import { getNodeSensorData, getNodeStatistics, deleteNode } from '../api/client';
 import NodeNameEditor from './NodeNameEditor';
 import SensorChart from './SensorChart';
 import TimeRangeSelector from './TimeRangeSelector';
@@ -15,10 +15,11 @@ interface NodeDetailProps {
   zones: Zone[];
   onBack: () => void;
   onUpdate: (node: Node) => void;
+  onDelete: (address: number) => void;
   onZoneCreated: (zone: Zone) => void;
 }
 
-function NodeDetail({ node, zones, onBack, onUpdate, onZoneCreated }: NodeDetailProps) {
+function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: NodeDetailProps) {
   const [readings, setReadings] = useState<SensorReading[]>([]);
   const [statistics, setStatistics] = useState<NodeStatistics | null>(null);
   const [timeRange, setTimeRange] = useState<TimeRange>('24h');
@@ -33,6 +34,8 @@ function NodeDetail({ node, zones, onBack, onUpdate, onZoneCreated }: NodeDetail
   const [loadingStatistics, setLoadingStatistics] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [timeBounds, setTimeBounds] = useState<{ start: number; end: number } | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const fetchData = useCallback(async () => {
@@ -109,6 +112,20 @@ function NodeDetail({ node, zones, onBack, onUpdate, onZoneCreated }: NodeDetail
     });
   };
 
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await deleteNode(node.address);
+      onDelete(node.address);
+      onBack();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete node');
+      setShowDeleteConfirm(false);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const displayName = node.metadata?.name || `Node ${node.address}`;
   const currentZone = zones.find(z => z.id === node.metadata?.zone_id);
   const healthStatus = useMemo(() => getHealthStatus(node.status?.error_flags ?? null), [node.status?.error_flags]);
@@ -159,6 +176,20 @@ function NodeDetail({ node, zones, onBack, onUpdate, onZoneCreated }: NodeDetail
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-1 space-y-4">
           <NodeNameEditor node={node} zones={zones} onUpdate={handleMetadataUpdate} onZoneCreated={onZoneCreated} />
+
+          {/* Delete Node */}
+          <div className="card">
+            <h3 className="text-lg font-medium text-gray-900 mb-3">Danger Zone</h3>
+            <p className="text-sm text-gray-500 mb-3">
+              Permanently delete this node and all its sensor data history.
+            </p>
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              className="btn bg-red-600 text-white hover:bg-red-700 w-full"
+            >
+              Delete Node
+            </button>
+          </div>
 
           {/* Node Status Panel - collapsible */}
           {node.status && (
@@ -390,6 +421,35 @@ function NodeDetail({ node, zones, onBack, onUpdate, onZoneCreated }: NodeDetail
           </div>
         </div>
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md mx-4 shadow-xl">
+            <h3 className="text-lg font-medium text-gray-900 mb-2">Delete Node?</h3>
+            <p className="text-sm text-gray-500 mb-4">
+              This will permanently delete <strong>{displayName}</strong> and all its sensor data history.
+              This action cannot be undone.
+            </p>
+            <div className="flex space-x-3 justify-end">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={deleting}
+                className="btn btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="btn bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {deleting ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

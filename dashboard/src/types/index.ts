@@ -123,7 +123,6 @@ const RSSI_GOOD = -85;
 const RSSI_FAIR = -100;
 
 const SNR_USE_RSSI_THRESHOLD = 7;  // Above this, RSSI is more meaningful
-const SNR_EXCELLENT = 10;
 const SNR_GOOD = 0;
 const SNR_FAIR = -10;
 
