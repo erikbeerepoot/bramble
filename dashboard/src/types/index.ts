@@ -106,18 +106,54 @@ export function getHealthStatus(flags: number | null): 'healthy' | 'warning' | '
 }
 
 /**
- * Get signal quality label from RSSI
+ * Signal quality thresholds based on LoRa research
+ *
+ * RSSI thresholds (dBm):
+ * - Excellent: > -65 dBm (strong signal)
+ * - Good: > -85 dBm (suitable for most applications)
+ * - Fair: > -100 dBm (may work but less reliable)
+ * - Poor: <= -100 dBm (near receiver sensitivity limit)
+ *
+ * SNR thresholds (dB):
+ * - When SNR >= 7 dB: use RSSI as quality indicator
+ * - When SNR < 7 dB: use SNR as quality indicator (more meaningful near noise floor)
  */
-export function getSignalQuality(rssi: number | null): { label: string; bars: number; color: string } {
+const RSSI_EXCELLENT = -65;
+const RSSI_GOOD = -85;
+const RSSI_FAIR = -100;
+
+const SNR_USE_RSSI_THRESHOLD = 7;  // Above this, RSSI is more meaningful
+const SNR_EXCELLENT = 10;
+const SNR_GOOD = 0;
+const SNR_FAIR = -10;
+
+/**
+ * Get signal quality label from RSSI and optionally SNR
+ *
+ * When SNR is provided and < 7 dB, it's used as the primary quality indicator
+ * since it becomes more meaningful near the noise floor.
+ */
+export function getSignalQuality(
+  rssi: number | null,
+  snr?: number | null
+): { label: string; bars: number; color: string } {
   if (rssi === null) return { label: 'Unknown', bars: 0, color: 'gray' };
 
   // RSSI is typically negative (dBm)
   // Convert to absolute if positive (some systems report absolute)
   const absRssi = rssi > 0 ? -rssi : rssi;
 
-  if (absRssi > -60) return { label: 'Excellent', bars: 4, color: 'green' };
-  if (absRssi > -80) return { label: 'Good', bars: 3, color: 'green' };
-  if (absRssi > -100) return { label: 'Fair', bars: 2, color: 'yellow' };
+  // When SNR is available and low, use it as the quality indicator
+  if (snr !== null && snr !== undefined && snr < SNR_USE_RSSI_THRESHOLD) {
+    if (snr >= SNR_GOOD) return { label: 'Good', bars: 3, color: 'green' };
+    if (snr >= SNR_FAIR) return { label: 'Fair', bars: 2, color: 'yellow' };
+    return { label: 'Poor', bars: 1, color: 'red' };
+  }
+
+  // Use RSSI when SNR is good or unavailable
+  if (absRssi > RSSI_EXCELLENT) return { label: 'Excellent', bars: 4, color: 'green' };
+  if (absRssi > RSSI_GOOD) return { label: 'Good', bars: 3, color: 'green' };
+  if (absRssi > RSSI_FAIR) return { label: 'Fair', bars: 2, color: 'yellow' };
   return { label: 'Poor', bars: 1, color: 'red' };
 }
 
@@ -249,7 +285,7 @@ export function getOverallNodeHealth(node: Node): OverallHealth {
   // Poor signal is a degraded (orange) condition
   if (signal_strength !== null) {
     const absRssi = signal_strength > 0 ? -signal_strength : signal_strength;
-    if (absRssi < -100) return 'orange';
+    if (absRssi <= RSSI_FAIR) return 'orange';
   }
 
   // High backlog is degraded
