@@ -1136,7 +1136,7 @@ void SensorMode::attemptDeferredRegistration()
     uint64_t device_id = 0;
     memcpy(&device_id, board_id.id, sizeof(device_id));
 
-    pmu_logger.info("Cold start - registering (device_id=0x%016llX)", device_id);
+    pmu_logger.info("Unregistered - sending registration (device_id=0x%016llX)", device_id);
 
     uint8_t seq = messenger_.sendRegistrationRequest(
         ADDRESS_HUB, device_id, NODE_TYPE_SENSOR, CAP_TEMPERATURE | CAP_HUMIDITY,
@@ -1144,6 +1144,8 @@ void SensorMode::attemptDeferredRegistration()
 
     if (seq != 0) {
         pmu_logger.info("Registration request sent (seq=%d)", seq);
+        // Expect registration response - ensures we enter LISTENING before sleep
+        sensor_state_.expectResponse();
     } else {
         pmu_logger.error("Failed to send registration request");
     }
