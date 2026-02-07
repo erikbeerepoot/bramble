@@ -536,8 +536,10 @@ void ReliableMessenger::update()
 {
     uint32_t current_time = TimeUtils::getCurrentTimeMs();
 
-    // Process message queue if not currently transmitting
-    if (!is_transmitting_ && !message_queue_.empty()) {
+    // Process message queue if not currently transmitting and no pending ACKs
+    // For half-duplex LoRa, we must wait for ACK before sending the next message
+    // to ensure we're in RX mode when the response arrives
+    if (!is_transmitting_ && pending_messages_.empty() && !message_queue_.empty()) {
         // Get next message from queue
         OutgoingMessage outgoing = std::move(message_queue_.front());
         message_queue_.pop();
