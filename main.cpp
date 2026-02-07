@@ -198,6 +198,38 @@ int main()
         Flash flash;
         NodeConfigManager config_manager(flash);
 
+#ifdef HARDWARE_SENSOR
+        // Sensor nodes get address from PMU RAM, not flash
+        // SensorMode handles registration on cold start via attemptDeferredRegistration()
+        uint16_t current_address = ADDRESS_UNREGISTERED;
+        log.info("Sensor node - address managed by PMU state");
+
+        // Create messenger with unregistered address - will be set by SensorMode
+        ReliableMessenger messenger(&lora, current_address, &network_stats);
+
+        // Get device ID for re-registration callback
+        uint64_t device_id = getDeviceId();
+        VariantInfo variant = getVariantInfo();
+
+        // Set up re-registration callback (hub doesn't recognize us)
+        messenger.setReregistrationCallback([&messenger, device_id, variant]() {
+            printf("Re-registering with hub...\n");
+            messenger.sendRegistrationRequest(ADDRESS_HUB, device_id, variant.node_type,
+                                              variant.capabilities, BRAMBLE_FIRMWARE_VERSION,
+                                              variant.variant_name);
+        });
+
+        // Set up registration success callback (update messenger address only, not flash)
+        messenger.setRegistrationSuccessCallback([](uint16_t new_address) {
+            printf("Registered with address 0x%04X (stored in PMU RAM)\n", new_address);
+        });
+
+        // No registration attempt here - SensorMode handles it on cold start
+        log.info("Starting SENSOR mode");
+        SensorMode mode(messenger, lora, led, nullptr, nullptr, &network_stats);
+        mode.run();
+#else
+        // Non-sensor nodes: use flash-based address management
         // Start with unregistered address
         uint16_t current_address = ADDRESS_UNREGISTERED;
 
@@ -269,10 +301,6 @@ int main()
         log.info("Starting IRRIGATION mode");
         IrrigationMode mode(messenger, lora, led, nullptr, nullptr, &network_stats, false);
         mode.run();
-#elif HARDWARE_SENSOR
-        log.info("Starting SENSOR mode");
-        SensorMode mode(messenger, lora, led, nullptr, nullptr, &network_stats);
-        mode.run();
 #elif HARDWARE_CONTROLLER
         // Controller hardware running as node (unusual but possible)
         log.warn("Controller hardware running as NODE!");
@@ -285,6 +313,7 @@ int main()
         ApplicationMode mode(messenger, lora, led, nullptr, nullptr, &network_stats);
         mode.run();
 #endif
+#endif  // HARDWARE_SENSOR
     }
 
     return 0;  // Should never reach here
