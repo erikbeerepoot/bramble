@@ -227,6 +227,7 @@ def delete_node(address: int):
     """Delete a node and all its associated data.
 
     Removes the node from:
+    - Hub firmware registry (via DELETE_NODE command)
     - nodes table
     - node_metadata table
     - node_status table
@@ -240,12 +241,35 @@ def delete_node(address: int):
         JSON success message or 404 if not found
     """
     try:
-        db = get_database()
-        deleted = db.delete_node(address)
+        # First, tell the hub to delete the node from its registry
+        hub_deleted = False
+        hub_error = None
+        try:
+            serial = get_serial()
+            responses = serial.send_command(f'DELETE_NODE {address}', timeout=2.0)
+            if responses:
+                if responses[0].startswith('DELETED_NODE'):
+                    hub_deleted = True
+                    logger.info(f"Hub deleted node {address} from registry")
+                elif responses[0].startswith('ERROR'):
+                    hub_error = responses[0]
+                    logger.warning(f"Hub error deleting node {address}: {hub_error}")
+        except Exception as e:
+            hub_error = str(e)
+            logger.warning(f"Could not send DELETE_NODE to hub: {e}")
 
-        if deleted:
-            logger.info(f"Deleted node {address}")
-            return jsonify({'message': f'Node {address} deleted'})
+        # Delete from database regardless of hub result
+        # (node may have been manually removed from hub, or hub may be offline)
+        db = get_database()
+        db_deleted = db.delete_node(address)
+
+        if db_deleted or hub_deleted:
+            logger.info(f"Deleted node {address} (hub={hub_deleted}, db={db_deleted})")
+            return jsonify({
+                'message': f'Node {address} deleted',
+                'hub_deleted': hub_deleted,
+                'db_deleted': db_deleted
+            })
         else:
             return jsonify({'error': f'Node {address} not found'}), 404
 
