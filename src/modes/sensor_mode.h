@@ -39,7 +39,7 @@ private:
     // Hub sync timeout tracking - used to proceed with PMU time if hub doesn't respond
     uint32_t heartbeat_request_time_ = 0;
     static constexpr uint32_t HEARTBEAT_TIMEOUT_MS =
-        250;  // Aggressive timeout for low-power operation
+        5000;  // Allow time for RELIABLE retries (3 attempts) + hub response
 
     // CTS/WakeNotification timeout tracking
     uint32_t cts_sent_time_ = 0;
@@ -199,4 +199,11 @@ private:
      * falls back to sending heartbeat to sync from hub.
      */
     void requestTimeSync();
+
+    /**
+     * @brief Attempt deferred registration on cold start
+     * Called when PMU RAM is lost (battery disconnect) and we need to register with the hub.
+     * Sensor nodes store address in PMU RAM, not flash, so cold start means no address.
+     */
+    void attemptDeferredRegistration();
 };

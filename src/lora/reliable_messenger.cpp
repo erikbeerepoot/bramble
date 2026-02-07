@@ -88,7 +88,7 @@ bool ReliableMessenger::sendSensorData(uint16_t dst_addr, uint8_t sensor_type, c
 bool ReliableMessenger::sendHeartbeat(uint16_t dst_addr, uint32_t uptime_seconds,
                                       uint8_t battery_level, uint8_t signal_strength,
                                       uint8_t active_sensors, uint16_t error_flags,
-                                      uint16_t pending_records)
+                                      uint16_t pending_records, DeliveryCriticality criticality)
 {
     uint8_t seq_num = getNextSequenceNumber();
 
@@ -113,7 +113,7 @@ bool ReliableMessenger::sendHeartbeat(uint16_t dst_addr, uint32_t uptime_seconds
 
             return sizeof(MessageHeader) + sizeof(HeartbeatPayload);
         },
-        BEST_EFFORT, "heartbeat");
+        criticality, "heartbeat");
 }
 
 bool ReliableMessenger::sendHeartbeatResponse(uint16_t dst_addr, int16_t year, int8_t month,
@@ -536,8 +536,10 @@ void ReliableMessenger::update()
 {
     uint32_t current_time = TimeUtils::getCurrentTimeMs();
 
-    // Process message queue if not currently transmitting
-    if (!is_transmitting_ && !message_queue_.empty()) {
+    // Process message queue if not currently transmitting and no pending ACKs
+    // For half-duplex LoRa, we must wait for ACK before sending the next message
+    // to ensure we're in RX mode when the response arrives
+    if (!is_transmitting_ && pending_messages_.empty() && !message_queue_.empty()) {
         // Get next message from queue
         OutgoingMessage outgoing = std::move(message_queue_.front());
         message_queue_.pop();
