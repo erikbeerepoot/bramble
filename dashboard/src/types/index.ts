@@ -134,7 +134,6 @@ export function getSignalQuality(
 
   // When SNR is available and low, use it as the quality indicator
   if (snr !== null && snr !== undefined && snr < SNR_USE_RSSI_THRESHOLD) {
-    if (snr >= SNR_EXCELLENT) return { label: 'Excellent', bars: 4, color: 'green' };
     if (snr >= SNR_GOOD) return { label: 'Good', bars: 3, color: 'green' };
     if (snr >= SNR_FAIR) return { label: 'Fair', bars: 2, color: 'yellow' };
     return { label: 'Poor', bars: 1, color: 'red' };

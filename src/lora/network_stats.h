@@ -264,8 +264,6 @@ public:
         }
 
         // When SNR is low, it's more meaningful than RSSI
-        if (snr >= SNR_EXCELLENT_THRESHOLD)
-            return LINK_EXCELLENT;
         if (snr >= SNR_GOOD_THRESHOLD)
             return LINK_GOOD;
         if (snr >= SNR_FAIR_THRESHOLD)
