@@ -111,19 +111,38 @@ private:
 
 /**
  * @brief Link quality thresholds in dBm
+ *
+ * Based on LoRa signal research:
+ * - Excellent: > -65 dBm (strong signal)
+ * - Good: > -85 dBm (suitable for most applications)
+ * - Fair: > -100 dBm (may work but less reliable)
+ * - Poor: <= -100 dBm (near receiver sensitivity limit)
  */
-constexpr int16_t RSSI_EXCELLENT_THRESHOLD = -60;
-constexpr int16_t RSSI_GOOD_THRESHOLD = -80;
+constexpr int16_t RSSI_EXCELLENT_THRESHOLD = -65;
+constexpr int16_t RSSI_GOOD_THRESHOLD = -85;
 constexpr int16_t RSSI_FAIR_THRESHOLD = -100;
+
+/**
+ * @brief SNR thresholds in dB
+ *
+ * LoRa can operate below the noise floor (-7.5 to -20 dB depending on SF).
+ * SNR becomes the primary quality indicator when signal is weak.
+ * - When SNR >= 7 dB: use RSSI as quality indicator
+ * - When SNR < 7 dB: use SNR as quality indicator
+ */
+constexpr int8_t SNR_USE_RSSI_THRESHOLD = 7;    // Above this, RSSI is more meaningful
+constexpr int8_t SNR_EXCELLENT_THRESHOLD = 10;  // Very good reception
+constexpr int8_t SNR_GOOD_THRESHOLD = 0;        // Signal above noise floor
+constexpr int8_t SNR_FAIR_THRESHOLD = -10;      // Below noise but decodable
 
 /**
  * @brief Link quality categories
  */
 enum LinkQuality {
-    LINK_EXCELLENT,  // RSSI > -60 dBm
-    LINK_GOOD,       // RSSI > -80 dBm
-    LINK_FAIR,       // RSSI > -100 dBm
-    LINK_POOR        // RSSI <= -100 dBm
+    LINK_EXCELLENT,  // RSSI > -65 dBm or SNR >= 10 dB
+    LINK_GOOD,       // RSSI > -85 dBm or SNR >= 0 dB
+    LINK_FAIR,       // RSSI > -100 dBm or SNR >= -10 dB
+    LINK_POOR        // RSSI <= -100 dBm or SNR < -10 dB
 };
 
 /**
@@ -220,13 +239,34 @@ public:
         return criticality_stats[RELIABLE].retries + criticality_stats[CRITICAL].retries;
     }
 
-    LinkQuality calculateLinkQuality(int16_t rssi) const
+    /**
+     * @brief Calculate link quality from RSSI and SNR
+     *
+     * Uses SNR as the primary indicator when signal is weak (SNR < 7 dB),
+     * otherwise uses RSSI. This matches LoRa best practices where SNR
+     * becomes more meaningful near the noise floor.
+     *
+     * @param rssi RSSI value in dBm
+     * @param snr SNR value in dB (default 10 to use RSSI-only logic)
+     * @return LinkQuality enum value
+     */
+    LinkQuality calculateLinkQuality(int16_t rssi, int8_t snr = SNR_EXCELLENT_THRESHOLD) const
     {
-        if (rssi > RSSI_EXCELLENT_THRESHOLD)
-            return LINK_EXCELLENT;
-        if (rssi > RSSI_GOOD_THRESHOLD)
+        // When SNR is good (>= 7 dB), use RSSI as the quality indicator
+        if (snr >= SNR_USE_RSSI_THRESHOLD) {
+            if (rssi > RSSI_EXCELLENT_THRESHOLD)
+                return LINK_EXCELLENT;
+            if (rssi > RSSI_GOOD_THRESHOLD)
+                return LINK_GOOD;
+            if (rssi > RSSI_FAIR_THRESHOLD)
+                return LINK_FAIR;
+            return LINK_POOR;
+        }
+
+        // When SNR is low, it's more meaningful than RSSI
+        if (snr >= SNR_GOOD_THRESHOLD)
             return LINK_GOOD;
-        if (rssi > RSSI_FAIR_THRESHOLD)
+        if (snr >= SNR_FAIR_THRESHOLD)
             return LINK_FAIR;
         return LINK_POOR;
     }
@@ -420,10 +460,11 @@ private:
     /**
      * @brief Update link quality state
      * @param stats Node statistics to update
-     * @param rssi New RSSI value
+     * @param rssi New RSSI value in dBm
+     * @param snr SNR value in dB
      * @param current_time Current timestamp
      */
-    void updateLinkQuality(NodeStatistics &stats, int16_t rssi, uint32_t current_time);
+    void updateLinkQuality(NodeStatistics &stats, int16_t rssi, int8_t snr, uint32_t current_time);
 
     /**
      * @brief Update message statistics for sent messages

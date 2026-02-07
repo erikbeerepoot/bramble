@@ -58,8 +58,8 @@ void NetworkStats::recordMessageReceived(uint16_t src_addr, int16_t rssi, float 
         node.rssi_stats.add(rssi);
         node.snr_stats.add((int16_t)(snr * 10));  // Store SNR * 10 for precision
 
-        // Update link quality
-        updateLinkQuality(node, rssi, current_time);
+        // Update link quality (SNR as int8_t for threshold comparison)
+        updateLinkQuality(node, rssi, (int8_t)snr, current_time);
     }
 
     node.last_seen_time = current_time;
@@ -258,17 +258,18 @@ NodeStatistics &NetworkStats::getOrCreateNodeStats(uint16_t address)
     return it->second;
 }
 
-void NetworkStats::updateLinkQuality(NodeStatistics &stats, int16_t rssi, uint32_t current_time)
+void NetworkStats::updateLinkQuality(NodeStatistics &stats, int16_t rssi, int8_t snr,
+                                     uint32_t current_time)
 {
-    LinkQuality new_quality = stats.calculateLinkQuality(rssi);
+    LinkQuality new_quality = stats.calculateLinkQuality(rssi, snr);
 
     if (new_quality != stats.current_link_quality) {
         stats.link_quality_changes++;
         stats.current_link_quality = new_quality;
         stats.time_entered_current_quality = current_time;
 
-        logger_.debug("Node link quality changed to %s (RSSI: %d dBm)",
-                      stats.getLinkQualityString(), rssi);
+        logger_.debug("Node link quality changed to %s (RSSI: %d dBm, SNR: %d dB)",
+                      stats.getLinkQualityString(), rssi, snr);
     }
 }
 

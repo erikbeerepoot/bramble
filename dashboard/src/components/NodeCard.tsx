@@ -1,5 +1,7 @@
-import type { Node, Zone } from '../types';
-import { getOverallNodeHealth } from '../types';
+import { useEffect, useState } from 'react';
+import type { Node, Zone, SensorReading } from '../types';
+import { getOverallNodeHealth, NodeType } from '../types';
+import { getNodeLatestReading } from '../api/client';
 
 interface NodeCardProps {
   node: Node;
@@ -33,6 +35,13 @@ const HEALTH_LABEL: Record<string, string> = {
 function NodeCard({ node, zone, onClick }: NodeCardProps) {
   const displayName = node.metadata?.name || `Node ${node.address}`;
   const health = getOverallNodeHealth(node);
+  const [reading, setReading] = useState<SensorReading | null>(null);
+
+  useEffect(() => {
+    if (node.online && node.type === NodeType.SENSOR) {
+      getNodeLatestReading(node.address).then(setReading);
+    }
+  }, [node.address, node.online, node.type]);
 
   return (
     <div
@@ -55,8 +64,15 @@ function NodeCard({ node, zone, onClick }: NodeCardProps) {
             </span>
           </div>
 
-          {node.metadata?.name && (
-            <p className="text-sm text-gray-500">Address: {node.address}</p>
+          {reading && (
+            <div className="mt-2 flex items-center space-x-4 text-sm">
+              <span className="text-gray-700">
+                {reading.temperature_celsius.toFixed(1)}°C
+              </span>
+              <span className="text-gray-700">
+                {reading.humidity_percent.toFixed(0)}%
+              </span>
+            </div>
           )}
 
         </div>

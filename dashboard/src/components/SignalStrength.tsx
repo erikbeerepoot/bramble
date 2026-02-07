@@ -9,12 +9,13 @@ import { getSignalQuality } from '../types';
 
 interface SignalStrengthProps {
   rssi: number | null;
+  snr?: number | null;
   showLabel?: boolean;
   size?: 'sm' | 'md' | 'lg';
 }
 
-function SignalStrength({ rssi, showLabel = true, size = 'sm' }: SignalStrengthProps) {
-  const quality = getSignalQuality(rssi);
+function SignalStrength({ rssi, snr, showLabel = true, size = 'sm' }: SignalStrengthProps) {
+  const quality = getSignalQuality(rssi, snr);
 
   // Size configurations
   const sizeConfig = {
