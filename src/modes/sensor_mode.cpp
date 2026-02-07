@@ -8,6 +8,7 @@
 
 #include "hardware/i2c.h"
 
+#include "../../main.h"
 #include "../hal/cht832x.h"
 #include "../hal/logger.h"
 #include "../led_patterns.h"
@@ -1133,10 +1134,7 @@ void SensorMode::requestTimeSync()
 
 void SensorMode::attemptDeferredRegistration()
 {
-    pico_unique_board_id_t board_id;
-    pico_get_unique_board_id(&board_id);
-    uint64_t device_id = 0;
-    memcpy(&device_id, board_id.id, sizeof(device_id));
+    uint64_t device_id = getDeviceId();
 
     pmu_logger.info("Unregistered - sending registration (device_id=0x%016llX)", device_id);
 
