@@ -88,7 +88,7 @@ bool ReliableMessenger::sendSensorData(uint16_t dst_addr, uint8_t sensor_type, c
 bool ReliableMessenger::sendHeartbeat(uint16_t dst_addr, uint32_t uptime_seconds,
                                       uint8_t battery_level, uint8_t signal_strength,
                                       uint8_t active_sensors, uint16_t error_flags,
-                                      uint16_t pending_records)
+                                      uint16_t pending_records, DeliveryCriticality criticality)
 {
     uint8_t seq_num = getNextSequenceNumber();
 
@@ -113,7 +113,7 @@ bool ReliableMessenger::sendHeartbeat(uint16_t dst_addr, uint32_t uptime_seconds
 
             return sizeof(MessageHeader) + sizeof(HeartbeatPayload);
         },
-        BEST_EFFORT, "heartbeat");
+        criticality, "heartbeat");
 }
 
 bool ReliableMessenger::sendHeartbeatResponse(uint16_t dst_addr, int16_t year, int8_t month,

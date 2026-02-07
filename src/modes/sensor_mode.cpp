@@ -463,8 +463,9 @@ void SensorMode::sendHeartbeat(uint32_t /* current_time */)
     logger.debug("Sending heartbeat (uptime=%lu s, battery=%u, errors=0x%04X, pending=%u)", uptime,
                  battery_level, error_flags, pending_records);
 
+    // Use RELIABLE delivery - heartbeat is for time sync, we need the response
     messenger_.sendHeartbeat(HUB_ADDRESS, uptime, battery_level, signal_strength, active_sensors,
-                             error_flags, pending_records);
+                             error_flags, pending_records, RELIABLE);
 
     // Heartbeat expects a HEARTBEAT_RESPONSE from the hub
     sensor_state_.expectResponse();

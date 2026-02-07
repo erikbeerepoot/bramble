@@ -139,11 +139,13 @@ public:
      * @param active_sensors Bitmask of active sensors
      * @param error_flags Error status flags
      * @param pending_records Untransmitted sensor records in flash backlog
+     * @param criticality Delivery criticality (default BEST_EFFORT, use RELIABLE for time sync)
      * @return true if heartbeat sent successfully
      */
     bool sendHeartbeat(uint16_t dst_addr, uint32_t uptime_seconds, uint8_t battery_level,
                        uint8_t signal_strength, uint8_t active_sensors, uint16_t error_flags,
-                       uint16_t pending_records = 0);
+                       uint16_t pending_records = 0,
+                       DeliveryCriticality criticality = BEST_EFFORT);
 
     /**
      * @brief Send heartbeat response with current datetime (hub to node)
