@@ -122,7 +122,6 @@ void SensorMode::onStart()
         // containing persisted state (write_index, read_index, etc.)
         // The getDateTime call is deferred to handlePmuWake() to ensure state is restored first.
         pmu_logger.debug("Sending ClearToSend to PMU...");
-        cts_sent_time_ = to_ms_since_boot(get_absolute_time());
         reliable_pmu_->clearToSend([this](bool success, PMU::ErrorCode error) {
             if (!success) {
                 pmu_logger.error("ClearToSend failed: %d", static_cast<int>(error));
@@ -131,6 +130,8 @@ void SensorMode::onStart()
                 sensor_state_.markInitialized();
             } else {
                 pmu_logger.info("ClearToSend ACK received - waiting for WakeNotification");
+                // Start timeout timer AFTER ACK received, not when command queued
+                cts_sent_time_ = to_ms_since_boot(get_absolute_time());
             }
             // On success, handlePmuWake() will call markInitialized()
             // AWAITING_TIME state handler will then call getDateTime
@@ -883,7 +884,6 @@ void SensorMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry 
             // Restore assigned address from PMU RAM (no flash dependency)
             if (persisted->assigned_address != ADDRESS_UNREGISTERED) {
                 messenger_.setNodeAddress(persisted->assigned_address);
-                pmu_logger.info("Restored address: 0x%04X", persisted->assigned_address);
             }
 
             // Restore flash buffer indices only if flash is available
