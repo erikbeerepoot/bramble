@@ -39,7 +39,7 @@ private:
     // Hub sync timeout tracking - used to proceed with PMU time if hub doesn't respond
     uint32_t heartbeat_request_time_ = 0;
     static constexpr uint32_t HEARTBEAT_TIMEOUT_MS =
-        250;  // Aggressive timeout for low-power operation
+        3000;  // Allow time for message queue processing + hub response
 
     // CTS/WakeNotification timeout tracking
     uint32_t cts_sent_time_ = 0;
