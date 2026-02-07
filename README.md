@@ -359,6 +359,10 @@ BATCH_ACK <node_addr> <count> <status>
 # Time sync (Hub queries, Pi responds)
 GET_DATETIME
 DATETIME YYYY-MM-DD HH:MM:SS <day_of_week>
+
+# Delete node from hub registry (Pi to Hub)
+DELETE_NODE <node_addr>
+DELETED_NODE <node_addr>
 ```
 
 ### Database Schema
