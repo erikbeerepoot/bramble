@@ -2,6 +2,7 @@ import type {
   Node,
   NodesResponse,
   NodeMetadata,
+  SensorReading,
   SensorDataResponse,
   NodeStatistics,
   Zone,
@@ -87,6 +88,16 @@ export async function getNodeSensorData(
   const query = params.toString();
   const endpoint = `/api/nodes/${address}/sensor-data${query ? `?${query}` : ''}`;
   return fetchApi<SensorDataResponse>(endpoint, { signal: options?.signal });
+}
+
+export async function getNodeLatestReading(
+  address: number
+): Promise<SensorReading | null> {
+  try {
+    return await fetchApi<SensorReading>(`/api/nodes/${address}/sensor-data/latest`);
+  } catch {
+    return null;
+  }
 }
 
 export async function getNodeStatistics(

@@ -29,10 +29,21 @@ export interface NodeStatus {
   updated_at: number | null;
 }
 
+// Node type constants (match firmware/API values)
+export const NodeType = {
+  SENSOR: 'SENSOR',
+  IRRIGATION: 'IRRIGATION',
+  CONTROLLER: 'CONTROLLER',
+  HUB: 'HUB',
+  GENERIC: 'GENERIC',
+} as const;
+
+export type NodeTypeValue = typeof NodeType[keyof typeof NodeType];
+
 export interface Node {
   address: number;
   device_id: number | null;
-  type: string;
+  type: NodeTypeValue;
   online: boolean;
   last_seen_seconds: number;
   firmware_version: string | null;
