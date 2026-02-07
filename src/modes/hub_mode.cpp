@@ -290,6 +290,8 @@ void HubMode::handleSerialCommand(const char *cmd)
         handleDateTimeResponse(cmd + 9);
     } else if (strncmp(cmd, "BATCH_ACK ", 10) == 0) {
         handleBatchAckResponse(cmd + 10);
+    } else if (strncmp(cmd, "DELETE_NODE ", 12) == 0) {
+        handleDeleteNode(cmd + 12);
     } else {
         uart_puts(API_UART_ID, "ERROR Unknown command\n");
     }
@@ -552,6 +554,44 @@ void HubMode::handleGetDateTime()
     // Parse response: DATETIME YYYY MM DD DOW HH MM SS
     // This will be called when RasPi responds with datetime
     // The response is handled in handleSerialCommand via handleDateTimeResponse
+}
+
+void HubMode::handleDeleteNode(const char *args)
+{
+    // Parse node address
+    uint16_t node_addr = atoi(args);
+
+    if (node_addr < ADDRESS_MIN_NODE || node_addr > ADDRESS_MAX_NODE) {
+        uart_puts(API_UART_ID, "ERROR Invalid node address\n");
+        return;
+    }
+
+    // Check if node exists
+    const NodeInfo *node = address_manager_->getNodeInfo(node_addr);
+    if (!node) {
+        uart_puts(API_UART_ID, "ERROR Node not found\n");
+        return;
+    }
+
+    // Unregister the node
+    if (!address_manager_->unregisterNode(node_addr)) {
+        uart_puts(API_UART_ID, "ERROR Failed to unregister node\n");
+        return;
+    }
+
+    // Clear any pending updates for this node
+    hub_router_->clearPendingUpdates(node_addr);
+
+    // Persist the registry to flash
+    Flash flash_hal;
+    address_manager_->persist(flash_hal);
+
+    // Send success response
+    char response[64];
+    snprintf(response, sizeof(response), "DELETED_NODE %u\n", node_addr);
+    uart_puts(API_UART_ID, response);
+
+    logger.info("Deleted node 0x%04X from registry", node_addr);
 }
 
 void HubMode::handleHeartbeat(uint16_t source_addr, const HeartbeatPayload *payload, int16_t rssi)

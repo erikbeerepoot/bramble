@@ -34,6 +34,7 @@ private:
     void handleSetDateTime(const char *args);
     void handleDateTimeResponse(const char *args);
     void handleGetDateTime();  // Request datetime from RasPi
+    void handleDeleteNode(const char *args);
     bool parseScheduleArgs(const char *args, uint16_t &node_addr, uint8_t &index, uint8_t &hour,
                            uint8_t &minute, uint16_t &duration, uint8_t &days, uint8_t &valve);
 
