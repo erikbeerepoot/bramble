@@ -1226,3 +1226,43 @@ class SensorDatabase:
                 }
                 for row in result.fetchall()
             ]
+
+    def delete_node(self, address: int) -> bool:
+        """Delete a node and all its associated data.
+
+        Removes data from all related tables:
+        - nodes
+        - node_metadata
+        - node_status
+        - node_status_history
+        - sensor_readings
+
+        Args:
+            address: Node address
+
+        Returns:
+            True if node was deleted, False if not found
+        """
+        with self._get_connection() as conn:
+            # Check if node exists in any table
+            exists = conn.execute(
+                "SELECT 1 FROM nodes WHERE address = ? "
+                "UNION SELECT 1 FROM node_metadata WHERE address = ? "
+                "UNION SELECT 1 FROM node_status WHERE address = ? "
+                "UNION SELECT 1 FROM sensor_readings WHERE node_address = ? "
+                "LIMIT 1",
+                (address, address, address, address)
+            ).fetchone()
+
+            if not exists:
+                return False
+
+            # Delete from all related tables
+            conn.execute("DELETE FROM sensor_readings WHERE node_address = ?", (address,))
+            conn.execute("DELETE FROM node_status_history WHERE address = ?", (address,))
+            conn.execute("DELETE FROM node_status WHERE address = ?", (address,))
+            conn.execute("DELETE FROM node_metadata WHERE address = ?", (address,))
+            conn.execute("DELETE FROM nodes WHERE address = ?", (address,))
+
+            logger.info(f"Deleted node {address} and all associated data")
+            return True

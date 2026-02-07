@@ -13,6 +13,7 @@ interface AppContextType {
   fetchNodes: () => Promise<void>;
   fetchZones: () => Promise<void>;
   updateNode: (node: Node) => void;
+  removeNode: (address: number) => void;
   addZone: (zone: Zone) => void;
 }
 
@@ -64,6 +65,10 @@ function App() {
     setNodes(prev => prev.map(n => n.address === updatedNode.address ? updatedNode : n));
   }, []);
 
+  const removeNode = useCallback((address: number) => {
+    setNodes(prev => prev.filter(n => n.address !== address));
+  }, []);
+
   const addZone = useCallback((zone: Zone) => {
     setZones(prev => [...prev, zone].sort((a, b) => a.name.localeCompare(b.name)));
   }, []);
@@ -102,6 +107,7 @@ function App() {
     fetchNodes,
     fetchZones,
     updateNode,
+    removeNode,
     addZone,
   };
 
