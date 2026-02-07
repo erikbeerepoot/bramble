@@ -870,28 +870,33 @@ void SensorMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry 
     }
 
     // Restore state from PMU RAM if valid
-    if (state_valid && state != nullptr && flash_buffer_) {
+    // Note: address and seq_num are restored even if flash is unavailable
+    if (state_valid && state != nullptr) {
         const SensorPersistedState *persisted =
             reinterpret_cast<const SensorPersistedState *>(state);
 
         // Check version compatibility
         if (persisted->version == STATE_VERSION) {
-            // Restore flash buffer indices
-            flash_buffer_->setReadIndex(persisted->read_index);
-            flash_buffer_->setWriteIndex(persisted->write_index);
-
-            // Restore LoRa sequence number
+            // Restore LoRa sequence number (no flash dependency)
             messenger_.setNextSeqNum(persisted->next_seq_num);
 
-            // Restore assigned address from PMU RAM
+            // Restore assigned address from PMU RAM (no flash dependency)
             if (persisted->assigned_address != ADDRESS_UNREGISTERED) {
                 messenger_.setNodeAddress(persisted->assigned_address);
                 pmu_logger.info("Restored address: 0x%04X", persisted->assigned_address);
             }
 
-            pmu_logger.info("Restored state: read=%lu, write=%lu, seq=%u, addr=0x%04X",
-                            persisted->read_index, persisted->write_index,
-                            persisted->next_seq_num, persisted->assigned_address);
+            // Restore flash buffer indices only if flash is available
+            if (flash_buffer_) {
+                flash_buffer_->setReadIndex(persisted->read_index);
+                flash_buffer_->setWriteIndex(persisted->write_index);
+                pmu_logger.info("Restored state: read=%lu, write=%lu, seq=%u, addr=0x%04X",
+                                persisted->read_index, persisted->write_index,
+                                persisted->next_seq_num, persisted->assigned_address);
+            } else {
+                pmu_logger.info("Restored state: seq=%u, addr=0x%04X (flash unavailable)",
+                                persisted->next_seq_num, persisted->assigned_address);
+            }
         } else {
             pmu_logger.warn("State version mismatch (got %u, expected %u) - cold start",
                             persisted->version, STATE_VERSION);
