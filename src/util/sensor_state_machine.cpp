@@ -24,6 +24,37 @@ void SensorStateMachine::markError()
     updateState();
 }
 
+void SensorStateMachine::reportRegistrationSent()
+{
+    // This is now just a logging method - the transition to REGISTERING
+    // happens via markInitialized() -> updateState()
+    if (state_ != SensorState::REGISTERING) {
+        logger.warn("reportRegistrationSent() called in unexpected state: %s", stateName(state_));
+        return;
+    }
+    logger.debug("Registration message sent, awaiting hub response");
+}
+
+void SensorStateMachine::reportRegistrationComplete()
+{
+    if (state_ != SensorState::REGISTERING) {
+        logger.warn("reportRegistrationComplete() called in unexpected state: %s", stateName(state_));
+        return;
+    }
+    logger.info("Registration complete");
+    transitionTo(SensorState::AWAITING_TIME);
+}
+
+void SensorStateMachine::reportRegistrationTimeout()
+{
+    if (state_ != SensorState::REGISTERING) {
+        logger.warn("reportRegistrationTimeout() called in unexpected state: %s", stateName(state_));
+        return;
+    }
+    logger.warn("Registration timed out - will retry on next wake");
+    transitionTo(SensorState::READY_FOR_SLEEP);
+}
+
 void SensorStateMachine::reportRtcSynced()
 {
     if (rtc_synced_) {
@@ -170,17 +201,17 @@ void SensorStateMachine::updateState()
     SensorState new_state = state_;
 
     // Derive state from internal flags
-    // Note: workflow states (SYNCING_TIME, READING_SENSOR, CHECKING_BACKLOG,
-    // TRANSMITTING, READY_FOR_SLEEP) are handled by transitionTo() instead
+    // Note: workflow states (REGISTERING, SYNCING_TIME, READING_SENSOR, CHECKING_BACKLOG,
+    // TRANSMITTING, LISTENING, READY_FOR_SLEEP) are handled by transitionTo() instead
     if (error_) {
         new_state = SensorState::ERROR;
     } else if (!initialized_) {
         new_state = SensorState::INITIALIZING;
     } else if (!rtc_synced_) {
-        // Only go to AWAITING_TIME from INITIALIZING
-        // Don't override SYNCING_TIME (we're waiting for hub response)
+        // Go to REGISTERING from INITIALIZING - state callback will check if needed
+        // Don't override workflow states (REGISTERING, SYNCING_TIME, etc.)
         if (state_ == SensorState::INITIALIZING) {
-            new_state = SensorState::AWAITING_TIME;
+            new_state = SensorState::REGISTERING;
         }
     } else if (sensor_initialized_) {
         // RTC synced and sensor working - go to READING_SENSOR
@@ -230,6 +261,8 @@ const char *SensorStateMachine::stateName(SensorState state)
     switch (state) {
         case SensorState::INITIALIZING:
             return "INITIALIZING";
+        case SensorState::REGISTERING:
+            return "REGISTERING";
         case SensorState::AWAITING_TIME:
             return "AWAITING_TIME";
         case SensorState::SYNCING_TIME:

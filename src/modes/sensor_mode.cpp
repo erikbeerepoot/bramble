@@ -94,6 +94,13 @@ void SensorMode::onStart()
     // Set up state change handler - centralizes all reactions to state changes
     sensor_state_.setCallback([this](SensorState state) { onStateChange(state); });
 
+    // Set up registration success callback - transitions REGISTERING → AWAITING_TIME
+    messenger_.setRegistrationSuccessCallback([this](uint16_t assigned_addr) {
+        pmu_logger.info("Registration success callback: assigned address 0x%04X", assigned_addr);
+        registration_sent_time_ = 0;  // Clear timeout
+        sensor_state_.reportRegistrationComplete();
+    });
+
     // Initialize PMU client at 9600 baud to match STM32 LPUART configuration
     pmu_client_ = new PmuClient(PMU_UART_ID, PMU_UART_TX_PIN, PMU_UART_RX_PIN, 9600);
     pmu_available_ = pmu_client_->init();
@@ -298,6 +305,29 @@ void SensorMode::onStateChange(SensorState state)
         case SensorState::INITIALIZING:
             // Initial state - nothing to do yet
             break;
+
+        case SensorState::REGISTERING:
+            // Yellow fast blink while checking/waiting for registration
+            led_pattern_ = std::make_unique<ShortBlinkPattern>(led_, 255, 255, 0, 50, 250);
+
+            // Check if we actually need to register
+            if (messenger_.getNodeAddress() != ADDRESS_UNREGISTERED) {
+                // Already registered - skip to AWAITING_TIME
+                logger.info("Already registered (addr=0x%04X) - skipping registration",
+                            messenger_.getNodeAddress());
+                sensor_state_.reportRegistrationComplete();
+            } else {
+                // Need to register - send message via deferred task to avoid reentrancy
+                task_queue_.postOnce(
+                    [](void *ctx, uint32_t time) -> bool {
+                        (void)time;
+                        SensorMode *self = static_cast<SensorMode *>(ctx);
+                        self->attemptRegistration();
+                        return true;
+                    },
+                    this, TaskPriority::High);
+            }
+            break;
     }
 }
 
@@ -324,9 +354,19 @@ void SensorMode::onLoop()
             pmu_logger.warn("WakeNotification timeout (%lu ms) - proceeding without PMU state",
                             elapsed);
             cts_sent_time_ = 0;
-            // Proceed without restored state - flash scan will happen in handlePmuWake
-            // or we just proceed fresh
+
+            // markInitialized triggers REGISTERING state, callback handles registration check
             sensor_state_.markInitialized();
+        }
+    }
+
+    // Registration timeout - if we sent registration but never got response, go to sleep
+    if (registration_sent_time_ > 0 && sensor_state_.isRegistering()) {
+        uint32_t elapsed = to_ms_since_boot(get_absolute_time()) - registration_sent_time_;
+        if (elapsed >= REGISTRATION_TIMEOUT_MS) {
+            pmu_logger.warn("Registration timeout (%lu ms) - will retry on next wake", elapsed);
+            registration_sent_time_ = 0;
+            sensor_state_.reportRegistrationTimeout();
         }
     }
 
@@ -918,19 +958,15 @@ void SensorMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry 
         }
     }
 
-    // If we don't have an address, register now
-    // This can happen on:
-    // - Cold start: PMU RAM lost (battery disconnect)
-    // - Warm wake from unregistered state: first boot after flash, never registered yet
-    if (messenger_.getNodeAddress() == ADDRESS_UNREGISTERED) {
-        attemptDeferredRegistration();
-    }
-
     // Complete initialization now that state is restored
-    // This transitions INITIALIZING → AWAITING_TIME, enabling the rest of the flow
+    // This transitions INITIALIZING → REGISTERING, where the state callback
+    // will check if registration is actually needed and proceed accordingly
     if (sensor_state_.state() == SensorState::INITIALIZING) {
         pmu_logger.debug("Marking initialized after state restoration");
         sensor_state_.markInitialized();
+        // markInitialized triggers REGISTERING state, callback handles registration check
+        // Return here - state callbacks drive the rest of the flow
+        return;
     }
 
     switch (reason) {
@@ -1132,11 +1168,11 @@ void SensorMode::requestTimeSync()
     }
 }
 
-void SensorMode::attemptDeferredRegistration()
+void SensorMode::attemptRegistration()
 {
     uint64_t device_id = getDeviceId();
 
-    pmu_logger.info("Unregistered - sending registration (device_id=0x%016llX)", device_id);
+    pmu_logger.info("Sending registration (device_id=0x%016llX)", device_id);
 
     uint8_t seq = messenger_.sendRegistrationRequest(ADDRESS_HUB, device_id, NODE_TYPE_SENSOR,
                                                      CAP_TEMPERATURE | CAP_HUMIDITY,
@@ -1144,9 +1180,14 @@ void SensorMode::attemptDeferredRegistration()
 
     if (seq != 0) {
         pmu_logger.info("Registration request sent (seq=%d)", seq);
+        // Start registration timeout - state is already REGISTERING
+        registration_sent_time_ = to_ms_since_boot(get_absolute_time());
+        sensor_state_.reportRegistrationSent();
         // Expect registration response - ensures we enter LISTENING before sleep
         sensor_state_.expectResponse();
     } else {
         pmu_logger.error("Failed to send registration request");
+        // Failed to send - go to sleep and retry next cycle
+        sensor_state_.reportRegistrationTimeout();
     }
 }

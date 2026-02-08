@@ -45,6 +45,10 @@ private:
     uint32_t cts_sent_time_ = 0;
     static constexpr uint32_t WAKE_NOTIFICATION_TIMEOUT_MS = 1000;
 
+    // Registration timeout tracking - wait for hub response before sending heartbeat
+    uint32_t registration_sent_time_ = 0;
+    static constexpr uint32_t REGISTRATION_TIMEOUT_MS = 5000;  // Allow time for RELIABLE retries
+
     // Listen window tracking - receive window before sleep for hub responses
     uint32_t listen_window_start_time_ = 0;
     static constexpr uint32_t LISTEN_WINDOW_MS = 500;
@@ -201,9 +205,10 @@ private:
     void requestTimeSync();
 
     /**
-     * @brief Attempt deferred registration on cold start
-     * Called when PMU RAM is lost (battery disconnect) and we need to register with the hub.
-     * Sensor nodes store address in PMU RAM, not flash, so cold start means no address.
+     * @brief Send registration request to hub
+     * Called from REGISTERING state callback when node has no assigned address.
+     * On success, registration response callback transitions to AWAITING_TIME.
+     * On failure to send, transitions to READY_FOR_SLEEP to retry next cycle.
      */
-    void attemptDeferredRegistration();
+    void attemptRegistration();
 };

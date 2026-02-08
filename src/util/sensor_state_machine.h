@@ -11,42 +11,55 @@
  * [Boot/Wake]
  *     │
  *     ▼
- * INITIALIZING ──► markInitialized() ──► AWAITING_TIME
- *                                             │
- *     ┌───────────────────────────────────────┘
- *     │                           │
- *     ▼ (no PMU time)             ▼ (PMU has time)
- * sendHeartbeat()           reportRtcSynced()
- *     │                           │
- *     ▼                           │
- * SYNCING_TIME ──────────────────►│
- *     │ (hub responds)            │
- *     ▼                           ▼
- * reportRtcSynced() ──────► TIME_SYNCED
- *                                │
- *                                ▼ (first boot)
- *                     reportSensorInit*()
- *                                │
- *             ┌──────────────────┴──────────────────┐
- *             ▼                                      ▼
- *         READING_SENSOR                    DEGRADED_NO_SENSOR
- *             │                                      │
- *             ▼ reportReadComplete()                 │
- *         CHECKING_BACKLOG ◄─────────────────────────┘
- *             │
- *             ├── (not time to TX) ──► LISTENING or READY_FOR_SLEEP
- *             │
- *             ▼ (time to TX)
+ * INITIALIZING ──► markInitialized() ──► REGISTERING
+ *                                              │
+ *     ┌───────(state callback checks registration)────────┐
+ *     │ (already registered)                              │ (not registered)
+ *     │                                                   │
+ *     │                              sendRegistrationRequest()
+ *     │                                                   │
+ *     │                           ┌───────────────────────┤
+ *     │                           │ (timeout)             │ (response received)
+ *     │                           ▼                       ▼
+ *     │                   READY_FOR_SLEEP    reportRegistrationComplete()
+ *     │                                                   │
+ *     └─────────► AWAITING_TIME ◄─────────────────────────┘
+ *                      │
+ *     ┌────────────────┴───────────────────┐
+ *     │ (no PMU time)                      │ (PMU has time)
+ *     ▼                                    ▼
+ * sendHeartbeat()                    reportRtcSynced()
+ *     │                                    │
+ *     ▼                                    │
+ * SYNCING_TIME ────(hub responds)─────────►│
+ *     │                                    │
+ *     ▼                                    ▼
+ * reportRtcSynced() ──────────────► TIME_SYNCED
+ *                                          │
+ *                                          ▼ (first boot)
+ *                               reportSensorInit*()
+ *                                          │
+ *               ┌──────────────────────────┴──────────────────────┐
+ *               ▼                                                  ▼
+ *         READING_SENSOR                                  DEGRADED_NO_SENSOR
+ *               │                                                  │
+ *               ▼ reportReadComplete()                             │
+ *         CHECKING_BACKLOG ◄───────────────────────────────────────┘
+ *               │
+ *               ├── (not time to TX) ──► LISTENING or READY_FOR_SLEEP
+ *               │
+ *               ▼ (time to TX)
  *         TRANSMITTING
- *             │
- *             ▼ reportTransmitComplete()
+ *               │
+ *               ▼ reportTransmitComplete()
  *         LISTENING or READY_FOR_SLEEP
- *             │
- *             ▼ (LISTENING only if expectResponse() was called)
+ *               │
+ *               ▼ (LISTENING only if expectResponse() was called)
  *         READY_FOR_SLEEP ──► signalReadyForSleep() ──► [PMU sleeps]
  */
 enum class SensorState : uint8_t {
     INITIALIZING,        // Hardware setup in progress
+    REGISTERING,         // Waiting for registration response from hub
     AWAITING_TIME,       // Need RTC sync (no valid time)
     SYNCING_TIME,        // Heartbeat sent, awaiting hub response
     TIME_SYNCED,         // RTC valid, sensor not yet attempted
@@ -114,6 +127,39 @@ public:
      * Transitions to ERROR state. Only recoverable via reset.
      */
     void markError();
+
+    // =========================================================================
+    // Registration Events - for hub registration handshake
+    // =========================================================================
+
+    /**
+     * @brief Report that registration request was sent
+     *
+     * Call after sendRegistrationRequest() when node is unregistered.
+     * Used for logging only - state is already REGISTERING (via markInitialized).
+     */
+    void reportRegistrationSent();
+
+    /**
+     * @brief Report that registration completed successfully
+     *
+     * Call when registration response is received with assigned address.
+     * Transitions REGISTERING → AWAITING_TIME.
+     */
+    void reportRegistrationComplete();
+
+    /**
+     * @brief Report that registration timed out
+     *
+     * Call when registration response is not received within timeout.
+     * Transitions REGISTERING → READY_FOR_SLEEP (retry on next wake).
+     */
+    void reportRegistrationTimeout();
+
+    /**
+     * @brief Check if waiting for registration response
+     */
+    bool isRegistering() const { return state_ == SensorState::REGISTERING; }
 
     // =========================================================================
     // Hardware Events - report these when hardware state changes
