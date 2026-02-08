@@ -38,12 +38,12 @@ def seed_database(db: SensorDatabase, node_address: int, device_id: int, num_rea
         timestamp = base_time + (i * interval_seconds)
 
         reading = SensorReading(
-            node_address=node_address,
             device_id=device_id,
             timestamp=timestamp,
             temperature_centidegrees=temp,
             humidity_centipercent=humidity,
-            received_at=timestamp + random.randint(0, 2)  # Small delay
+            received_at=timestamp + random.randint(0, 2),  # Small delay
+            address=node_address
         )
 
         try:
@@ -86,7 +86,7 @@ def main():
     print(f"Inserted {inserted} readings into {args.db}")
 
     # Show summary
-    stats = db.get_node_statistics(args.node)
+    stats = db.get_node_statistics(args.device_id)
     if stats:
         print(f"\nNode {args.node:#04x} statistics:")
         print(f"  Device ID: {stats['device_id']:#018x}" if stats['device_id'] else "  Device ID: None")

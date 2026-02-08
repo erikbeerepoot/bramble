@@ -48,12 +48,12 @@ def seeded_db(temp_db):
 
     for i in range(50):
         reading = SensorReading(
-            node_address=node_address,
             device_id=device_id,
             timestamp=base_time + (i * 60),
             temperature_centidegrees=2200 + random.randint(-100, 100),
             humidity_centipercent=6500 + random.randint(-200, 200),
-            received_at=base_time + (i * 60) + 1
+            received_at=base_time + (i * 60) + 1,
+            address=node_address
         )
         temp_db.insert_reading(reading)
 

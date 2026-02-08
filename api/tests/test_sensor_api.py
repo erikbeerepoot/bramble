@@ -34,14 +34,14 @@ class TestSensorDataEndpoints:
         assert data['total'] == 50
 
     def test_get_sensor_data_filter_by_node(self, app_client, seeded_db):
-        """Filters by node address."""
-        # Node 2 has data
-        response = app_client.get('/api/sensor-data?node_address=2')
+        """Filters by device ID."""
+        # Device 0x123456789ABCDEF0 has data (from seeded_db fixture)
+        response = app_client.get('/api/sensor-data?device_id=1311768467463790320')
         assert response.status_code == 200
         assert response.get_json()['count'] == 50
 
-        # Node 99 has no data
-        response = app_client.get('/api/sensor-data?node_address=99')
+        # Different device ID has no data
+        response = app_client.get('/api/sensor-data?device_id=99')
         assert response.status_code == 200
         assert response.get_json()['count'] == 0
 
@@ -51,11 +51,12 @@ class TestNodeSensorEndpoints:
 
     def test_get_node_latest_reading(self, app_client, seeded_db):
         """Returns most recent reading for node."""
-        response = app_client.get('/api/nodes/2/sensor-data/latest')
+        # Use device_id from seeded_db fixture: 0x123456789ABCDEF0
+        response = app_client.get('/api/nodes/1311768467463790320/sensor-data/latest')
         assert response.status_code == 200
 
         data = response.get_json()
-        assert data['node_address'] == 2
+        assert data['device_id'] == '1311768467463790320'
         assert 'temperature_celsius' in data
         assert 'humidity_percent' in data
 
@@ -66,7 +67,8 @@ class TestNodeSensorEndpoints:
 
     def test_get_node_statistics(self, app_client, seeded_db):
         """Returns statistics for node."""
-        response = app_client.get('/api/nodes/2/statistics')
+        # Use device_id from seeded_db fixture: 0x123456789ABCDEF0
+        response = app_client.get('/api/nodes/1311768467463790320/statistics')
         assert response.status_code == 200
 
         data = response.get_json()
@@ -82,16 +84,18 @@ class TestDatabaseLayer:
 
     def test_insert_and_retrieve(self, temp_db):
         """Basic insert and query."""
+        device_id = 0xDEADBEEF12345678
         reading = SensorReading(
-            node_address=0x05,
+            device_id=device_id,
             timestamp=int(time.time()),
             temperature_centidegrees=2534,
             humidity_centipercent=6521,
-            received_at=int(time.time())
+            received_at=int(time.time()),
+            address=0x05
         )
         temp_db.insert_reading(reading)
 
-        readings = temp_db.query_readings(node_address=0x05)
+        readings = temp_db.query_readings(device_id=device_id)
         assert len(readings) == 1
         assert readings[0].temperature_celsius == 25.34
         assert readings[0].humidity_percent == 65.21
@@ -100,16 +104,16 @@ class TestDatabaseLayer:
         """Device ID is properly stored and retrieved."""
         device_id = 0xDEADBEEF12345678
         reading = SensorReading(
-            node_address=0x05,
             device_id=device_id,
             timestamp=int(time.time()),
             temperature_centidegrees=2200,
             humidity_centipercent=6000,
-            received_at=int(time.time())
+            received_at=int(time.time()),
+            address=0x05
         )
         temp_db.insert_reading(reading)
 
-        readings = temp_db.query_readings(node_address=0x05)
+        readings = temp_db.query_readings(device_id=device_id)
         assert len(readings) == 1
         assert readings[0].device_id == device_id
 
@@ -117,16 +121,16 @@ class TestDatabaseLayer:
         """Device ID appears in to_dict output."""
         device_id = 0xCAFEBABE
         reading = SensorReading(
-            node_address=0x05,
             device_id=device_id,
             timestamp=int(time.time()),
             temperature_centidegrees=2200,
             humidity_centipercent=6000,
-            received_at=int(time.time())
+            received_at=int(time.time()),
+            address=0x05
         )
         temp_db.insert_reading(reading)
 
-        readings = temp_db.query_readings(node_address=0x05)
+        readings = temp_db.query_readings(device_id=device_id)
         result = readings[0].to_dict()
         assert 'device_id' in result
         assert result['device_id'] == device_id
@@ -134,22 +138,25 @@ class TestDatabaseLayer:
     def test_duplicate_rejected(self, temp_db):
         """Duplicate node+timestamp is rejected."""
         timestamp = int(time.time())
+        device_id = 0xDEADBEEF12345678
         reading = SensorReading(
-            node_address=0x05,
+            device_id=device_id,
             timestamp=timestamp,
             temperature_centidegrees=2500,
             humidity_centipercent=6500,
-            received_at=timestamp
+            received_at=timestamp,
+            address=0x05
         )
         temp_db.insert_reading(reading)
 
         # Same node+timestamp should fail
         duplicate = SensorReading(
-            node_address=0x05,
+            device_id=device_id,
             timestamp=timestamp,
             temperature_centidegrees=2600,
             humidity_centipercent=7000,
-            received_at=timestamp
+            received_at=timestamp,
+            address=0x05
         )
         # Should not raise, but also shouldn't insert
         try:
@@ -157,5 +164,5 @@ class TestDatabaseLayer:
         except Exception:
             pass  # Expected
 
-        readings = temp_db.query_readings(node_address=0x05)
+        readings = temp_db.query_readings(device_id=device_id)
         assert len(readings) == 1
