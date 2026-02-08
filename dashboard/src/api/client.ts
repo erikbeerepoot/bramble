@@ -51,32 +51,32 @@ export async function getNodes(): Promise<NodesResponse> {
   return fetchApi<NodesResponse>('/api/nodes');
 }
 
-export async function getNode(address: number): Promise<Node> {
-  return fetchApi<Node>(`/api/nodes/${address}`);
+export async function getNode(deviceId: number): Promise<Node> {
+  return fetchApi<Node>(`/api/nodes/${deviceId}`);
 }
 
-export async function getNodeMetadata(address: number): Promise<NodeMetadata> {
-  return fetchApi<NodeMetadata>(`/api/nodes/${address}/metadata`);
+export async function getNodeMetadata(deviceId: number): Promise<NodeMetadata> {
+  return fetchApi<NodeMetadata>(`/api/nodes/${deviceId}/metadata`);
 }
 
-export async function deleteNode(address: number): Promise<void> {
-  await fetchApi<{ message: string }>(`/api/nodes/${address}`, {
+export async function deleteNode(deviceId: number): Promise<void> {
+  await fetchApi<{ message: string }>(`/api/nodes/${deviceId}`, {
     method: 'DELETE',
   });
 }
 
 export async function updateNodeMetadata(
-  address: number,
+  deviceId: number,
   metadata: Partial<Pick<NodeMetadata, 'name' | 'notes'>>
 ): Promise<NodeMetadata> {
-  return fetchApi<NodeMetadata>(`/api/nodes/${address}/metadata`, {
+  return fetchApi<NodeMetadata>(`/api/nodes/${deviceId}/metadata`, {
     method: 'PUT',
     body: JSON.stringify(metadata),
   });
 }
 
 export async function getNodeSensorData(
-  address: number,
+  deviceId: number,
   options?: {
     startTime?: number;
     endTime?: number;
@@ -92,22 +92,22 @@ export async function getNodeSensorData(
   if (options?.downsample) params.set('downsample', options.downsample.toString());
 
   const query = params.toString();
-  const endpoint = `/api/nodes/${address}/sensor-data${query ? `?${query}` : ''}`;
+  const endpoint = `/api/nodes/${deviceId}/sensor-data${query ? `?${query}` : ''}`;
   return fetchApi<SensorDataResponse>(endpoint, { signal: options?.signal });
 }
 
 export async function getNodeLatestReading(
-  address: number
+  deviceId: number
 ): Promise<SensorReading | null> {
   try {
-    return await fetchApi<SensorReading>(`/api/nodes/${address}/sensor-data/latest`);
+    return await fetchApi<SensorReading>(`/api/nodes/${deviceId}/sensor-data/latest`);
   } catch {
     return null;
   }
 }
 
 export async function getNodeStatistics(
-  address: number,
+  deviceId: number,
   options?: {
     startTime?: number;
     endTime?: number;
@@ -119,7 +119,7 @@ export async function getNodeStatistics(
   if (options?.endTime) params.set('end_time', options.endTime.toString());
 
   const query = params.toString();
-  const endpoint = `/api/nodes/${address}/statistics${query ? `?${query}` : ''}`;
+  const endpoint = `/api/nodes/${deviceId}/statistics${query ? `?${query}` : ''}`;
   return fetchApi<NodeStatistics>(endpoint, { signal: options?.signal });
 }
 
@@ -165,10 +165,10 @@ export async function deleteZone(zoneId: number): Promise<void> {
 }
 
 export async function setNodeZone(
-  address: number,
+  deviceId: number,
   zoneId: number | null
 ): Promise<NodeMetadata> {
-  return fetchApi<NodeMetadata>(`/api/nodes/${address}/zone`, {
+  return fetchApi<NodeMetadata>(`/api/nodes/${deviceId}/zone`, {
     method: 'PUT',
     body: JSON.stringify({ zone_id: zoneId }),
   });

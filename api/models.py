@@ -18,8 +18,8 @@ def format_firmware_version(raw_version: int) -> str:
 @dataclass
 class Node:
     """Represents a LoRa node in the network."""
-    address: int
-    device_id: Optional[int]
+    device_id: int  # Primary identifier (64-bit hardware unique ID)
+    address: int  # LoRa address (for routing)
     node_type: str
     online: bool
     last_seen_seconds: int
@@ -37,8 +37,8 @@ class Node:
             fw_version = format_firmware_version(firmware_version_raw)
 
         return cls(
+            device_id=device_id,
             address=addr,
-            device_id=device_id if device_id != 0 else None,
             node_type=node_type,
             online=online == '1',
             last_seen_seconds=int(last_seen),
@@ -48,8 +48,8 @@ class Node:
     def to_dict(self):
         """Convert to dictionary for JSON serialization."""
         return {
-            'address': self.address,
             'device_id': self.device_id,
+            'address': self.address,
             'type': self.node_type,
             'online': self.online,
             'last_seen_seconds': self.last_seen_seconds,
@@ -60,7 +60,7 @@ class Node:
 @dataclass
 class NodeMetadata:
     """Metadata for a LoRa node (friendly name, notes)."""
-    address: int
+    device_id: int  # Primary identifier
     name: Optional[str] = None
     notes: Optional[str] = None
     zone_id: Optional[int] = None
@@ -69,7 +69,7 @@ class NodeMetadata:
     def to_dict(self):
         """Convert to dictionary for JSON serialization."""
         return {
-            'address': self.address,
+            'device_id': self.device_id,
             'name': self.name,
             'notes': self.notes,
             'zone_id': self.zone_id,

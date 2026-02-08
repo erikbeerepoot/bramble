@@ -178,10 +178,14 @@ class SerialInterface:
             # pending_records is optional for backwards compatibility with older firmware
             pending_records = int(parts[7]) if len(parts) > 7 else None
 
-            # Store in database
+            if device_id == 0:
+                logger.warning(f"Heartbeat from node {node_addr} has no device_id, skipping")
+                return
+
+            # Store in database using device_id as primary key
             self.database.update_node_status(
+                device_id=device_id,
                 address=node_addr,
-                device_id=device_id if device_id != 0 else None,
                 battery_level=battery_level,
                 error_flags=error_flags,
                 signal_strength=signal_strength,
@@ -190,7 +194,7 @@ class SerialInterface:
             )
 
             pending_str = f", pending={pending_records}" if pending_records is not None else ""
-            logger.info(f"Updated node status: addr={node_addr}, battery={battery_level}, "
+            logger.info(f"Updated node status: device_id={device_id}, addr={node_addr}, battery={battery_level}, "
                        f"errors=0x{error_flags:02X}, rssi={signal_strength}dBm, uptime={uptime_seconds}s{pending_str}")
 
         except (ValueError, IndexError) as e:
@@ -327,12 +331,16 @@ class SerialInterface:
             value = int(parts[4])
             timestamp = int(time.time())
 
+            if device_id == 0:
+                logger.warning(f"Sensor data from node {node_addr} has no device_id, skipping")
+                return
+
             # For individual readings, we only have one value at a time
             # Store with placeholder for the missing value
             if sensor_type == "TEMP":
                 reading = SensorReading(
-                    node_address=node_addr,
                     device_id=device_id,
+                    address=node_addr,
                     timestamp=timestamp,
                     temperature_centidegrees=value,
                     humidity_centipercent=0,  # Will be updated if humidity follows
@@ -340,8 +348,8 @@ class SerialInterface:
                 )
             elif sensor_type == "HUM":
                 reading = SensorReading(
-                    node_address=node_addr,
                     device_id=device_id,
+                    address=node_addr,
                     timestamp=timestamp,
                     temperature_centidegrees=0,
                     humidity_centipercent=value,
@@ -352,9 +360,9 @@ class SerialInterface:
                 return
 
             if self.database.insert_reading(reading):
-                logger.info(f"Stored sensor data: node={node_addr}, device_id={device_id}, {sensor_type}={value}")
+                logger.info(f"Stored sensor data: device_id={device_id}, addr={node_addr}, {sensor_type}={value}")
             else:
-                logger.debug(f"Duplicate sensor data: node={node_addr}, device_id={device_id}, {sensor_type}={value}")
+                logger.debug(f"Duplicate sensor data: device_id={device_id}, addr={node_addr}, {sensor_type}={value}")
 
         except (ValueError, IndexError) as e:
             logger.error(f"Failed to parse SENSOR_DATA: {e}")
@@ -374,6 +382,10 @@ class SerialInterface:
             device_id = int(parts[2])
             count = int(parts[3])
 
+            if device_id == 0:
+                logger.warning(f"Batch from node {node_addr} has no device_id, skipping")
+                return
+
             self._batch_state = {
                 'node_addr': node_addr,
                 'device_id': device_id,
@@ -382,7 +394,7 @@ class SerialInterface:
                 'start_time': time.time()
             }
 
-            logger.info(f"Starting batch receive: node={node_addr}, device_id={device_id}, expected={count}")
+            logger.info(f"Starting batch receive: device_id={device_id}, addr={node_addr}, expected={count}")
 
         except (ValueError, IndexError) as e:
             logger.error(f"Failed to parse SENSOR_BATCH: {e}")
@@ -410,8 +422,8 @@ class SerialInterface:
             flags = int(parts[6])
 
             reading = SensorReading(
-                node_address=node_addr,
                 device_id=device_id,
+                address=node_addr,
                 timestamp=timestamp,
                 temperature_centidegrees=temperature,
                 humidity_centipercent=humidity,
@@ -466,7 +478,7 @@ class SerialInterface:
 
             # Clear batch state
             elapsed = time.time() - self._batch_state['start_time']
-            logger.info(f"Batch complete: node={node_addr}, records={actual_count}, elapsed={elapsed:.2f}s")
+            logger.info(f"Batch complete: device_id={device_id}, addr={node_addr}, records={actual_count}, elapsed={elapsed:.2f}s")
             self._batch_state = None
 
         except (ValueError, IndexError) as e:

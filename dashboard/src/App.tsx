@@ -62,11 +62,11 @@ function App() {
   }, []);
 
   const updateNode = useCallback((updatedNode: Node) => {
-    setNodes(prev => prev.map(n => n.address === updatedNode.address ? updatedNode : n));
+    setNodes(prev => prev.map(n => n.device_id === updatedNode.device_id ? updatedNode : n));
   }, []);
 
-  const removeNode = useCallback((address: number) => {
-    setNodes(prev => prev.filter(n => n.address !== address));
+  const removeNode = useCallback((deviceId: number) => {
+    setNodes(prev => prev.filter(n => n.device_id !== deviceId));
   }, []);
 
   const addZone = useCallback((zone: Zone) => {
