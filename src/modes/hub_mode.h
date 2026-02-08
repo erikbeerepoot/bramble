@@ -5,9 +5,6 @@
 
 #include "application_mode.h"
 
-// Minimum interval between reregister requests to same node (ms)
-constexpr uint32_t REREGISTER_REQUEST_INTERVAL_MS = 30000;
-
 /**
  * @brief Hub mode for network management and routing
  */
@@ -17,9 +14,6 @@ private:
     char serial_input_buffer_[256];
     size_t serial_input_pos_;
     uint32_t last_datetime_sync_ms_;  // Last time we synced with RasPi
-
-    // Track last reregister request time per address to avoid spamming
-    std::map<uint16_t, uint32_t> last_reregister_request_time_;
 
     // Track pending batch seq_num per node for BATCH_ACK response
     std::map<uint16_t, uint8_t> pending_batch_seq_num_;
