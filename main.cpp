@@ -211,22 +211,23 @@ int main()
         uint64_t device_id = getDeviceId();
         VariantInfo variant = getVariantInfo();
 
-        // Set up re-registration callback (hub doesn't recognize us)
-        messenger.setReregistrationCallback([&messenger, device_id, variant]() {
-            printf("Re-registering with hub...\n");
-            messenger.sendRegistrationRequest(ADDRESS_HUB, device_id, variant.node_type,
-                                              variant.capabilities, BRAMBLE_FIRMWARE_VERSION,
-                                              variant.variant_name);
-        });
-
         // Set up registration success callback (update messenger address only, not flash)
         messenger.setRegistrationSuccessCallback([](uint16_t new_address) {
             printf("Registered with address 0x%04X (stored in PMU RAM)\n", new_address);
         });
 
+        // Re-registration callback: hub doesn't recognize us, re-send registration
+        auto reregistration_callback = [&messenger, device_id, variant]() {
+            printf("Re-registering with hub...\n");
+            messenger.sendRegistrationRequest(ADDRESS_HUB, device_id, variant.node_type,
+                                              variant.capabilities, BRAMBLE_FIRMWARE_VERSION,
+                                              variant.variant_name);
+        };
+
         // No registration attempt here - SensorMode handles it on cold start
         log.info("Starting SENSOR mode");
         SensorMode mode(messenger, lora, led, nullptr, nullptr, &network_stats);
+        mode.setReregistrationCallback(reregistration_callback);
         mode.run();
 #else
         // Non-sensor nodes: use flash-based address management
@@ -254,14 +255,6 @@ int main()
 
         // Get variant info for registration
         VariantInfo variant = getVariantInfo();
-
-        // Set up re-registration callback (hub doesn't recognize us)
-        messenger.setReregistrationCallback([&messenger, device_id, variant]() {
-            printf("Re-registering with hub...\n");
-            messenger.sendRegistrationRequest(ADDRESS_HUB, device_id, variant.node_type,
-                                              variant.capabilities, BRAMBLE_FIRMWARE_VERSION,
-                                              variant.variant_name);
-        });
 
         // Set up registration success callback (save new address to flash)
         messenger.setRegistrationSuccessCallback(
@@ -296,21 +289,32 @@ int main()
             }
         }
 
+        // Re-registration callback: hub doesn't recognize us, re-send registration
+        auto reregistration_callback = [&messenger, device_id, variant]() {
+            printf("Re-registering with hub...\n");
+            messenger.sendRegistrationRequest(ADDRESS_HUB, device_id, variant.node_type,
+                                              variant.capabilities, BRAMBLE_FIRMWARE_VERSION,
+                                              variant.variant_name);
+        };
+
 // Create appropriate node mode
 #ifdef HARDWARE_IRRIGATION
         log.info("Starting IRRIGATION mode");
         IrrigationMode mode(messenger, lora, led, nullptr, nullptr, &network_stats, false);
+        mode.setReregistrationCallback(reregistration_callback);
         mode.run();
 #elif HARDWARE_CONTROLLER
         // Controller hardware running as node (unusual but possible)
         log.warn("Controller hardware running as NODE!");
         log.info("Starting CONTROLLER NODE mode (using hub mode)");
         HubMode mode(messenger, lora, led, nullptr, nullptr, &network_stats);
+        mode.setReregistrationCallback(reregistration_callback);
         mode.run();
 #else
         // Generic node
         log.info("Starting GENERIC mode");
         ApplicationMode mode(messenger, lora, led, nullptr, nullptr, &network_stats);
+        mode.setReregistrationCallback(reregistration_callback);
         mode.run();
 #endif
 #endif  // HARDWARE_SENSOR

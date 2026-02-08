@@ -112,6 +112,11 @@ void ApplicationMode::onHeartbeatResponse(const HeartbeatResponsePayload *payloa
     if (!payload)
         return;
 
+    // Log pending update flags if any are set
+    if (payload->pending_update_flags != PENDING_FLAG_NONE) {
+        logger.info("Heartbeat response has pending flags: 0x%02X", payload->pending_update_flags);
+    }
+
     // Convert HeartbeatResponsePayload to datetime_t
     datetime_t dt;
     dt.year = payload->year;
@@ -135,6 +140,14 @@ void ApplicationMode::onHeartbeatResponse(const HeartbeatResponsePayload *payloa
         switchToOperationalPattern();
     } else {
         logger.error("Failed to set RTC");
+    }
+
+    // Handle re-registration flag (applies to all node types)
+    if (payload->pending_update_flags & PENDING_FLAG_REREGISTER) {
+        logger.warn("Hub requests re-registration (PENDING_FLAG_REREGISTER)");
+        if (reregistration_callback_) {
+            reregistration_callback_();
+        }
     }
 }
 

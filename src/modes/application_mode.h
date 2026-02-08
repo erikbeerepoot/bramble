@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <functional>
 #include <memory>
 
 #include "hardware/rtc.h"
@@ -23,19 +24,10 @@ class NetworkStats;
  * This provides a common framework for the main loop, reducing code duplication
  */
 class ApplicationMode {
-protected:
-    ReliableMessenger &messenger_;
-    SX1276 &lora_;
-    NeoPixel &led_;
-    AddressManager *address_manager_;
-    HubRouter *hub_router_;
-    NetworkStats *network_stats_;
-    std::unique_ptr<LEDPattern> led_pattern_;
-    std::unique_ptr<LEDPattern> operational_pattern_;  // Pattern to switch to after RTC sync
-    PeriodicTaskManager task_manager_;
-    BaseStateMachine state_machine_;  // Centralized state management
-
 public:
+    // Callback type for reregistration required (hub doesn't recognize node)
+    using ReregistrationCallback = std::function<void()>;
+
     ApplicationMode(ReliableMessenger &messenger, SX1276 &lora, NeoPixel &led,
                     AddressManager *address_manager = nullptr, HubRouter *hub_router = nullptr,
                     NetworkStats *network_stats = nullptr, bool use_multicore = false)
@@ -47,11 +39,32 @@ public:
     virtual ~ApplicationMode() = default;
 
     /**
+     * @brief Set callback for reregistration required
+     * @param callback Function to call when hub requests re-registration via heartbeat flag
+     */
+    void setReregistrationCallback(ReregistrationCallback callback)
+    {
+        reregistration_callback_ = callback;
+    }
+
+    /**
      * @brief Main loop execution
      */
     void run();
 
 protected:
+    ReliableMessenger &messenger_;
+    SX1276 &lora_;
+    NeoPixel &led_;
+    AddressManager *address_manager_;
+    HubRouter *hub_router_;
+    NetworkStats *network_stats_;
+    std::unique_ptr<LEDPattern> led_pattern_;
+    std::unique_ptr<LEDPattern> operational_pattern_;  // Pattern to switch to after RTC sync
+    PeriodicTaskManager task_manager_;
+    BaseStateMachine state_machine_;  // Centralized state management
+    ReregistrationCallback reregistration_callback_;
+
     /**
      * @brief Update LED pattern for this mode
      * @param current_time Current system time in milliseconds
