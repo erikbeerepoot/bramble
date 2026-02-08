@@ -29,11 +29,11 @@ function NodeNameEditor({ node, zones, onUpdate, onZoneCreated }: NodeNameEditor
       // Update zone if changed
       const currentZoneId = node.metadata?.zone_id ?? null;
       if (selectedZoneId !== currentZoneId) {
-        await setNodeZone(node.address, selectedZoneId);
+        await setNodeZone(node.device_id, selectedZoneId);
       }
 
       // Update other metadata
-      const updated = await updateNodeMetadata(node.address, {
+      const updated = await updateNodeMetadata(node.device_id, {
         name: name || null,
         notes: notes || null,
       });
@@ -116,15 +116,13 @@ function NodeNameEditor({ node, zones, onUpdate, onZoneCreated }: NodeNameEditor
               <dd className="text-gray-900">{node.metadata?.notes || <span className="text-gray-400 italic">Not set</span>}</dd>
             </div>
             <div>
-              <dt className="text-sm text-gray-500">Address</dt>
+              <dt className="text-sm text-gray-500">Device ID</dt>
+              <dd className="text-gray-900 font-mono text-sm">{node.device_id.toString(16).toUpperCase()}</dd>
+            </div>
+            <div>
+              <dt className="text-sm text-gray-500">LoRa Address</dt>
               <dd className="text-gray-900 font-mono">{node.address}</dd>
             </div>
-            {node.device_id && (
-              <div>
-                <dt className="text-sm text-gray-500">Device ID</dt>
-                <dd className="text-gray-900 font-mono text-sm">{node.device_id.toString(16).toUpperCase()}</dd>
-              </div>
-            )}
             {node.firmware_version && (
               <div>
                 <dt className="text-sm text-gray-500">Firmware</dt>

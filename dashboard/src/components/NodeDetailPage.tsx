@@ -6,7 +6,7 @@ import { getNode } from '../api/client';
 import NodeDetail from './NodeDetail';
 
 function NodeDetailPage() {
-  const { address } = useParams<{ address: string }>();
+  const { deviceId } = useParams<{ deviceId: string }>();
   const navigate = useNavigate();
   const { nodes, zones, updateNode, removeNode, addZone } = useAppContext();
   const [node, setNode] = useState<Node | null>(null);
@@ -15,21 +15,21 @@ function NodeDetailPage() {
 
   useEffect(() => {
     async function loadNode() {
-      if (!address) {
-        setError('No node address provided');
+      if (!deviceId) {
+        setError('No device ID provided');
         setLoading(false);
         return;
       }
 
-      const addressNum = parseInt(address, 10);
-      if (isNaN(addressNum)) {
-        setError('Invalid node address');
+      const deviceIdNum = parseInt(deviceId, 10);
+      if (isNaN(deviceIdNum)) {
+        setError('Invalid device ID');
         setLoading(false);
         return;
       }
 
       // First try to find the node in the cached list
-      const cachedNode = nodes.find(n => n.address === addressNum);
+      const cachedNode = nodes.find(n => n.device_id === deviceIdNum);
       if (cachedNode) {
         setNode(cachedNode);
         setLoading(false);
@@ -38,7 +38,7 @@ function NodeDetailPage() {
 
       // If not in cache, fetch from API
       try {
-        const fetchedNode = await getNode(addressNum);
+        const fetchedNode = await getNode(deviceIdNum);
         setNode(fetchedNode);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load node');
@@ -48,18 +48,18 @@ function NodeDetailPage() {
     }
 
     loadNode();
-  }, [address, nodes]);
+  }, [deviceId, nodes]);
 
   // Update local node state when it changes in the nodes list
   useEffect(() => {
-    if (node && address) {
-      const addressNum = parseInt(address, 10);
-      const updatedNode = nodes.find(n => n.address === addressNum);
+    if (node && deviceId) {
+      const deviceIdNum = parseInt(deviceId, 10);
+      const updatedNode = nodes.find(n => n.device_id === deviceIdNum);
       if (updatedNode) {
         setNode(updatedNode);
       }
     }
-  }, [nodes, address, node]);
+  }, [nodes, deviceId, node]);
 
   const handleBack = () => {
     navigate('/nodes');

@@ -85,7 +85,7 @@ function NodeList() {
   };
 
   const handleNodeSelect = (node: Node) => {
-    navigate(`/nodes/${node.address}`);
+    navigate(`/nodes/${node.device_id}`);
   };
 
   if (loading) {
@@ -183,7 +183,7 @@ function NodeList() {
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {group.nodes.map(node => (
                       <NodeCard
-                        key={node.address}
+                        key={node.device_id}
                         node={node}
                         zone={group.zone ?? undefined}
                         onClick={() => handleNodeSelect(node)}

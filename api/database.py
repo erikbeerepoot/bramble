@@ -16,13 +16,13 @@ logger = logging.getLogger(__name__)
 @dataclass
 class SensorReading:
     """Represents a single sensor data reading."""
-    node_address: int
+    device_id: int  # Primary identifier (64-bit hardware unique ID)
     timestamp: int  # Unix timestamp in seconds
     temperature_centidegrees: int  # Temperature in 0.01C units
     humidity_centipercent: int  # Humidity in 0.01% units
     flags: int = 0
     received_at: Optional[int] = None  # When hub received it
-    device_id: Optional[int] = None  # Hardware unique identifier (64-bit)
+    address: Optional[int] = None  # LoRa address (for reference)
 
     @property
     def temperature_celsius(self) -> float:
@@ -37,8 +37,8 @@ class SensorReading:
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
         return {
-            'node_address': self.node_address,
             'device_id': self.device_id,
+            'address': self.address,
             'timestamp': self.timestamp,
             'temperature_celsius': self.temperature_celsius,
             'humidity_percent': self.humidity_percent,
@@ -119,29 +119,26 @@ class SensorDatabase:
     SCHEMA = """
     CREATE TABLE IF NOT EXISTS sensor_readings (
         id INTEGER PRIMARY KEY,
-        node_address INTEGER NOT NULL,
-        device_id UBIGINT,
+        device_id UBIGINT NOT NULL,
+        address INTEGER,
         timestamp INTEGER NOT NULL,
         temperature_centidegrees INTEGER NOT NULL,
         humidity_centipercent INTEGER NOT NULL,
         flags INTEGER DEFAULT 0,
         received_at INTEGER NOT NULL,
         created_at TIMESTAMP DEFAULT current_timestamp,
-        UNIQUE(node_address, timestamp)
+        UNIQUE(device_id, timestamp)
     );
 
-    CREATE INDEX IF NOT EXISTS idx_node_timestamp
-        ON sensor_readings(node_address, timestamp);
+    CREATE INDEX IF NOT EXISTS idx_device_timestamp
+        ON sensor_readings(device_id, timestamp);
 
     CREATE INDEX IF NOT EXISTS idx_timestamp
         ON sensor_readings(timestamp);
 
-    CREATE INDEX IF NOT EXISTS idx_device_id
-        ON sensor_readings(device_id);
-
     CREATE TABLE IF NOT EXISTS nodes (
-        address INTEGER PRIMARY KEY,
-        device_id UBIGINT UNIQUE,
+        device_id UBIGINT PRIMARY KEY,
+        address INTEGER,
         node_type VARCHAR NOT NULL,
         first_seen_at INTEGER NOT NULL,
         last_seen_at INTEGER NOT NULL,
@@ -151,11 +148,11 @@ class SensorDatabase:
     CREATE INDEX IF NOT EXISTS idx_last_seen
         ON nodes(last_seen_at);
 
-    CREATE INDEX IF NOT EXISTS idx_nodes_device_id
-        ON nodes(device_id);
+    CREATE INDEX IF NOT EXISTS idx_nodes_address
+        ON nodes(address);
 
     CREATE TABLE IF NOT EXISTS node_metadata (
-        address INTEGER PRIMARY KEY,
+        device_id UBIGINT PRIMARY KEY,
         name VARCHAR,
         notes VARCHAR,
         zone_id INTEGER,
@@ -170,8 +167,8 @@ class SensorDatabase:
     );
 
     CREATE TABLE IF NOT EXISTS node_status (
-        address INTEGER PRIMARY KEY,
-        device_id UBIGINT,
+        device_id UBIGINT PRIMARY KEY,
+        address INTEGER,
         battery_level INTEGER,
         error_flags INTEGER,
         signal_strength INTEGER,
@@ -185,7 +182,7 @@ class SensorDatabase:
 
     CREATE TABLE IF NOT EXISTS node_status_history (
         id INTEGER PRIMARY KEY,
-        address INTEGER NOT NULL,
+        device_id UBIGINT NOT NULL,
         error_flags INTEGER NOT NULL,
         battery_level INTEGER,
         signal_strength INTEGER,
@@ -194,8 +191,8 @@ class SensorDatabase:
         timestamp INTEGER NOT NULL
     );
 
-    CREATE INDEX IF NOT EXISTS idx_nsh_address_time
-        ON node_status_history(address, timestamp);
+    CREATE INDEX IF NOT EXISTS idx_nsh_device_time
+        ON node_status_history(device_id, timestamp);
     """
 
     def __init__(self, db_path: str = Config.SENSOR_DB_PATH):
@@ -276,18 +273,6 @@ class SensorDatabase:
                 if statement:
                     conn.execute(statement)
             self._init_id_counter(conn)
-            # Migration: add zone_id column to node_metadata if it doesn't exist
-            try:
-                conn.execute("ALTER TABLE node_metadata ADD COLUMN zone_id INTEGER")
-                logger.info("Added zone_id column to node_metadata table")
-            except duckdb.Error:
-                pass  # Column already exists
-            # Migration: add signal_strength column to node_status_history if it doesn't exist
-            try:
-                conn.execute("ALTER TABLE node_status_history ADD COLUMN signal_strength INTEGER")
-                logger.info("Added signal_strength column to node_status_history table")
-            except duckdb.Error:
-                pass  # Column already exists
             logger.info(f"Database initialized at {self.db_path}")
 
     def close(self):
@@ -322,14 +307,14 @@ class SensorDatabase:
             with self._get_connection() as conn:
                 result = conn.execute("""
                     INSERT INTO sensor_readings
-                    (id, node_address, device_id, timestamp, temperature_centidegrees,
+                    (id, device_id, address, timestamp, temperature_centidegrees,
                      humidity_centipercent, flags, received_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT (node_address, timestamp) DO NOTHING
+                    ON CONFLICT (device_id, timestamp) DO NOTHING
                 """, (
                     new_id,
-                    reading.node_address,
                     reading.device_id,
+                    reading.address,
                     reading.timestamp,
                     reading.temperature_centidegrees,
                     reading.humidity_centipercent,
@@ -345,7 +330,7 @@ class SensorDatabase:
 
                 if count > 0:
                     # Update node statistics
-                    self._update_node_stats(conn, reading.node_address, reading.device_id, reading.timestamp)
+                    self._update_node_stats(conn, reading.device_id, reading.address, reading.timestamp)
                     return True
                 return False
 
@@ -377,14 +362,14 @@ class SensorDatabase:
 
                     conn.execute("""
                         INSERT INTO sensor_readings
-                        (id, node_address, device_id, timestamp, temperature_centidegrees,
+                        (id, device_id, address, timestamp, temperature_centidegrees,
                          humidity_centipercent, flags, received_at)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT (node_address, timestamp) DO NOTHING
+                        ON CONFLICT (device_id, timestamp) DO NOTHING
                     """, (
                         new_id,
-                        reading.node_address,
                         reading.device_id,
+                        reading.address,
                         reading.timestamp,
                         reading.temperature_centidegrees,
                         reading.humidity_centipercent,
@@ -400,7 +385,7 @@ class SensorDatabase:
 
                     if count > 0:
                         inserted += 1
-                        self._update_node_stats(conn, reading.node_address, reading.device_id, reading.timestamp)
+                        self._update_node_stats(conn, reading.device_id, reading.address, reading.timestamp)
                     else:
                         duplicates += 1
 
@@ -411,40 +396,40 @@ class SensorDatabase:
             logger.error(f"Batch insert failed: {e}")
             return (0, len(readings))
 
-    def _update_node_stats(self, conn: duckdb.DuckDBPyConnection, node_address: int, device_id: Optional[int], timestamp: int):
+    def _update_node_stats(self, conn: duckdb.DuckDBPyConnection, device_id: int, address: Optional[int], timestamp: int):
         """Update node statistics after inserting a reading."""
         # Check if node exists
         existing = conn.execute(
-            "SELECT address, device_id, first_seen_at, total_readings FROM nodes WHERE address = ?",
-            (node_address,)
+            "SELECT device_id, address, first_seen_at, total_readings FROM nodes WHERE device_id = ?",
+            (device_id,)
         ).fetchone()
 
         if existing:
-            # Update existing node, also update device_id if we have one and it's not set
-            if device_id and not existing[1]:
+            # Update existing node, also update address if we have one and it changed
+            if address and existing[1] != address:
                 conn.execute("""
                     UPDATE nodes SET
-                        device_id = ?,
+                        address = ?,
                         last_seen_at = GREATEST(last_seen_at, ?),
                         total_readings = total_readings + 1
-                    WHERE address = ?
-                """, (device_id, timestamp, node_address))
+                    WHERE device_id = ?
+                """, (address, timestamp, device_id))
             else:
                 conn.execute("""
                     UPDATE nodes SET
                         last_seen_at = GREATEST(last_seen_at, ?),
                         total_readings = total_readings + 1
-                    WHERE address = ?
-                """, (timestamp, node_address))
+                    WHERE device_id = ?
+                """, (timestamp, device_id))
         else:
             conn.execute("""
-                INSERT INTO nodes (address, device_id, node_type, first_seen_at, last_seen_at, total_readings)
+                INSERT INTO nodes (device_id, address, node_type, first_seen_at, last_seen_at, total_readings)
                 VALUES (?, ?, 'SENSOR', ?, ?, 1)
-            """, (node_address, device_id, timestamp, timestamp))
+            """, (device_id, address, timestamp, timestamp))
 
     def query_readings(
         self,
-        node_address: Optional[int] = None,
+        device_id: Optional[int] = None,
         start_time: Optional[int] = None,
         end_time: Optional[int] = None,
         limit: int = 1000,
@@ -453,7 +438,7 @@ class SensorDatabase:
         """Query sensor readings with filters.
 
         Args:
-            node_address: Filter by node address (optional)
+            device_id: Filter by device ID (optional)
             start_time: Start timestamp (optional)
             end_time: End timestamp (optional)
             limit: Maximum records to return
@@ -465,9 +450,9 @@ class SensorDatabase:
         conditions = []
         params = []
 
-        if node_address is not None:
-            conditions.append("node_address = ?")
-            params.append(node_address)
+        if device_id is not None:
+            conditions.append("device_id = ?")
+            params.append(device_id)
         if start_time is not None:
             conditions.append("timestamp >= ?")
             params.append(start_time)
@@ -480,7 +465,7 @@ class SensorDatabase:
 
         with self._get_connection() as conn:
             result = conn.execute(f"""
-                SELECT node_address, device_id, timestamp, temperature_centidegrees,
+                SELECT device_id, address, timestamp, temperature_centidegrees,
                        humidity_centipercent, flags, received_at
                 FROM sensor_readings
                 WHERE {where_clause}
@@ -490,8 +475,8 @@ class SensorDatabase:
 
             return [
                 SensorReading(
-                    node_address=row[0],
-                    device_id=row[1],
+                    device_id=row[0],
+                    address=row[1],
                     timestamp=row[2],
                     temperature_centidegrees=row[3],
                     humidity_centipercent=row[4],
@@ -501,21 +486,21 @@ class SensorDatabase:
                 for row in result.fetchall()
             ]
 
-    def get_latest_reading(self, node_address: int) -> Optional[SensorReading]:
+    def get_latest_reading(self, device_id: int) -> Optional[SensorReading]:
         """Get the most recent reading for a node.
 
         Args:
-            node_address: Node address to query
+            device_id: Device ID to query
 
         Returns:
             Latest SensorReading or None
         """
-        readings = self.query_readings(node_address=node_address, limit=1)
+        readings = self.query_readings(device_id=device_id, limit=1)
         return readings[0] if readings else None
 
     def query_readings_downsampled(
         self,
-        node_address: int,
+        device_id: int,
         start_time: int,
         end_time: int,
         max_points: int = 500
@@ -527,7 +512,7 @@ class SensorDatabase:
         preserving the overall trend.
 
         Args:
-            node_address: Node address to query
+            device_id: Device ID to query
             start_time: Start timestamp (required)
             end_time: End timestamp (required)
             max_points: Maximum number of data points to return
@@ -550,12 +535,12 @@ class SensorDatabase:
                     AVG(humidity_centipercent) as avg_hum,
                     COUNT(*) as sample_count
                 FROM sensor_readings
-                WHERE node_address = ?
+                WHERE device_id = ?
                   AND timestamp >= ?
                   AND timestamp <= ?
                 GROUP BY bucket_timestamp
                 ORDER BY bucket_timestamp ASC
-            """, (bucket_size, bucket_size, node_address, start_time, end_time))
+            """, (bucket_size, bucket_size, device_id, start_time, end_time))
 
             return [
                 {
@@ -569,14 +554,14 @@ class SensorDatabase:
 
     def get_node_statistics(
         self,
-        node_address: int,
+        device_id: int,
         start_time: Optional[int] = None,
         end_time: Optional[int] = None
     ) -> Optional[dict]:
         """Get statistics for a specific node.
 
         Args:
-            node_address: Node address to query
+            device_id: Device ID to query
             start_time: Start timestamp for stats calculation (optional)
             end_time: End timestamp for stats calculation (optional)
 
@@ -586,17 +571,17 @@ class SensorDatabase:
         with self._get_connection() as conn:
             # Get node info
             result = conn.execute("""
-                SELECT address, device_id, node_type, first_seen_at, last_seen_at, total_readings
-                FROM nodes WHERE address = ?
-            """, (node_address,))
+                SELECT device_id, address, node_type, first_seen_at, last_seen_at, total_readings
+                FROM nodes WHERE device_id = ?
+            """, (device_id,))
             row = result.fetchone()
 
             if not row:
                 return None
 
             # Build time-filtered stats query
-            conditions = ["node_address = ?"]
-            params = [node_address]
+            conditions = ["device_id = ?"]
+            params = [device_id]
 
             if start_time is not None:
                 conditions.append("timestamp >= ?")
@@ -626,8 +611,8 @@ class SensorDatabase:
             reading_count = stats[6] if (start_time or end_time) else row[5]
 
             return {
-                'address': row[0],
-                'device_id': row[1],
+                'device_id': row[0],
+                'address': row[1],
                 'node_type': row[2],
                 'first_seen_at': row[3],
                 'last_seen_at': row[4],
@@ -647,14 +632,14 @@ class SensorDatabase:
 
     def get_reading_count(
         self,
-        node_address: Optional[int] = None,
+        device_id: Optional[int] = None,
         start_time: Optional[int] = None,
         end_time: Optional[int] = None
     ) -> int:
         """Get count of readings matching filters.
 
         Args:
-            node_address: Filter by node address (optional)
+            device_id: Filter by device ID (optional)
             start_time: Start timestamp (optional)
             end_time: End timestamp (optional)
 
@@ -664,9 +649,9 @@ class SensorDatabase:
         conditions = []
         params = []
 
-        if node_address is not None:
-            conditions.append("node_address = ?")
-            params.append(node_address)
+        if device_id is not None:
+            conditions.append("device_id = ?")
+            params.append(device_id)
         if start_time is not None:
             conditions.append("timestamp >= ?")
             params.append(start_time)
@@ -684,7 +669,7 @@ class SensorDatabase:
 
     def export_csv_iter(
         self,
-        node_address: Optional[int] = None,
+        device_id: Optional[int] = None,
         start_time: Optional[int] = None,
         end_time: Optional[int] = None
     ):
@@ -694,21 +679,21 @@ class SensorDatabase:
         in memory, keeping memory usage constant regardless of data size.
 
         Args:
-            node_address: Filter by node address (optional)
+            device_id: Filter by device ID (optional)
             start_time: Start timestamp (optional)
             end_time: End timestamp (optional)
 
         Yields:
             CSV lines including header
         """
-        yield "node_address,device_id,timestamp,temperature_celsius,humidity_percent,flags\n"
+        yield "device_id,address,timestamp,temperature_celsius,humidity_percent,flags\n"
 
         conditions = []
         params = []
 
-        if node_address is not None:
-            conditions.append("node_address = ?")
-            params.append(node_address)
+        if device_id is not None:
+            conditions.append("device_id = ?")
+            params.append(device_id)
         if start_time is not None:
             conditions.append("timestamp >= ?")
             params.append(start_time)
@@ -720,7 +705,7 @@ class SensorDatabase:
 
         with self._get_connection() as conn:
             result = conn.execute(f"""
-                SELECT node_address, device_id, timestamp, temperature_centidegrees,
+                SELECT device_id, address, timestamp, temperature_centidegrees,
                        humidity_centipercent, flags
                 FROM sensor_readings
                 WHERE {where_clause}
@@ -735,27 +720,27 @@ class SensorDatabase:
                 hum_p = row[4] / 100.0
                 yield f"{row[0]},{row[1] or ''},{row[2]},{temp_c:.2f},{hum_p:.2f},{row[5]}\n"
 
-    def get_node_metadata(self, address: int) -> Optional[dict]:
+    def get_node_metadata(self, device_id: int) -> Optional[dict]:
         """Get metadata for a node.
 
         Args:
-            address: Node address
+            device_id: Device ID
 
         Returns:
             Dictionary with node metadata or None if not found
         """
         with self._get_connection() as conn:
             result = conn.execute("""
-                SELECT address, name, notes, zone_id, updated_at
-                FROM node_metadata WHERE address = ?
-            """, (address,))
+                SELECT device_id, name, notes, zone_id, updated_at
+                FROM node_metadata WHERE device_id = ?
+            """, (device_id,))
             row = result.fetchone()
 
             if not row:
                 return None
 
             return {
-                'address': row[0],
+                'device_id': row[0],
                 'name': row[1],
                 'notes': row[2],
                 'zone_id': row[3],
@@ -766,18 +751,18 @@ class SensorDatabase:
         """Get metadata for all nodes.
 
         Returns:
-            Dictionary mapping address to metadata dict
+            Dictionary mapping device_id to metadata dict
         """
         with self._get_connection() as conn:
             result = conn.execute("""
-                SELECT address, name, notes, zone_id, updated_at
+                SELECT device_id, name, notes, zone_id, updated_at
                 FROM node_metadata
             """)
 
             metadata = {}
             for row in result.fetchall():
                 metadata[row[0]] = {
-                    'address': row[0],
+                    'device_id': row[0],
                     'name': row[1],
                     'notes': row[2],
                     'zone_id': row[3],
@@ -787,7 +772,7 @@ class SensorDatabase:
 
     def update_node_metadata(
         self,
-        address: int,
+        device_id: int,
         name: Optional[str] = None,
         notes: Optional[str] = None,
         zone_id: Optional[int] = None
@@ -795,7 +780,7 @@ class SensorDatabase:
         """Update metadata for a node (upsert).
 
         Args:
-            address: Node address
+            device_id: Device ID
             name: Friendly name for the node
             notes: Additional notes
             zone_id: Zone ID (use -1 to explicitly unset, None to preserve)
@@ -808,8 +793,8 @@ class SensorDatabase:
         with self._get_connection() as conn:
             # Check if metadata exists
             existing = conn.execute(
-                "SELECT name, notes, zone_id FROM node_metadata WHERE address = ?",
-                (address,)
+                "SELECT name, notes, zone_id FROM node_metadata WHERE device_id = ?",
+                (device_id,)
             ).fetchone()
 
             if existing:
@@ -827,17 +812,17 @@ class SensorDatabase:
                 conn.execute("""
                     UPDATE node_metadata
                     SET name = ?, notes = ?, zone_id = ?, updated_at = ?
-                    WHERE address = ?
-                """, (current_name, current_notes, current_zone_id, updated_at, address))
+                    WHERE device_id = ?
+                """, (current_name, current_notes, current_zone_id, updated_at, device_id))
             else:
                 # Insert new
                 actual_zone_id = None if zone_id == -1 else zone_id
                 conn.execute("""
-                    INSERT INTO node_metadata (address, name, notes, zone_id, updated_at)
+                    INSERT INTO node_metadata (device_id, name, notes, zone_id, updated_at)
                     VALUES (?, ?, ?, ?, ?)
-                """, (address, name, notes, actual_zone_id, updated_at))
+                """, (device_id, name, notes, actual_zone_id, updated_at))
 
-        return self.get_node_metadata(address)
+        return self.get_node_metadata(device_id)
 
     def sync_to_s3(
         self,
@@ -1019,11 +1004,11 @@ class SensorDatabase:
 
             return True
 
-    def set_node_zone(self, address: int, zone_id: Optional[int]) -> Optional[dict]:
+    def set_node_zone(self, device_id: int, zone_id: Optional[int]) -> Optional[dict]:
         """Set a node's zone.
 
         Args:
-            address: Node address
+            device_id: Device ID
             zone_id: Zone ID or None to unzone
 
         Returns:
@@ -1031,14 +1016,14 @@ class SensorDatabase:
         """
         # Use -1 to explicitly unset zone_id in update_node_metadata
         zone_value = -1 if zone_id is None else zone_id
-        return self.update_node_metadata(address, zone_id=zone_value)
+        return self.update_node_metadata(device_id, zone_id=zone_value)
 
     # ===== Node Status Management =====
 
     def update_node_status(
         self,
-        address: int,
-        device_id: Optional[int] = None,
+        device_id: int,
+        address: Optional[int] = None,
         battery_level: Optional[int] = None,
         error_flags: Optional[int] = None,
         signal_strength: Optional[int] = None,
@@ -1051,8 +1036,8 @@ class SensorDatabase:
         of when errors occurred over time.
 
         Args:
-            address: Node address
-            device_id: Hardware device ID
+            device_id: Hardware device ID (primary key)
+            address: LoRa address (for routing)
             battery_level: Battery percentage (0-100, 255=external power)
             error_flags: Bitmask of error flags
             signal_strength: RSSI in dBm (negative value)
@@ -1067,8 +1052,8 @@ class SensorDatabase:
         with self._get_connection() as conn:
             # Check if status exists
             existing = conn.execute(
-                "SELECT device_id, battery_level, error_flags, signal_strength, uptime_seconds, pending_records FROM node_status WHERE address = ?",
-                (address,)
+                "SELECT address, battery_level, error_flags, signal_strength, uptime_seconds, pending_records FROM node_status WHERE device_id = ?",
+                (device_id,)
             ).fetchone()
 
             # Track previous error_flags for history
@@ -1076,7 +1061,7 @@ class SensorDatabase:
 
             if existing:
                 # Update existing - only update fields that are provided
-                current_device_id = device_id if device_id is not None else existing[0]
+                current_address = address if address is not None else existing[0]
                 current_battery = battery_level if battery_level is not None else existing[1]
                 current_errors = error_flags if error_flags is not None else existing[2]
                 current_signal = signal_strength if signal_strength is not None else existing[3]
@@ -1085,32 +1070,32 @@ class SensorDatabase:
 
                 conn.execute("""
                     UPDATE node_status
-                    SET device_id = ?, battery_level = ?, error_flags = ?,
+                    SET address = ?, battery_level = ?, error_flags = ?,
                         signal_strength = ?, uptime_seconds = ?, pending_records = ?, updated_at = ?
-                    WHERE address = ?
-                """, (current_device_id, current_battery, current_errors,
-                      current_signal, current_uptime, current_pending, updated_at, address))
+                    WHERE device_id = ?
+                """, (current_address, current_battery, current_errors,
+                      current_signal, current_uptime, current_pending, updated_at, device_id))
             else:
                 # Insert new
                 conn.execute("""
-                    INSERT INTO node_status (address, device_id, battery_level, error_flags,
+                    INSERT INTO node_status (device_id, address, battery_level, error_flags,
                                             signal_strength, uptime_seconds, pending_records, updated_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, (address, device_id, battery_level, error_flags,
+                """, (device_id, address, battery_level, error_flags,
                       signal_strength, uptime_seconds, pending_records, updated_at))
 
             # Record history if error_flags changed (or first status report)
             if error_flags is not None and error_flags != previous_error_flags:
                 self._record_status_history(
-                    conn, address, error_flags, battery_level, signal_strength, uptime_seconds, pending_records, updated_at
+                    conn, device_id, error_flags, battery_level, signal_strength, uptime_seconds, pending_records, updated_at
                 )
 
-        return self.get_node_status(address)
+        return self.get_node_status(device_id)
 
     def _record_status_history(
         self,
         conn,
-        address: int,
+        device_id: int,
         error_flags: int,
         battery_level: Optional[int],
         signal_strength: Optional[int],
@@ -1125,33 +1110,33 @@ class SensorDatabase:
 
         conn.execute("""
             INSERT INTO node_status_history
-            (id, address, error_flags, battery_level, signal_strength, uptime_seconds, pending_records, timestamp)
+            (id, device_id, error_flags, battery_level, signal_strength, uptime_seconds, pending_records, timestamp)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (next_id, address, error_flags, battery_level, signal_strength, uptime_seconds, pending_records, timestamp))
+        """, (next_id, device_id, error_flags, battery_level, signal_strength, uptime_seconds, pending_records, timestamp))
 
-    def get_node_status(self, address: int) -> Optional[dict]:
+    def get_node_status(self, device_id: int) -> Optional[dict]:
         """Get status for a node.
 
         Args:
-            address: Node address
+            device_id: Device ID
 
         Returns:
             Status dictionary or None if not found
         """
         with self._get_connection() as conn:
             result = conn.execute("""
-                SELECT address, device_id, battery_level, error_flags,
+                SELECT device_id, address, battery_level, error_flags,
                        signal_strength, uptime_seconds, pending_records, updated_at
-                FROM node_status WHERE address = ?
-            """, (address,))
+                FROM node_status WHERE device_id = ?
+            """, (device_id,))
             row = result.fetchone()
 
             if not row:
                 return None
 
             return {
-                'address': row[0],
-                'device_id': row[1],
+                'device_id': row[0],
+                'address': row[1],
                 'battery_level': row[2],
                 'error_flags': row[3],
                 'signal_strength': row[4],
@@ -1164,11 +1149,11 @@ class SensorDatabase:
         """Get status for all nodes.
 
         Returns:
-            Dictionary mapping address to status dict
+            Dictionary mapping device_id to status dict
         """
         with self._get_connection() as conn:
             result = conn.execute("""
-                SELECT address, device_id, battery_level, error_flags,
+                SELECT device_id, address, battery_level, error_flags,
                        signal_strength, uptime_seconds, pending_records, updated_at
                 FROM node_status
             """)
@@ -1176,8 +1161,8 @@ class SensorDatabase:
             status = {}
             for row in result.fetchall():
                 status[row[0]] = {
-                    'address': row[0],
-                    'device_id': row[1],
+                    'device_id': row[0],
+                    'address': row[1],
                     'battery_level': row[2],
                     'error_flags': row[3],
                     'signal_strength': row[4],
@@ -1189,7 +1174,7 @@ class SensorDatabase:
 
     def get_node_error_history(
         self,
-        address: int,
+        device_id: int,
         start_time: int,
         end_time: int
     ) -> list[dict]:
@@ -1199,7 +1184,7 @@ class SensorDatabase:
         tracking when errors like flash failures occurred.
 
         Args:
-            address: Node address
+            device_id: Device ID
             start_time: Start timestamp (inclusive)
             end_time: End timestamp (inclusive)
 
@@ -1211,9 +1196,9 @@ class SensorDatabase:
             result = conn.execute("""
                 SELECT error_flags, battery_level, signal_strength, uptime_seconds, pending_records, timestamp
                 FROM node_status_history
-                WHERE address = ? AND timestamp BETWEEN ? AND ?
+                WHERE device_id = ? AND timestamp BETWEEN ? AND ?
                 ORDER BY timestamp ASC
-            """, (address, start_time, end_time))
+            """, (device_id, start_time, end_time))
 
             return [
                 {
@@ -1227,7 +1212,7 @@ class SensorDatabase:
                 for row in result.fetchall()
             ]
 
-    def delete_node(self, address: int) -> bool:
+    def delete_node(self, device_id: int) -> bool:
         """Delete a node and all its associated data.
 
         Removes data from all related tables:
@@ -1238,7 +1223,7 @@ class SensorDatabase:
         - sensor_readings
 
         Args:
-            address: Node address
+            device_id: Device ID
 
         Returns:
             True if node was deleted, False if not found
@@ -1246,23 +1231,51 @@ class SensorDatabase:
         with self._get_connection() as conn:
             # Check if node exists in any table
             exists = conn.execute(
-                "SELECT 1 FROM nodes WHERE address = ? "
-                "UNION SELECT 1 FROM node_metadata WHERE address = ? "
-                "UNION SELECT 1 FROM node_status WHERE address = ? "
-                "UNION SELECT 1 FROM sensor_readings WHERE node_address = ? "
+                "SELECT 1 FROM nodes WHERE device_id = ? "
+                "UNION SELECT 1 FROM node_metadata WHERE device_id = ? "
+                "UNION SELECT 1 FROM node_status WHERE device_id = ? "
+                "UNION SELECT 1 FROM sensor_readings WHERE device_id = ? "
                 "LIMIT 1",
-                (address, address, address, address)
+                (device_id, device_id, device_id, device_id)
             ).fetchone()
 
             if not exists:
                 return False
 
             # Delete from all related tables
-            conn.execute("DELETE FROM sensor_readings WHERE node_address = ?", (address,))
-            conn.execute("DELETE FROM node_status_history WHERE address = ?", (address,))
-            conn.execute("DELETE FROM node_status WHERE address = ?", (address,))
-            conn.execute("DELETE FROM node_metadata WHERE address = ?", (address,))
-            conn.execute("DELETE FROM nodes WHERE address = ?", (address,))
+            conn.execute("DELETE FROM sensor_readings WHERE device_id = ?", (device_id,))
+            conn.execute("DELETE FROM node_status_history WHERE device_id = ?", (device_id,))
+            conn.execute("DELETE FROM node_status WHERE device_id = ?", (device_id,))
+            conn.execute("DELETE FROM node_metadata WHERE device_id = ?", (device_id,))
+            conn.execute("DELETE FROM nodes WHERE device_id = ?", (device_id,))
 
-            logger.info(f"Deleted node {address} and all associated data")
+            logger.info(f"Deleted node with device_id {device_id} and all associated data")
             return True
+
+    def get_node_by_device_id(self, device_id: int) -> Optional[dict]:
+        """Get node info by device_id.
+
+        Args:
+            device_id: Device ID to look up
+
+        Returns:
+            Node dictionary with address and other info, or None
+        """
+        with self._get_connection() as conn:
+            result = conn.execute("""
+                SELECT device_id, address, node_type, first_seen_at, last_seen_at, total_readings
+                FROM nodes WHERE device_id = ?
+            """, (device_id,))
+            row = result.fetchone()
+
+            if not row:
+                return None
+
+            return {
+                'device_id': row[0],
+                'address': row[1],
+                'node_type': row[2],
+                'first_seen_at': row[3],
+                'last_seen_at': row[4],
+                'total_readings': row[5]
+            }

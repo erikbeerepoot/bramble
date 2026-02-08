@@ -134,7 +134,7 @@ def list_nodes():
         header = responses[0].split()
         count = int(header[1])
 
-        # Get all metadata and status to include with nodes
+        # Get all metadata and status to include with nodes (keyed by device_id)
         db = get_database()
         all_metadata = db.get_all_node_metadata()
         all_status = db.get_all_node_status()
@@ -149,24 +149,27 @@ def list_nodes():
                 if len(parts) >= 6:
                     device_id = int(parts[2])
                     address = int(parts[1])
+                    # Skip nodes without device_id (shouldn't happen normally)
+                    if device_id == 0:
+                        continue
                     # firmware_version is optional for backwards compatibility
                     firmware_version_raw = int(parts[6]) if len(parts) >= 7 else None
                     node = Node(
+                        device_id=device_id,
                         address=address,
-                        device_id=device_id if device_id != 0 else None,
                         node_type=parts[3],
                         online=parts[4] == '1',
                         last_seen_seconds=int(parts[5]),
                         firmware_version=format_firmware_version(firmware_version_raw) if firmware_version_raw else None
                     )
                     node_dict = node.to_dict()
-                    # Include metadata if available
-                    if address in all_metadata:
-                        node_dict['metadata'] = all_metadata[address]
-                    # Include status if available
-                    if address in all_status:
-                        node_dict['status'] = all_status[address]
-                    # Include hub queue count if requested
+                    # Include metadata if available (keyed by device_id)
+                    if device_id in all_metadata:
+                        node_dict['metadata'] = all_metadata[device_id]
+                    # Include status if available (keyed by device_id)
+                    if device_id in all_status:
+                        node_dict['status'] = all_status[device_id]
+                    # Include hub queue count if requested (uses address for hub routing)
                     if include_queue:
                         node_dict['hub_queue_count'] = _get_hub_queue_count(serial, address)
                     nodes.append(node_dict)
@@ -183,12 +186,12 @@ def list_nodes():
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/nodes/<int:address>', methods=['GET'])
-def get_node(address: int):
+@app.route('/api/nodes/<int:device_id>', methods=['GET'])
+def get_node(device_id: int):
     """Get details for a specific node.
 
     Args:
-        address: Node address
+        device_id: Device ID (64-bit hardware unique ID)
 
     Returns:
         JSON node object
@@ -197,17 +200,17 @@ def get_node(address: int):
         serial = get_serial()
         responses = serial.send_command('LIST_NODES')
 
-        # Parse and find the node
+        # Parse and find the node by device_id
         # Format: NODE <addr> <device_id> <type> <online> <last_seen_sec> [<firmware_version>]
         for line in responses[1:]:
             if line.startswith('NODE '):
                 parts = line.split()
-                if len(parts) >= 6 and int(parts[1]) == address:
-                    device_id = int(parts[2])
+                if len(parts) >= 6 and int(parts[2]) == device_id:
+                    address = int(parts[1])
                     firmware_version_raw = int(parts[6]) if len(parts) >= 7 else None
                     node = Node(
-                        address=int(parts[1]),
-                        device_id=device_id if device_id != 0 else None,
+                        device_id=device_id,
+                        address=address,
                         node_type=parts[3],
                         online=parts[4] == '1',
                         last_seen_seconds=int(parts[5]),
@@ -215,19 +218,19 @@ def get_node(address: int):
                     )
                     return jsonify(node.to_dict())
 
-        return jsonify({'error': f'Node {address} not found'}), 404
+        return jsonify({'error': f'Node with device_id {device_id} not found'}), 404
 
     except Exception as e:
-        logger.error(f"Error getting node {address}: {e}")
+        logger.error(f"Error getting node {device_id}: {e}")
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/nodes/<int:address>', methods=['DELETE'])
-def delete_node(address: int):
+@app.route('/api/nodes/<int:device_id>', methods=['DELETE'])
+def delete_node(device_id: int):
     """Delete a node and all its associated data.
 
     Removes the node from:
-    - Hub firmware registry (via DELETE_NODE command)
+    - Hub firmware registry (via DELETE_NODE command, using address)
     - nodes table
     - node_metadata table
     - node_status table
@@ -235,70 +238,75 @@ def delete_node(address: int):
     - sensor_readings table
 
     Args:
-        address: Node address
+        device_id: Device ID (64-bit hardware unique ID)
 
     Returns:
         JSON success message or 404 if not found
     """
     try:
-        # First, tell the hub to delete the node from its registry
+        db = get_database()
+
+        # Look up the node's address for hub command
+        node_info = db.get_node_by_device_id(device_id)
+        address = node_info['address'] if node_info else None
+
+        # Try to tell the hub to delete the node from its registry
         hub_deleted = False
         hub_error = None
-        try:
-            serial = get_serial()
-            responses = serial.send_command(f'DELETE_NODE {address}', timeout=2.0)
-            if responses:
-                if responses[0].startswith('DELETED_NODE'):
-                    hub_deleted = True
-                    logger.info(f"Hub deleted node {address} from registry")
-                elif responses[0].startswith('ERROR'):
-                    hub_error = responses[0]
-                    logger.warning(f"Hub error deleting node {address}: {hub_error}")
-        except Exception as e:
-            hub_error = str(e)
-            logger.warning(f"Could not send DELETE_NODE to hub: {e}")
+        if address:
+            try:
+                serial = get_serial()
+                responses = serial.send_command(f'DELETE_NODE {address}', timeout=2.0)
+                if responses:
+                    if responses[0].startswith('DELETED_NODE'):
+                        hub_deleted = True
+                        logger.info(f"Hub deleted node {address} from registry")
+                    elif responses[0].startswith('ERROR'):
+                        hub_error = responses[0]
+                        logger.warning(f"Hub error deleting node {address}: {hub_error}")
+            except Exception as e:
+                hub_error = str(e)
+                logger.warning(f"Could not send DELETE_NODE to hub: {e}")
 
         # Delete from database regardless of hub result
-        # (node may have been manually removed from hub, or hub may be offline)
-        db = get_database()
-        db_deleted = db.delete_node(address)
+        db_deleted = db.delete_node(device_id)
 
         if db_deleted or hub_deleted:
-            logger.info(f"Deleted node {address} (hub={hub_deleted}, db={db_deleted})")
+            logger.info(f"Deleted node device_id={device_id} (hub={hub_deleted}, db={db_deleted})")
             return jsonify({
-                'message': f'Node {address} deleted',
+                'message': f'Node {device_id} deleted',
                 'hub_deleted': hub_deleted,
                 'db_deleted': db_deleted
             })
         else:
-            return jsonify({'error': f'Node {address} not found'}), 404
+            return jsonify({'error': f'Node with device_id {device_id} not found'}), 404
 
     except Exception as e:
-        logger.error(f"Error deleting node {address}: {e}")
+        logger.error(f"Error deleting node {device_id}: {e}")
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/nodes/<int:address>/status', methods=['GET'])
-def get_node_status(address: int):
+@app.route('/api/nodes/<int:device_id>/status', methods=['GET'])
+def get_node_status(device_id: int):
     """Get status for a specific node.
 
     Args:
-        address: Node address
+        device_id: Device ID (64-bit hardware unique ID)
 
     Returns:
         JSON status object or 404 if not found
     """
     try:
         db = get_database()
-        status = db.get_node_status(address)
+        status = db.get_node_status(device_id)
 
         if status:
             return jsonify(status)
         else:
             # Return empty status structure for nodes without status
             return jsonify({
-                'address': address,
-                'device_id': None,
+                'device_id': device_id,
+                'address': None,
                 'battery_level': None,
                 'error_flags': None,
                 'signal_strength': None,
@@ -308,19 +316,19 @@ def get_node_status(address: int):
             })
 
     except Exception as e:
-        logger.error(f"Error getting status for node {address}: {e}")
+        logger.error(f"Error getting status for node {device_id}: {e}")
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/nodes/<int:address>/error-history', methods=['GET'])
-def get_node_error_history(address: int):
+@app.route('/api/nodes/<int:device_id>/error-history', methods=['GET'])
+def get_node_error_history(device_id: int):
     """Get error flag history for a specific node.
 
     Returns history of error_flags changes over time, useful for
     tracking when errors like flash failures occurred.
 
     Args:
-        address: Node address
+        device_id: Device ID (64-bit hardware unique ID)
 
     Query parameters:
         start: Start timestamp (required)
@@ -340,10 +348,10 @@ def get_node_error_history(address: int):
             return jsonify({'error': 'start must be <= end'}), 400
 
         db = get_database()
-        history = db.get_node_error_history(address, start_time, end_time)
+        history = db.get_node_error_history(device_id, start_time, end_time)
 
         return jsonify({
-            'address': address,
+            'device_id': device_id,
             'start': start_time,
             'end': end_time,
             'count': len(history),
@@ -351,46 +359,47 @@ def get_node_error_history(address: int):
         })
 
     except Exception as e:
-        logger.error(f"Error getting error history for node {address}: {e}")
+        logger.error(f"Error getting error history for node {device_id}: {e}")
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/nodes/<int:address>/metadata', methods=['GET'])
-def get_node_metadata(address: int):
+@app.route('/api/nodes/<int:device_id>/metadata', methods=['GET'])
+def get_node_metadata(device_id: int):
     """Get metadata for a specific node.
 
     Args:
-        address: Node address
+        device_id: Device ID (64-bit hardware unique ID)
 
     Returns:
         JSON metadata object or 404 if not found
     """
     try:
         db = get_database()
-        metadata = db.get_node_metadata(address)
+        metadata = db.get_node_metadata(device_id)
 
         if metadata:
             return jsonify(metadata)
         else:
             # Return empty metadata structure for nodes without metadata
             return jsonify({
-                'address': address,
+                'device_id': device_id,
                 'name': None,
                 'notes': None,
+                'zone_id': None,
                 'updated_at': None
             })
 
     except Exception as e:
-        logger.error(f"Error getting metadata for node {address}: {e}")
+        logger.error(f"Error getting metadata for node {device_id}: {e}")
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/nodes/<int:address>/metadata', methods=['PUT'])
-def update_node_metadata(address: int):
+@app.route('/api/nodes/<int:device_id>/metadata', methods=['PUT'])
+def update_node_metadata(device_id: int):
     """Update metadata for a node.
 
     Args:
-        address: Node address
+        device_id: Device ID (64-bit hardware unique ID)
 
     Request body:
         {
@@ -408,7 +417,7 @@ def update_node_metadata(address: int):
 
         db = get_database()
         metadata = db.update_node_metadata(
-            address=address,
+            device_id=device_id,
             name=data.get('name'),
             notes=data.get('notes')
         )
@@ -416,21 +425,27 @@ def update_node_metadata(address: int):
         return jsonify(metadata)
 
     except Exception as e:
-        logger.error(f"Error updating metadata for node {address}: {e}")
+        logger.error(f"Error updating metadata for node {device_id}: {e}")
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/nodes/<int:address>/queue', methods=['GET'])
-def get_queue(address: int):
+@app.route('/api/nodes/<int:device_id>/queue', methods=['GET'])
+def get_queue(device_id: int):
     """Get pending updates queue for a node.
 
     Args:
-        address: Node address
+        device_id: Device ID (64-bit hardware unique ID)
 
     Returns:
         JSON array of queued updates
     """
     try:
+        db = get_database()
+        node_info = db.get_node_by_device_id(device_id)
+        if not node_info or not node_info.get('address'):
+            return jsonify({'error': f'Node with device_id {device_id} not found'}), 404
+
+        address = node_info['address']
         serial = get_serial()
         responses = serial.send_command(f'GET_QUEUE {address}')
 
@@ -459,7 +474,8 @@ def get_queue(address: int):
                     updates.append(update.to_dict())
 
         return jsonify({
-            'node_address': address,
+            'device_id': device_id,
+            'address': address,
             'count': count,
             'updates': updates
         })
@@ -467,16 +483,16 @@ def get_queue(address: int):
     except TimeoutError:
         return jsonify({'error': 'Hub did not respond'}), 504
     except Exception as e:
-        logger.error(f"Error getting queue for node {address}: {e}")
+        logger.error(f"Error getting queue for node {device_id}: {e}")
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/nodes/<int:address>/schedules', methods=['POST'])
-def add_schedule(address: int):
+@app.route('/api/nodes/<int:device_id>/schedules', methods=['POST'])
+def add_schedule(device_id: int):
     """Add or update a schedule entry for a node.
 
     Args:
-        address: Node address
+        device_id: Device ID (64-bit hardware unique ID)
 
     Request body:
         {
@@ -492,6 +508,13 @@ def add_schedule(address: int):
         JSON response with task_id for tracking (202 Accepted)
     """
     try:
+        db = get_database()
+        node_info = db.get_node_by_device_id(device_id)
+        if not node_info or not node_info.get('address'):
+            return jsonify({'error': f'Node with device_id {device_id} not found'}), 404
+
+        address = node_info['address']
+
         data = request.get_json()
         if not data:
             return jsonify({'error': 'Request body must be JSON'}), 400
@@ -514,7 +537,7 @@ def add_schedule(address: int):
         if errors:
             return jsonify({'error': 'Validation failed', 'details': errors}), 400
 
-        # Queue command for delivery
+        # Queue command for delivery (uses address for hub routing)
         from command_queue import queue_set_schedule
 
         result = queue_set_schedule(
@@ -530,22 +553,23 @@ def add_schedule(address: int):
         return jsonify({
             'status': 'queued',
             'task_id': result.id,
-            'node_address': address,
+            'device_id': device_id,
+            'address': address,
             'schedule': data,
             'message': 'Command queued for delivery'
         }), 202
 
     except Exception as e:
-        logger.error(f"Error adding schedule for node {address}: {e}")
+        logger.error(f"Error adding schedule for node {device_id}: {e}")
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/nodes/<int:address>/schedules/<int:index>', methods=['DELETE'])
-def remove_schedule(address: int, index: int):
+@app.route('/api/nodes/<int:device_id>/schedules/<int:index>', methods=['DELETE'])
+def remove_schedule(device_id: int, index: int):
     """Remove a schedule entry from a node.
 
     Args:
-        address: Node address
+        device_id: Device ID (64-bit hardware unique ID)
         index: Schedule index (0-7)
 
     Returns:
@@ -555,7 +579,14 @@ def remove_schedule(address: int, index: int):
         if not 0 <= index <= 7:
             return jsonify({'error': 'Schedule index must be 0-7'}), 400
 
-        # Queue command for delivery
+        db = get_database()
+        node_info = db.get_node_by_device_id(device_id)
+        if not node_info or not node_info.get('address'):
+            return jsonify({'error': f'Node with device_id {device_id} not found'}), 404
+
+        address = node_info['address']
+
+        # Queue command for delivery (uses address for hub routing)
         from command_queue import queue_remove_schedule
 
         result = queue_remove_schedule(node_address=address, index=index)
@@ -563,22 +594,23 @@ def remove_schedule(address: int, index: int):
         return jsonify({
             'status': 'queued',
             'task_id': result.id,
-            'node_address': address,
+            'device_id': device_id,
+            'address': address,
             'schedule_index': index,
             'message': 'Command queued for delivery'
         }), 202
 
     except Exception as e:
-        logger.error(f"Error removing schedule {index} for node {address}: {e}")
+        logger.error(f"Error removing schedule {index} for node {device_id}: {e}")
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/nodes/<int:address>/wake-interval', methods=['POST'])
-def set_wake_interval(address: int):
+@app.route('/api/nodes/<int:device_id>/wake-interval', methods=['POST'])
+def set_wake_interval(device_id: int):
     """Set periodic wake interval for a node.
 
     Args:
-        address: Node address
+        device_id: Device ID (64-bit hardware unique ID)
 
     Request body:
         {
@@ -589,6 +621,13 @@ def set_wake_interval(address: int):
         JSON response with task_id for tracking (202 Accepted)
     """
     try:
+        db = get_database()
+        node_info = db.get_node_by_device_id(device_id)
+        if not node_info or not node_info.get('address'):
+            return jsonify({'error': f'Node with device_id {device_id} not found'}), 404
+
+        address = node_info['address']
+
         data = request.get_json()
         if not data:
             return jsonify({'error': 'Request body must be JSON'}), 400
@@ -601,7 +640,7 @@ def set_wake_interval(address: int):
         if not 10 <= interval <= 3600:
             return jsonify({'error': 'interval_seconds must be 10-3600'}), 400
 
-        # Queue command for delivery
+        # Queue command for delivery (uses address for hub routing)
         from command_queue import queue_set_wake_interval
 
         result = queue_set_wake_interval(node_address=address, interval_seconds=interval)
@@ -609,22 +648,23 @@ def set_wake_interval(address: int):
         return jsonify({
             'status': 'queued',
             'task_id': result.id,
-            'node_address': address,
+            'device_id': device_id,
+            'address': address,
             'interval_seconds': interval,
             'message': 'Command queued for delivery'
         }), 202
 
     except Exception as e:
-        logger.error(f"Error setting wake interval for node {address}: {e}")
+        logger.error(f"Error setting wake interval for node {device_id}: {e}")
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/nodes/<int:address>/datetime', methods=['POST'])
-def set_datetime(address: int):
+@app.route('/api/nodes/<int:device_id>/datetime', methods=['POST'])
+def set_datetime(device_id: int):
     """Set date/time for a node's RTC.
 
     Args:
-        address: Node address
+        device_id: Device ID (64-bit hardware unique ID)
 
     Request body:
         {
@@ -641,6 +681,13 @@ def set_datetime(address: int):
         JSON response with task_id for tracking (202 Accepted)
     """
     try:
+        db = get_database()
+        node_info = db.get_node_by_device_id(device_id)
+        if not node_info or not node_info.get('address'):
+            return jsonify({'error': f'Node with device_id {device_id} not found'}), 404
+
+        address = node_info['address']
+
         data = request.get_json()
         if not data:
             return jsonify({'error': 'Request body must be JSON'}), 400
@@ -673,7 +720,7 @@ def set_datetime(address: int):
         if not (0 <= second <= 59):
             return jsonify({'error': 'second must be 0-59'}), 400
 
-        # Queue command for delivery
+        # Queue command for delivery (uses address for hub routing)
         from command_queue import queue_set_datetime
 
         result = queue_set_datetime(
@@ -690,7 +737,8 @@ def set_datetime(address: int):
         return jsonify({
             'status': 'queued',
             'task_id': result.id,
-            'node_address': address,
+            'device_id': device_id,
+            'address': address,
             'datetime': {
                 'year': year,
                 'month': month,
@@ -704,7 +752,7 @@ def set_datetime(address: int):
         }), 202
 
     except Exception as e:
-        logger.error(f"Error setting datetime for node {address}: {e}")
+        logger.error(f"Error setting datetime for node {device_id}: {e}")
         return jsonify({'error': str(e)}), 500
 
 
@@ -715,7 +763,7 @@ def get_sensor_data():
     """Query sensor data with optional filters.
 
     Query parameters:
-        node_address: Filter by node address (optional)
+        device_id: Filter by device ID (optional)
         start_time: Start timestamp (optional)
         end_time: End timestamp (optional)
         limit: Maximum records to return (default 1000)
@@ -728,7 +776,7 @@ def get_sensor_data():
         db = get_database()
 
         # Parse query parameters
-        node_address = request.args.get('node_address', type=int)
+        device_id = request.args.get('device_id', type=int)
         start_time = request.args.get('start_time', type=int)
         end_time = request.args.get('end_time', type=int)
         limit = request.args.get('limit', default=1000, type=int)
@@ -742,7 +790,7 @@ def get_sensor_data():
 
         # Query database
         readings = db.query_readings(
-            node_address=node_address,
+            device_id=device_id,
             start_time=start_time,
             end_time=end_time,
             limit=limit,
@@ -751,7 +799,7 @@ def get_sensor_data():
 
         # Get total count for pagination
         total = db.get_reading_count(
-            node_address=node_address,
+            device_id=device_id,
             start_time=start_time,
             end_time=end_time
         )
@@ -774,7 +822,7 @@ def export_sensor_data():
     """Export sensor data as CSV.
 
     Query parameters:
-        node_address: Filter by node address (optional)
+        device_id: Filter by device ID (optional)
         start_time: Start timestamp (optional)
         end_time: End timestamp (optional)
         format: Export format (default 'csv')
@@ -786,7 +834,7 @@ def export_sensor_data():
         db = get_database()
 
         # Parse query parameters
-        node_address = request.args.get('node_address', type=int)
+        device_id = request.args.get('device_id', type=int)
         start_time = request.args.get('start_time', type=int)
         end_time = request.args.get('end_time', type=int)
         export_format = request.args.get('format', default='csv')
@@ -798,7 +846,7 @@ def export_sensor_data():
         filename = f"sensor_data_{int(time.time())}.csv"
         return Response(
             db.export_csv_iter(
-                node_address=node_address,
+                device_id=device_id,
                 start_time=start_time,
                 end_time=end_time
             ),
@@ -811,12 +859,12 @@ def export_sensor_data():
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/nodes/<int:address>/sensor-data', methods=['GET'])
-def get_node_sensor_data(address: int):
+@app.route('/api/nodes/<int:device_id>/sensor-data', methods=['GET'])
+def get_node_sensor_data(device_id: int):
     """Get sensor data for a specific node.
 
     Args:
-        address: Node address
+        device_id: Device ID (64-bit hardware unique ID)
 
     Query parameters:
         start_time: Start timestamp (optional, required for downsampling)
@@ -840,7 +888,7 @@ def get_node_sensor_data(address: int):
         if downsample and start_time and end_time:
             query_start = time.time()
             readings = db.query_readings_downsampled(
-                node_address=address,
+                device_id=device_id,
                 start_time=start_time,
                 end_time=end_time,
                 max_points=min(downsample, 2000)  # Cap at 2000 points
@@ -849,7 +897,7 @@ def get_node_sensor_data(address: int):
 
             json_start = time.time()
             response_data = {
-                'node_address': address,
+                'device_id': device_id,
                 'count': len(readings),
                 'downsampled': True,
                 'readings': readings,  # Already in chart format
@@ -864,53 +912,53 @@ def get_node_sensor_data(address: int):
 
         # Standard query for full data
         readings = db.query_readings(
-            node_address=address,
+            device_id=device_id,
             start_time=start_time,
             end_time=end_time,
             limit=limit
         )
 
         return jsonify({
-            'node_address': address,
+            'device_id': device_id,
             'count': len(readings),
             'readings': [r.to_chart_dict() for r in readings]
         })
 
     except Exception as e:
-        logger.error(f"Error getting sensor data for node {address}: {e}")
+        logger.error(f"Error getting sensor data for node {device_id}: {e}")
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/nodes/<int:address>/sensor-data/latest', methods=['GET'])
-def get_node_latest(address: int):
+@app.route('/api/nodes/<int:device_id>/sensor-data/latest', methods=['GET'])
+def get_node_latest(device_id: int):
     """Get the most recent sensor reading for a node.
 
     Args:
-        address: Node address
+        device_id: Device ID (64-bit hardware unique ID)
 
     Returns:
         JSON sensor reading or 404 if not found
     """
     try:
         db = get_database()
-        reading = db.get_latest_reading(address)
+        reading = db.get_latest_reading(device_id)
 
         if reading:
             return jsonify(reading.to_dict())
         else:
-            return jsonify({'error': f'No readings found for node {address}'}), 404
+            return jsonify({'error': f'No readings found for node {device_id}'}), 404
 
     except Exception as e:
-        logger.error(f"Error getting latest reading for node {address}: {e}")
+        logger.error(f"Error getting latest reading for node {device_id}: {e}")
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/nodes/<int:address>/statistics', methods=['GET'])
-def get_node_statistics(address: int):
+@app.route('/api/nodes/<int:device_id>/statistics', methods=['GET'])
+def get_node_statistics(device_id: int):
     """Get statistics for a specific node.
 
     Args:
-        address: Node address
+        device_id: Device ID (64-bit hardware unique ID)
 
     Query parameters:
         start_time: Start timestamp for stats calculation (optional)
@@ -927,7 +975,7 @@ def get_node_statistics(address: int):
         end_time = request.args.get('end_time', type=int)
 
         query_start = time.time()
-        stats = db.get_node_statistics(address, start_time=start_time, end_time=end_time)
+        stats = db.get_node_statistics(device_id, start_time=start_time, end_time=end_time)
         query_time = time.time() - query_start
 
         if stats:
@@ -938,10 +986,10 @@ def get_node_statistics(address: int):
             logger.info(f"statistics: query={query_time*1000:.0f}ms")
             return jsonify(stats)
         else:
-            return jsonify({'error': f'No data found for node {address}'}), 404
+            return jsonify({'error': f'No data found for node {device_id}'}), 404
 
     except Exception as e:
-        logger.error(f"Error getting statistics for node {address}: {e}")
+        logger.error(f"Error getting statistics for node {device_id}: {e}")
         return jsonify({'error': str(e)}), 500
 
 
@@ -1141,12 +1189,12 @@ def delete_zone(zone_id: int):
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/nodes/<int:address>/zone', methods=['PUT'])
-def set_node_zone(address: int):
+@app.route('/api/nodes/<int:device_id>/zone', methods=['PUT'])
+def set_node_zone(device_id: int):
     """Set a node's zone.
 
     Args:
-        address: Node address
+        device_id: Device ID (64-bit hardware unique ID)
 
     Request body:
         {
@@ -1176,17 +1224,17 @@ def set_node_zone(address: int):
                 return jsonify({'error': f'Zone {zone_id} not found'}), 404
 
         db = get_database()
-        metadata = db.set_node_zone(address, zone_id)
+        metadata = db.set_node_zone(device_id, zone_id)
 
         if metadata:
             return jsonify(metadata)
         else:
             # Node metadata doesn't exist yet, create it
-            metadata = db.update_node_metadata(address, zone_id=zone_id if zone_id else -1)
+            metadata = db.update_node_metadata(device_id, zone_id=zone_id if zone_id else -1)
             return jsonify(metadata)
 
     except Exception as e:
-        logger.error(f"Error setting zone for node {address}: {e}")
+        logger.error(f"Error setting zone for node {device_id}: {e}")
         return jsonify({'error': str(e)}), 500
 
 

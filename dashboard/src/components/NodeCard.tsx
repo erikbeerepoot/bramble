@@ -33,15 +33,15 @@ const HEALTH_LABEL: Record<string, string> = {
 };
 
 function NodeCard({ node, zone, onClick }: NodeCardProps) {
-  const displayName = node.metadata?.name || `Node ${node.address}`;
+  const displayName = node.metadata?.name || `Node ${node.device_id.toString(16).toUpperCase()}`;
   const health = getOverallNodeHealth(node);
   const [reading, setReading] = useState<SensorReading | null>(null);
 
   useEffect(() => {
     if (node.online && node.type === NodeType.SENSOR) {
-      getNodeLatestReading(node.address).then(setReading);
+      getNodeLatestReading(node.device_id).then(setReading);
     }
-  }, [node.address, node.online, node.type]);
+  }, [node.device_id, node.online, node.type]);
 
   return (
     <div

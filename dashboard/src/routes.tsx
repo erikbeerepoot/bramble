@@ -18,7 +18,7 @@ export const router = createBrowserRouter([
         element: <NodeList />,
       },
       {
-        path: 'nodes/:address',
+        path: 'nodes/:deviceId',
         element: <NodeDetailPage />,
       },
       {

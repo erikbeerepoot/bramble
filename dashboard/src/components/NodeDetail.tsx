@@ -15,7 +15,7 @@ interface NodeDetailProps {
   zones: Zone[];
   onBack: () => void;
   onUpdate: (node: Node) => void;
-  onDelete: (address: number) => void;
+  onDelete: (deviceId: number) => void;
   onZoneCreated: (zone: Zone) => void;
 }
 
@@ -68,7 +68,7 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
     setTimeBounds({ start: startTime!, end: endTime! });
 
     // Fire both requests in parallel but update UI as each resolves
-    const sensorDataPromise = getNodeSensorData(node.address, {
+    const sensorDataPromise = getNodeSensorData(node.device_id, {
       startTime,
       endTime,
       downsample: 500,
@@ -78,7 +78,7 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
       setLoadingSensorData(false);
     });
 
-    const statisticsPromise = getNodeStatistics(node.address, {
+    const statisticsPromise = getNodeStatistics(node.device_id, {
       startTime,
       endTime,
       signal,
@@ -97,7 +97,7 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
       if (reason instanceof DOMException && reason.name === 'AbortError') return;
       setError(reason instanceof Error ? reason.message : 'Failed to fetch data');
     }
-  }, [node.address, timeRange, customRange]);
+  }, [node.device_id, timeRange, customRange]);
 
   useEffect(() => {
     fetchData();
@@ -116,8 +116,8 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
   const handleDelete = async () => {
     setDeleting(true);
     try {
-      await deleteNode(node.address);
-      onDelete(node.address);
+      await deleteNode(node.device_id);
+      onDelete(node.device_id);
       onBack();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete node');
@@ -127,7 +127,7 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
     }
   };
 
-  const displayName = node.metadata?.name || `Node ${node.address}`;
+  const displayName = node.metadata?.name || `Node ${node.device_id.toString(16).toUpperCase()}`;
   const currentZone = zones.find(z => z.id === node.metadata?.zone_id);
   const healthStatus = useMemo(() => getHealthStatus(node.status?.error_flags ?? null), [node.status?.error_flags]);
   const isHealthy = healthStatus === 'healthy';
