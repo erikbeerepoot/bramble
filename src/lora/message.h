@@ -140,7 +140,8 @@ constexpr uint8_t PENDING_FLAG_NONE = 0x00;
 constexpr uint8_t PENDING_FLAG_SCHEDULE = 0x01;       // SET_SCHEDULE or REMOVE_SCHEDULE queued
 constexpr uint8_t PENDING_FLAG_WAKE_INTERVAL = 0x02;  // SET_WAKE_INTERVAL queued
 constexpr uint8_t PENDING_FLAG_REREGISTER = 0x04;     // Node should re-register with the hub
-// Bits 3-7 reserved for future update types
+constexpr uint8_t PENDING_FLAG_REBOOT = 0x08;         // Node should perform full system reset
+// Bits 4-7 reserved for future update types
 
 /**
  * @brief Message header structure

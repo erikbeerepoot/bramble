@@ -322,6 +322,11 @@ bool ReliablePmuClient::clearToSend(CommandCallback callback)
     return queueCommand(Command::ClearToSend, nullptr, 0, callback);
 }
 
+bool ReliablePmuClient::systemReset(CommandCallback callback)
+{
+    return queueCommand(Command::SystemReset, nullptr, 0, callback);
+}
+
 // ============================================================================
 // Event callbacks
 // ============================================================================

@@ -114,6 +114,15 @@ protected:
     virtual void onHeartbeatResponse(const HeartbeatResponsePayload *payload);
 
     /**
+     * @brief Handle reboot request from hub via PENDING_FLAG_REBOOT
+     *
+     * Default implementation performs RP2040-only watchdog reboot.
+     * Modes with PMU access should override to send SystemReset to PMU
+     * for a full system reset (STM32 + RP2040).
+     */
+    virtual void onRebootRequested();
+
+    /**
      * @brief Check if we should use interrupt-based sleep
      * @return true to use sleep, false to continue immediately
      */

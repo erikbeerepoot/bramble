@@ -258,6 +258,8 @@ void HubMode::handleSerialCommand(const char *cmd)
         handleBatchAckResponse(cmd + 10);
     } else if (strncmp(cmd, "DELETE_NODE ", 12) == 0) {
         handleDeleteNode(cmd + 12);
+    } else if (strncmp(cmd, "REBOOT_NODE ", 12) == 0) {
+        handleRebootNode(cmd + 12);
     } else {
         uart_puts(API_UART_ID, "ERROR Unknown command\n");
     }
@@ -560,6 +562,28 @@ void HubMode::handleDeleteNode(const char *args)
     logger.info("Deleted node 0x%04X from registry", node_addr);
 }
 
+void HubMode::handleRebootNode(const char *args)
+{
+    uint16_t node_addr;
+    if (sscanf(args, "%hu", &node_addr) != 1) {
+        uart_puts(API_UART_ID, "ERROR Invalid REBOOT_NODE syntax\n");
+        return;
+    }
+
+    if (node_addr < ADDRESS_MIN_NODE || node_addr > ADDRESS_MAX_NODE) {
+        uart_puts(API_UART_ID, "ERROR Invalid node address\n");
+        return;
+    }
+
+    pending_reboots_.insert(node_addr);
+
+    char response[64];
+    snprintf(response, sizeof(response), "QUEUED REBOOT_NODE %u\n", node_addr);
+    uart_puts(API_UART_ID, response);
+
+    logger.info("Queued reboot for node 0x%04X", node_addr);
+}
+
 void HubMode::handleHeartbeat(uint16_t source_addr, const HeartbeatPayload *payload, int16_t rssi)
 {
     // Get current datetime from RTC
@@ -576,6 +600,13 @@ void HubMode::handleHeartbeat(uint16_t source_addr, const HeartbeatPayload *payl
     const NodeInfo *node = address_manager_->getNodeInfo(source_addr);
     if (!node) {
         pending_flags |= PENDING_FLAG_REREGISTER;
+    }
+
+    // Set REBOOT flag if this node has a pending reboot request
+    if (pending_reboots_.count(source_addr)) {
+        pending_flags |= PENDING_FLAG_REBOOT;
+        pending_reboots_.erase(source_addr);
+        logger.info("Setting PENDING_FLAG_REBOOT for node 0x%04X", source_addr);
     }
 
     // Send heartbeat response with current time and pending flags

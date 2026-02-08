@@ -160,6 +160,18 @@ public:
     bool clearToSend(CommandCallback callback = nullptr);
 
     /**
+     * @brief Request full system reset via PMU
+     * @param callback Called when command is ACK'd (optional)
+     * @return true if command queued successfully
+     *
+     * The PMU will ACK this command, then perform NVIC_SystemReset(),
+     * which resets both the STM32 and kills power to the RP2040.
+     * The callback's ACK triggers a watchdog_reboot() as a fallback
+     * in case the PMU reset doesn't kill RP2040 power immediately.
+     */
+    bool systemReset(CommandCallback callback = nullptr);
+
+    /**
      * @brief Get access to the underlying PmuClient
      * Useful for accessing the protocol directly for operations
      * not covered by the reliable client.

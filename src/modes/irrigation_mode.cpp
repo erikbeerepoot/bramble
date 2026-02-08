@@ -5,6 +5,7 @@
 #include "pico/unique_id.h"
 
 #include "hardware/rtc.h"
+#include "hardware/watchdog.h"
 
 #include "../hal/logger.h"
 #include "../led_patterns.h"
@@ -578,6 +579,21 @@ void IrrigationMode::signalReadyForSleep()
         pmu_logger.warn("No response to ReadyForSleep (attempt %d/%d)", attempt + 1, MAX_RETRIES);
         sleep_ms(100);  // Small delay before retry
     }
+}
+
+void IrrigationMode::onRebootRequested()
+{
+    if (pmu_available_ && pmu_client_) {
+        logger.warn("Requesting full system reset via PMU");
+        auto &protocol = pmu_client_->getProtocol();
+        uint8_t seq = protocol.getNextSequenceNumber();
+        protocol.sendCommand(seq, PMU::Command::SystemReset, nullptr, 0);
+        // Brief delay to allow UART to flush before watchdog reboot
+        sleep_ms(100);
+    } else {
+        logger.warn("PMU not available - performing RP2040-only watchdog reboot");
+    }
+    watchdog_reboot(0, 0, 0);
 }
 
 void IrrigationMode::updateIrrigationState()

@@ -7,6 +7,7 @@
 #include "pico/unique_id.h"
 
 #include "hardware/i2c.h"
+#include "hardware/watchdog.h"
 
 #include "../../main.h"
 #include "../hal/cht832x.h"
@@ -1027,6 +1028,24 @@ void SensorMode::onHeartbeatResponse(const HeartbeatResponsePayload *payload)
     } else if (payload) {
         // No PMU, but RTC was synced by base class - report event directly
         sensor_state_.reportRtcSynced();
+    }
+}
+
+void SensorMode::onRebootRequested()
+{
+    if (pmu_available_ && reliable_pmu_) {
+        logger.warn("Requesting full system reset via PMU");
+        reliable_pmu_->systemReset([](bool success, PMU::ErrorCode error) {
+            (void)error;
+            // PMU will reset itself (killing RP2040 power), but if the ACK
+            // arrives before power is cut, do a watchdog reboot as fallback
+            if (success) {
+                watchdog_reboot(0, 0, 0);
+            }
+        });
+    } else {
+        logger.warn("PMU not available - performing RP2040-only watchdog reboot");
+        watchdog_reboot(0, 0, 0);
     }
 }
 
