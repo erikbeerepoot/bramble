@@ -173,3 +173,11 @@ export async function setNodeZone(
     body: JSON.stringify({ zone_id: zoneId }),
   });
 }
+
+export async function rebootNode(
+  address: number
+): Promise<{ status: string; task_id: string; message: string }> {
+  return fetchApi(`/api/nodes/${address}/reboot`, {
+    method: 'POST',
+  });
+}

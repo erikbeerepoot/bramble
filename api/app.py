@@ -756,6 +756,36 @@ def set_datetime(device_id: int):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/nodes/<int:address>/reboot', methods=['POST'])
+def reboot_node(address: int):
+    """Request a remote reboot for a node.
+
+    The reboot command is queued and will be delivered to the node
+    on its next heartbeat. The node will perform a full system reset.
+
+    Args:
+        address: Node address
+
+    Returns:
+        JSON response with task_id for tracking (202 Accepted)
+    """
+    try:
+        from command_queue import queue_reboot_node
+
+        result = queue_reboot_node(node_address=address)
+
+        return jsonify({
+            'status': 'queued',
+            'task_id': result.id,
+            'node_address': address,
+            'message': 'Reboot command queued for delivery'
+        }), 202
+
+    except Exception as e:
+        logger.error(f"Error queueing reboot for node {address}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 # ===== Sensor Data Endpoints =====
 
 @app.route('/api/sensor-data', methods=['GET'])

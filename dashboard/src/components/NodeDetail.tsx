@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { Node, NodeStatistics, SensorReading, TimeRange, NodeMetadata, CustomTimeRange, Zone } from '../types';
 import { TIME_RANGES, parseErrorFlags, formatUptime, getSignalQuality, getBatteryStatus, getHealthStatus } from '../types';
-import { getNodeSensorData, getNodeStatistics, deleteNode } from '../api/client';
+import { getNodeSensorData, getNodeStatistics, deleteNode, rebootNode } from '../api/client';
 import NodeNameEditor from './NodeNameEditor';
 import SensorChart from './SensorChart';
 import TimeRangeSelector from './TimeRangeSelector';
@@ -36,7 +36,9 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
   const [timeBounds, setTimeBounds] = useState<{ start: number; end: number } | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [dangerZoneExpanded, setDangerZoneExpanded] = useState(false);
+  const [advancedExpanded, setAdvancedExpanded] = useState(false);
+  const [showRebootConfirm, setShowRebootConfirm] = useState(false);
+  const [rebooting, setRebooting] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const fetchData = useCallback(async () => {
@@ -124,6 +126,18 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
       setShowDeleteConfirm(false);
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const handleReboot = async () => {
+    setRebooting(true);
+    try {
+      await rebootNode(node.address);
+      setShowRebootConfirm(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to queue reboot');
+    } finally {
+      setRebooting(false);
     }
   };
 
@@ -351,15 +365,15 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
             </div>
           )}
 
-          {/* 4. Danger Zone - collapsible, collapsed by default */}
+          {/* 4. Advanced - collapsible, collapsed by default */}
           <div className="card">
             <button
-              onClick={() => setDangerZoneExpanded(!dangerZoneExpanded)}
+              onClick={() => setAdvancedExpanded(!advancedExpanded)}
               className="w-full flex items-center justify-between"
             >
-              <h3 className="text-lg font-medium text-gray-900">Danger Zone</h3>
+              <h3 className="text-lg font-medium text-gray-900">Advanced</h3>
               <svg
-                className={`w-5 h-5 text-gray-400 transition-transform ${dangerZoneExpanded ? 'rotate-180' : ''}`}
+                className={`w-5 h-5 text-gray-400 transition-transform ${advancedExpanded ? 'rotate-180' : ''}`}
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -368,17 +382,33 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
               </svg>
             </button>
 
-            {dangerZoneExpanded && (
-              <div className="mt-4">
-                <p className="text-sm text-gray-500 mb-3">
-                  Permanently delete this node and all its sensor data history.
-                </p>
-                <button
-                  onClick={() => setShowDeleteConfirm(true)}
-                  className="btn bg-red-600 text-white hover:bg-red-700 w-full"
-                >
-                  Delete Node
-                </button>
+            {advancedExpanded && (
+              <div className="mt-4 space-y-4">
+                {/* Reboot Node */}
+                <div>
+                  <p className="text-sm text-gray-500 mb-2">
+                    Request a remote reboot. The node will restart on its next heartbeat.
+                  </p>
+                  <button
+                    onClick={() => setShowRebootConfirm(true)}
+                    className="btn bg-amber-600 text-white hover:bg-amber-700 w-full"
+                  >
+                    Reboot Node
+                  </button>
+                </div>
+
+                {/* Delete Node */}
+                <div className="pt-4 border-t border-gray-200">
+                  <p className="text-sm text-gray-500 mb-2">
+                    Permanently delete this node and all its sensor data history.
+                  </p>
+                  <button
+                    onClick={() => setShowDeleteConfirm(true)}
+                    className="btn bg-red-600 text-white hover:bg-red-700 w-full"
+                  >
+                    Delete Node
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -444,6 +474,34 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
       </div>
 
       {/* Delete Confirmation Dialog */}
+      {showRebootConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md mx-4 shadow-xl">
+            <h3 className="text-lg font-medium text-gray-900 mb-2">Reboot Node?</h3>
+            <p className="text-sm text-gray-500 mb-4">
+              This will queue a reboot command for <strong>{displayName}</strong>.
+              The node will restart on its next heartbeat.
+            </p>
+            <div className="flex space-x-3 justify-end">
+              <button
+                onClick={() => setShowRebootConfirm(false)}
+                disabled={rebooting}
+                className="btn btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleReboot}
+                disabled={rebooting}
+                className="btn bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50"
+              >
+                {rebooting ? 'Queueing...' : 'Reboot'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-md mx-4 shadow-xl">
