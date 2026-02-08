@@ -83,7 +83,8 @@ size_t MessageHandler::createHeartbeatMessage(uint16_t src_addr, uint16_t dst_ad
 size_t MessageHandler::createHeartbeatResponseMessage(uint16_t src_addr, uint16_t dst_addr,
                                                       uint8_t seq_num, int16_t year, int8_t month,
                                                       int8_t day, int8_t dotw, int8_t hour,
-                                                      int8_t min, int8_t sec, uint8_t *buffer)
+                                                      int8_t min, int8_t sec,
+                                                      uint8_t pending_update_flags, uint8_t *buffer)
 {
     HeartbeatResponsePayload payload = {.year = year,
                                         .month = month,
@@ -91,7 +92,8 @@ size_t MessageHandler::createHeartbeatResponseMessage(uint16_t src_addr, uint16_
                                         .dotw = dotw,
                                         .hour = hour,
                                         .min = min,
-                                        .sec = sec};
+                                        .sec = sec,
+                                        .pending_update_flags = pending_update_flags};
 
     return MessageBuilder::createMessage<HeartbeatResponsePayload>(
         MSG_TYPE_HEARTBEAT_RESPONSE, MSG_FLAG_RELIABLE, src_addr, dst_addr, seq_num, payload,
