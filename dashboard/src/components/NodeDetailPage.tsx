@@ -21,15 +21,8 @@ function NodeDetailPage() {
         return;
       }
 
-      const deviceIdNum = parseInt(deviceId, 10);
-      if (isNaN(deviceIdNum)) {
-        setError('Invalid device ID');
-        setLoading(false);
-        return;
-      }
-
       // First try to find the node in the cached list
-      const cachedNode = nodes.find(n => n.device_id === deviceIdNum);
+      const cachedNode = nodes.find(n => n.device_id === deviceId);
       if (cachedNode) {
         setNode(cachedNode);
         setLoading(false);
@@ -38,7 +31,7 @@ function NodeDetailPage() {
 
       // If not in cache, fetch from API
       try {
-        const fetchedNode = await getNode(deviceIdNum);
+        const fetchedNode = await getNode(deviceId);
         setNode(fetchedNode);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load node');
@@ -53,8 +46,7 @@ function NodeDetailPage() {
   // Update local node state when it changes in the nodes list
   useEffect(() => {
     if (node && deviceId) {
-      const deviceIdNum = parseInt(deviceId, 10);
-      const updatedNode = nodes.find(n => n.device_id === deviceIdNum);
+      const updatedNode = nodes.find(n => n.device_id === deviceId);
       if (updatedNode) {
         setNode(updatedNode);
       }

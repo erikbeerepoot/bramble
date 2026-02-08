@@ -37,7 +37,7 @@ class SensorReading:
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
         return {
-            'device_id': self.device_id,
+            'device_id': str(self.device_id),  # String to preserve JS precision
             'address': self.address,
             'timestamp': self.timestamp,
             'temperature_celsius': self.temperature_celsius,
@@ -611,7 +611,7 @@ class SensorDatabase:
             reading_count = stats[6] if (start_time or end_time) else row[5]
 
             return {
-                'device_id': row[0],
+                'device_id': str(row[0]),  # String to preserve JS precision
                 'address': row[1],
                 'node_type': row[2],
                 'first_seen_at': row[3],
@@ -740,7 +740,7 @@ class SensorDatabase:
                 return None
 
             return {
-                'device_id': row[0],
+                'device_id': str(row[0]),  # String to preserve JS precision
                 'name': row[1],
                 'notes': row[2],
                 'zone_id': row[3],
@@ -762,7 +762,7 @@ class SensorDatabase:
             metadata = {}
             for row in result.fetchall():
                 metadata[row[0]] = {
-                    'device_id': row[0],
+                    'device_id': str(row[0]),  # String to preserve JS precision
                     'name': row[1],
                     'notes': row[2],
                     'zone_id': row[3],
@@ -1135,7 +1135,7 @@ class SensorDatabase:
                 return None
 
             return {
-                'device_id': row[0],
+                'device_id': str(row[0]),  # String to preserve JS precision
                 'address': row[1],
                 'battery_level': row[2],
                 'error_flags': row[3],
@@ -1161,7 +1161,7 @@ class SensorDatabase:
             status = {}
             for row in result.fetchall():
                 status[row[0]] = {
-                    'device_id': row[0],
+                    'device_id': str(row[0]),  # String to preserve JS precision
                     'address': row[1],
                     'battery_level': row[2],
                     'error_flags': row[3],
@@ -1272,7 +1272,7 @@ class SensorDatabase:
                 return None
 
             return {
-                'device_id': row[0],
+                'device_id': str(row[0]),  # String to preserve JS precision
                 'address': row[1],
                 'node_type': row[2],
                 'first_seen_at': row[3],

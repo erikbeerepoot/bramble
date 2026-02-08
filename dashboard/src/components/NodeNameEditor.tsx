@@ -117,7 +117,7 @@ function NodeNameEditor({ node, zones, onUpdate, onZoneCreated }: NodeNameEditor
             </div>
             <div>
               <dt className="text-sm text-gray-500">Device ID</dt>
-              <dd className="text-gray-900 font-mono text-sm">{node.device_id.toString(16).toUpperCase()}</dd>
+              <dd className="text-gray-900 font-mono text-sm">{BigInt(node.device_id).toString(16).toUpperCase()}</dd>
             </div>
             <div>
               <dt className="text-sm text-gray-500">LoRa Address</dt>

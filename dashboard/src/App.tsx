@@ -13,7 +13,7 @@ interface AppContextType {
   fetchNodes: () => Promise<void>;
   fetchZones: () => Promise<void>;
   updateNode: (node: Node) => void;
-  removeNode: (address: number) => void;
+  removeNode: (deviceId: string) => void;
   addZone: (zone: Zone) => void;
 }
 
@@ -65,7 +65,7 @@ function App() {
     setNodes(prev => prev.map(n => n.device_id === updatedNode.device_id ? updatedNode : n));
   }, []);
 
-  const removeNode = useCallback((deviceId: number) => {
+  const removeNode = useCallback((deviceId: string) => {
     setNodes(prev => prev.filter(n => n.device_id !== deviceId));
   }, []);
 

@@ -11,7 +11,7 @@ export interface ZonesResponse {
 }
 
 export interface NodeMetadata {
-  device_id: number;
+  device_id: string;  // String to preserve 64-bit precision
   name: string | null;
   notes: string | null;
   zone_id: number | null;
@@ -19,7 +19,7 @@ export interface NodeMetadata {
 }
 
 export interface NodeStatus {
-  device_id: number;
+  device_id: string;  // String to preserve 64-bit precision
   address: number | null;
   battery_level: number | null;
   error_flags: number | null;
@@ -41,7 +41,7 @@ export const NodeType = {
 export type NodeTypeValue = typeof NodeType[keyof typeof NodeType];
 
 export interface Node {
-  device_id: number;  // Primary identifier
+  device_id: string;  // Primary identifier (string to preserve 64-bit precision)
   address: number;    // LoRa address (for routing)
   type: NodeTypeValue;
   online: boolean;
@@ -192,7 +192,7 @@ export interface SensorReading {
   temperature_celsius: number;
   humidity_percent: number;
   // Optional fields (not included in compact/downsampled responses)
-  device_id?: number;
+  device_id?: string;  // String to preserve 64-bit precision
   address?: number | null;
   temperature_raw?: number;
   humidity_raw?: number;
@@ -202,14 +202,14 @@ export interface SensorReading {
 }
 
 export interface SensorDataResponse {
-  device_id: number;
+  device_id: string;  // String to preserve 64-bit precision
   count: number;
   downsampled?: boolean;
   readings: SensorReading[];
 }
 
 export interface NodeStatistics {
-  device_id: number;
+  device_id: string;  // String to preserve 64-bit precision
   address: number | null;
   node_type: string;
   first_seen_at: number;

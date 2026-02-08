@@ -1,6 +1,6 @@
 services:
   api:
-    image: ghcr.io/erikbeerepoot/bramble/api:latest
+    image: ${API_IMAGE:-ghcr.io/erikbeerepoot/bramble/api:latest}
     container_name: bramble-api
     ports:
       - "5000:5000"
@@ -24,7 +24,7 @@ services:
       - dialout
 
   worker:
-    image: ghcr.io/erikbeerepoot/bramble/api:latest
+    image: ${API_IMAGE:-ghcr.io/erikbeerepoot/bramble/api:latest}
     container_name: bramble-worker
     command: uv run huey_consumer command_queue.huey -w 2 -k thread
     devices:

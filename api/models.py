@@ -48,7 +48,7 @@ class Node:
     def to_dict(self):
         """Convert to dictionary for JSON serialization."""
         return {
-            'device_id': self.device_id,
+            'device_id': str(self.device_id),  # String to preserve JS precision
             'address': self.address,
             'type': self.node_type,
             'online': self.online,
@@ -69,7 +69,7 @@ class NodeMetadata:
     def to_dict(self):
         """Convert to dictionary for JSON serialization."""
         return {
-            'device_id': self.device_id,
+            'device_id': str(self.device_id),  # String to preserve JS precision
             'name': self.name,
             'notes': self.notes,
             'zone_id': self.zone_id,

@@ -33,7 +33,7 @@ const HEALTH_LABEL: Record<string, string> = {
 };
 
 function NodeCard({ node, zone, onClick }: NodeCardProps) {
-  const displayName = node.metadata?.name || `Node ${node.device_id.toString(16).toUpperCase()}`;
+  const displayName = node.metadata?.name || `Node ${BigInt(node.device_id).toString(16).toUpperCase()}`;
   const health = getOverallNodeHealth(node);
   const [reading, setReading] = useState<SensorReading | null>(null);
 
