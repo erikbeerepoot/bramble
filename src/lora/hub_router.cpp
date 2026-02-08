@@ -522,6 +522,37 @@ void HubRouter::handleUpdateAck(uint16_t node_addr, uint8_t sequence, bool succe
     }
 }
 
+uint8_t HubRouter::getPendingUpdateFlags(uint16_t node_addr) const
+{
+    auto it = node_updates_.find(node_addr);
+    if (it == node_updates_.end() || it->second.pending_updates.empty()) {
+        return PENDING_FLAG_NONE;
+    }
+
+    uint8_t flags = PENDING_FLAG_NONE;
+
+    // Scan the queue by copying (std::queue doesn't support iteration)
+    auto queue_copy = it->second.pending_updates;
+    while (!queue_copy.empty()) {
+        const PendingUpdate &update = queue_copy.front();
+        switch (update.type) {
+            case UpdateType::SET_SCHEDULE:
+            case UpdateType::REMOVE_SCHEDULE:
+                flags |= PENDING_FLAG_SCHEDULE;
+                break;
+            case UpdateType::SET_WAKE_INTERVAL:
+                flags |= PENDING_FLAG_WAKE_INTERVAL;
+                break;
+            case UpdateType::SET_DATETIME:
+                // Ignored - heartbeat response already carries current time
+                break;
+        }
+        queue_copy.pop();
+    }
+
+    return flags;
+}
+
 size_t HubRouter::getPendingUpdateCount(uint16_t node_addr) const
 {
     auto it = node_updates_.find(node_addr);
