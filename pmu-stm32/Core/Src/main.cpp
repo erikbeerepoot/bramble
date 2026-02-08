@@ -47,6 +47,8 @@ UART_HandleTypeDef hlpuart1;
 
 RTC_HandleTypeDef hrtc;
 
+TIM_HandleTypeDef htim21;
+
 /* USER CODE BEGIN PV */
 LED led;
 DCDC dcdc;
@@ -63,6 +65,14 @@ constexpr int TOTAL_FLICKERS = 5;  // 5 flickers = 1 second total
 constexpr uint32_t FLICKER_ON_MS = 100;
 constexpr uint32_t FLICKER_OFF_MS = 100;
 }  // namespace BootAnimationConfig
+
+// Boot animation state (for non-blocking animation)
+static struct {
+    int flickerCount = 0;
+    uint32_t lastToggleTime = 0;
+    bool ledOn = false;
+    bool complete = false;
+} bootAnimation;
 
 // Protocol callbacks
 static void uartSendCallback(const uint8_t *data, uint8_t length);
@@ -84,12 +94,13 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_LPUART1_UART_Init(void);
 static void MX_RTC_Init(void);
+static void MX_TIM21_Init(void);
 /* USER CODE BEGIN PFP */
 static void configureRTCWakeup(uint32_t seconds);
 static void enterStopMode(void);
 static void wakeupFromStopMode(void);
 static void determineWakeType(void);
-static void runBootAnimation(void);
+static void startBootAnimation(void);
 static void updateLedForState(PmuState state, WakeType wakeType);
 static void onStateChange(PmuState newState);
 static void sendWakeNotification();
@@ -139,6 +150,7 @@ int main(void)
     MX_GPIO_Init();
     MX_LPUART1_UART_Init();
     MX_RTC_Init();
+    MX_TIM21_Init();
 
     /* USER CODE BEGIN 2 */
     // Start UART receive interrupt IMMEDIATELY after UART init
@@ -158,19 +170,10 @@ int main(void)
     // Configure RTC wakeup timer with default wake interval (300 seconds)
     configureRTCWakeup(protocol.getWakeInterval());
 
-    // Boot animation (blocking) - UART interrupt still receives bytes
-    runBootAnimation();
-
-    // Boot complete - transition out of BOOTING state
-    pmuState.dispatch(PmuEvent::BOOT_COMPLETE);
-
-    // Handle CTS that arrived during boot (RP2040 boots alongside STM32)
-    if (protocol.isCtsReceived()) {
-        pmuState.dispatch(PmuEvent::RTC_WAKEUP);
-        // determineWakeType() was called by onStateChange callback
-        pmuState.dispatch(PmuEvent::CTS_RECEIVED);
-        protocol.clearCtsReceived();
-    }
+    // Start non-blocking boot animation (timer-based)
+    // BOOT_COMPLETE is dispatched by timer callback when animation finishes
+    // Main loop runs immediately, so CTS can be handled without waiting
+    startBootAnimation();
 
     /* USER CODE END 2 */
 
@@ -388,16 +391,83 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 
 /**
- * @brief Run boot animation (blocking)
- * Green LED flickers to indicate successful boot
+ * @brief Initialize TIM21 for boot animation
+ * Timer fires every 100ms for LED toggle
  */
-static void runBootAnimation(void)
+static void MX_TIM21_Init(void)
 {
-    for (int i = 0; i < BootAnimationConfig::TOTAL_FLICKERS; i++) {
-        led.setColor(LED::GREEN);
-        HAL_Delay(BootAnimationConfig::FLICKER_ON_MS);
+    __HAL_RCC_TIM21_CLK_ENABLE();
+
+    // MSI clock is 2.097 MHz (range 5)
+    // For 100ms period: 2097000 / 100 = 20970 counts per 100ms
+    // Use prescaler of 209 (divide by 210) -> 9985.7 Hz
+    // Period of 999 (1000 counts) -> 100.1ms (close enough)
+    htim21.Instance = TIM21;
+    htim21.Init.Prescaler = 209;
+    htim21.Init.CounterMode = TIM_COUNTERMODE_UP;
+    htim21.Init.Period = 999;
+    htim21.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+    htim21.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+
+    if (HAL_TIM_Base_Init(&htim21) != HAL_OK) {
+        Error_Handler();
+    }
+
+    // Enable timer interrupt
+    HAL_NVIC_SetPriority(TIM21_IRQn, 1, 0);
+    HAL_NVIC_EnableIRQ(TIM21_IRQn);
+}
+
+/**
+ * @brief Start non-blocking boot animation
+ * Uses TIM21 interrupt to toggle LED
+ */
+static void startBootAnimation(void)
+{
+    bootAnimation.flickerCount = 0;
+    bootAnimation.ledOn = true;
+    bootAnimation.complete = false;
+
+    // Start with LED on
+    led.setColor(LED::GREEN);
+
+    // Start timer
+    HAL_TIM_Base_Start_IT(&htim21);
+}
+
+/**
+ * @brief TIM21 interrupt handler
+ */
+extern "C" void TIM21_IRQHandler(void)
+{
+    HAL_TIM_IRQHandler(&htim21);
+}
+
+/**
+ * @brief Timer period elapsed callback - handles boot animation
+ */
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+    if (htim->Instance != TIM21 || bootAnimation.complete) {
+        return;
+    }
+
+    if (bootAnimation.ledOn) {
+        // LED was on, turn it off
         led.off();
-        HAL_Delay(BootAnimationConfig::FLICKER_OFF_MS);
+        bootAnimation.ledOn = false;
+        bootAnimation.flickerCount++;
+
+        // Check if animation complete
+        if (bootAnimation.flickerCount >= BootAnimationConfig::TOTAL_FLICKERS) {
+            bootAnimation.complete = true;
+            HAL_TIM_Base_Stop_IT(&htim21);
+            pmuState.dispatch(PmuEvent::BOOT_COMPLETE);
+        }
+    } else {
+        // LED was off, turn it on
+        led.setColor(LED::GREEN);
+        bootAnimation.ledOn = true;
     }
 }
 

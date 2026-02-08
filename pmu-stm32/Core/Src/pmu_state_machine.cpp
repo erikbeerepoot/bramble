@@ -13,6 +13,11 @@ PmuState PmuStateMachine::reduce(PmuState state, PmuEvent event)
             switch (event) {
                 case PmuEvent::BOOT_COMPLETE:
                     return PmuState::SLEEPING;
+                case PmuEvent::CTS_RECEIVED:
+                    // CTS received during boot - go directly to WAKE_ACTIVE
+                    // This ensures WakeNotification is sent immediately without waiting
+                    // for boot animation to complete
+                    return PmuState::WAKE_ACTIVE;
                 case PmuEvent::ERROR_OCCURRED:
                     return PmuState::ERROR;
                 default:
