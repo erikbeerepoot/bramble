@@ -136,6 +136,7 @@ private:
      * @param payload Heartbeat response with timestamp from hub
      */
     void onHeartbeatResponse(const HeartbeatResponsePayload *payload) override;
+    void onRebootRequested() override;
 
     /**
      * @brief Check if enough time has elapsed since last transmission

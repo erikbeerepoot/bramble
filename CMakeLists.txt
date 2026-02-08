@@ -295,6 +295,7 @@ if(NOT BUILD_TESTS)
             hardware_flash
             hardware_sync
             hardware_rtc
+            hardware_watchdog
             pico_multicore
             pico_util
             pico_unique_id

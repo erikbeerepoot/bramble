@@ -2,6 +2,8 @@
 
 #include "pico/stdlib.h"
 
+#include "hardware/watchdog.h"
+
 #include "hal/logger.h"
 #include "lora/address_manager.h"
 #include "lora/hub_router.h"
@@ -149,6 +151,12 @@ void ApplicationMode::onHeartbeatResponse(const HeartbeatResponsePayload *payloa
             reregistration_callback_();
         }
     }
+
+    // Handle reboot flag (applies to all node types)
+    if (payload->pending_update_flags & PENDING_FLAG_REBOOT) {
+        logger.warn("Hub requests reboot (PENDING_FLAG_REBOOT)");
+        onRebootRequested();
+    }
 }
 
 uint32_t ApplicationMode::getUnixTimestamp() const
@@ -195,4 +203,10 @@ void ApplicationMode::updateStateMachine()
     BaseHardwareState hardware_state;
     hardware_state.rtc_running = rtc_running();
     state_machine_.update(hardware_state);
+}
+
+void ApplicationMode::onRebootRequested()
+{
+    logger.warn("Performing RP2040-only watchdog reboot (no PMU)");
+    watchdog_reboot(0, 0, 0);
 }

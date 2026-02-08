@@ -577,6 +577,16 @@ void Protocol::processReceivedByte(uint8_t byte)
                 clearToSendReceived_ = true;
                 sendAck();
                 break;
+            case Command::SystemReset:
+                // Full system reset requested by RP2040
+                // Always send ACK (even for duplicates, in case first ACK was lost)
+                sendAck();
+                if (!isDuplicate) {
+                    // Brief delay to allow UART to flush the ACK
+                    for (volatile uint32_t i = 0; i < 10000; i++) {}
+                    NVIC_SystemReset();
+                }
+                break;
             default:
                 sendNack(ErrorCode::InvalidParam);
                 break;
