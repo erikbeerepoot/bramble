@@ -134,6 +134,14 @@ enum class UpdateType : uint8_t {
     SET_WAKE_INTERVAL = 0x04  // Change periodic wake interval
 };
 
+// Pending update flags for HeartbeatResponsePayload
+// Bitmask indicating categories of updates queued for a node
+constexpr uint8_t PENDING_FLAG_NONE = 0x00;
+constexpr uint8_t PENDING_FLAG_SCHEDULE = 0x01;       // SET_SCHEDULE or REMOVE_SCHEDULE queued
+constexpr uint8_t PENDING_FLAG_WAKE_INTERVAL = 0x02;  // SET_WAKE_INTERVAL queued
+constexpr uint8_t PENDING_FLAG_REREGISTER = 0x04;     // Node should re-register with the hub
+// Bits 3-7 reserved for future update types
+
 /**
  * @brief Message header structure
  */
@@ -181,13 +189,14 @@ struct __attribute__((packed)) HeartbeatPayload {
  * @brief Heartbeat response payload (hub sends current datetime to node)
  */
 struct __attribute__((packed)) HeartbeatResponsePayload {
-    int16_t year;  // 0..4095 (e.g., 2025)
-    int8_t month;  // 1..12 (1=January)
-    int8_t day;    // 1..28,29,30,31
-    int8_t dotw;   // 0..6 (0=Sunday, 1=Monday, ..., 6=Saturday)
-    int8_t hour;   // 0..23
-    int8_t min;    // 0..59
-    int8_t sec;    // 0..59
+    int16_t year;                  // 0..4095 (e.g., 2025)
+    int8_t month;                  // 1..12 (1=January)
+    int8_t day;                    // 1..28,29,30,31
+    int8_t dotw;                   // 0..6 (0=Sunday, 1=Monday, ..., 6=Saturday)
+    int8_t hour;                   // 0..23
+    int8_t min;                    // 0..59
+    int8_t sec;                    // 0..59
+    uint8_t pending_update_flags;  // PENDING_FLAG_* bitmask of queued updates for this node
 };
 
 /**
@@ -365,13 +374,15 @@ public:
      * @param hour Current hour (0-23)
      * @param min Current minute (0-59)
      * @param sec Current second (0-59)
+     * @param pending_update_flags PENDING_FLAG_* bitmask of queued updates
      * @param buffer Output buffer (must be at least MESSAGE_MAX_SIZE bytes)
      * @return Length of created message, 0 on error
      */
     static size_t createHeartbeatResponseMessage(uint16_t src_addr, uint16_t dst_addr,
                                                  uint8_t seq_num, int16_t year, int8_t month,
                                                  int8_t day, int8_t dotw, int8_t hour, int8_t min,
-                                                 int8_t sec, uint8_t *buffer);
+                                                 int8_t sec, uint8_t pending_update_flags,
+                                                 uint8_t *buffer);
 
     /**
      * @brief Create a registration request message
