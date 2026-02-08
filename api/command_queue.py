@@ -92,3 +92,14 @@ def queue_set_datetime(node_address: int, year: int, month: int, day: int,
     command = f"SET_DATETIME {node_address} {year} {month} {day} {weekday} {hour} {minute} {second}"
     command_id = f"datetime-{node_address}"
     return send_hub_command(command, command_id)
+
+
+def queue_reboot_node(node_address: int):
+    """Queue a REBOOT_NODE command.
+
+    Returns:
+        huey TaskResultWrapper for tracking status
+    """
+    command = f"REBOOT_NODE {node_address}"
+    command_id = f"reboot-{node_address}"
+    return send_hub_command(command, command_id)
