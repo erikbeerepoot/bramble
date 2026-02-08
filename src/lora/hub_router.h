@@ -179,6 +179,18 @@ public:
     void handleUpdateAck(uint16_t node_addr, uint8_t sequence, bool success, uint8_t error_code);
 
     /**
+     * @brief Get pending update flags bitmask for a node
+     *
+     * Scans the node's pending update queue and maps UpdateType values
+     * to PENDING_FLAG_* bits. SET_DATETIME is excluded because the
+     * heartbeat response already carries the current time.
+     *
+     * @param node_addr Node address
+     * @return PENDING_FLAG_* bitmask
+     */
+    uint8_t getPendingUpdateFlags(uint16_t node_addr) const;
+
+    /**
      * @brief Get number of pending updates for a node
      * @param node_addr Node address
      * @return Number of pending updates
