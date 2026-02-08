@@ -279,6 +279,14 @@ void IrrigationMode::onHeartbeatResponse(const HeartbeatResponsePayload *payload
     // Call base class implementation to update RP2040 RTC
     ApplicationMode::onHeartbeatResponse(payload);
 
+    // If hub signals pending updates, trigger CHECK_UPDATES to pull them
+    if (payload && payload->pending_update_flags != PENDING_FLAG_NONE) {
+        logger.info("Pending updates flagged (0x%02X) - triggering CHECK_UPDATES",
+                    payload->pending_update_flags);
+        work_tracker_.addWork(WorkType::UpdatePull);
+        sendCheckUpdates();
+    }
+
     // Also sync time to PMU if available
     if (pmu_available_ && pmu_client_ && payload) {
         // Convert HeartbeatResponsePayload to PMU::DateTime
