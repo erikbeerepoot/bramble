@@ -996,6 +996,12 @@ void SensorMode::onHeartbeatResponse(const HeartbeatResponsePayload *payload)
     // Call base class implementation to update RP2040 RTC
     ApplicationMode::onHeartbeatResponse(payload);
 
+    // Log pending flags (sensor mode doesn't handle updates yet)
+    if (payload && payload->pending_update_flags != PENDING_FLAG_NONE) {
+        logger.info("Pending update flags: 0x%02X (not handled in sensor mode)",
+                    payload->pending_update_flags);
+    }
+
     // Also sync time to PMU if available
     if (pmu_available_ && reliable_pmu_ && payload) {
         // Convert HeartbeatResponsePayload to PMU::DateTime
