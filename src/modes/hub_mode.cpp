@@ -142,40 +142,6 @@ void HubMode::processIncomingMessage(uint8_t *rx_buffer, int rx_len, uint32_t cu
     if (rx_len >= static_cast<int>(sizeof(MessageHeader))) {
         const MessageHeader *header = reinterpret_cast<const MessageHeader *>(rx_buffer);
 
-        // Check if message is from an unregistered node (not a registration request)
-        // and request re-registration if needed
-        if (header->src_addr >= ADDRESS_MIN_NODE && header->src_addr <= ADDRESS_MAX_NODE &&
-            header->type != MSG_TYPE_REGISTRATION) {
-            const NodeInfo *node = address_manager_->getNodeInfo(header->src_addr);
-            if (!node) {
-                // Node is not registered - check if we should send reregister request
-                auto it = last_reregister_request_time_.find(header->src_addr);
-                bool should_send = (it == last_reregister_request_time_.end()) ||
-                                   (current_time - it->second >= REREGISTER_REQUEST_INTERVAL_MS);
-
-                if (should_send) {
-                    printf("Unknown node 0x%04X - sending reregister request\n", header->src_addr);
-
-                    // Send REG_RESPONSE with REG_REREGISTER_REQUIRED status
-                    // device_id=0 since we don't know it, assigned_addr=0 to indicate no valid
-                    // address
-                    messenger_.sendRegistrationResponse(
-                        header->src_addr,  // Send to the unknown node
-                        0,                 // device_id unknown
-                        0,                 // No assigned address
-                        REG_REREGISTER_REQUIRED,
-                        30,           // Retry interval in seconds
-                        current_time  // Network time
-                    );
-
-                    last_reregister_request_time_[header->src_addr] = current_time;
-                }
-
-                // Still process the message (sensor data is useful even from unknown nodes)
-                // But don't call updateLastSeen since the node isn't in the registry
-            }
-        }
-
         if (header->type == MSG_TYPE_HEARTBEAT) {
             const HeartbeatPayload *heartbeat =
                 reinterpret_cast<const HeartbeatPayload *>(rx_buffer + sizeof(MessageHeader));
@@ -603,17 +569,28 @@ void HubMode::handleHeartbeat(uint16_t source_addr, const HeartbeatPayload *payl
         return;
     }
 
-    // Send heartbeat response with current time
-    messenger_.sendHeartbeatResponse(source_addr, dt.year, dt.month, dt.day, dt.dotw, dt.hour,
-                                     dt.min, dt.sec);
+    // Compute pending update flags for this node
+    uint8_t pending_flags = hub_router_->getPendingUpdateFlags(source_addr);
 
-    logger.debug("Sent time to node 0x%04X: %04d-%02d-%02d %02d:%02d:%02d", source_addr, dt.year,
-                 dt.month, dt.day, dt.hour, dt.min, dt.sec);
+    // Set REREGISTER flag if the node is unknown to the address manager
+    const NodeInfo *node = address_manager_->getNodeInfo(source_addr);
+    if (!node) {
+        pending_flags |= PENDING_FLAG_REREGISTER;
+    }
+
+    // Send heartbeat response with current time and pending flags
+    messenger_.sendHeartbeatResponse(source_addr, dt.year, dt.month, dt.day, dt.dotw, dt.hour,
+                                     dt.min, dt.sec, pending_flags);
+
+    if (pending_flags != PENDING_FLAG_NONE) {
+        logger.debug("Sent time + pending flags 0x%02X to node 0x%04X", pending_flags, source_addr);
+    } else {
+        logger.debug("Sent time to node 0x%04X: %04d-%02d-%02d %02d:%02d:%02d", source_addr,
+                     dt.year, dt.month, dt.day, dt.hour, dt.min, dt.sec);
+    }
 
     // Forward heartbeat status to Raspberry Pi via UART
-    // Look up device_id from address manager
     uint64_t device_id = 0;
-    const NodeInfo *node = address_manager_->getNodeInfo(source_addr);
     if (node) {
         device_id = node->device_id;
     }
