@@ -51,22 +51,22 @@ export async function getNodes(): Promise<NodesResponse> {
   return fetchApi<NodesResponse>('/api/nodes');
 }
 
-export async function getNode(deviceId: number): Promise<Node> {
+export async function getNode(deviceId: string): Promise<Node> {
   return fetchApi<Node>(`/api/nodes/${deviceId}`);
 }
 
-export async function getNodeMetadata(deviceId: number): Promise<NodeMetadata> {
+export async function getNodeMetadata(deviceId: string): Promise<NodeMetadata> {
   return fetchApi<NodeMetadata>(`/api/nodes/${deviceId}/metadata`);
 }
 
-export async function deleteNode(deviceId: number): Promise<void> {
+export async function deleteNode(deviceId: string): Promise<void> {
   await fetchApi<{ message: string }>(`/api/nodes/${deviceId}`, {
     method: 'DELETE',
   });
 }
 
 export async function updateNodeMetadata(
-  deviceId: number,
+  deviceId: string,
   metadata: Partial<Pick<NodeMetadata, 'name' | 'notes'>>
 ): Promise<NodeMetadata> {
   return fetchApi<NodeMetadata>(`/api/nodes/${deviceId}/metadata`, {
@@ -76,7 +76,7 @@ export async function updateNodeMetadata(
 }
 
 export async function getNodeSensorData(
-  deviceId: number,
+  deviceId: string,
   options?: {
     startTime?: number;
     endTime?: number;
@@ -97,7 +97,7 @@ export async function getNodeSensorData(
 }
 
 export async function getNodeLatestReading(
-  deviceId: number
+  deviceId: string
 ): Promise<SensorReading | null> {
   try {
     return await fetchApi<SensorReading>(`/api/nodes/${deviceId}/sensor-data/latest`);
@@ -107,7 +107,7 @@ export async function getNodeLatestReading(
 }
 
 export async function getNodeStatistics(
-  deviceId: number,
+  deviceId: string,
   options?: {
     startTime?: number;
     endTime?: number;
@@ -165,7 +165,7 @@ export async function deleteZone(zoneId: number): Promise<void> {
 }
 
 export async function setNodeZone(
-  deviceId: number,
+  deviceId: string,
   zoneId: number | null
 ): Promise<NodeMetadata> {
   return fetchApi<NodeMetadata>(`/api/nodes/${deviceId}/zone`, {

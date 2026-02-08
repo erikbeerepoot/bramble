@@ -305,7 +305,7 @@ def get_node_status(device_id: int):
         else:
             # Return empty status structure for nodes without status
             return jsonify({
-                'device_id': device_id,
+                'device_id': str(device_id),  # String to preserve JS precision
                 'address': None,
                 'battery_level': None,
                 'error_flags': None,
@@ -351,7 +351,7 @@ def get_node_error_history(device_id: int):
         history = db.get_node_error_history(device_id, start_time, end_time)
 
         return jsonify({
-            'device_id': device_id,
+            'device_id': str(device_id),  # String to preserve JS precision
             'start': start_time,
             'end': end_time,
             'count': len(history),
@@ -382,7 +382,7 @@ def get_node_metadata(device_id: int):
         else:
             # Return empty metadata structure for nodes without metadata
             return jsonify({
-                'device_id': device_id,
+                'device_id': str(device_id),  # String to preserve JS precision
                 'name': None,
                 'notes': None,
                 'zone_id': None,
@@ -474,7 +474,7 @@ def get_queue(device_id: int):
                     updates.append(update.to_dict())
 
         return jsonify({
-            'device_id': device_id,
+            'device_id': str(device_id),  # String to preserve JS precision
             'address': address,
             'count': count,
             'updates': updates
@@ -553,7 +553,7 @@ def add_schedule(device_id: int):
         return jsonify({
             'status': 'queued',
             'task_id': result.id,
-            'device_id': device_id,
+            'device_id': str(device_id),  # String to preserve JS precision
             'address': address,
             'schedule': data,
             'message': 'Command queued for delivery'
@@ -594,7 +594,7 @@ def remove_schedule(device_id: int, index: int):
         return jsonify({
             'status': 'queued',
             'task_id': result.id,
-            'device_id': device_id,
+            'device_id': str(device_id),  # String to preserve JS precision
             'address': address,
             'schedule_index': index,
             'message': 'Command queued for delivery'
@@ -648,7 +648,7 @@ def set_wake_interval(device_id: int):
         return jsonify({
             'status': 'queued',
             'task_id': result.id,
-            'device_id': device_id,
+            'device_id': str(device_id),  # String to preserve JS precision
             'address': address,
             'interval_seconds': interval,
             'message': 'Command queued for delivery'
@@ -737,7 +737,7 @@ def set_datetime(device_id: int):
         return jsonify({
             'status': 'queued',
             'task_id': result.id,
-            'device_id': device_id,
+            'device_id': str(device_id),  # String to preserve JS precision
             'address': address,
             'datetime': {
                 'year': year,
@@ -897,7 +897,7 @@ def get_node_sensor_data(device_id: int):
 
             json_start = time.time()
             response_data = {
-                'device_id': device_id,
+                'device_id': str(device_id),  # String to preserve JS precision
                 'count': len(readings),
                 'downsampled': True,
                 'readings': readings,  # Already in chart format
@@ -919,7 +919,7 @@ def get_node_sensor_data(device_id: int):
         )
 
         return jsonify({
-            'device_id': device_id,
+            'device_id': str(device_id),  # String to preserve JS precision
             'count': len(readings),
             'readings': [r.to_chart_dict() for r in readings]
         })

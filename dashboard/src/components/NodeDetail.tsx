@@ -127,7 +127,7 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
     }
   };
 
-  const displayName = node.metadata?.name || `Node ${node.device_id.toString(16).toUpperCase()}`;
+  const displayName = node.metadata?.name || `Node ${BigInt(node.device_id).toString(16).toUpperCase()}`;
   const currentZone = zones.find(z => z.id === node.metadata?.zone_id);
   const healthStatus = useMemo(() => getHealthStatus(node.status?.error_flags ?? null), [node.status?.error_flags]);
   const isHealthy = healthStatus === 'healthy';
