@@ -118,14 +118,15 @@ bool ReliableMessenger::sendHeartbeat(uint16_t dst_addr, uint32_t uptime_seconds
 
 bool ReliableMessenger::sendHeartbeatResponse(uint16_t dst_addr, int16_t year, int8_t month,
                                               int8_t day, int8_t dotw, int8_t hour, int8_t min,
-                                              int8_t sec)
+                                              int8_t sec, uint8_t pending_update_flags)
 {
     uint8_t seq_num = getNextSequenceNumber();
 
     return sendWithBuilder(
         [=](uint8_t *buffer) {
             return MessageHandler::createHeartbeatResponseMessage(
-                node_addr_, dst_addr, seq_num, year, month, day, dotw, hour, min, sec, buffer);
+                node_addr_, dst_addr, seq_num, year, month, day, dotw, hour, min, sec,
+                pending_update_flags, buffer);
         },
         RELIABLE, "heartbeat_response");
 }
@@ -516,11 +517,6 @@ bool ReliableMessenger::processIncomingMessage(const uint8_t *buffer, size_t len
                 // Notify application to persist the new address
                 if (registration_success_callback_) {
                     registration_success_callback_(reg_response->assigned_addr);
-                }
-            } else if (reg_response->status == REG_REREGISTER_REQUIRED) {
-                logger_.warn("Hub requests re-registration - node address unknown to hub");
-                if (reregistration_callback_) {
-                    reregistration_callback_();
                 }
             } else {
                 logger_.error("Registration failed with status: %d", reg_response->status);
