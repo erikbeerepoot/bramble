@@ -81,9 +81,6 @@ public:
     // Callback type for heartbeat response messages
     using HeartbeatResponseCallback = std::function<void(const HeartbeatResponsePayload *)>;
 
-    // Callback type for reregistration required (hub doesn't recognize node)
-    using ReregistrationCallback = std::function<void()>;
-
     // Callback type for registration success (provides new assigned address)
     using RegistrationSuccessCallback = std::function<void(uint16_t new_address)>;
 
@@ -156,10 +153,12 @@ public:
      * @param hour Current hour (0-23)
      * @param min Current minute (0-59)
      * @param sec Current second (0-59)
+     * @param pending_update_flags PENDING_FLAG_* bitmask of queued updates
      * @return true if heartbeat response sent successfully
      */
     bool sendHeartbeatResponse(uint16_t dst_addr, int16_t year, int8_t month, int8_t day,
-                               int8_t dotw, int8_t hour, int8_t min, int8_t sec);
+                               int8_t dotw, int8_t hour, int8_t min, int8_t sec,
+                               uint8_t pending_update_flags = 0);
 
     /**
      * @brief Send registration request to hub
@@ -318,15 +317,6 @@ public:
     }
 
     /**
-     * @brief Set callback for reregistration required
-     * @param callback Function to call when hub requests re-registration
-     */
-    void setReregistrationCallback(ReregistrationCallback callback)
-    {
-        reregistration_callback_ = callback;
-    }
-
-    /**
      * @brief Set callback for registration success
      * @param callback Function to call when registration succeeds (receives new address)
      */
@@ -360,7 +350,6 @@ private:
     ActuatorCallback actuator_callback_;
     UpdateCallback update_callback_;
     HeartbeatResponseCallback heartbeat_response_callback_;
-    ReregistrationCallback reregistration_callback_;
     RegistrationSuccessCallback registration_success_callback_;
 
     // Deduplication: ring buffer of recently seen messages
