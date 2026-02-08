@@ -38,7 +38,8 @@ void SensorStateMachine::reportRegistrationSent()
 void SensorStateMachine::reportRegistrationComplete()
 {
     if (state_ != SensorState::REGISTERING) {
-        logger.warn("reportRegistrationComplete() called in unexpected state: %s", stateName(state_));
+        logger.warn("reportRegistrationComplete() called in unexpected state: %s",
+                    stateName(state_));
         return;
     }
     logger.info("Registration complete");
@@ -48,7 +49,8 @@ void SensorStateMachine::reportRegistrationComplete()
 void SensorStateMachine::reportRegistrationTimeout()
 {
     if (state_ != SensorState::REGISTERING) {
-        logger.warn("reportRegistrationTimeout() called in unexpected state: %s", stateName(state_));
+        logger.warn("reportRegistrationTimeout() called in unexpected state: %s",
+                    stateName(state_));
         return;
     }
     logger.warn("Registration timed out - will retry on next wake");
