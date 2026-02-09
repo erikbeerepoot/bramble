@@ -528,22 +528,12 @@ void SensorFlashBuffer::initializeMetadata()
     metadata_.records_lost = 0;
     metadata_.last_sync_timestamp = 0;
     metadata_.initial_boot_timestamp = 0;
-    metadata_.next_seq_num = 0;
+    metadata_._reserved_seq_num = 0;
 }
 
 uint32_t SensorFlashBuffer::getRecordAddress(uint32_t index) const
 {
     return DATA_START_OFFSET + (index * sizeof(SensorDataRecord));
-}
-
-uint8_t SensorFlashBuffer::getNextSeqNum() const
-{
-    return metadata_.next_seq_num;
-}
-
-void SensorFlashBuffer::saveNextSeqNum(uint8_t seq_num)
-{
-    metadata_.next_seq_num = seq_num;
 }
 
 bool SensorFlashBuffer::validateMetadata() const
