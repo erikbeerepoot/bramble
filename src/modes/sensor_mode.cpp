@@ -1037,11 +1037,11 @@ void SensorMode::onRebootRequested()
         logger.warn("Requesting full system reset via PMU");
         reliable_pmu_->systemReset([](bool success, PMU::ErrorCode error) {
             (void)error;
+            (void)success;
             // PMU will reset itself (killing RP2040 power), but if the ACK
-            // arrives before power is cut, do a watchdog reboot as fallback
-            if (success) {
-                watchdog_reboot(0, 0, 0);
-            }
+            // arrives before power is cut, do a watchdog reboot as fallback.
+            // Also reboot if PMU command failed - we always honor reboot requests.
+            watchdog_reboot(0, 0, 0);
         });
     } else {
         logger.warn("PMU not available - performing RP2040-only watchdog reboot");
