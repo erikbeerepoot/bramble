@@ -13,23 +13,6 @@ REST API for managing irrigation schedules over LoRa. Runs on Raspberry Pi Zero 
 
 ### Option 1: Docker (Recommended)
 
-**Quick Start - Pull pre-built image:**
-```bash
-# Pull from GitHub Container Registry (works on x86 and Raspberry Pi)
-docker pull ghcr.io/erikbeerepoot/bramble/api:latest
-
-# Run with serial device access (Raspberry Pi)
-docker run -d \
-  --name bramble-api \
-  -p 5000:5000 \
-  --device /dev/ttyAMA0:/dev/ttyAMA0 \
-  -e SERIAL_PORT=/dev/ttyAMA0 \
-  -v bramble-data:/app/data \
-  ghcr.io/erikbeerepoot/bramble/api:latest
-
-# API runs on http://localhost:5000
-```
-
 **Prerequisites - Install Docker on Raspberry Pi/Debian:**
 
 ```bash
@@ -136,57 +119,179 @@ Environment variables:
 | `HOST` | `0.0.0.0` | API server host |
 | `PORT` | `5000` | API server port |
 | `DEBUG` | `False` | Enable debug logging |
-| `QUEUE_DB_PATH` | `/data/queue.db` | Path to command queue SQLite database |
-| `QUEUE_IMMEDIATE` | `false` | Run queue synchronously (for testing) |
-| `SENSOR_DB_PATH` | `/data/sensor_data.duckdb` | Path to sensor data database |
 
-## Architecture
+## API Endpoints
 
-### Command Queue
+### Health Check
 
-Commands to nodes (schedules, wake intervals, datetime) are processed through a persistent queue that survives container restarts:
+**GET** `/api/health`
 
-```
-┌─────────────┐     ┌──────────────┐     ┌─────────────────────────┐
-│ Flask API   │     │ huey queue   │     │ huey worker (consumer)  │
-│             │ ──► │ (SQLite)     │ ──► │                         │
-│ POST /...   │     │ /data/queue.db     │ send_hub_command()      │
-│ returns 202 │     │              │     │   ├─ serial.send()      │
-└─────────────┘     └──────────────┘     │   └─ retry on failure   │
-                                         └─────────────────────────┘
+```json
+{
+  "status": "healthy",
+  "serial_connected": true,
+  "serial_port": "/dev/ttyACM0"
+}
 ```
 
-- Commands return immediately with a `task_id` (HTTP 202 Accepted)
-- Worker processes commands asynchronously with retries (3 attempts, 30s delay)
-- Queue persists in SQLite, surviving container restarts
-- Use `/api/tasks/<task_id>` to check command status
+### System Time
 
-**Docker Compose** runs both the API and worker containers:
-```bash
-docker compose up  # Starts api + worker
+**GET** `/api/system/time`
+
+```json
+{
+  "datetime": "2025-01-15T14:30:00",
+  "formatted": "2025-01-15 14:30:00",
+  "weekday": 3,
+  "timestamp": 1736953800
+}
 ```
 
-**Local testing** can use synchronous mode:
-```bash
-QUEUE_IMMEDIATE=true uv run python app.py
+### List Nodes
+
+**GET** `/api/nodes`
+
+```json
+{
+  "count": 2,
+  "nodes": [
+    {
+      "address": 42,
+      "type": "IRRIGATION",
+      "online": true,
+      "last_seen_seconds": 15
+    }
+  ]
+}
 ```
 
-## API Reference
+### Get Node
 
-See [docs/API.md](docs/API.md) for complete API documentation.
+**GET** `/api/nodes/{addr}`
 
-**Quick examples:**
+```json
+{
+  "address": 42,
+  "type": "IRRIGATION",
+  "online": true,
+  "last_seen_seconds": 15
+}
+```
+
+### Get Update Queue
+
+**GET** `/api/nodes/{addr}/queue`
+
+```json
+{
+  "node_address": 42,
+  "count": 2,
+  "updates": [
+    {
+      "sequence": 5,
+      "type": "SET_SCHEDULE",
+      "age_seconds": 30
+    }
+  ]
+}
+```
+
+### Add Schedule
+
+**POST** `/api/nodes/{addr}/schedules`
+
+**Request:**
+```json
+{
+  "index": 0,
+  "hour": 14,
+  "minute": 30,
+  "duration": 900,
+  "days": 127,
+  "valve": 0
+}
+```
+
+**Parameters:**
+- `index`: Schedule slot (0-7)
+- `hour`: Hour (0-23)
+- `minute`: Minute (0-59)
+- `duration`: Duration in seconds (0-65535)
+- `days`: Day bitmask (127 = all days, 1 = Sunday, 2 = Monday, etc.)
+- `valve`: Valve ID (0+)
+
+**Response:**
+```json
+{
+  "status": "queued",
+  "node_address": 42,
+  "schedule": { ... },
+  "position": 1
+}
+```
+
+### Remove Schedule
+
+**DELETE** `/api/nodes/{addr}/schedules/{index}`
+
+```json
+{
+  "status": "queued",
+  "node_address": 42,
+  "schedule_index": 0,
+  "position": 2
+}
+```
+
+### Set Wake Interval
+
+**POST** `/api/nodes/{addr}/wake-interval`
+
+**Request:**
+```json
+{
+  "interval_seconds": 60
+}
+```
+
+**Response:**
+```json
+{
+  "status": "queued",
+  "node_address": 42,
+  "interval_seconds": 60,
+  "position": 3
+}
+```
+
+## Usage Examples
+
 ```bash
 # List all nodes
 curl http://localhost:5000/api/nodes
 
-# Add irrigation schedule
+# Add irrigation schedule (water at 2:30 PM for 15 minutes, all days, valve 0)
 curl -X POST http://localhost:5000/api/nodes/42/schedules \
   -H "Content-Type: application/json" \
-  -d '{"index": 0, "hour": 14, "minute": 30, "duration": 900, "days": 127, "valve": 0}'
+  -d '{
+    "index": 0,
+    "hour": 14,
+    "minute": 30,
+    "duration": 900,
+    "days": 127,
+    "valve": 0
+  }'
 
-# Check task status
-curl http://localhost:5000/api/tasks/{task_id}
+# Remove schedule
+curl -X DELETE http://localhost:5000/api/nodes/42/schedules/0
+
+# Set wake interval to 1 minute
+curl -X POST http://localhost:5000/api/nodes/42/wake-interval \
+  -H "Content-Type: application/json" \
+  -d '{"interval_seconds": 60}'
+
+# Check node's update queue
+curl http://localhost:5000/api/nodes/42/queue
 ```
 
 ## Troubleshooting
