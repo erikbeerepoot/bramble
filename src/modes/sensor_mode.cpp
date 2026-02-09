@@ -39,13 +39,6 @@ void SensorMode::onStart()
             flash_buffer_->getStatistics(stats);
             logger.info("Flash buffer initialized: %lu records (%lu untransmitted)",
                         stats.total_records, flash_buffer_->getUntransmittedCount());
-
-            // Restore persisted LoRa sequence number across sleep/wake cycles
-            uint8_t saved_seq = flash_buffer_->getNextSeqNum();
-            if (saved_seq >= 128) {
-                messenger_.setNextSeqNum(saved_seq);
-                logger.debug("Restored LoRa seq num: %u", saved_seq);
-            }
         } else {
             logger.error("Failed to initialize flash buffer!");
         }

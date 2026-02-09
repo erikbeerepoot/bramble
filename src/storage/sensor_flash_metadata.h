@@ -30,7 +30,7 @@ struct __attribute__((packed)) SensorFlashMetadata {
     uint32_t records_lost;            // Records overwritten before transmission
     uint32_t last_sync_timestamp;     // Unix timestamp of last hub sync
     uint32_t initial_boot_timestamp;  // Unix timestamp of first boot after power loss
-    uint8_t next_seq_num;             // Persisted LoRa sequence number
+    uint8_t _reserved_seq_num;        // Reserved (formerly LoRa sequence number)
     uint8_t reserved[4055];           // Pad to 4KB sector size
     uint32_t crc32;                   // CRC32 of all fields above
 };

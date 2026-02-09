@@ -188,22 +188,6 @@ public:
     bool setInitialBootTimestamp(uint32_t timestamp);
 
     /**
-     * @brief Get the persisted LoRa sequence number
-     * @return Persisted next sequence number (0 if not set)
-     */
-    uint8_t getNextSeqNum() const;
-
-    /**
-     * @brief Save the LoRa sequence number to metadata (in-memory only)
-     *
-     * Call flush() to persist to flash. This avoids extra flash writes
-     * since flush() is already called before sleep.
-     *
-     * @param seq_num Sequence number to save
-     */
-    void saveNextSeqNum(uint8_t seq_num);
-
-    /**
      * @brief Flush metadata to flash
      *
      * Call this before power down to ensure write_index is persisted.
