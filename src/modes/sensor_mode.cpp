@@ -16,8 +16,6 @@
 #include "../lora/message.h"
 #include "../lora/network_stats.h"
 #include "../lora/reliable_messenger.h"
-#include "../storage/log_flash_buffer.h"
-#include "../usb/usb_stdio.h"
 #include "../version.h"
 
 constexpr uint16_t HUB_ADDRESS = ADDRESS_HUB;
@@ -100,7 +98,8 @@ void SensorMode::onStart()
     // Set up registration success callback - transitions REGISTERING → AWAITING_TIME
     messenger_.setRegistrationSuccessCallback([this](uint16_t assigned_addr) {
         pmu_logger.info("Registration success callback: assigned address 0x%04X", assigned_addr);
-        registration_sent_time_ = 0;  // Clear timeout
+        task_queue_.cancel(registration_timeout_id_);
+        registration_timeout_id_ = 0;
         sensor_state_.reportRegistrationComplete();
     });
 
@@ -141,29 +140,29 @@ void SensorMode::onStart()
                 sensor_state_.markInitialized();
             } else {
                 pmu_logger.info("ClearToSend ACK received - waiting for WakeNotification");
-                // Start timeout timer AFTER ACK received, not when command queued
-                cts_sent_time_ = to_ms_since_boot(get_absolute_time());
+                // Start timeout — if WakeNotification doesn't arrive, proceed without PMU state
+                uint32_t now = to_ms_since_boot(get_absolute_time());
+                wake_timeout_id_ = task_queue_.postDelayed(
+                    [](void *ctx, uint32_t) -> bool {
+                        SensorMode *self = static_cast<SensorMode *>(ctx);
+                        pmu_logger.warn("WakeNotification timeout - proceeding without PMU state");
+                        self->wake_timeout_id_ = 0;
+                        self->sensor_state_.markInitialized();
+                        return true;
+                    },
+                    this, now, WAKE_NOTIFICATION_TIMEOUT_MS, TaskPriority::High);
             }
             // On success, handlePmuWake() will call markInitialized()
             // AWAITING_TIME state handler will then call getDateTime
         });
     } else {
         logger.warn("PMU client not available - sending heartbeat for time sync");
-        heartbeat_request_time_ = to_ms_since_boot(get_absolute_time());
         sendHeartbeat(0);
+        startHeartbeatTimeout();
         sensor_state_.reportHeartbeatSent();
         // No PMU, so mark initialized immediately (no state to restore)
         sensor_state_.markInitialized();
     }
-
-    // Note: Periodic tasks are no longer used - state machine drives all work.
-    // The wake cycle flow (TIME_SYNCED -> READING_SENSOR -> CHECKING_BACKLOG ->
-    // TRANSMITTING -> READY_FOR_SLEEP) handles sensor reads and transmissions.
-    // Heartbeats are sent on each wake cycle as part of time sync.
-
-    // Note: markInitialized() is now called in handlePmuWake() after state is restored
-    // from PMU. This ensures write_index is correct BEFORE any sensor writes happen.
-    // The state machine stays in INITIALIZING until handlePmuWake() fires.
 }
 
 void SensorMode::onStateChange(SensorState state)
@@ -267,11 +266,20 @@ void SensorMode::onStateChange(SensorState state)
             }
             break;
 
-        case SensorState::LISTENING:
+        case SensorState::LISTENING: {
             // Receive window open - stay awake briefly for hub responses
-            listen_window_start_time_ = to_ms_since_boot(get_absolute_time());
+            uint32_t now = to_ms_since_boot(get_absolute_time());
             logger.info("Receive window open (%lu ms)", LISTEN_WINDOW_MS);
+            task_queue_.postDelayed(
+                [](void *ctx, uint32_t) -> bool {
+                    SensorMode *self = static_cast<SensorMode *>(ctx);
+                    logger.info("Receive window closed");
+                    self->sensor_state_.reportListenComplete();
+                    return true;
+                },
+                this, now, LISTEN_WINDOW_MS, TaskPriority::High);
             break;
+        }
 
         case SensorState::READY_FOR_SLEEP:
             // All work done - signal PMU
@@ -309,19 +317,6 @@ void SensorMode::onStateChange(SensorState state)
             // Initial state - nothing to do yet
             break;
 
-        case SensorState::USB_CONNECTED:
-            // USB CDC connected - stay awake with cyan LED, send KeepAwake to PMU
-            led_pattern_ = std::make_unique<ShortBlinkPattern>(led_, 0, 255, 255);  // Cyan
-            usb_keepalive_time_ = to_ms_since_boot(get_absolute_time());
-            logger.info("USB connected - staying awake for host communication");
-            // Send initial KeepAwake to PMU
-            if (pmu_available_ && reliable_pmu_) {
-                reliable_pmu_->keepAwake(USB_KEEPALIVE_SECONDS);
-            }
-            // Flush log buffer to flash so logs appear on USB drive
-            Logger::flushFlashSink();
-            break;
-
         case SensorState::REGISTERING:
             // Yellow fast blink while checking/waiting for registration
             led_pattern_ = std::make_unique<ShortBlinkPattern>(led_, 255, 255, 0, 50, 250);
@@ -349,98 +344,20 @@ void SensorMode::onStateChange(SensorState state)
 
 void SensorMode::onLoop()
 {
-    // If sleep is pending, halt to prevent UART activity from keeping STM32 awake
-    // This handles the case where USB power keeps RP2040 running after dcdc.disable()
     if (sleep_pending_) {
-        // Enter tight loop - do nothing until power is cut or device is reset
-        // Using tight_loop_contents() allows debugger to interrupt if attached
         tight_loop_contents();
         return;
     }
 
-    // Process any pending PMU messages and handle retries
     if (pmu_available_ && reliable_pmu_) {
         reliable_pmu_->update();
     }
 
-    // WakeNotification timeout - if we sent CTS but never got WakeNotification, proceed anyway
-    if (cts_sent_time_ > 0 && sensor_state_.state() == SensorState::INITIALIZING) {
-        uint32_t elapsed = to_ms_since_boot(get_absolute_time()) - cts_sent_time_;
-        if (elapsed >= WAKE_NOTIFICATION_TIMEOUT_MS) {
-            pmu_logger.warn("WakeNotification timeout (%lu ms) - proceeding without PMU state",
-                            elapsed);
-            cts_sent_time_ = 0;
-
-            // markInitialized triggers REGISTERING state, callback handles registration check
-            sensor_state_.markInitialized();
-        }
-    }
-
-    // Registration timeout - if we sent registration but never got response, go to sleep
-    if (registration_sent_time_ > 0 && sensor_state_.isRegistering()) {
-        uint32_t elapsed = to_ms_since_boot(get_absolute_time()) - registration_sent_time_;
-        if (elapsed >= REGISTRATION_TIMEOUT_MS) {
-            pmu_logger.warn("Registration timeout (%lu ms) - will retry on next wake", elapsed);
-            registration_sent_time_ = 0;
-            sensor_state_.reportRegistrationTimeout();
-        }
-    }
-
-    // Hub sync timeout - check if PMU already set RTC and we can proceed
-    if (!sensor_state_.isTimeSynced() && heartbeat_request_time_ > 0) {
-        uint32_t elapsed = to_ms_since_boot(get_absolute_time()) - heartbeat_request_time_;
-        if (elapsed >= HEARTBEAT_TIMEOUT_MS) {
-            logger.warn("Hub sync timeout (%lu ms) - checking if RTC is running", elapsed);
-            heartbeat_request_time_ = 0;
-            // Check hardware directly - if RTC is running, PMU must have set it
-            if (rtc_running()) {
-                // reportRtcSynced triggers TIME_SYNCED -> onStateChange handles the rest
-                sensor_state_.reportRtcSynced();
-            }
-        }
-    }
-
-    // Listen window timeout - close receive window and proceed to sleep
-    if (sensor_state_.isListening() && listen_window_start_time_ > 0) {
-        uint32_t elapsed = to_ms_since_boot(get_absolute_time()) - listen_window_start_time_;
-        if (elapsed >= LISTEN_WINDOW_MS) {
-            logger.info("Receive window closed after %lu ms", elapsed);
-            listen_window_start_time_ = 0;
-            sensor_state_.reportListenComplete();
-        }
-    }
-
-    // USB connection monitoring - report connect/disconnect to state machine
-    bool usb_now_connected = usb_stdio_connected();
-    if (usb_now_connected && !sensor_state_.isUsbConnected() &&
-        (sensor_state_.isListening() || sensor_state_.isReadyForSleep())) {
-        // USB just connected while in late-cycle state - transition to USB_CONNECTED
-        sensor_state_.reportUsbConnected();
-    } else if (!usb_now_connected && sensor_state_.isUsbConnected()) {
-        // USB just disconnected while in USB_CONNECTED state - go to sleep
-        sensor_state_.reportUsbDisconnected();
-    }
-
-    // USB keep-alive - periodically send KeepAwake to PMU while USB connected
-    if (sensor_state_.isUsbConnected() && usb_keepalive_time_ > 0) {
-        uint32_t elapsed = to_ms_since_boot(get_absolute_time()) - usb_keepalive_time_;
-        if (elapsed >= USB_KEEPALIVE_INTERVAL_MS) {
-            usb_keepalive_time_ = to_ms_since_boot(get_absolute_time());
-            if (pmu_available_ && reliable_pmu_) {
-                reliable_pmu_->keepAwake(USB_KEEPALIVE_SECONDS);
-            }
-        }
-    }
-
-    // Process any pending tasks (deferred sleep signals, etc.)
-    uint32_t current_time = to_ms_since_boot(get_absolute_time());
-    task_queue_.process(current_time);
+    task_queue_.process(to_ms_since_boot(get_absolute_time()));
 }
 
 void SensorMode::readAndStoreSensorData(uint32_t current_time)
 {
-    (void)current_time;  // No longer used - we use RTC Unix timestamp
-
     if (!sensor_) {
         logger.error("Sensor object not created");
         return;
@@ -462,7 +379,7 @@ void SensorMode::readAndStoreSensorData(uint32_t current_time)
         }
     }
 
-    auto reading = sensor_->read();
+    CHT832X::Reading reading = sensor_->read();
 
     // Track sensor read validity for error reporting
     last_sensor_read_valid_ = reading.valid;
@@ -903,13 +820,6 @@ void SensorMode::signalReadyForSleep()
             (void)time;
             SensorMode *self = static_cast<SensorMode *>(ctx);
 
-            // Abort if no longer ready for sleep (e.g., USB connected while task was queued)
-            if (!self->sensor_state_.isReadyForSleep()) {
-                pmu_logger.debug("Skipping ReadyForSleep - state changed to %s",
-                                 SensorStateMachine::stateName(self->sensor_state_.state()));
-                return true;  // Task completed (cancelled)
-            }
-
             // Repack state fresh in case it changed since signalReadyForSleep was called
             static SensorPersistedState state;
             memset(&state, 0, sizeof(state));
@@ -924,9 +834,6 @@ void SensorMode::signalReadyForSleep()
             pmu_logger.info(
                 "Sending ReadyForSleep with state (seq=%u, addr=0x%04X, read=%lu, write=%lu)",
                 state.next_seq_num, state.assigned_address, state.read_index, state.write_index);
-
-            // Flush log buffer before sleep - page buffer in RAM is lost on power down
-            Logger::flushFlashSink();
 
             self->reliable_pmu_->readyForSleep(
                 reinterpret_cast<const uint8_t *>(&state),
@@ -950,6 +857,10 @@ void SensorMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry 
                                bool state_valid, const uint8_t *state)
 {
     (void)entry;
+
+    // Cancel the wake notification timeout — PMU responded
+    task_queue_.cancel(wake_timeout_id_);
+    wake_timeout_id_ = 0;
 
     // Ignore duplicate wake notifications if already active
     // This can happen if PMU sends multiple notifications (e.g., during LISTENING window)
@@ -1041,6 +952,10 @@ void SensorMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry 
 
 void SensorMode::onHeartbeatResponse(const HeartbeatResponsePayload *payload)
 {
+    // Cancel heartbeat timeout — we got the response we were waiting for
+    task_queue_.cancel(heartbeat_timeout_id_);
+    heartbeat_timeout_id_ = 0;
+
     // Call base class implementation to update RP2040 RTC
     ApplicationMode::onHeartbeatResponse(payload);
 
@@ -1215,8 +1130,8 @@ void SensorMode::requestTimeSync()
                     // Only sync from hub if it's time to transmit
                     if (time_to_transmit) {
                         pmu_logger.info("Syncing time by sending heartbeat.");
-                        heartbeat_request_time_ = to_ms_since_boot(get_absolute_time());
                         sendHeartbeat(0);
+                        startHeartbeatTimeout();
                     } else {
                         pmu_logger.info("Skip hub sync: not time to transmit yet.");
                     }
@@ -1226,18 +1141,37 @@ void SensorMode::requestTimeSync()
             } else {
                 // PMU doesn't have valid time - need to sync from hub
                 pmu_logger.info("PMU time not valid - sending heartbeat for hub sync");
-                heartbeat_request_time_ = to_ms_since_boot(get_absolute_time());
                 sendHeartbeat(0);
+                startHeartbeatTimeout();
                 sensor_state_.reportHeartbeatSent();
             }
         });
     } else {
         // No PMU - send heartbeat to sync from hub
         logger.info("No PMU - sending heartbeat for time sync");
-        heartbeat_request_time_ = to_ms_since_boot(get_absolute_time());
         sendHeartbeat(0);
+        startHeartbeatTimeout();
         sensor_state_.reportHeartbeatSent();
     }
+}
+
+void SensorMode::startHeartbeatTimeout()
+{
+    // Cancel any existing heartbeat timeout before starting a new one
+    task_queue_.cancel(heartbeat_timeout_id_);
+
+    uint32_t now = to_ms_since_boot(get_absolute_time());
+    heartbeat_timeout_id_ = task_queue_.postDelayed(
+        [](void *ctx, uint32_t) -> bool {
+            SensorMode *self = static_cast<SensorMode *>(ctx);
+            logger.warn("Hub sync timeout - checking if RTC is running");
+            self->heartbeat_timeout_id_ = 0;
+            if (rtc_running()) {
+                self->sensor_state_.reportRtcSynced();
+            }
+            return true;
+        },
+        this, now, HEARTBEAT_TIMEOUT_MS, TaskPriority::High);
 }
 
 void SensorMode::attemptRegistration()
@@ -1252,8 +1186,17 @@ void SensorMode::attemptRegistration()
 
     if (seq != 0) {
         pmu_logger.info("Registration request sent (seq=%d)", seq);
-        // Start registration timeout - state is already REGISTERING
-        registration_sent_time_ = to_ms_since_boot(get_absolute_time());
+        // Start registration timeout — fires if hub never responds
+        uint32_t now = to_ms_since_boot(get_absolute_time());
+        registration_timeout_id_ = task_queue_.postDelayed(
+            [](void *ctx, uint32_t) -> bool {
+                SensorMode *self = static_cast<SensorMode *>(ctx);
+                pmu_logger.warn("Registration timeout - will retry on next wake");
+                self->registration_timeout_id_ = 0;
+                self->sensor_state_.reportRegistrationTimeout();
+                return true;
+            },
+            this, now, REGISTRATION_TIMEOUT_MS, TaskPriority::High);
         sensor_state_.reportRegistrationSent();
         // Expect registration response - ensures we enter LISTENING before sleep
         sensor_state_.expectResponse();
