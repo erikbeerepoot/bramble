@@ -222,6 +222,7 @@ else()
             main.cpp
             src/modes/sensor_mode.cpp
             src/hal/cht832x.cpp
+            src/util/sensor_pmu_manager.cpp
             ${COMMON_SOURCES}
         )
         target_compile_definitions(bramble_sensor PRIVATE

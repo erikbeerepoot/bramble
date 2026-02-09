@@ -4,9 +4,8 @@
 
 #include "../hal/cht832x.h"
 #include "../hal/external_flash.h"
-#include "../hal/pmu_client.h"
-#include "../hal/pmu_reliability.h"
 #include "../storage/sensor_flash_buffer.h"
+#include "../util/sensor_pmu_manager.h"
 #include "../util/sensor_state_machine.h"
 #include "../util/task_queue.h"
 #include "application_mode.h"
@@ -31,20 +30,16 @@ private:
     std::unique_ptr<CHT832X> sensor_;
     std::unique_ptr<ExternalFlash> external_flash_;
     std::unique_ptr<SensorFlashBuffer> flash_buffer_;
-    PmuClient *pmu_client_ = nullptr;
-    PMU::ReliablePmuClient *reliable_pmu_ = nullptr;
-    bool pmu_available_ = false;
+    std::unique_ptr<SensorPmuManager> pmu_manager_;
     TaskQueue task_queue_;  // Unified task coordination
 
     // Timeout task handles — cancelled when expected response arrives, fires if it doesn't
-    uint16_t wake_timeout_id_ = 0;
     uint16_t registration_timeout_id_ = 0;
     uint16_t heartbeat_timeout_id_ = 0;
 
     // Timeout durations
     static constexpr uint32_t HEARTBEAT_TIMEOUT_MS =
         5000;  // Allow time for RELIABLE retries (3 attempts) + hub response
-    static constexpr uint32_t WAKE_NOTIFICATION_TIMEOUT_MS = 1000;
     static constexpr uint32_t REGISTRATION_TIMEOUT_MS = 5000;  // Allow time for RELIABLE retries
     static constexpr uint32_t LISTEN_WINDOW_MS = 500;
 
@@ -116,22 +111,6 @@ private:
     void initializeFlashTimestamps();
 
     /**
-     * @brief Signal to PMU that RP2040 is ready for sleep
-     * Called when there's no more work to do (no backlog to transmit)
-     */
-    void signalReadyForSleep();
-
-    /**
-     * @brief Handle PMU wake notification
-     * @param reason Wake reason from PMU
-     * @param entry Schedule entry (if scheduled wake)
-     * @param state_valid true if state blob is valid (false on cold start)
-     * @param state 32-byte state blob from PMU RAM (or null)
-     */
-    void handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry *entry, bool state_valid,
-                       const uint8_t *state);
-
-    /**
      * @brief Handle heartbeat response - sync time to PMU
      * @param payload Heartbeat response with timestamp from hub
      */
@@ -168,10 +147,6 @@ private:
     // Batch transmission tracking - send multiple batches per wake cycle to clear backlog faster
     uint8_t batches_this_cycle_ = 0;
     static constexpr uint8_t MAX_BATCHES_PER_CYCLE = 20;  // Send up to 20 batches before sleeping
-
-    // Sleep pending flag - when set, onLoop() enters halt state
-    // This prevents UART activity when USB is keeping RP2040 powered after dcdc.disable()
-    bool sleep_pending_ = false;
 
     // Fallback storage for direct transmit when flash unavailable
     SensorDataRecord current_reading_ = {};
