@@ -399,7 +399,7 @@ void SensorMode::readAndStoreSensorData(uint32_t current_time)
     int16_t temp_fixed = static_cast<int16_t>(reading.temperature * 100.0f);
     uint16_t hum_fixed = static_cast<uint16_t>(reading.humidity * 100.0f);
 
-    // Store reading in memory for direct transmit fallback (when flash unavailable)
+    // Store reading in memory (also used as direct transmit fallback when flash unavailable)
     current_reading_ = {.timestamp = unix_timestamp,
                         .temperature = temp_fixed,
                         .humidity = hum_fixed,
@@ -407,18 +407,10 @@ void SensorMode::readAndStoreSensorData(uint32_t current_time)
                         .reserved = 0,
                         .crc16 = 0};
 
-    // Write to flash only (no immediate TX - batch transmission handles delivery)
+    // Write to flash (no immediate TX - batch transmission handles delivery)
+    // CRC will be calculated by writeRecord()
     if (flash_buffer_) {
-        SensorDataRecord record = {
-            .timestamp = unix_timestamp,
-            .temperature = temp_fixed,
-            .humidity = hum_fixed,
-            .flags = 0,  // Not transmitted yet
-            .reserved = 0,
-            .crc16 = 0  // Will be calculated by writeRecord()
-        };
-
-        if (!flash_buffer_->writeRecord(record)) {
+        if (!flash_buffer_->writeRecord(current_reading_)) {
             logger.error("Failed to write record to flash!");
         } else {
             logger.debug("Stored sensor data to flash (temp=%d, hum=%d)", temp_fixed, hum_fixed);
@@ -568,27 +560,22 @@ bool SensorMode::checkNeedsTransmission()
         return false;
     }
 
-    // Check if it's time to transmit (based on TRANSMIT_INTERVAL_S)
-    // This ensures ALL transmission paths respect the 10-minute interval
-    if (!isTimeToTransmit()) {
-        uint32_t now = getUnixTimestamp();
-        SensorFlashMetadata stats;
-        uint32_t last_sync = 0;
-        if (flash_buffer_->getStatistics(stats)) {
-            last_sync = stats.last_sync_timestamp;
-        }
-        uint32_t elapsed = now - last_sync;
-        logger.info("Not time to transmit yet (%lu s / %lu s)", elapsed, TRANSMIT_INTERVAL_S);
-        return false;
-    }
-
+    // Compute elapsed time since last sync (used for logging in both branches)
     uint32_t now = getUnixTimestamp();
     SensorFlashMetadata stats;
     uint32_t last_sync = 0;
     if (flash_buffer_->getStatistics(stats)) {
         last_sync = stats.last_sync_timestamp;
     }
-    uint32_t elapsed = now - last_sync;
+    uint32_t elapsed = (last_sync > 0) ? (now - last_sync) : 0;
+
+    // Check if it's time to transmit (based on TRANSMIT_INTERVAL_S)
+    // This ensures ALL transmission paths respect the 10-minute interval
+    if (!isTimeToTransmit()) {
+        logger.info("Not time to transmit yet (%lu s / %lu s)", elapsed, TRANSMIT_INTERVAL_S);
+        return false;
+    }
+
     logger.info("Transmit interval reached (%lu s) - checking backlog", elapsed);
 
     uint32_t untransmitted_count = flash_buffer_->getUntransmittedCount();
