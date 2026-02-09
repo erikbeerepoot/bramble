@@ -4,6 +4,7 @@
 
 #include "../hal/cht832x.h"
 #include "../hal/external_flash.h"
+#include "../lora/heartbeat_client.h"
 #include "../storage/sensor_flash_buffer.h"
 #include "../util/sensor_pmu_manager.h"
 #include "../util/sensor_state_machine.h"
@@ -31,6 +32,7 @@ private:
     std::unique_ptr<ExternalFlash> external_flash_;
     std::unique_ptr<SensorFlashBuffer> flash_buffer_;
     std::unique_ptr<SensorPmuManager> pmu_manager_;
+    std::unique_ptr<HeartbeatClient> heartbeat_client_;
     TaskQueue task_queue_;  // Unified task coordination
 
     // Timeout task handles — cancelled when expected response arrives, fires if it doesn't
@@ -62,10 +64,10 @@ private:
     void readAndStoreSensorData(uint32_t current_time);
 
     /**
-     * @brief Send heartbeat with current status
-     * @param current_time Current system time in milliseconds
+     * @brief Collect current heartbeat status for the HeartbeatClient
+     * @return HeartbeatStatus with uptime, battery, signal, sensors, errors, pending records
      */
-    void sendHeartbeat(uint32_t current_time);
+    HeartbeatStatus collectHeartbeatStatus();
 
     /**
      * @brief Check if transmission is needed
