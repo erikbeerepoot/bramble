@@ -20,36 +20,8 @@
 
 constexpr uint16_t HUB_ADDRESS = ADDRESS_HUB;
 
-// PMU UART configuration - adjust pins based on your hardware
-#define PMU_UART_ID uart0
-#define PMU_UART_TX_PIN 0
-#define PMU_UART_RX_PIN 1
-
 static Logger logger("SENSOR");
 static Logger pmu_logger("PMU");
-
-/**
- * @brief Persisted state stored in PMU RAM across sleep cycles
- *
- * This struct is packed into a 32-byte opaque blob and sent to the PMU
- * with ReadyForSleep. The PMU stores it in RAM (always powered from battery)
- * and returns it in the WakeReason notification.
- *
- * On cold start (battery disconnect), state_valid=false and we reconstruct
- * from flash scan.
- */
-struct __attribute__((packed)) SensorPersistedState {
-    uint8_t version;            // Format version (for future compatibility)
-    uint8_t next_seq_num;       // LoRa sequence number
-    uint16_t assigned_address;  // Node address (survives warm reboot, lost on cold start)
-    uint32_t read_index;        // Flash buffer read position
-    uint32_t write_index;       // Flash buffer write position
-    uint8_t padding[20];        // Reserved for future use
-};
-static_assert(sizeof(SensorPersistedState) == 32, "SensorPersistedState must be 32 bytes");
-
-// Current state format version - bumped for assigned_address field
-constexpr uint8_t STATE_VERSION = 2;
 
 SensorMode::~SensorMode() = default;
 
@@ -103,59 +75,54 @@ void SensorMode::onStart()
         sensor_state_.reportRegistrationComplete();
     });
 
-    // Initialize PMU client at 9600 baud to match STM32 LPUART configuration
-    pmu_client_ = new PmuClient(PMU_UART_ID, PMU_UART_TX_PIN, PMU_UART_RX_PIN, 9600);
-    pmu_available_ = pmu_client_->init();
+    // Initialize PMU manager
+    pmu_manager_ = std::make_unique<SensorPmuManager>(messenger_, flash_buffer_.get(), task_queue_);
 
-    // Create reliable PMU client wrapper for automatic retry
-    if (pmu_available_) {
-        reliable_pmu_ = new PMU::ReliablePmuClient(pmu_client_);
-        reliable_pmu_->init();
+    bool pmu_ok = pmu_manager_->initialize([this](bool state_restored, PMU::WakeReason reason) {
+        // Ignore duplicate wake notifications if already active
+        // This can happen if PMU sends multiple notifications (e.g., during LISTENING window)
+        // We must check this BEFORE driving state machine, as transitions may reset state
+        if (sensor_state_.state() != SensorState::INITIALIZING &&
+            sensor_state_.state() != SensorState::READY_FOR_SLEEP) {
+            pmu_logger.debug("Ignoring wake notification - already active (state: %s)",
+                             SensorStateMachine::stateName(sensor_state_.state()));
+            return;
+        }
 
-        // Allow UART to stabilize before first message - prevents parser desync
-        sleep_ms(150);
-    }
+        // Complete initialization now that state is restored
+        // This transitions INITIALIZING → REGISTERING, where the state callback
+        // will check if registration is actually needed and proceed accordingly
+        if (sensor_state_.state() == SensorState::INITIALIZING) {
+            pmu_logger.debug("Marking initialized after state restoration");
+            sensor_state_.markInitialized();
+            // markInitialized triggers REGISTERING state, callback handles registration check
+            return;
+        }
 
-    // Note: Task queue is used to coordinate RTC sync -> backlog -> sleep flow
-    // Tasks are posted dynamically as work becomes available
+        // Re-wake from READY_FOR_SLEEP (periodic/scheduled/external wake)
+        switch (reason) {
+            case PMU::WakeReason::Periodic:
+                pmu_logger.info("Periodic wake.");
+                // Report wake to state machine - it handles the appropriate transition
+                if (!sensor_state_.reportWakeFromSleep()) {
+                    // Need time sync first
+                    pmu_logger.warn("RTC not synced on periodic wake - requesting time");
+                    sendHeartbeat(0);
+                    sensor_state_.reportHeartbeatSent();
+                }
+                break;
 
-    if (pmu_available_ && reliable_pmu_) {
-        pmu_logger.info("PMU client initialized successfully");
+            case PMU::WakeReason::Scheduled:
+                pmu_logger.warn("Unexpected scheduled wake in sensor mode");
+                break;
 
-        // Set up PMU callback handler - this receives state and completes initialization
-        reliable_pmu_->onWake([this](PMU::WakeReason reason, const PMU::ScheduleEntry *entry,
-                                     bool state_valid, const uint8_t *state) {
-            this->handlePmuWake(reason, entry, state_valid, state);
-        });
+            case PMU::WakeReason::External:
+                pmu_logger.info("External wake trigger");
+                break;
+        }
+    });
 
-        // Signal ready to receive wake info - PMU will respond with wake notification
-        // containing persisted state (write_index, read_index, etc.)
-        // The getDateTime call is deferred to handlePmuWake() to ensure state is restored first.
-        pmu_logger.debug("Sending ClearToSend to PMU...");
-        reliable_pmu_->clearToSend([this](bool success, PMU::ErrorCode error) {
-            if (!success) {
-                pmu_logger.error("ClearToSend failed: %d", static_cast<int>(error));
-                // Fall back to proceeding without waiting for PMU state
-                // markInitialized() will trigger AWAITING_TIME which handles getDateTime
-                sensor_state_.markInitialized();
-            } else {
-                pmu_logger.info("ClearToSend ACK received - waiting for WakeNotification");
-                // Start timeout — if WakeNotification doesn't arrive, proceed without PMU state
-                uint32_t now = to_ms_since_boot(get_absolute_time());
-                wake_timeout_id_ = task_queue_.postDelayed(
-                    [](void *ctx, uint32_t) -> bool {
-                        SensorMode *self = static_cast<SensorMode *>(ctx);
-                        pmu_logger.warn("WakeNotification timeout - proceeding without PMU state");
-                        self->wake_timeout_id_ = 0;
-                        self->sensor_state_.markInitialized();
-                        return true;
-                    },
-                    this, now, WAKE_NOTIFICATION_TIMEOUT_MS, TaskPriority::High);
-            }
-            // On success, handlePmuWake() will call markInitialized()
-            // AWAITING_TIME state handler will then call getDateTime
-        });
-    } else {
+    if (!pmu_ok) {
         logger.warn("PMU client not available - sending heartbeat for time sync");
         sendHeartbeat(0);
         startHeartbeatTimeout();
@@ -283,14 +250,9 @@ void SensorMode::onStateChange(SensorState state)
 
         case SensorState::READY_FOR_SLEEP:
             // All work done - signal PMU
-            task_queue_.postOnce(
-                [](void *ctx, uint32_t time) -> bool {
-                    (void)time;
-                    SensorMode *self = static_cast<SensorMode *>(ctx);
-                    self->signalReadyForSleep();
-                    return true;
-                },
-                this, TaskPriority::Low);
+            if (pmu_manager_) {
+                pmu_manager_->signalReadyForSleep();
+            }
             break;
 
         case SensorState::DEGRADED_NO_SENSOR:
@@ -344,13 +306,13 @@ void SensorMode::onStateChange(SensorState state)
 
 void SensorMode::onLoop()
 {
-    if (sleep_pending_) {
+    if (pmu_manager_ && pmu_manager_->isSleepPending()) {
         tight_loop_contents();
         return;
     }
 
-    if (pmu_available_ && reliable_pmu_) {
-        reliable_pmu_->update();
+    if (pmu_manager_) {
+        pmu_manager_->update();
     }
 
     task_queue_.process(to_ms_since_boot(get_absolute_time()));
@@ -494,7 +456,7 @@ uint16_t SensorMode::collectErrorFlags()
     }
 
     // Check PMU availability
-    if (!pmu_available_) {
+    if (!pmu_manager_ || !pmu_manager_->isAvailable()) {
         flags |= ERR_FLAG_PMU_FAILURE;
     }
 
@@ -786,170 +748,6 @@ bool SensorMode::transmitBatch(const SensorDataRecord *records, size_t count)
     return true;
 }
 
-void SensorMode::signalReadyForSleep()
-{
-    if (!pmu_available_ || !reliable_pmu_) {
-        logger.debug("PMU not available, skipping ready for sleep signal");
-        return;
-    }
-
-    // Pack state into blob for PMU storage
-    // Note: We no longer flush to flash - state is persisted in PMU RAM instead
-    static SensorPersistedState state_to_persist;
-    memset(&state_to_persist, 0, sizeof(state_to_persist));
-    state_to_persist.version = STATE_VERSION;
-    state_to_persist.next_seq_num = messenger_.getNextSeqNum();
-
-    if (flash_buffer_) {
-        state_to_persist.read_index = flash_buffer_->getReadIndex();
-        state_to_persist.write_index = flash_buffer_->getWriteIndex();
-    }
-
-    pmu_logger.debug("Packing state: seq=%u, read=%lu, write=%lu", state_to_persist.next_seq_num,
-                     state_to_persist.read_index, state_to_persist.write_index);
-
-    // Post deferred task to send sleep signal in main loop
-    // This avoids calling PMU protocol directly from callback chains (stack safety)
-    // Using postOnce() to deduplicate - multiple code paths call this but we only
-    // need one ReadyForSleep command per wake cycle
-    pmu_logger.debug("Requesting sleep (posting deferred task)");
-
-    // Pass this pointer as context so we can access reliable_pmu_
-    task_queue_.postOnce(
-        [](void *ctx, uint32_t time) -> bool {
-            (void)time;
-            SensorMode *self = static_cast<SensorMode *>(ctx);
-
-            // Repack state fresh in case it changed since signalReadyForSleep was called
-            static SensorPersistedState state;
-            memset(&state, 0, sizeof(state));
-            state.version = STATE_VERSION;
-            state.next_seq_num = self->messenger_.getNextSeqNum();
-            state.assigned_address = self->messenger_.getNodeAddress();
-            if (self->flash_buffer_) {
-                state.read_index = self->flash_buffer_->getReadIndex();
-                state.write_index = self->flash_buffer_->getWriteIndex();
-            }
-
-            pmu_logger.info(
-                "Sending ReadyForSleep with state (seq=%u, addr=0x%04X, read=%lu, write=%lu)",
-                state.next_seq_num, state.assigned_address, state.read_index, state.write_index);
-
-            self->reliable_pmu_->readyForSleep(
-                reinterpret_cast<const uint8_t *>(&state),
-                [self](bool success, PMU::ErrorCode error) {
-                    if (success) {
-                        pmu_logger.info("Ready for sleep acknowledged - halting");
-                        // Set flag to halt main loop - prevents UART activity from keeping
-                        // STM32 awake when USB power keeps RP2040 running after dcdc.disable()
-                        self->sleep_pending_ = true;
-                    } else {
-                        pmu_logger.error("Ready for sleep failed: error %d",
-                                         static_cast<int>(error));
-                    }
-                });
-            return true;  // Task complete
-        },
-        this, TaskPriority::Low);
-}
-
-void SensorMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry *entry,
-                               bool state_valid, const uint8_t *state)
-{
-    (void)entry;
-
-    // Cancel the wake notification timeout — PMU responded
-    task_queue_.cancel(wake_timeout_id_);
-    wake_timeout_id_ = 0;
-
-    // Ignore duplicate wake notifications if already active
-    // This can happen if PMU sends multiple notifications (e.g., during LISTENING window)
-    // We must check this BEFORE doing flash scan, as scan resets read_index
-    if (sensor_state_.state() != SensorState::INITIALIZING &&
-        sensor_state_.state() != SensorState::READY_FOR_SLEEP) {
-        pmu_logger.debug("Ignoring wake notification - already active (state: %s)",
-                         SensorStateMachine::stateName(sensor_state_.state()));
-        return;
-    }
-
-    // Restore state from PMU RAM if valid
-    // Note: address and seq_num are restored even if flash is unavailable
-    if (state_valid && state != nullptr) {
-        const SensorPersistedState *persisted =
-            reinterpret_cast<const SensorPersistedState *>(state);
-
-        // Check version compatibility
-        if (persisted->version == STATE_VERSION) {
-            // Restore LoRa sequence number (no flash dependency)
-            messenger_.setNextSeqNum(persisted->next_seq_num);
-
-            // Restore assigned address from PMU RAM (no flash dependency)
-            if (persisted->assigned_address != ADDRESS_UNREGISTERED) {
-                messenger_.setNodeAddress(persisted->assigned_address);
-            }
-
-            // Restore flash buffer indices only if flash is available
-            if (flash_buffer_) {
-                flash_buffer_->setReadIndex(persisted->read_index);
-                flash_buffer_->setWriteIndex(persisted->write_index);
-                pmu_logger.info("Restored state: read=%lu, write=%lu, seq=%u, addr=0x%04X",
-                                persisted->read_index, persisted->write_index,
-                                persisted->next_seq_num, persisted->assigned_address);
-            } else {
-                pmu_logger.info("Restored state: seq=%u, addr=0x%04X (flash unavailable)",
-                                persisted->next_seq_num, persisted->assigned_address);
-            }
-        } else {
-            pmu_logger.warn("State version mismatch (got %u, expected %u) - cold start",
-                            persisted->version, STATE_VERSION);
-            state_valid = false;
-        }
-    }
-
-    // Cold start: reconstruct state from flash scan
-    if (!state_valid && flash_buffer_) {
-        pmu_logger.info("Cold start detected - scanning flash for state");
-        if (flash_buffer_->scanForWriteIndex()) {
-            pmu_logger.info("Flash scan complete: write_index=%lu, read_index=%lu",
-                            flash_buffer_->getWriteIndex(), flash_buffer_->getReadIndex());
-        } else {
-            pmu_logger.error("Flash scan failed - starting fresh");
-        }
-    }
-
-    // Complete initialization now that state is restored
-    // This transitions INITIALIZING → REGISTERING, where the state callback
-    // will check if registration is actually needed and proceed accordingly
-    if (sensor_state_.state() == SensorState::INITIALIZING) {
-        pmu_logger.debug("Marking initialized after state restoration");
-        sensor_state_.markInitialized();
-        // markInitialized triggers REGISTERING state, callback handles registration check
-        // Return here - state callbacks drive the rest of the flow
-        return;
-    }
-
-    switch (reason) {
-        case PMU::WakeReason::Periodic:
-            pmu_logger.info("Periodic wake.");
-            // Report wake to state machine - it handles the appropriate transition
-            if (!sensor_state_.reportWakeFromSleep()) {
-                // Need time sync first
-                pmu_logger.warn("RTC not synced on periodic wake - requesting time");
-                sendHeartbeat(0);
-                sensor_state_.reportHeartbeatSent();
-            }
-            break;
-
-        case PMU::WakeReason::Scheduled:
-            pmu_logger.warn("Unexpected scheduled wake in sensor mode");
-            break;
-
-        case PMU::WakeReason::External:
-            pmu_logger.info("External wake trigger");
-            break;
-    }
-}
-
 void SensorMode::onHeartbeatResponse(const HeartbeatResponsePayload *payload)
 {
     // Cancel heartbeat timeout — we got the response we were waiting for
@@ -966,23 +764,15 @@ void SensorMode::onHeartbeatResponse(const HeartbeatResponsePayload *payload)
     }
 
     // Also sync time to PMU if available
-    if (pmu_available_ && reliable_pmu_ && payload) {
+    if (pmu_manager_ && pmu_manager_->isAvailable() && payload) {
         // Convert HeartbeatResponsePayload to PMU::DateTime
         PMU::DateTime datetime(payload->year % 100,  // PMU uses 2-digit year (e.g., 26 for 2026)
                                payload->month, payload->day, payload->dotw, payload->hour,
                                payload->min, payload->sec);
 
-        pmu_logger.info("Syncing time to PMU: 20%02d-%02d-%02d %02d:%02d:%02d", datetime.year,
-                        datetime.month, datetime.day, datetime.hour, datetime.minute,
-                        datetime.second);
-
         // Send datetime to PMU, then report RTC synced
-        reliable_pmu_->setDateTime(datetime, [this](bool success, PMU::ErrorCode error) {
-            if (success) {
-                pmu_logger.info("PMU time sync successful");
-            } else {
-                pmu_logger.error("PMU time sync failed: error %d", static_cast<int>(error));
-            }
+        pmu_manager_->syncTime(datetime, [this](bool success) {
+            (void)success;
             // Report RTC synced (regardless of PMU sync - RP2040 RTC is set by base class)
             // This triggers TIME_SYNCED -> onStateChange handles the rest
             sensor_state_.reportRtcSynced();
@@ -995,18 +785,10 @@ void SensorMode::onHeartbeatResponse(const HeartbeatResponsePayload *payload)
 
 void SensorMode::onRebootRequested()
 {
-    if (pmu_available_ && reliable_pmu_) {
-        logger.warn("Requesting full system reset via PMU");
-        reliable_pmu_->systemReset([](bool success, PMU::ErrorCode error) {
-            (void)error;
-            (void)success;
-            // PMU will reset itself (killing RP2040 power), but if the ACK
-            // arrives before power is cut, do a watchdog reboot as fallback.
-            // Also reboot if PMU command failed - we always honor reboot requests.
-            watchdog_reboot(0, 0, 0);
-        });
+    if (pmu_manager_) {
+        pmu_manager_->requestSystemReset();
     } else {
-        logger.warn("PMU not available - performing RP2040-only watchdog reboot");
+        logger.warn("PMU manager not available - performing RP2040-only watchdog reboot");
         watchdog_reboot(0, 0, 0);
     }
 }
@@ -1073,10 +855,9 @@ bool SensorMode::tryInitSensor()
 
 void SensorMode::requestTimeSync()
 {
-    if (pmu_available_ && reliable_pmu_) {
+    if (pmu_manager_ && pmu_manager_->isAvailable()) {
         // Try PMU's battery-backed RTC first
-        pmu_logger.debug("Requesting datetime from PMU...");
-        reliable_pmu_->getDateTime([this](bool valid, const PMU::DateTime &datetime) {
+        pmu_manager_->requestTime([this](bool valid, const PMU::DateTime &datetime) {
             if (valid) {
                 pmu_logger.debug("PMU has valid time: 20%02d-%02d-%02d %02d:%02d:%02d",
                                  datetime.year, datetime.month, datetime.day, datetime.hour,
