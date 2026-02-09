@@ -11,6 +11,7 @@
 #include "../led_patterns.h"
 #include "../lora/message.h"
 #include "../lora/reliable_messenger.h"
+#include "../util/time.h"
 #include "../version.h"
 
 constexpr uint16_t HUB_ADDRESS = ADDRESS_HUB;
@@ -82,14 +83,7 @@ void IrrigationMode::onStart()
                                 datetime.minute, datetime.second);
 
                 // Set RP2040 RTC from PMU time
-                datetime_t dt;
-                dt.year = 2000 + datetime.year;
-                dt.month = datetime.month;
-                dt.day = datetime.day;
-                dt.dotw = datetime.weekday;
-                dt.hour = datetime.hour;
-                dt.min = datetime.minute;
-                dt.sec = datetime.second;
+                datetime_t dt = bramble::util::time::toDatetimeT(datetime);
 
                 if (rtc_set_datetime(&dt)) {
                     sleep_us(64);
