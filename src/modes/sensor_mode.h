@@ -36,21 +36,16 @@ private:
     bool pmu_available_ = false;
     TaskQueue task_queue_;  // Unified task coordination
 
-    // Hub sync timeout tracking - used to proceed with PMU time if hub doesn't respond
-    uint32_t heartbeat_request_time_ = 0;
+    // Timeout task handles — cancelled when expected response arrives, fires if it doesn't
+    uint16_t wake_timeout_id_ = 0;
+    uint16_t registration_timeout_id_ = 0;
+    uint16_t heartbeat_timeout_id_ = 0;
+
+    // Timeout durations
     static constexpr uint32_t HEARTBEAT_TIMEOUT_MS =
         5000;  // Allow time for RELIABLE retries (3 attempts) + hub response
-
-    // CTS/WakeNotification timeout tracking
-    uint32_t cts_sent_time_ = 0;
     static constexpr uint32_t WAKE_NOTIFICATION_TIMEOUT_MS = 1000;
-
-    // Registration timeout tracking - wait for hub response before sending heartbeat
-    uint32_t registration_sent_time_ = 0;
     static constexpr uint32_t REGISTRATION_TIMEOUT_MS = 5000;  // Allow time for RELIABLE retries
-
-    // Listen window tracking - receive window before sleep for hub responses
-    uint32_t listen_window_start_time_ = 0;
     static constexpr uint32_t LISTEN_WINDOW_MS = 500;
 
     // USB keep-alive tracking - send KeepAwake to PMU while USB connected
@@ -209,6 +204,13 @@ private:
      * falls back to sending heartbeat to sync from hub.
      */
     void requestTimeSync();
+
+    /**
+     * @brief Start heartbeat/hub sync timeout
+     * Posts a delayed task that fires after HEARTBEAT_TIMEOUT_MS.
+     * Cancels any existing heartbeat timeout first.
+     */
+    void startHeartbeatTimeout();
 
     /**
      * @brief Send registration request to hub
