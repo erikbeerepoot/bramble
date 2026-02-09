@@ -76,6 +76,11 @@ void SensorMode::onStart()
         sensor_state_.reportRegistrationComplete();
     });
 
+    // Initialize batch transmitter
+    transmitter_ = std::make_unique<BatchTransmitter>(
+        messenger_,
+        BatchTransmitter::Config{.max_batches_per_cycle = 20, .hub_address = HUB_ADDRESS});
+
     // Initialize heartbeat client
     heartbeat_client_ = std::make_unique<HeartbeatClient>(messenger_);
     heartbeat_client_->setStatusProvider([this]() { return collectHeartbeatStatus(); });
@@ -233,7 +238,7 @@ void SensorMode::onStateChange(SensorState state)
 
         case SensorState::TRANSMITTING:
             // Reset batch counter for this wake cycle
-            batches_this_cycle_ = 0;
+            transmitter_->resetCycleCounter();
 
             // Branch based on flash availability and health
             if (flash_buffer_ && flash_buffer_->isHealthy()) {
@@ -243,7 +248,7 @@ void SensorMode::onStateChange(SensorState state)
                         (void)time;
                         SensorMode *self = static_cast<SensorMode *>(ctx);
                         self->transmitBacklog();
-                        // Note: reportTransmitComplete called in transmitBatch callback
+                        // Note: reportTransmitComplete called in transmitter callback
                         return true;
                     },
                     this, TaskPriority::High);
@@ -493,7 +498,7 @@ uint16_t SensorMode::collectErrorFlags()
     }
 
     // Check consecutive transmission failures
-    if (consecutive_tx_failures_ >= TX_FAILURE_THRESHOLD) {
+    if (transmitter_ && transmitter_->consecutiveFailures() >= TX_FAILURE_THRESHOLD) {
         flags |= ERR_FLAG_TX_FAILURES;
     }
 
@@ -611,32 +616,12 @@ void SensorMode::transmitCurrentReading()
     logger.info("Direct transmit: %.2fC (ts=%lu)", current_reading_.temperature / 100.0f,
                 current_reading_.timestamp);
 
-    BatchSensorRecord record = {.timestamp = current_reading_.timestamp,
-                                .temperature = current_reading_.temperature,
-                                .humidity = current_reading_.humidity,
-                                .flags = current_reading_.flags,
-                                .reserved = current_reading_.reserved,
-                                .crc16 = 0};
-
-    uint8_t seq = messenger_.sendSensorDataBatchWithCallback(
-        HUB_ADDRESS, 0, &record, 1, RELIABLE,
-        [this](uint8_t seq_num, uint8_t ack_status, uint64_t context) {
-            (void)context;
-            if (ack_status == 0) {
-                logger.info("Direct transmit ACK (seq=%d)", seq_num);
-                consecutive_tx_failures_ = 0;
+    if (!transmitter_->transmit(&current_reading_, 1, [this](bool success) {
+            if (success) {
                 current_reading_.timestamp = 0;  // Clear to avoid retransmit
-            } else {
-                logger.warn("Direct transmit failed (seq=%d, status=%d)", seq_num, ack_status);
-                if (consecutive_tx_failures_ < 255) {
-                    consecutive_tx_failures_++;
-                }
             }
             sensor_state_.reportTransmitComplete();
-        },
-        0);
-
-    if (seq == 0) {
+        })) {
         logger.error("Failed to send direct transmit message");
         sensor_state_.reportTransmitComplete();
     }
@@ -678,90 +663,38 @@ void SensorMode::transmitBacklog()
         return;
     }
 
-    logger.info("Transmitting batch of %zu records", actual_count);
-
-    // Transmit the batch - reportTransmitComplete called in callback
-    if (transmitBatch(records, actual_count)) {
-        logger.info("Batch transmission initiated");
-        // Note: updateLastSync moved to ACK callback in transmitBatch to avoid
-        // resetting the 10-minute timer before delivery is confirmed
-    } else {
-        logger.warn("Batch transmission failed to initiate");
-        sensor_state_.reportTransmitComplete();
-    }
-}
-
-bool SensorMode::transmitBatch(const SensorDataRecord *records, size_t count)
-{
-    if (!records || count == 0 || !flash_buffer_) {
-        return false;
-    }
-
     // Get the start index for tracking which records are in this batch
     SensorFlashMetadata stats;
     flash_buffer_->getStatistics(stats);
     uint32_t start_index = stats.read_index;
 
-    // Convert SensorDataRecord to BatchSensorRecord format
-    BatchSensorRecord batch_records[MAX_BATCH_RECORDS];
-    for (size_t i = 0; i < count && i < MAX_BATCH_RECORDS; i++) {
-        batch_records[i].timestamp = records[i].timestamp;
-        batch_records[i].temperature = records[i].temperature;
-        batch_records[i].humidity = records[i].humidity;
-        batch_records[i].flags = records[i].flags;
-        batch_records[i].reserved = records[i].reserved;
-        batch_records[i].crc16 = records[i].crc16;
-    }
+    logger.info("Transmitting batch of %zu records", actual_count);
 
-    // Send batch with callback to advance read index on ACK
-    // Note: We don't mark individual records as transmitted - timestamps allow
-    // deduplication during USB recovery if needed. This avoids flash wear.
-    uint8_t seq = messenger_.sendSensorDataBatchWithCallback(
-        HUB_ADDRESS, start_index, batch_records, static_cast<uint8_t>(count), RELIABLE,
-        [this, count](uint8_t seq_num, uint8_t ack_status, uint64_t context) {
-            batches_this_cycle_++;
-
-            if (ack_status == 0 && flash_buffer_) {
-                // ACK received - advance read index past transmitted records
-                if (flash_buffer_->advanceReadIndex(static_cast<uint32_t>(count))) {
-                    logger.info("Batch %u/%u ACK (seq=%d): %zu records transmitted",
-                                batches_this_cycle_, MAX_BATCHES_PER_CYCLE, seq_num, count);
-                    consecutive_tx_failures_ = 0;  // Reset failure counter on success
+    if (!transmitter_->transmit(
+            records, actual_count,
+            [this, actual_count](bool success) {
+                if (success && flash_buffer_) {
+                    flash_buffer_->advanceReadIndex(static_cast<uint32_t>(actual_count));
                     flash_buffer_->updateLastSync(getUnixTimestamp());
 
                     // Check if we should send another batch
                     uint32_t remaining = flash_buffer_->getUntransmittedCount();
-                    if (remaining > 0 && batches_this_cycle_ < MAX_BATCHES_PER_CYCLE) {
+                    if (remaining > 0 && transmitter_->canSendMore()) {
                         logger.info("More backlog (%lu records) - sending next batch", remaining);
                         transmitBacklog();
                         return;  // Don't report complete yet
                     } else if (remaining == 0) {
                         logger.info("All backlog transmitted");
                     } else {
-                        logger.info("Batch limit reached (%u/%u), %lu records remaining",
-                                    batches_this_cycle_, MAX_BATCHES_PER_CYCLE, remaining);
+                        logger.info("Batch limit reached, %lu records remaining", remaining);
                     }
                 }
-            } else {
-                logger.warn("Batch transmission failed (seq=%d, status=%d), will retry next cycle",
-                            seq_num, ack_status);
-                if (consecutive_tx_failures_ < 255) {
-                    consecutive_tx_failures_++;
-                }
-            }
-            // Report completion to state machine (triggers READY_FOR_SLEEP)
-            sensor_state_.reportTransmitComplete();
-        },
-        start_index  // Pass start index as user_context
-    );
-
-    if (seq == 0) {
-        logger.error("Failed to send batch message");
-        return false;
+                sensor_state_.reportTransmitComplete();
+            },
+            start_index)) {
+        logger.warn("Batch transmission failed to initiate");
+        sensor_state_.reportTransmitComplete();
     }
-
-    logger.debug("Sent batch of %zu records (start_index=%lu, seq=%d)", count, start_index, seq);
-    return true;
 }
 
 void SensorMode::onHeartbeatResponse(const HeartbeatResponsePayload *payload)

@@ -4,6 +4,7 @@
 
 #include "../hal/cht832x.h"
 #include "../hal/external_flash.h"
+#include "../lora/batch_transmitter.h"
 #include "../lora/heartbeat_client.h"
 #include "../storage/sensor_flash_buffer.h"
 #include "../util/sensor_pmu_manager.h"
@@ -96,14 +97,6 @@ private:
     void transmitCurrentReading();
 
     /**
-     * @brief Transmit a batch of sensor records
-     * @param records Array of records to transmit
-     * @param count Number of records in batch
-     * @return true if transmission initiated successfully
-     */
-    bool transmitBatch(const SensorDataRecord *records, size_t count);
-
-    /**
      * @brief Initialize flash timestamps on first boot
      * Sets initial_boot_timestamp and last_sync_timestamp if not set.
      */
@@ -140,12 +133,10 @@ private:
 
     // Error tracking state
     bool last_sensor_read_valid_ = false;               // Track if last sensor read succeeded
-    uint8_t consecutive_tx_failures_ = 0;               // Track consecutive transmission failures
     static constexpr uint8_t TX_FAILURE_THRESHOLD = 3;  // Failures before setting error flag
 
-    // Batch transmission tracking - send multiple batches per wake cycle to clear backlog faster
-    uint8_t batches_this_cycle_ = 0;
-    static constexpr uint8_t MAX_BATCHES_PER_CYCLE = 20;  // Send up to 20 batches before sleeping
+    // Batch transmission
+    std::unique_ptr<BatchTransmitter> transmitter_;
 
     // Fallback storage for direct transmit when flash unavailable
     SensorDataRecord current_reading_ = {};
