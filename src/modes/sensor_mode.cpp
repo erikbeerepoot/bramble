@@ -16,6 +16,7 @@
 #include "../lora/message.h"
 #include "../lora/network_stats.h"
 #include "../lora/reliable_messenger.h"
+#include "../util/time.h"
 #include "../utils/time_utils.h"
 #include "../version.h"
 
@@ -76,6 +77,30 @@ void SensorMode::onStart()
         sensor_state_.reportRegistrationComplete();
     });
 
+    // Initialize heartbeat client
+    heartbeat_client_ = std::make_unique<HeartbeatClient>(messenger_);
+    heartbeat_client_->setStatusProvider([this]() { return collectHeartbeatStatus(); });
+    heartbeat_client_->setResponseCallback([this](const HeartbeatResponsePayload &response) {
+        // SensorMode owns all side effects:
+        // - Sync time to PMU if available
+        // - Report to state machine
+        if (pmu_manager_ && pmu_manager_->isAvailable()) {
+            PMU::DateTime datetime(response.year % 100, response.month, response.day, response.dotw,
+                                   response.hour, response.min, response.sec);
+            pmu_manager_->syncTime(datetime, [this](bool success) {
+                (void)success;
+                sensor_state_.reportRtcSynced();
+            });
+        } else {
+            sensor_state_.reportRtcSynced();
+        }
+    });
+    heartbeat_client_->setDeliveryCallback([this](bool success) {
+        if (!success && rtc_running()) {
+            sensor_state_.reportRtcSynced();
+        }
+    });
+
     // Initialize PMU manager
     pmu_manager_ = std::make_unique<SensorPmuManager>(messenger_, flash_buffer_.get(), task_queue_);
 
@@ -108,7 +133,8 @@ void SensorMode::onStart()
                 if (!sensor_state_.reportWakeFromSleep()) {
                     // Need time sync first
                     pmu_logger.warn("RTC not synced on periodic wake - requesting time");
-                    sendHeartbeat(0);
+                    heartbeat_client_->send();
+                    sensor_state_.expectResponse();
                     sensor_state_.reportHeartbeatSent();
                 }
                 break;
@@ -125,7 +151,8 @@ void SensorMode::onStart()
 
     if (!pmu_ok) {
         logger.warn("PMU client not available - sending heartbeat for time sync");
-        sendHeartbeat(0);
+        heartbeat_client_->send();
+        sensor_state_.expectResponse();
         sensor_state_.reportHeartbeatSent();
         // No PMU, so mark initialized immediately (no state to restore)
         sensor_state_.markInitialized();
@@ -163,7 +190,8 @@ void SensorMode::onStateChange(SensorState state)
             // If we just synced from hub (first boot), resend heartbeat with correct uptime
             // The initial heartbeat had uptime=0 because RTC wasn't set yet
             if (sensor_state_.previousState() == SensorState::SYNCING_TIME) {
-                sendHeartbeat(to_ms_since_boot(get_absolute_time()));
+                heartbeat_client_->send();
+                sensor_state_.expectResponse();
             }
 
             // Try to initialize sensor
@@ -394,10 +422,10 @@ void SensorMode::readAndStoreSensorData(uint32_t current_time)
     }
 }
 
-void SensorMode::sendHeartbeat(uint32_t /* current_time */)
+HeartbeatStatus SensorMode::collectHeartbeatStatus()
 {
     // Calculate uptime from initial boot timestamp (persisted across sleep cycles)
-    uint32_t uptime = util::time::uptimeSeconds(
+    uint32_t uptime = bramble::util::time::uptimeSeconds(
         flash_buffer_ ? flash_buffer_->getInitialBootTimestamp() : 0, getUnixTimestamp());
 
     uint8_t battery_level = getBatteryLevel();
@@ -415,22 +443,7 @@ void SensorMode::sendHeartbeat(uint32_t /* current_time */)
         pending_records = (count > 0xFFFF) ? 0xFFFF : static_cast<uint16_t>(count);
     }
 
-    logger.debug("Sending heartbeat (uptime=%lu s, battery=%u, errors=0x%04X, pending=%u)", uptime,
-                 battery_level, error_flags, pending_records);
-
-    messenger_.sendHeartbeat(
-        HUB_ADDRESS, uptime, battery_level, signal_strength, active_sensors, error_flags,
-        pending_records, RELIABLE, [this](uint8_t seq_num, uint8_t ack_status, uint64_t) {
-            if (ack_status != 0) {
-                logger.warn("Heartbeat delivery failed (seq=%d) - checking if RTC is running",
-                            seq_num);
-                if (rtc_running()) {
-                    sensor_state_.reportRtcSynced();
-                }
-            }
-            // Success case: onHeartbeatResponse() handles the HEARTBEAT_RESPONSE message
-        });
-    sensor_state_.expectResponse();
+    return {uptime, battery_level, signal_strength, active_sensors, error_flags, pending_records};
 }
 
 uint16_t SensorMode::collectErrorFlags()
@@ -763,24 +776,8 @@ void SensorMode::onHeartbeatResponse(const HeartbeatResponsePayload *payload)
                     payload->pending_update_flags);
     }
 
-    // Also sync time to PMU if available
-    if (pmu_manager_ && pmu_manager_->isAvailable() && payload) {
-        // Convert HeartbeatResponsePayload to PMU::DateTime
-        PMU::DateTime datetime(payload->year % 100,  // PMU uses 2-digit year (e.g., 26 for 2026)
-                               payload->month, payload->day, payload->dotw, payload->hour,
-                               payload->min, payload->sec);
-
-        // Send datetime to PMU, then report RTC synced
-        pmu_manager_->syncTime(datetime, [this](bool success) {
-            (void)success;
-            // Report RTC synced (regardless of PMU sync - RP2040 RTC is set by base class)
-            // This triggers TIME_SYNCED -> onStateChange handles the rest
-            sensor_state_.reportRtcSynced();
-        });
-    } else if (payload) {
-        // No PMU, but RTC was synced by base class - report event directly
-        sensor_state_.reportRtcSynced();
-    }
+    // Delegate to heartbeat client — ResponseCallback handles PMU sync + state machine
+    heartbeat_client_->handleResponse(payload);
 }
 
 void SensorMode::onRebootRequested()
@@ -911,7 +908,8 @@ void SensorMode::requestTimeSync()
                     // Only sync from hub if it's time to transmit
                     if (time_to_transmit) {
                         pmu_logger.info("Syncing time by sending heartbeat.");
-                        sendHeartbeat(0);
+                        heartbeat_client_->send();
+                        sensor_state_.expectResponse();
                     } else {
                         pmu_logger.info("Skip hub sync: not time to transmit yet.");
                     }
@@ -921,35 +919,18 @@ void SensorMode::requestTimeSync()
             } else {
                 // PMU doesn't have valid time - need to sync from hub
                 pmu_logger.info("PMU time not valid - sending heartbeat for hub sync");
-                sendHeartbeat(0);
+                heartbeat_client_->send();
+                sensor_state_.expectResponse();
                 sensor_state_.reportHeartbeatSent();
             }
         });
     } else {
         // No PMU - send heartbeat to sync from hub
         logger.info("No PMU - sending heartbeat for time sync");
-        sendHeartbeat(0);
+        heartbeat_client_->send();
+        sensor_state_.expectResponse();
         sensor_state_.reportHeartbeatSent();
     }
-}
-
-void SensorMode::startHeartbeatTimeout()
-{
-    // Cancel any existing heartbeat timeout before starting a new one
-    task_queue_.cancel(heartbeat_timeout_id_);
-
-    uint32_t now = to_ms_since_boot(get_absolute_time());
-    heartbeat_timeout_id_ = task_queue_.postDelayed(
-        [](void *ctx, uint32_t) -> bool {
-            SensorMode *self = static_cast<SensorMode *>(ctx);
-            logger.warn("Hub sync timeout - checking if RTC is running");
-            self->heartbeat_timeout_id_ = 0;
-            if (rtc_running()) {
-                self->sensor_state_.reportRtcSynced();
-            }
-            return true;
-        },
-        this, now, HEARTBEAT_TIMEOUT_MS, TaskPriority::High);
 }
 
 void SensorMode::attemptRegistration()
