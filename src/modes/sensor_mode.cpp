@@ -16,6 +16,7 @@
 #include "../lora/message.h"
 #include "../lora/network_stats.h"
 #include "../lora/reliable_messenger.h"
+#include "../utils/time_utils.h"
 #include "../version.h"
 
 constexpr uint16_t HUB_ADDRESS = ADDRESS_HUB;
@@ -396,12 +397,9 @@ void SensorMode::readAndStoreSensorData(uint32_t current_time)
 void SensorMode::sendHeartbeat(uint32_t /* current_time */)
 {
     // Calculate uptime from initial boot timestamp (persisted across sleep cycles)
-    uint32_t uptime = 0;
-    uint32_t initial_boot = flash_buffer_ ? flash_buffer_->getInitialBootTimestamp() : 0;
-    uint32_t current_time_rtc = getUnixTimestamp();
-    if (initial_boot > 0 && current_time_rtc > initial_boot) {
-        uptime = current_time_rtc - initial_boot;
-    }
+    uint32_t uptime = util::time::uptimeSeconds(
+        flash_buffer_ ? flash_buffer_->getInitialBootTimestamp() : 0, getUnixTimestamp());
+
     uint8_t battery_level = getBatteryLevel();
     // RSSI is negative dBm (e.g., -70 dBm); convert to absolute value for payload
     int rssi = lora_.getRssi();
@@ -933,6 +931,25 @@ void SensorMode::requestTimeSync()
         sendHeartbeat(0);
         sensor_state_.reportHeartbeatSent();
     }
+}
+
+void SensorMode::startHeartbeatTimeout()
+{
+    // Cancel any existing heartbeat timeout before starting a new one
+    task_queue_.cancel(heartbeat_timeout_id_);
+
+    uint32_t now = to_ms_since_boot(get_absolute_time());
+    heartbeat_timeout_id_ = task_queue_.postDelayed(
+        [](void *ctx, uint32_t) -> bool {
+            SensorMode *self = static_cast<SensorMode *>(ctx);
+            logger.warn("Hub sync timeout - checking if RTC is running");
+            self->heartbeat_timeout_id_ = 0;
+            if (rtc_running()) {
+                self->sensor_state_.reportRtcSynced();
+            }
+            return true;
+        },
+        this, now, HEARTBEAT_TIMEOUT_MS, TaskPriority::High);
 }
 
 void SensorMode::attemptRegistration()
