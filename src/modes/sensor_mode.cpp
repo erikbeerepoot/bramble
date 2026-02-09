@@ -1,7 +1,6 @@
 #include "sensor_mode.h"
 
 #include <cstring>
-#include <ctime>
 
 #include "pico/stdlib.h"
 #include "pico/unique_id.h"
@@ -860,29 +859,12 @@ void SensorMode::requestTimeSync()
                                  datetime.year, datetime.month, datetime.day, datetime.hour,
                                  datetime.minute, datetime.second);
 
-                // Convert PMU datetime to Unix timestamp using mktime
-                uint16_t year = 2000 + datetime.year;
-                std::tm tm = {};
-                tm.tm_year = year - 1900;        // years since 1900
-                tm.tm_mon = datetime.month - 1;  // 0-based month
-                tm.tm_mday = datetime.day;
-                tm.tm_hour = datetime.hour;
-                tm.tm_min = datetime.minute;
-                tm.tm_sec = datetime.second;
-                uint32_t pmu_timestamp = static_cast<uint32_t>(std::mktime(&tm));
-
                 // Check if it's time to transmit BEFORE setting RTC
-                bool time_to_transmit = isTimeToTransmit(pmu_timestamp);
+                bool time_to_transmit =
+                    isTimeToTransmit(bramble::util::time::toUnixTimestamp(datetime));
 
                 // Set RP2040 RTC from PMU time
-                datetime_t dt;
-                dt.year = year;
-                dt.month = datetime.month;
-                dt.day = datetime.day;
-                dt.dotw = datetime.weekday;
-                dt.hour = datetime.hour;
-                dt.min = datetime.minute;
-                dt.sec = datetime.second;
+                datetime_t dt = bramble::util::time::toDatetimeT(datetime);
 
                 if (rtc_set_datetime(&dt)) {
                     // The RTC on the RP2040 runs on a separate clock domain
