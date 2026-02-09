@@ -88,32 +88,35 @@ bool ReliableMessenger::sendSensorData(uint16_t dst_addr, uint8_t sensor_type, c
 bool ReliableMessenger::sendHeartbeat(uint16_t dst_addr, uint32_t uptime_seconds,
                                       uint8_t battery_level, uint8_t signal_strength,
                                       uint8_t active_sensors, uint16_t error_flags,
-                                      uint16_t pending_records, DeliveryCriticality criticality)
+                                      uint16_t pending_records, DeliveryCriticality criticality,
+                                      AckCallback ack_callback, uint64_t user_context)
 {
     uint8_t seq_num = getNextSequenceNumber();
 
-    return sendWithBuilder(
-        [=](uint8_t *buffer) {
-            // Build heartbeat message with pending_records field
-            Message *msg = reinterpret_cast<Message *>(buffer);
-            msg->header.magic = MESSAGE_MAGIC;
-            msg->header.type = MSG_TYPE_HEARTBEAT;
-            msg->header.flags = 0;
-            msg->header.src_addr = node_addr_;
-            msg->header.dst_addr = dst_addr;
-            msg->header.seq_num = seq_num;
+    // Build heartbeat message into buffer
+    uint8_t buffer[MESSAGE_MAX_SIZE];
+    Message *msg = reinterpret_cast<Message *>(buffer);
+    msg->header.magic = MESSAGE_MAGIC;
+    msg->header.type = MSG_TYPE_HEARTBEAT;
+    msg->header.flags = MessageBuilder::criticalityToFlags(criticality);
+    msg->header.src_addr = node_addr_;
+    msg->header.dst_addr = dst_addr;
+    msg->header.seq_num = seq_num;
 
-            HeartbeatPayload *payload = reinterpret_cast<HeartbeatPayload *>(msg->payload);
-            payload->uptime_seconds = uptime_seconds;
-            payload->battery_level = battery_level;
-            payload->signal_strength = signal_strength;
-            payload->active_sensors = active_sensors;
-            payload->error_flags = error_flags;
-            payload->pending_records = pending_records;
+    HeartbeatPayload *payload = reinterpret_cast<HeartbeatPayload *>(msg->payload);
+    payload->uptime_seconds = uptime_seconds;
+    payload->battery_level = battery_level;
+    payload->signal_strength = signal_strength;
+    payload->active_sensors = active_sensors;
+    payload->error_flags = error_flags;
+    payload->pending_records = pending_records;
 
-            return sizeof(MessageHeader) + sizeof(HeartbeatPayload);
-        },
-        criticality, "heartbeat");
+    size_t length = sizeof(MessageHeader) + sizeof(HeartbeatPayload);
+
+    if (ack_callback) {
+        return sendWithCallback(buffer, length, criticality, ack_callback, user_context) != 0;
+    }
+    return send(buffer, length, criticality);
 }
 
 bool ReliableMessenger::sendHeartbeatResponse(uint16_t dst_addr, int16_t year, int8_t month,
