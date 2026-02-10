@@ -32,8 +32,8 @@ private:
     static bool check_usb_;        // Enable USB checking for power savings
     static uint64_t rtc_sync_us_;  // System time (us) when RTC was last synced
     static LogFlashBuffer *flash_sink_;
-    static LogLevel flash_level_;           // Minimum level for flash logging
-    static bool (*usb_connected_fn_)(void); // Optional USB connection check callback
+    static LogLevel flash_level_;            // Minimum level for flash logging
+    static bool (*usb_connected_fn_)(void);  // Optional USB connection check callback
 
     /**
      * @brief Get current timestamp (ms since boot)
