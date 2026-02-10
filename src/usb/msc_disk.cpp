@@ -96,7 +96,8 @@ static uint32_t compute_file_size()
     char line_buf[MAX_LINE_LENGTH];
 
     for (uint32_t i = 0; i < 8 && i < count; i++) {
-        uint32_t idx = (oldest + i * (count / 8)) % max_records;
+        uint32_t stride = (count < 8) ? 1 : (count / 8);
+        uint32_t idx = (oldest + i * stride) % max_records;
         LogRecord record;
         if (g_log_buffer->readRecord(idx, record)) {
             int len = format_log_line(record, line_buf, sizeof(line_buf));
