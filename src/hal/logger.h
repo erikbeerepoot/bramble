@@ -171,6 +171,13 @@ public:
     static void setFlashLogLevel(LogLevel level) { flash_level_ = level; }
 
     /**
+     * @brief Flush any buffered log data to flash
+     *
+     * Call before sleep/power-down to avoid losing the page buffer contents.
+     */
+    static void flushFlashSink();
+
+    /**
      * @brief Call immediately after rtc_set_datetime() to sync subsecond precision
      */
     static void syncSubsecondCounter() { rtc_sync_us_ = to_us_since_boot(get_absolute_time()); }

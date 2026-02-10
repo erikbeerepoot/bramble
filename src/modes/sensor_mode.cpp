@@ -16,6 +16,7 @@
 #include "../lora/message.h"
 #include "../lora/network_stats.h"
 #include "../lora/reliable_messenger.h"
+#include "../storage/log_flash_buffer.h"
 #include "../version.h"
 
 constexpr uint16_t HUB_ADDRESS = ADDRESS_HUB;
@@ -880,6 +881,9 @@ void SensorMode::signalReadyForSleep()
             pmu_logger.info(
                 "Sending ReadyForSleep with state (seq=%u, addr=0x%04X, read=%lu, write=%lu)",
                 state.next_seq_num, state.assigned_address, state.read_index, state.write_index);
+
+            // Flush log buffer before sleep - page buffer in RAM is lost on power down
+            Logger::flushFlashSink();
 
             self->reliable_pmu_->readyForSleep(
                 reinterpret_cast<const uint8_t *>(&state),
