@@ -154,6 +154,7 @@ else()
         src/config/node_config.cpp
         src/config/hub_config.cpp
         src/storage/sensor_flash_buffer.cpp
+        src/storage/log_flash_buffer.cpp
         src/util/work_tracker.cpp
         src/util/task_queue.cpp
         src/util/base_state_machine.cpp
@@ -241,7 +242,61 @@ else()
         list(APPEND BUILD_TARGETS bramble_generic)
         message(STATUS "Building GENERIC variant")
     endif()
-    
+
+    # USB MSC log retrieval target - standalone binary for downloading logs
+    if(HARDWARE_VARIANT STREQUAL "ALL" OR HARDWARE_VARIANT STREQUAL "MSC")
+        add_executable(bramble_msc
+            src/usb/usb_msc_mode.cpp
+            src/usb/msc_disk.cpp
+            src/usb/usb_descriptors.c
+            src/hal/external_flash.cpp
+            src/hal/neopixel.cpp
+            src/hal/logger.cpp
+            src/storage/log_flash_buffer.cpp
+            src/storage/sensor_flash_buffer.cpp
+            src/config/config_base.cpp
+        )
+
+        pico_set_program_name(bramble_msc "bramble_msc")
+        pico_set_program_version(bramble_msc "${BRAMBLE_VERSION_STRING}")
+
+        # No pico_enable_stdio_usb - we provide our own TinyUSB configuration
+        pico_enable_stdio_usb(bramble_msc 0)
+        pico_enable_stdio_uart(bramble_msc 0)
+
+        target_include_directories(bramble_msc PRIVATE
+            ${CMAKE_CURRENT_LIST_DIR}
+            ${CMAKE_CURRENT_LIST_DIR}/src
+            ${CMAKE_CURRENT_LIST_DIR}/src/usb
+        )
+
+        target_compile_definitions(bramble_msc PRIVATE
+            BRAMBLE_VERSION_MAJOR=${BRAMBLE_VERSION_MAJOR}
+            BRAMBLE_VERSION_MINOR=${BRAMBLE_VERSION_MINOR}
+            BRAMBLE_VERSION_BUILD=${BRAMBLE_VERSION_BUILD}
+        )
+
+        target_compile_options(bramble_msc PRIVATE -Wno-psabi)
+
+        target_link_libraries(bramble_msc
+            pico_stdlib
+            pico_unique_id
+            tinyusb_device
+            tinyusb_board
+            hardware_spi
+            hardware_timer
+            hardware_clocks
+            hardware_pio
+            hardware_flash
+            hardware_sync
+            hardware_rtc
+        )
+
+        pico_generate_pio_header(bramble_msc ${CMAKE_CURRENT_LIST_DIR}/src/hal/ws2812.pio)
+        pico_add_extra_outputs(bramble_msc)
+        message(STATUS "Building MSC (USB log retrieval) variant")
+    endif()
+
 endif()
 
 # Configure all production targets
