@@ -162,6 +162,9 @@ else()
         src/util/irrigation_state_machine.cpp
         src/modes/application_mode.cpp
         src/modes/hub_mode.cpp
+        src/usb/usb_stdio.cpp
+        src/usb/usb_descriptors.c
+        src/usb/msc_disk.cpp
     )
 
     # List of targets to configure
@@ -306,8 +309,8 @@ if(NOT BUILD_TESTS)
         pico_set_program_name(${TARGET_NAME} "${TARGET_NAME}")
         pico_set_program_version(${TARGET_NAME} "${BRAMBLE_VERSION_STRING}")
 
-        # Enable stdio on USB for all targets
-        pico_enable_stdio_usb(${TARGET_NAME} 1)
+        # Disable pico_stdio_usb - we provide our own composite CDC+MSC driver
+        pico_enable_stdio_usb(${TARGET_NAME} 0)
         pico_enable_stdio_rtt(${TARGET_NAME} 0)
 
         # Configure stdio_uart per-target:
@@ -339,6 +342,7 @@ if(NOT BUILD_TESTS)
         target_include_directories(${TARGET_NAME} PRIVATE
             ${CMAKE_CURRENT_LIST_DIR}
             ${CMAKE_CURRENT_LIST_DIR}/src
+            ${CMAKE_CURRENT_LIST_DIR}/src/usb
         )
 
         target_link_libraries(${TARGET_NAME}
@@ -354,6 +358,8 @@ if(NOT BUILD_TESTS)
             pico_multicore
             pico_util
             pico_unique_id
+            tinyusb_device
+            tinyusb_board
         )
 
         # Add pico-extras libraries if available
