@@ -113,18 +113,18 @@ public:
      * call advanceReadIndex() after successful transmission is confirmed
      * via ACK callback to prevent data loss on failed transmissions.
      *
-     * When actual_count == 0 but records_scanned > 0, all scanned records had
-     * CRC errors and can be skipped. When records_scanned < untransmitted_count,
+     * When valid_records_count == 0 but total_records_scanned > 0, all scanned records had
+     * CRC errors and can be skipped. When total_records_scanned < untransmitted_count,
      * a read failure occurred and unscanned records should NOT be skipped.
      *
      * @param records Output buffer for records
      * @param max_count Maximum number of records to read
-     * @param actual_count Output: number of valid records read
-     * @param records_scanned Output: total records examined (including CRC errors)
+     * @param valid_records_count Output: number of valid records read
+     * @param total_records_scanned Output: total records examined (including CRC errors)
      * @return true if read operation completed (even if no valid records found)
      */
-    bool readUntransmittedRecords(SensorDataRecord *records, size_t max_count, size_t &actual_count,
-                                  size_t &records_scanned);
+    bool readUntransmittedRecords(SensorDataRecord *records, size_t max_count,
+                                  size_t &valid_records_count, size_t &total_records_scanned);
 
     /**
      * @brief Get current buffer statistics
