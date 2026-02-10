@@ -18,3 +18,10 @@ void Logger::writeToFlash(LogLevel level, const char *fmt, va_list args) const
     vsnprintf(msg_buf, sizeof(msg_buf), fmt, args);
     flash_sink_->writeLog(static_cast<uint8_t>(level), module_name_, msg_buf, getTimestampMs());
 }
+
+void Logger::flushFlashSink()
+{
+    if (flash_sink_) {
+        flash_sink_->flush();
+    }
+}
