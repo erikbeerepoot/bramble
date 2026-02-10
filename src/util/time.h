@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <ctime>
 
+#include "pico/stdlib.h"
+
 #include "hardware/rtc.h"
 
 #include "../hal/pmu_protocol.h"
@@ -42,6 +44,26 @@ inline uint32_t toUnixTimestamp(const PMU::DateTime &dt)
     tm.tm_min = dt.minute;
     tm.tm_sec = dt.second;
     return static_cast<uint32_t>(std::mktime(&tm));
+}
+
+inline uint32_t currentTimeMs()
+{
+    return to_ms_since_boot(get_absolute_time());
+}
+
+inline uint32_t currentTimeSec()
+{
+    return currentTimeMs() / 1000;
+}
+
+inline bool hasTimedOut(uint32_t start_time, uint32_t timeout_ms)
+{
+    return (currentTimeMs() - start_time) >= timeout_ms;
+}
+
+inline uint32_t elapsedMs(uint32_t start_time)
+{
+    return currentTimeMs() - start_time;
 }
 
 }  // namespace bramble::util::time
