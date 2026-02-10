@@ -35,7 +35,8 @@ static void usb_out_chars(const char *buf, int length)
 {
     uint32_t owner;
     if (!mutex_try_enter(&usb_mutex, &owner)) {
-        if (owner == get_core_num()) return;  // Avoid recursive deadlock
+        if (owner == get_core_num())
+            return;  // Avoid recursive deadlock
         mutex_enter_blocking(&usb_mutex);
     }
 
@@ -46,7 +47,8 @@ static void usb_out_chars(const char *buf, int length)
         uint32_t available = tud_cdc_write_available();
         if (available > 0) {
             uint32_t to_write = (uint32_t)(length - pos);
-            if (to_write > available) to_write = available;
+            if (to_write > available)
+                to_write = available;
             uint32_t written = tud_cdc_write(buf + pos, to_write);
             pos += (int)written;
         } else {
@@ -66,7 +68,8 @@ static void usb_out_flush(void)
 {
     uint32_t owner;
     if (!mutex_try_enter(&usb_mutex, &owner)) {
-        if (owner == get_core_num()) return;
+        if (owner == get_core_num())
+            return;
         mutex_enter_blocking(&usb_mutex);
     }
 

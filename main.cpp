@@ -26,8 +26,8 @@
 #include "storage/log_flash_buffer.h"
 
 // USB includes
-#include "usb/usb_stdio.h"
 #include "usb/msc_disk.h"
+#include "usb/usb_stdio.h"
 
 // LoRa includes
 #include "lora/address_manager.h"
