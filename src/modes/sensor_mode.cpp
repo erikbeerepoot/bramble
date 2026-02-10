@@ -16,7 +16,6 @@
 #include "../lora/network_stats.h"
 #include "../lora/reliable_messenger.h"
 #include "../util/time.h"
-#include "../utils/time_utils.h"
 #include "../version.h"
 
 constexpr uint16_t HUB_ADDRESS = ADDRESS_HUB;

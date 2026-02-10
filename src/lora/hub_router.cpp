@@ -5,7 +5,7 @@
 #include "pico/stdlib.h"
 
 #include "../hal/logger.h"
-#include "../utils/time_utils.h"
+#include "../util/time.h"
 
 static Logger logger("HubRouter");
 
@@ -52,7 +52,7 @@ bool HubRouter::forwardMessage(const uint8_t *buffer, size_t length, uint16_t de
     // Update routing table with successful path
     RouteEntry &route = routing_table_[destination_address];
     route.destination_address = destination_address;
-    route.last_used_time = TimeUtils::getCurrentTimeMs();
+    route.last_used_time = bramble::util::time::currentTimeMs();
 
     // Forward the message directly using the send method
     bool success = messenger_.send(buffer, length, BEST_EFFORT);
@@ -74,7 +74,7 @@ bool HubRouter::forwardMessage(const uint8_t *buffer, size_t length, uint16_t de
 
 void HubRouter::updateRouteOnline(uint16_t node_address)
 {
-    uint32_t current_time = TimeUtils::getCurrentTimeMs();
+    uint32_t current_time = bramble::util::time::currentTimeMs();
 
     // Get or create routing table entry
     RouteEntry &route = routing_table_[node_address];
@@ -112,7 +112,7 @@ void HubRouter::processQueuedMessages()
         return;
     }
 
-    uint32_t current_time = TimeUtils::getCurrentTimeMs();
+    uint32_t current_time = bramble::util::time::currentTimeMs();
     std::queue<QueuedMessage> retry_queue;
 
     // Process all queued messages
@@ -246,7 +246,7 @@ bool HubRouter::queueMessage(const uint8_t *buffer, size_t length, uint16_t dest
     memcpy(msg.buffer, buffer, length);
     msg.length = length;
     msg.destination_address = destination_address;
-    msg.queued_time = TimeUtils::getCurrentTimeMs();
+    msg.queued_time = bramble::util::time::currentTimeMs();
     msg.retry_count = 0;
     msg.requires_ack = requires_ack;
 
@@ -304,7 +304,7 @@ bool HubRouter::queueScheduleUpdate(uint16_t node_addr, uint8_t index,
     // Create update
     PendingUpdate update;
     update.type = UpdateType::SET_SCHEDULE;
-    update.queued_at_ms = TimeUtils::getCurrentTimeMs();
+    update.queued_at_ms = bramble::util::time::currentTimeMs();
     update.sequence = state.next_sequence++;
 
     // Pack schedule data (8 bytes)
@@ -338,7 +338,7 @@ bool HubRouter::queueRemoveSchedule(uint16_t node_addr, uint8_t index)
 
     PendingUpdate update;
     update.type = UpdateType::REMOVE_SCHEDULE;
-    update.queued_at_ms = TimeUtils::getCurrentTimeMs();
+    update.queued_at_ms = bramble::util::time::currentTimeMs();
     update.sequence = state.next_sequence++;
     update.data[0] = index;
     update.data_length = 1;
@@ -362,7 +362,7 @@ bool HubRouter::queueDateTimeUpdate(uint16_t node_addr, const PMU::DateTime &dat
 
     PendingUpdate update;
     update.type = UpdateType::SET_DATETIME;
-    update.queued_at_ms = TimeUtils::getCurrentTimeMs();
+    update.queued_at_ms = bramble::util::time::currentTimeMs();
     update.sequence = state.next_sequence++;
 
     // Pack datetime data (7 bytes)
@@ -393,7 +393,7 @@ bool HubRouter::queueWakeIntervalUpdate(uint16_t node_addr, uint16_t interval_se
 
     PendingUpdate update;
     update.type = UpdateType::SET_WAKE_INTERVAL;
-    update.queued_at_ms = TimeUtils::getCurrentTimeMs();
+    update.queued_at_ms = bramble::util::time::currentTimeMs();
     update.sequence = state.next_sequence++;
 
     // Pack interval data (2 bytes)
@@ -412,7 +412,7 @@ bool HubRouter::queueWakeIntervalUpdate(uint16_t node_addr, uint16_t interval_se
 void HubRouter::handleCheckUpdates(uint16_t node_addr, uint8_t node_sequence)
 {
     auto &state = node_updates_[node_addr];
-    state.last_check_time = TimeUtils::getCurrentTimeMs();
+    state.last_check_time = bramble::util::time::currentTimeMs();
 
     // Remove updates that the node has already processed
     // Node sequence indicates the last update the node successfully applied

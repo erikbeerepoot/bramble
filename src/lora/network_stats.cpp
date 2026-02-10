@@ -5,11 +5,11 @@
 
 #include "pico/stdlib.h"
 
-#include "../utils/time_utils.h"
+#include "../util/time.h"
 
 NetworkStats::NetworkStats() : logger_("NetworkStats")
 {
-    global_stats_.network_start_time = TimeUtils::getCurrentTimeMs();
+    global_stats_.network_start_time = bramble::util::time::currentTimeMs();
 }
 
 void NetworkStats::recordMessageSent(uint16_t dst_addr, DeliveryCriticality criticality,
@@ -33,7 +33,7 @@ void NetworkStats::recordMessageSent(uint16_t dst_addr, DeliveryCriticality crit
 
 void NetworkStats::recordMessageReceived(uint16_t src_addr, int16_t rssi, float snr, bool crc_error)
 {
-    uint32_t current_time = TimeUtils::getCurrentTimeMs();
+    uint32_t current_time = bramble::util::time::currentTimeMs();
 
     // Update global counters
     if (crc_error) {
@@ -184,7 +184,8 @@ void NetworkStats::printNodeStats(uint16_t address) const
     logger_.info("========== Node 0x%04X Statistics ==========", address);
     logger_.info("Uptime: %lu seconds", node->getUptimeSeconds());
     logger_.info("Last Seen: %lu ms ago",
-                 node->last_seen_time ? TimeUtils::getCurrentTimeMs() - node->last_seen_time : 0);
+                 node->last_seen_time ? bramble::util::time::currentTimeMs() - node->last_seen_time
+                                      : 0);
 
     logger_.info("Message Statistics:");
     logger_.info("  Sent: %lu total", node->getTotalMessagesSent());
@@ -242,7 +243,7 @@ void NetworkStats::reset()
 {
     node_stats_.clear();
     global_stats_ = GlobalStatistics();
-    global_stats_.network_start_time = TimeUtils::getCurrentTimeMs();
+    global_stats_.network_start_time = bramble::util::time::currentTimeMs();
     logger_.info("Network statistics reset");
 }
 
@@ -251,7 +252,7 @@ NodeStatistics &NetworkStats::getOrCreateNodeStats(uint16_t address)
     auto it = node_stats_.find(address);
     if (it == node_stats_.end()) {
         NodeStatistics new_stats;
-        new_stats.first_seen_time = TimeUtils::getCurrentTimeMs();
+        new_stats.first_seen_time = bramble::util::time::currentTimeMs();
         node_stats_[address] = new_stats;
         return node_stats_[address];
     }

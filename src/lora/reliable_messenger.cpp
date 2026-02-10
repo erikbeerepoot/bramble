@@ -5,7 +5,7 @@
 
 #include "pico/stdlib.h"
 
-#include "../utils/time_utils.h"
+#include "../util/time.h"
 
 ReliableMessenger::ReliableMessenger(SX1276 *lora, uint16_t node_addr, NetworkStats *stats)
     : lora_(lora), node_addr_(node_addr), logger_("ReliableMessenger"), network_stats_(stats),
@@ -269,7 +269,7 @@ uint8_t ReliableMessenger::sendWithCallback(const uint8_t *buffer, size_t length
     memcpy(pending.buffer.get(), buffer, length);
     pending.length = length;
     pending.dst_addr = dst_addr;
-    pending.send_time = TimeUtils::getCurrentTimeMs();
+    pending.send_time = bramble::util::time::currentTimeMs();
     pending.attempts = 1;
     pending.criticality = criticality;
     pending.retry_config = RetryPolicy::getConfig(criticality);
@@ -533,7 +533,7 @@ bool ReliableMessenger::processIncomingMessage(const uint8_t *buffer, size_t len
 
 void ReliableMessenger::update()
 {
-    uint32_t current_time = TimeUtils::getCurrentTimeMs();
+    uint32_t current_time = bramble::util::time::currentTimeMs();
 
     // Process message queue if not currently transmitting and no pending ACKs
     // For half-duplex LoRa, we must wait for ACK before sending the next message
@@ -778,7 +778,7 @@ bool ReliableMessenger::cancelPendingMessage(uint8_t seq_num)
 
 bool ReliableMessenger::wasRecentlySeen(uint16_t src_addr, uint8_t seq_num)
 {
-    uint32_t current_time = TimeUtils::getCurrentTimeMs();
+    uint32_t current_time = bramble::util::time::currentTimeMs();
 
     for (size_t i = 0; i < SEEN_MESSAGE_BUFFER_SIZE; i++) {
         const auto &seen = seen_messages_[i];
@@ -794,8 +794,9 @@ bool ReliableMessenger::wasRecentlySeen(uint16_t src_addr, uint8_t seq_num)
 void ReliableMessenger::markAsSeen(uint16_t src_addr, uint8_t seq_num)
 {
     // Add to ring buffer at current index
-    seen_messages_[seen_messages_index_] = {
-        .src_addr = src_addr, .seq_num = seq_num, .timestamp = TimeUtils::getCurrentTimeMs()};
+    seen_messages_[seen_messages_index_] = {.src_addr = src_addr,
+                                            .seq_num = seq_num,
+                                            .timestamp = bramble::util::time::currentTimeMs()};
 
     // Advance index (wrap around)
     seen_messages_index_ = (seen_messages_index_ + 1) % SEEN_MESSAGE_BUFFER_SIZE;

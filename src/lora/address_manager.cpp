@@ -6,7 +6,7 @@
 
 #include "../config/hub_config.h"
 #include "../hal/logger.h"
-#include "../utils/time_utils.h"
+#include "../util/time.h"
 
 static Logger logger("AddressManager");
 
@@ -53,7 +53,7 @@ uint16_t AddressManager::registerNode(uint64_t device_id, uint8_t node_type, uin
             strncpy(node->device_name, device_name, sizeof(node->device_name) - 1);
             node->device_name[sizeof(node->device_name) - 1] = '\0';
         }
-        uint32_t current_time = TimeUtils::getCurrentTimeMs();
+        uint32_t current_time = bramble::util::time::currentTimeMs();
         node->last_seen_time = current_time;
         node->last_check_time = current_time;
         node->inactive_duration_ms = 0;  // Reset since node is re-registering
@@ -88,7 +88,7 @@ uint16_t AddressManager::registerNode(uint64_t device_id, uint8_t node_type, uin
     } else {
         strcpy(new_node.device_name, "Unknown");
     }
-    uint32_t current_time = TimeUtils::getCurrentTimeMs();
+    uint32_t current_time = bramble::util::time::currentTimeMs();
     new_node.last_seen_time = current_time;
     new_node.last_check_time = current_time;
     new_node.inactive_duration_ms = 0;  // Fresh registration, no inactive time
@@ -234,7 +234,7 @@ void AddressManager::printNetworkStatus()
         logger.info("0x%04x  0x%016llx  %-16s  0x%02x  0x%02x  %-6s  %d ms ago", address,
                     (unsigned long long)node.device_id, node.device_name, node.node_type,
                     node.capabilities, node.is_active ? "Yes" : "No",
-                    TimeUtils::getCurrentTimeMs() - node.last_seen_time);
+                    bramble::util::time::currentTimeMs() - node.last_seen_time);
     }
 }
 
@@ -307,7 +307,7 @@ bool AddressManager::persist(Flash &flash)
     registry.header.version = 1;
     registry.header.next_address = next_available_address_;
     registry.header.node_count = 0;
-    registry.header.save_time = TimeUtils::getCurrentTimeMs();
+    registry.header.save_time = bramble::util::time::currentTimeMs();
 
     // Convert NodeInfo entries to RegistryNodeEntry format
     uint16_t node_index = 0;
@@ -381,7 +381,8 @@ bool AddressManager::load(Flash &flash)
         node_info.capabilities = entry.capabilities;
         node_info.firmware_version = entry.firmware_version;
         node_info.last_seen_time = 0;  // Reset to 0 since boot time has changed
-        node_info.last_check_time = TimeUtils::getCurrentTimeMs();  // Start checking from now
+        node_info.last_check_time =
+            bramble::util::time::currentTimeMs();  // Start checking from now
         node_info.inactive_duration_ms =
             entry.inactive_duration_ms;  // Restore accumulated inactive time
         node_info.is_active = (entry.is_active != 0);
