@@ -1,15 +1,15 @@
 #include "usb_msc_mode.h"
 
-#include "tusb.h"
-#include "msc_disk.h"
+#include "pico/stdlib.h"
+
+#include "hardware/gpio.h"
+#include "hardware/spi.h"
 
 #include "../hal/external_flash.h"
 #include "../hal/neopixel.h"
 #include "../storage/log_flash_buffer.h"
-
-#include "hardware/spi.h"
-#include "hardware/gpio.h"
-#include "pico/stdlib.h"
+#include "msc_disk.h"
+#include "tusb.h"
 
 // SPI1 pins (shared with LoRa, but LoRa not active in MSC mode)
 static constexpr uint PIN_MISO = 8;

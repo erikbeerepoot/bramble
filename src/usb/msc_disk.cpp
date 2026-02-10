@@ -12,21 +12,23 @@
  * from log records in external flash.
  */
 
-#include "tusb.h"
 #include "msc_disk.h"
-#include "../storage/log_flash_buffer.h"
-#include "../storage/log_record.h"
-#include "../hal/external_flash.h"
 
 #include <cstdio>
 #include <cstring>
 
+#include "../hal/external_flash.h"
+#include "../storage/log_flash_buffer.h"
+#include "../storage/log_record.h"
+#include "tusb.h"
+
 // Disk geometry
 static constexpr uint16_t DISK_BLOCK_SIZE = 512;
-static constexpr uint16_t RESERVED_SECTORS = 1;   // Boot sector
-static constexpr uint16_t FAT_SECTORS = 2;         // FAT12 table
-static constexpr uint16_t ROOT_DIR_SECTORS = 2;    // Root directory (32 entries)
-static constexpr uint16_t DATA_START_SECTOR = RESERVED_SECTORS + FAT_SECTORS + ROOT_DIR_SECTORS; // = 5
+static constexpr uint16_t RESERVED_SECTORS = 1;  // Boot sector
+static constexpr uint16_t FAT_SECTORS = 2;       // FAT12 table
+static constexpr uint16_t ROOT_DIR_SECTORS = 2;  // Root directory (32 entries)
+static constexpr uint16_t DATA_START_SECTOR =
+    RESERVED_SECTORS + FAT_SECTORS + ROOT_DIR_SECTORS;  // = 5
 static constexpr uint16_t SECTORS_PER_CLUSTER = 1;
 
 // Maximum formatted line: "[4294967295] ERR  [MODULENAME]: <108 chars message>\r\n"
@@ -36,22 +38,27 @@ static constexpr size_t MAX_LINE_LENGTH = 160;
 // State
 static LogFlashBuffer *g_log_buffer = nullptr;
 static ExternalFlash *g_flash = nullptr;
-static uint32_t g_file_size = 0;      // Total file size in bytes
-static uint32_t g_total_blocks = 0;   // Total disk blocks
+static uint32_t g_file_size = 0;     // Total file size in bytes
+static uint32_t g_total_blocks = 0;  // Total disk blocks
 
 // Pre-computed FAT12 and boot sector
 static uint8_t g_boot_sector[512];
-static uint8_t g_fat[1024];           // 2 sectors of FAT12
-static uint8_t g_root_dir[1024];      // 2 sectors of root directory
+static uint8_t g_fat[1024];       // 2 sectors of FAT12
+static uint8_t g_root_dir[1024];  // 2 sectors of root directory
 
 static const char *level_str(uint8_t level)
 {
     switch (level) {
-        case 1: return "ERR ";
-        case 2: return "WARN";
-        case 3: return "INFO";
-        case 4: return "DBG ";
-        default: return "??? ";
+        case 1:
+            return "ERR ";
+        case 2:
+            return "WARN";
+        case 3:
+            return "INFO";
+        case 4:
+            return "DBG ";
+        default:
+            return "??? ";
     }
 }
 
@@ -61,11 +68,8 @@ static const char *level_str(uint8_t level)
  */
 static int format_log_line(const LogRecord &record, char *buf, size_t buf_size)
 {
-    return snprintf(buf, buf_size, "[%lu] %s [%.11s]: %.108s\r\n",
-                    (unsigned long)record.timestamp,
-                    level_str(record.level),
-                    record.module,
-                    record.message);
+    return snprintf(buf, buf_size, "[%lu] %s [%.11s]: %.108s\r\n", (unsigned long)record.timestamp,
+                    level_str(record.level), record.module, record.message);
 }
 
 /**
@@ -76,10 +80,12 @@ static int format_log_line(const LogRecord &record, char *buf, size_t buf_size)
  */
 static uint32_t compute_file_size()
 {
-    if (!g_log_buffer) return 0;
+    if (!g_log_buffer)
+        return 0;
 
     uint32_t count = g_log_buffer->getStoredCount();
-    if (count == 0) return 0;
+    if (count == 0)
+        return 0;
 
     // Sample a few records to get average line length, then multiply
     // For accuracy with minimal flash reads, sample up to 8 records
@@ -101,7 +107,8 @@ static uint32_t compute_file_size()
         }
     }
 
-    if (sampled == 0) return 0;
+    if (sampled == 0)
+        return 0;
 
     uint32_t avg_len = total_len / sampled;
     return avg_len * count;
@@ -112,18 +119,20 @@ static void build_boot_sector()
     memset(g_boot_sector, 0, sizeof(g_boot_sector));
 
     // BPB (BIOS Parameter Block)
-    g_boot_sector[0] = 0xEB; g_boot_sector[1] = 0x3C; g_boot_sector[2] = 0x90; // Jump + NOP
+    g_boot_sector[0] = 0xEB;
+    g_boot_sector[1] = 0x3C;
+    g_boot_sector[2] = 0x90;                   // Jump + NOP
     memcpy(&g_boot_sector[3], "BRAMBLE ", 8);  // OEM name
 
     // Bytes per sector
     g_boot_sector[11] = (DISK_BLOCK_SIZE & 0xFF);
     g_boot_sector[12] = (DISK_BLOCK_SIZE >> 8);
 
-    g_boot_sector[13] = SECTORS_PER_CLUSTER;   // Sectors per cluster
-    g_boot_sector[14] = RESERVED_SECTORS;       // Reserved sectors (little-endian)
+    g_boot_sector[13] = SECTORS_PER_CLUSTER;  // Sectors per cluster
+    g_boot_sector[14] = RESERVED_SECTORS;     // Reserved sectors (little-endian)
     g_boot_sector[15] = 0;
-    g_boot_sector[16] = 1;                      // Number of FATs
-    g_boot_sector[17] = 32;                     // Root dir entries (little-endian)
+    g_boot_sector[16] = 1;   // Number of FATs
+    g_boot_sector[17] = 32;  // Root dir entries (little-endian)
     g_boot_sector[18] = 0;
 
     // Total sectors (16-bit)
@@ -131,17 +140,21 @@ static void build_boot_sector()
     g_boot_sector[19] = (total_sectors & 0xFF);
     g_boot_sector[20] = (total_sectors >> 8);
 
-    g_boot_sector[21] = 0xF8;                  // Media type (fixed disk)
+    g_boot_sector[21] = 0xF8;  // Media type (fixed disk)
 
     // Sectors per FAT
     g_boot_sector[22] = FAT_SECTORS;
     g_boot_sector[23] = 0;
 
-    g_boot_sector[24] = 1; g_boot_sector[25] = 0;  // Sectors per track
-    g_boot_sector[26] = 1; g_boot_sector[27] = 0;  // Number of heads
-    g_boot_sector[38] = 0x29;                        // Extended boot signature
-    g_boot_sector[39] = 0x12; g_boot_sector[40] = 0x34;
-    g_boot_sector[41] = 0x56; g_boot_sector[42] = 0x78;  // Volume serial
+    g_boot_sector[24] = 1;
+    g_boot_sector[25] = 0;  // Sectors per track
+    g_boot_sector[26] = 1;
+    g_boot_sector[27] = 0;     // Number of heads
+    g_boot_sector[38] = 0x29;  // Extended boot signature
+    g_boot_sector[39] = 0x12;
+    g_boot_sector[40] = 0x34;
+    g_boot_sector[41] = 0x56;
+    g_boot_sector[42] = 0x78;  // Volume serial
 
     memcpy(&g_boot_sector[43], "BRAMBLE LOG", 11);  // Volume label
     memcpy(&g_boot_sector[54], "FAT12   ", 8);      // FS type
@@ -163,7 +176,8 @@ static void build_fat()
     // Build cluster chain for the file
     // Data clusters start at cluster 2
     uint32_t data_sectors = (g_file_size + DISK_BLOCK_SIZE - 1) / DISK_BLOCK_SIZE;
-    if (data_sectors == 0) data_sectors = 1;  // At least 1 cluster even for empty file
+    if (data_sectors == 0)
+        data_sectors = 1;  // At least 1 cluster even for empty file
 
     // FAT12 packing: each pair of entries uses 3 bytes
     for (uint32_t cluster = 2; cluster < data_sectors + 2; cluster++) {
@@ -176,7 +190,8 @@ static void build_fat()
 
         // FAT12 encoding
         uint32_t fat_offset = cluster + (cluster / 2);
-        if (fat_offset + 1 >= sizeof(g_fat)) break;
+        if (fat_offset + 1 >= sizeof(g_fat))
+            break;
 
         if (cluster & 1) {
             // Odd cluster
@@ -201,13 +216,13 @@ static void build_root_dir()
     // File entry: LOGS.TXT
     uint8_t *entry = &g_root_dir[32];
     memcpy(entry, "LOGS    TXT", 11);  // 8.3 filename
-    entry[11] = 0x01;                   // Attribute: read-only
-    entry[26] = 2;                      // Start cluster (little-endian)
+    entry[11] = 0x01;                  // Attribute: read-only
+    entry[26] = 2;                     // Start cluster (little-endian)
     entry[27] = 0;
 
     // File size (little-endian, 32-bit)
-    entry[28] = (g_file_size >>  0) & 0xFF;
-    entry[29] = (g_file_size >>  8) & 0xFF;
+    entry[28] = (g_file_size >> 0) & 0xFF;
+    entry[29] = (g_file_size >> 8) & 0xFF;
     entry[30] = (g_file_size >> 16) & 0xFF;
     entry[31] = (g_file_size >> 24) & 0xFF;
 }
@@ -221,12 +236,14 @@ void msc_disk_init(LogFlashBuffer *log_buffer, ExternalFlash *flash)
 
     // Total data sectors for file content
     uint32_t file_sectors = (g_file_size + DISK_BLOCK_SIZE - 1) / DISK_BLOCK_SIZE;
-    if (file_sectors == 0) file_sectors = 1;
+    if (file_sectors == 0)
+        file_sectors = 1;
 
     g_total_blocks = DATA_START_SECTOR + file_sectors;
 
     // Cap at 65535 (FAT12 limit for 16-bit total sectors)
-    if (g_total_blocks > 65535) g_total_blocks = 65535;
+    if (g_total_blocks > 65535)
+        g_total_blocks = 65535;
 
     build_boot_sector();
     build_fat();
@@ -239,12 +256,12 @@ void msc_disk_init(LogFlashBuffer *log_buffer, ExternalFlash *flash)
 
 extern "C" {
 
-void tud_msc_inquiry_cb(uint8_t lun, uint8_t vendor_id[8],
-                         uint8_t product_id[16], uint8_t product_rev[4])
+void tud_msc_inquiry_cb(uint8_t lun, uint8_t vendor_id[8], uint8_t product_id[16],
+                        uint8_t product_rev[4])
 {
     (void)lun;
-    memcpy(vendor_id,   "Bramble ", 8);
-    memcpy(product_id,  "Log Storage     ", 16);
+    memcpy(vendor_id, "Bramble ", 8);
+    memcpy(product_id, "Log Storage     ", 16);
     memcpy(product_rev, "1.0 ", 4);
 }
 
@@ -261,10 +278,12 @@ void tud_msc_capacity_cb(uint8_t lun, uint32_t *block_count, uint16_t *block_siz
     *block_size = DISK_BLOCK_SIZE;
 }
 
-bool tud_msc_start_stop_cb(uint8_t lun, uint8_t power_condition,
-                            bool start, bool load_eject)
+bool tud_msc_start_stop_cb(uint8_t lun, uint8_t power_condition, bool start, bool load_eject)
 {
-    (void)lun; (void)power_condition; (void)start; (void)load_eject;
+    (void)lun;
+    (void)power_condition;
+    (void)start;
+    (void)load_eject;
     return true;
 }
 
@@ -274,8 +293,8 @@ bool tud_msc_start_stop_cb(uint8_t lun, uint8_t power_condition,
  * Blocks 0-4 are FAT12 metadata (served from RAM).
  * Blocks 5+ are file data (log records formatted on-the-fly).
  */
-int32_t tud_msc_read10_cb(uint8_t lun, uint32_t lba, uint32_t offset,
-                           void *buffer, uint32_t bufsize)
+int32_t tud_msc_read10_cb(uint8_t lun, uint32_t lba, uint32_t offset, void *buffer,
+                          uint32_t bufsize)
 {
     (void)lun;
     (void)offset;
@@ -304,8 +323,7 @@ int32_t tud_msc_read10_cb(uint8_t lun, uint32_t lba, uint32_t offset,
         return (int32_t)bufsize;
     }
 
-    if (lba >= RESERVED_SECTORS + FAT_SECTORS &&
-        lba < (uint32_t)DATA_START_SECTOR) {
+    if (lba >= RESERVED_SECTORS + FAT_SECTORS && lba < (uint32_t)DATA_START_SECTOR) {
         uint32_t dir_offset = (lba - RESERVED_SECTORS - FAT_SECTORS) * DISK_BLOCK_SIZE;
         uint32_t copy_len = bufsize < 512 ? bufsize : 512;
         if (dir_offset + copy_len <= sizeof(g_root_dir)) {
@@ -347,7 +365,8 @@ int32_t tud_msc_read10_cb(uint8_t lun, uint32_t lba, uint32_t offset,
         }
 
         int line_len = format_log_line(record, line_buf, sizeof(line_buf));
-        if (line_len <= 0) continue;
+        if (line_len <= 0)
+            continue;
 
         uint32_t line_end = current_offset + (uint32_t)line_len;
 
@@ -375,24 +394,28 @@ int32_t tud_msc_read10_cb(uint8_t lun, uint32_t lba, uint32_t offset,
         current_offset = line_end;
 
         // If we've passed the block entirely, stop
-        if (current_offset >= file_offset + bufsize) break;
+        if (current_offset >= file_offset + bufsize)
+            break;
     }
 
     return (int32_t)bufsize;
 }
 
-int32_t tud_msc_write10_cb(uint8_t lun, uint32_t lba, uint32_t offset,
-                            uint8_t *buffer, uint32_t bufsize)
+int32_t tud_msc_write10_cb(uint8_t lun, uint32_t lba, uint32_t offset, uint8_t *buffer,
+                           uint32_t bufsize)
 {
-    (void)lun; (void)lba; (void)offset; (void)buffer;
+    (void)lun;
+    (void)lba;
+    (void)offset;
+    (void)buffer;
     // Read-only drive
     return -1;
 }
 
-int32_t tud_msc_scsi_cb(uint8_t lun, uint8_t const scsi_cmd[16],
-                          void *buffer, uint16_t bufsize)
+int32_t tud_msc_scsi_cb(uint8_t lun, uint8_t const scsi_cmd[16], void *buffer, uint16_t bufsize)
 {
-    (void)buffer; (void)bufsize;
+    (void)buffer;
+    (void)bufsize;
 
     int32_t resplen = 0;
 
