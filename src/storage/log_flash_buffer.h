@@ -20,15 +20,15 @@
 class LogFlashBuffer {
 public:
     // Flash layout constants
-    static constexpr uint32_t METADATA_OFFSET = 0x00001000;   // Sector 1
-    static constexpr uint32_t DATA_START = 0x06000000;         // 96MB offset
-    static constexpr uint32_t DATA_END = 0x08000000;           // 128MB boundary
+    static constexpr uint32_t METADATA_OFFSET = 0x00001000;  // Sector 1
+    static constexpr uint32_t DATA_START = 0x06000000;       // 96MB offset
+    static constexpr uint32_t DATA_END = 0x08000000;         // 128MB boundary
     static constexpr uint32_t DATA_SIZE = DATA_END - DATA_START;
     static constexpr uint32_t MAX_RECORDS = DATA_SIZE / sizeof(LogRecord);
     static constexpr uint32_t SECTOR_SIZE = ExternalFlash::SECTOR_SIZE;
     static constexpr uint32_t RECORDS_PER_SECTOR = SECTOR_SIZE / sizeof(LogRecord);
 
-    explicit LogFlashBuffer(ExternalFlash& flash);
+    explicit LogFlashBuffer(ExternalFlash &flash);
 
     bool init();
 
@@ -36,7 +36,7 @@ public:
      * @brief Write a log entry to flash
      * @return true on success
      */
-    bool writeLog(uint8_t level, const char* module, const char* message, uint32_t timestamp);
+    bool writeLog(uint8_t level, const char *module, const char *message, uint32_t timestamp);
 
     /**
      * @brief Read a record by absolute index in the circular buffer
@@ -44,7 +44,7 @@ public:
      * @param record Output record
      * @return true if record is valid
      */
-    bool readRecord(uint32_t index, LogRecord& record) const;
+    bool readRecord(uint32_t index, LogRecord &record) const;
 
     /**
      * @brief Get total number of stored records (capped at MAX_RECORDS)
@@ -69,7 +69,7 @@ public:
     bool reset();
 
 private:
-    ExternalFlash& flash_;
+    ExternalFlash &flash_;
     LogFlashMetadata metadata_;
     bool initialized_;
     Logger logger_;

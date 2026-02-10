@@ -33,18 +33,15 @@ class Logger {
 private:
     const char *module_name_;
     static LogLevel global_level_;
-    static bool check_usb_;            // Enable USB checking for power savings
-    static uint64_t rtc_sync_us_;      // System time (us) when RTC was last synced
+    static bool check_usb_;        // Enable USB checking for power savings
+    static uint64_t rtc_sync_us_;  // System time (us) when RTC was last synced
     static LogFlashBuffer *flash_sink_;
-    static LogLevel flash_level_;       // Minimum level for flash logging
+    static LogLevel flash_level_;  // Minimum level for flash logging
 
     /**
      * @brief Get current timestamp (ms since boot)
      */
-    static uint32_t getTimestampMs()
-    {
-        return to_ms_since_boot(get_absolute_time());
-    }
+    static uint32_t getTimestampMs() { return to_ms_since_boot(get_absolute_time()); }
 
     /**
      * @brief Write to flash sink if configured
