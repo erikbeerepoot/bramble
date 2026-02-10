@@ -616,23 +616,23 @@ void SensorMode::transmitBacklog()
 
     // Read up to BATCH_SIZE records
     SensorDataRecord records[SensorFlashBuffer::BATCH_SIZE];
-    size_t actual_count = 0;
-    size_t records_scanned = 0;
+    size_t valid_records_count = 0;
+    size_t total_records_scanned = 0;
 
     if (!flash_buffer_->readUntransmittedRecords(records, SensorFlashBuffer::BATCH_SIZE,
-                                                 actual_count, records_scanned)) {
+                                                 valid_records_count, total_records_scanned)) {
         logger.error("Failed to read untransmitted records");
         sensor_state_.reportTransmitComplete();
         return;
     }
 
     uint32_t untransmitted_count = flash_buffer_->getUntransmittedCount();
-    if (actual_count == 0) {
-        if (records_scanned > 0) {
+    if (valid_records_count == 0) {
+        if (total_records_scanned > 0) {
             // All scanned records had CRC errors - skip only those we verified as corrupt
             logger.warn("No valid records found - skipping %zu corrupt records (of %lu pending)",
-                        records_scanned, untransmitted_count);
-            flash_buffer_->advanceReadIndex(static_cast<uint32_t>(records_scanned));
+                        total_records_scanned, untransmitted_count);
+            flash_buffer_->advanceReadIndex(static_cast<uint32_t>(total_records_scanned));
         } else if (untransmitted_count > 0) {
             // Couldn't scan any records (read failure) - don't skip, try again later
             logger.warn("Flash read issues - %lu records pending, will retry later",
@@ -647,13 +647,13 @@ void SensorMode::transmitBacklog()
     flash_buffer_->getStatistics(stats);
     uint32_t start_index = stats.read_index;
 
-    logger.info("Transmitting batch of %zu records", actual_count);
+    logger.info("Transmitting batch of %zu records", valid_records_count);
 
     if (!transmitter_->transmit(
-            records, actual_count,
-            [this, actual_count](bool success) {
+            records, valid_records_count,
+            [this, total_records_scanned](bool success) {
                 if (success && flash_buffer_) {
-                    flash_buffer_->advanceReadIndex(static_cast<uint32_t>(actual_count));
+                    flash_buffer_->advanceReadIndex(static_cast<uint32_t>(total_records_scanned));
                     flash_buffer_->updateLastSync(getUnixTimestamp());
 
                     // Check if we should send another batch
