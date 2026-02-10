@@ -10,6 +10,9 @@
 #include "pico/stdio_usb.h"
 #endif
 
+// Forward declaration to avoid circular dependency
+class LogFlashBuffer;
+
 /**
  * @brief Logging levels for debug output control
  */
@@ -23,20 +26,45 @@ enum class LogLevel : uint8_t {
 
 /**
  * @brief Lightweight logger class for module-specific logging
+ *
+ * Outputs to stdio (USB/UART) and optionally to a flash-backed log buffer.
  */
 class Logger {
 private:
     const char *module_name_;
     static LogLevel global_level_;
-    static bool check_usb_;        // Enable USB checking for power savings
-    static uint64_t rtc_sync_us_;  // System time (us) when RTC was last synced
+    static bool check_usb_;            // Enable USB checking for power savings
+    static uint64_t rtc_sync_us_;      // System time (us) when RTC was last synced
+    static LogFlashBuffer *flash_sink_;
+    static LogLevel flash_level_;       // Minimum level for flash logging
+
+    /**
+     * @brief Get current timestamp (ms since boot)
+     */
+    static uint32_t getTimestampMs()
+    {
+        return to_ms_since_boot(get_absolute_time());
+    }
+
+    /**
+     * @brief Write to flash sink if configured
+     */
+    void writeToFlash(LogLevel level, const char *fmt, va_list args) const;
 
     /**
      * @brief Unified logging implementation
      */
     void log(LogLevel level, const char *prefix, const char *fmt, va_list args) const
     {
-        // Skip logging if USB checking is enabled and no USB connection
+        // Write to flash regardless of USB state
+        if (flash_sink_ && static_cast<uint8_t>(flash_level_) >= static_cast<uint8_t>(level)) {
+            va_list args_copy;
+            va_copy(args_copy, args);
+            writeToFlash(level, fmt, args_copy);
+            va_end(args_copy);
+        }
+
+        // Skip console if USB checking is enabled and no USB connection
 #if LIB_PICO_STDIO_USB
         if (check_usb_ && !stdio_usb_connected()) {
             return;
@@ -119,26 +147,34 @@ public:
     }
 
     /**
-     * @brief Set the global log level
+     * @brief Set the global console log level
      */
     static void setLogLevel(LogLevel level) { global_level_ = level; }
 
     /**
-     * @brief Get the current log level
+     * @brief Get the current console log level
      */
     static LogLevel getLogLevel() { return global_level_; }
 
     /**
      * @brief Enable/disable USB connection checking for power savings
-     * @param enable If true, only log when USB is connected
+     * @param enable If true, only log to console when USB is connected
      */
     static void checkForUsbConnection(bool enable) { check_usb_ = enable; }
 
     /**
+     * @brief Set the flash log sink
+     * @param buffer LogFlashBuffer instance (nullptr to disable)
+     */
+    static void setFlashSink(LogFlashBuffer *buffer) { flash_sink_ = buffer; }
+
+    /**
+     * @brief Set minimum level for flash logging (independent of console level)
+     */
+    static void setFlashLogLevel(LogLevel level) { flash_level_ = level; }
+
+    /**
      * @brief Call immediately after rtc_set_datetime() to sync subsecond precision
-     *
-     * This records the system timer value at the moment the RTC is set,
-     * allowing accurate millisecond calculation within each RTC second.
      */
     static void syncSubsecondCounter() { rtc_sync_us_ = to_us_since_boot(get_absolute_time()); }
 };

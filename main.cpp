@@ -19,9 +19,11 @@
 #include "hardware/watchdog.h"
 
 // HAL includes
+#include "hal/external_flash.h"
 #include "hal/flash.h"
 #include "hal/logger.h"
 #include "hal/neopixel.h"
+#include "storage/log_flash_buffer.h"
 
 // LoRa includes
 #include "lora/address_manager.h"
@@ -155,6 +157,20 @@ int main()
         led.setPixel(0, 255, 0, 0);  // Red for error
         led.show();
         // panic("Hardware initialization failed!");
+    }
+
+    // Initialize external flash and log buffer for all modes
+    ExternalFlash log_external_flash;
+    static LogFlashBuffer log_flash_buffer(log_external_flash);
+    if (log_external_flash.init()) {
+        if (log_flash_buffer.init()) {
+            Logger::setFlashSink(&log_flash_buffer);
+            log.info("Flash log storage initialized");
+        } else {
+            log.warn("Failed to init log flash buffer");
+        }
+    } else {
+        log.warn("Failed to init external flash for logging");
     }
 
     // Initialize network statistics

@@ -40,18 +40,21 @@ private:
  * The buffer stores sensor readings with automatic wraparound when full.
  *
  * Layout:
- * - Sector 0 (0x00000000 - 0x00000FFF): Metadata (4KB)
- * - Data region (0x00001000 - 0x07FFFFFF): Sensor records (127.996 MB)
+ * - Sector 0 (0x00000000 - 0x00000FFF): Sensor metadata (4KB)
+ * - Sector 1 (0x00001000 - 0x00001FFF): Log metadata (4KB)
+ * - Data region (0x00002000 - 0x05FFFFFF): Sensor records (~96MB)
+ * - Log region  (0x06000000 - 0x07FFFFFF): Log records (32MB) - see LogFlashBuffer
  *
- * Capacity: ~10.6 million records = ~12 years at 30-second intervals
+ * Capacity: ~8 million sensor records = ~7.6 years at 30-second intervals
  */
 class SensorFlashBuffer {
 public:
     // Flash layout constants
     static constexpr uint32_t METADATA_SECTOR = 0;
     static constexpr uint32_t METADATA_SIZE = 4096;
-    static constexpr uint32_t DATA_START_OFFSET = 4096;
-    static constexpr uint32_t DATA_REGION_SIZE = ExternalFlash::TOTAL_SIZE - DATA_START_OFFSET;
+    static constexpr uint32_t DATA_START_OFFSET = 0x00002000;  // After both metadata sectors
+    static constexpr uint32_t DATA_END_OFFSET = 0x06000000;    // Log region starts here
+    static constexpr uint32_t DATA_REGION_SIZE = DATA_END_OFFSET - DATA_START_OFFSET;
     static constexpr uint32_t MAX_RECORDS = DATA_REGION_SIZE / sizeof(SensorDataRecord);
 
     // Batch transmission constants (must match MAX_BATCH_RECORDS in message.h)
