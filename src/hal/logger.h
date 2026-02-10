@@ -6,10 +6,6 @@
 
 #include "hardware/rtc.h"
 
-#if LIB_PICO_STDIO_USB
-#include "pico/stdio_usb.h"
-#endif
-
 // Forward declaration to avoid circular dependency
 class LogFlashBuffer;
 
@@ -36,7 +32,8 @@ private:
     static bool check_usb_;        // Enable USB checking for power savings
     static uint64_t rtc_sync_us_;  // System time (us) when RTC was last synced
     static LogFlashBuffer *flash_sink_;
-    static LogLevel flash_level_;  // Minimum level for flash logging
+    static LogLevel flash_level_;           // Minimum level for flash logging
+    static bool (*usb_connected_fn_)(void); // Optional USB connection check callback
 
     /**
      * @brief Get current timestamp (ms since boot)
@@ -62,11 +59,9 @@ private:
         }
 
         // Skip console if USB checking is enabled and no USB connection
-#if LIB_PICO_STDIO_USB
-        if (check_usb_ && !stdio_usb_connected()) {
+        if (check_usb_ && usb_connected_fn_ && !usb_connected_fn_()) {
             return;
         }
-#endif
 
         if (static_cast<uint8_t>(global_level_) >= static_cast<uint8_t>(level)) {
             // Print timestamp prefix
@@ -169,6 +164,12 @@ public:
      * @brief Set minimum level for flash logging (independent of console level)
      */
     static void setFlashLogLevel(LogLevel level) { flash_level_ = level; }
+
+    /**
+     * @brief Set the USB connection check function
+     * @param fn Function returning true when USB serial is connected (nullptr to disable)
+     */
+    static void setUsbConnectedCheck(bool (*fn)(void)) { usb_connected_fn_ = fn; }
 
     /**
      * @brief Flush any buffered log data to flash

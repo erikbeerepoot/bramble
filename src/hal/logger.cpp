@@ -11,6 +11,7 @@ bool Logger::check_usb_ = false;
 uint64_t Logger::rtc_sync_us_ = 0;
 LogFlashBuffer *Logger::flash_sink_ = nullptr;
 LogLevel Logger::flash_level_ = LogLevel::Info;  // Default: log Info and above to flash
+bool (*Logger::usb_connected_fn_)(void) = nullptr;
 
 void Logger::writeToFlash(LogLevel level, const char *fmt, va_list args) const
 {

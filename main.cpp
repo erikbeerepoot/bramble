@@ -25,6 +25,10 @@
 #include "hal/neopixel.h"
 #include "storage/log_flash_buffer.h"
 
+// USB includes
+#include "usb/usb_stdio.h"
+#include "usb/msc_disk.h"
+
 // LoRa includes
 #include "lora/address_manager.h"
 #include "lora/hub_router.h"
@@ -109,8 +113,14 @@ bool attemptRegistration(ReliableMessenger &messenger, SX1276 &lora,
  */
 int main()
 {
-    // Initialize stdio (UART on GPIO12 configured via CMakeLists.txt)
+    // Initialize stdio (UART configured via CMakeLists.txt)
     stdio_init_all();
+
+    // Initialize composite USB CDC+MSC (replaces pico_stdio_usb)
+    usb_stdio_init();
+
+    // Configure Logger to check USB connection state for power savings
+    Logger::setUsbConnectedCheck(usb_stdio_connected);
 
     // Create main logger
     Logger log("Main");
@@ -165,7 +175,9 @@ int main()
     if (log_external_flash.init()) {
         if (log_flash_buffer.init()) {
             Logger::setFlashSink(&log_flash_buffer);
-            log.info("Flash log storage initialized");
+            // Initialize MSC disk so log drive is accessible over USB
+            msc_disk_init(&log_flash_buffer, &log_external_flash);
+            log.info("Flash log storage initialized (USB log drive active)");
         } else {
             log.warn("Failed to init log flash buffer");
         }
