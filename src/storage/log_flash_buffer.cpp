@@ -7,7 +7,7 @@
 
 LogFlashBuffer::LogFlashBuffer(ExternalFlash &flash)
     : flash_(flash), initialized_(false), logger_("LogFlash"), page_buffer_count_(0),
-      last_erased_sector_(UINT32_MAX)
+      flushing_(false), last_erased_sector_(UINT32_MAX)
 {
     memset(&metadata_, 0, sizeof(metadata_));
     memset(page_buffer_, 0, sizeof(page_buffer_));
@@ -71,6 +71,12 @@ bool LogFlashBuffer::flushPageBuffer()
     if (page_buffer_count_ == 0)
         return true;
 
+    // Prevent recursion during error logging
+    if (flushing_) {
+        return false;
+    }
+    flushing_ = true;
+
     // If we only have 1 record, pad the second slot with 0xFF (erased state)
     if (page_buffer_count_ == 1) {
         memset(&page_buffer_[1], 0xFF, sizeof(LogRecord));
@@ -80,12 +86,14 @@ bool LogFlashBuffer::flushPageBuffer()
 
     // Ensure the target sector is erased
     if (!ensureSectorErased(address)) {
+        flushing_ = false;
         return false;
     }
 
     // Also check if the page spans into the next sector
     uint32_t page_end = address + sizeof(page_buffer_) - 1;
     if (!ensureSectorErased(page_end)) {
+        flushing_ = false;
         return false;
     }
 
@@ -94,6 +102,7 @@ bool LogFlashBuffer::flushPageBuffer()
         address, reinterpret_cast<const uint8_t *>(page_buffer_), sizeof(page_buffer_));
     if (result != ExternalFlashResult::Success) {
         logger_.error("Log write failed at 0x%08X", address);
+        flushing_ = false;
         return false;
     }
 
@@ -102,6 +111,7 @@ bool LogFlashBuffer::flushPageBuffer()
     metadata_.total_records += page_buffer_count_;
     page_buffer_count_ = 0;
 
+    flushing_ = false;
     return true;
 }
 
@@ -127,7 +137,10 @@ bool LogFlashBuffer::ensureSectorErased(uint32_t address)
 
     result = flash_.eraseSector(sector_start);
     if (result != ExternalFlashResult::Success) {
-        logger_.error("Failed to erase log sector 0x%08X", sector_start);
+        // Don't log to flash during flush operation to prevent recursion
+        if (!flushing_) {
+            logger_.error("Failed to erase log sector 0x%08X", sector_start);
+        }
         return false;
     }
 

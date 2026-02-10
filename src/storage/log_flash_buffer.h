@@ -78,6 +78,9 @@ private:
     LogRecord page_buffer_[2];  // 256 bytes = 1 flash page
     uint8_t page_buffer_count_;
 
+    // Re-entrancy guard to prevent recursive flash writes during error logging
+    bool flushing_;
+
     bool loadMetadata();
     bool saveMetadata();
     void initializeMetadata();
