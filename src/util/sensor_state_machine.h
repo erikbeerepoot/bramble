@@ -52,10 +52,16 @@
  *         TRANSMITTING
  *               │
  *               ▼ reportTransmitComplete()
- *         LISTENING or READY_FOR_SLEEP
+ *         LISTENING or READY_FOR_SLEEP or USB_CONNECTED
  *               │
  *               ▼ (LISTENING only if expectResponse() was called)
- *         READY_FOR_SLEEP ──► signalReadyForSleep() ──► [PMU sleeps]
+ *         READY_FOR_SLEEP ◄──────────────────────────────────────────┐
+ *               │                                                     │
+ *               ├── signalReadyForSleep() ──► [PMU sleeps]            │
+ *               │                                                     │
+ *               └── (USB CDC connected) ──► USB_CONNECTED ────────────┘
+ *                                                 │      (USB disconnect)
+ *                                                 └── sends KeepAwake to PMU
  */
 enum class SensorState : uint8_t {
     INITIALIZING,        // Hardware setup in progress
@@ -68,6 +74,7 @@ enum class SensorState : uint8_t {
     TRANSMITTING,        // Sending batch to hub
     LISTENING,           // Receive window open, awaiting hub responses
     READY_FOR_SLEEP,     // All wake work done
+    USB_CONNECTED,       // USB CDC connected, staying awake for host comms
     DEGRADED_NO_SENSOR,  // Sensor failed, can still log timestamps
     ERROR,               // Unrecoverable error
 };
@@ -239,9 +246,26 @@ public:
      * @brief Report that listen window is complete
      *
      * Call after the receive window timeout expires.
-     * Transitions LISTENING → READY_FOR_SLEEP.
+     * Transitions LISTENING → READY_FOR_SLEEP (or USB_CONNECTED if USB active).
      */
     void reportListenComplete();
+
+    /**
+     * @brief Report that USB CDC is connected
+     *
+     * Call when USB CDC connection is detected. If already in a late-cycle state
+     * (LISTENING, READY_FOR_SLEEP), transitions to USB_CONNECTED.
+     * Otherwise, just records the USB status for later transitions.
+     */
+    void reportUsbConnected();
+
+    /**
+     * @brief Report that USB CDC has disconnected
+     *
+     * Call when USB CDC disconnection is detected.
+     * Transitions USB_CONNECTED → READY_FOR_SLEEP.
+     */
+    void reportUsbDisconnected();
 
     /**
      * @brief Note that an outgoing message expects a response
@@ -334,6 +358,11 @@ public:
     bool isReadyForSleep() const { return state_ == SensorState::READY_FOR_SLEEP; }
 
     /**
+     * @brief Check if USB is connected (staying awake for host comms)
+     */
+    bool isUsbConnected() const { return state_ == SensorState::USB_CONNECTED; }
+
+    /**
      * @brief Check if currently transmitting
      */
     bool isTransmitting() const { return state_ == SensorState::TRANSMITTING; }
@@ -392,5 +421,6 @@ private:
     bool rtc_synced_ = false;
     bool sensor_initialized_ = false;
     bool sensor_init_attempted_ = false;
+    bool usb_connected_ = false;
     uint8_t expected_responses_ = 0;
 };

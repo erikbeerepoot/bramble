@@ -17,6 +17,7 @@
 #include "../lora/network_stats.h"
 #include "../lora/reliable_messenger.h"
 #include "../storage/log_flash_buffer.h"
+#include "../usb/usb_stdio.h"
 #include "../version.h"
 
 constexpr uint16_t HUB_ADDRESS = ADDRESS_HUB;
@@ -308,6 +309,19 @@ void SensorMode::onStateChange(SensorState state)
             // Initial state - nothing to do yet
             break;
 
+        case SensorState::USB_CONNECTED:
+            // USB CDC connected - stay awake with cyan LED, send KeepAwake to PMU
+            led_pattern_ = std::make_unique<ShortBlinkPattern>(led_, 0, 255, 255);  // Cyan
+            usb_keepalive_time_ = to_ms_since_boot(get_absolute_time());
+            logger.info("USB connected - staying awake for host communication");
+            // Send initial KeepAwake to PMU
+            if (pmu_available_ && reliable_pmu_) {
+                reliable_pmu_->keepAwake(USB_KEEPALIVE_SECONDS);
+            }
+            // Flush log buffer to flash so logs appear on USB drive
+            Logger::flushFlashSink();
+            break;
+
         case SensorState::REGISTERING:
             // Yellow fast blink while checking/waiting for registration
             led_pattern_ = std::make_unique<ShortBlinkPattern>(led_, 255, 255, 0, 50, 250);
@@ -393,6 +407,28 @@ void SensorMode::onLoop()
             logger.info("Receive window closed after %lu ms", elapsed);
             listen_window_start_time_ = 0;
             sensor_state_.reportListenComplete();
+        }
+    }
+
+    // USB connection monitoring - report connect/disconnect to state machine
+    bool usb_now_connected = usb_stdio_connected();
+    if (usb_now_connected && !sensor_state_.isUsbConnected() &&
+        (sensor_state_.isListening() || sensor_state_.isReadyForSleep())) {
+        // USB just connected while in late-cycle state - transition to USB_CONNECTED
+        sensor_state_.reportUsbConnected();
+    } else if (!usb_now_connected && sensor_state_.isUsbConnected()) {
+        // USB just disconnected while in USB_CONNECTED state - go to sleep
+        sensor_state_.reportUsbDisconnected();
+    }
+
+    // USB keep-alive - periodically send KeepAwake to PMU while USB connected
+    if (sensor_state_.isUsbConnected() && usb_keepalive_time_ > 0) {
+        uint32_t elapsed = to_ms_since_boot(get_absolute_time()) - usb_keepalive_time_;
+        if (elapsed >= USB_KEEPALIVE_INTERVAL_MS) {
+            usb_keepalive_time_ = to_ms_since_boot(get_absolute_time());
+            if (pmu_available_ && reliable_pmu_) {
+                reliable_pmu_->keepAwake(USB_KEEPALIVE_SECONDS);
+            }
         }
     }
 
@@ -866,6 +902,13 @@ void SensorMode::signalReadyForSleep()
         [](void *ctx, uint32_t time) -> bool {
             (void)time;
             SensorMode *self = static_cast<SensorMode *>(ctx);
+
+            // Abort if no longer ready for sleep (e.g., USB connected while task was queued)
+            if (!self->sensor_state_.isReadyForSleep()) {
+                pmu_logger.debug("Skipping ReadyForSleep - state changed to %s",
+                                 SensorStateMachine::stateName(self->sensor_state_.state()));
+                return true;  // Task completed (cancelled)
+            }
 
             // Repack state fresh in case it changed since signalReadyForSleep was called
             static SensorPersistedState state;
