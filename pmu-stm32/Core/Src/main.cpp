@@ -211,6 +211,7 @@ int main(void)
                 // Boot animation handled before loop
                 break;
 
+            case PmuState::POST_BOOT:
             case PmuState::AWAITING_CTS:
             case PmuState::WAKE_ACTIVE:
                 dcdc.enable();
@@ -656,13 +657,14 @@ static void setWakeIntervalCallback(uint32_t seconds)
 
 /**
  * @brief Keep awake callback
- * @param seconds Number of seconds to stay awake
+ * @param seconds Number of seconds to stay awake (resets wake timeout)
  */
 static void keepAwakeCallback(uint16_t seconds)
 {
-    // TODO: Implement keep-awake timer
-    // For now, we could just delay, but better to use a timer
-    // This prevents entering sleep mode for the specified duration
+    // Extend the PMU state machine's wake timeout
+    // This resets the timer and sets a new timeout of 'seconds'
+    // The RP2040 should call this periodically to stay awake indefinitely
+    pmuState.extendWakeTimeout(seconds);
 }
 
 /**
@@ -717,6 +719,21 @@ static void updateLedForState(PmuState state, WakeType wakeType)
     LED::Color wakeColor = (wakeType == WakeType::SCHEDULED) ? LED::RED : LED::ORANGE;
 
     switch (state) {
+        case PmuState::POST_BOOT: {
+            // Very fast blink (200ms cycle) with green while waiting for RP2040 to boot
+            uint32_t now = HAL_GetTick();
+            if (now - lastBlinkTime >= 100) {
+                lastBlinkTime = now;
+                ledOn = !ledOn;
+                if (ledOn) {
+                    led.setColor(LED::GREEN);
+                } else {
+                    led.off();
+                }
+            }
+            break;
+        }
+
         case PmuState::AWAITING_CTS: {
             // Fast blink (250ms cycle) while waiting for CTS
             uint32_t now = HAL_GetTick();
@@ -751,6 +768,7 @@ static void updateLedForState(PmuState state, WakeType wakeType)
             led.setColor(LED::RED);
             break;
 
+        case PmuState::BOOTING:
         case PmuState::SLEEPING:
         default:
             led.off();
@@ -773,8 +791,10 @@ static void onStateChange(PmuState newState)
     // Send wake notification when entering WAKE_ACTIVE
     // This centralizes the notification logic - no need to call it explicitly
     if (newState == PmuState::WAKE_ACTIVE) {
-        // If we came directly from SLEEPING (CTS woke us), determine wake type first
-        // This is safe to call even if already called in AWAITING_CTS
+        // For POST_BOOT -> WAKE_ACTIVE (CTS received during boot grace period)
+        // or BOOTING -> WAKE_ACTIVE (early CTS during boot animation),
+        // we need to determine wake type and send notification
+        // For AWAITING_CTS -> WAKE_ACTIVE, wake type is already set
         determineWakeType();
         sendWakeNotification();
     }

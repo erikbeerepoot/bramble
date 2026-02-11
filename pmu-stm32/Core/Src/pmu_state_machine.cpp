@@ -12,12 +12,27 @@ PmuState PmuStateMachine::reduce(PmuState state, PmuEvent event)
         case PmuState::BOOTING:
             switch (event) {
                 case PmuEvent::BOOT_COMPLETE:
-                    return PmuState::SLEEPING;
+                    // Go to POST_BOOT grace period to allow RP2040 time to initialize
+                    return PmuState::POST_BOOT;
                 case PmuEvent::CTS_RECEIVED:
                     // CTS received during boot - go directly to WAKE_ACTIVE
                     // This ensures WakeNotification is sent immediately without waiting
                     // for boot animation to complete
                     return PmuState::WAKE_ACTIVE;
+                case PmuEvent::ERROR_OCCURRED:
+                    return PmuState::ERROR;
+                default:
+                    return state;
+            }
+
+        case PmuState::POST_BOOT:
+            switch (event) {
+                case PmuEvent::CTS_RECEIVED:
+                    // RP2040 is ready - transition to WAKE_ACTIVE
+                    return PmuState::WAKE_ACTIVE;
+                case PmuEvent::WAKE_TIMEOUT:
+                    // Grace period expired without CTS - go to sleep
+                    return PmuState::SLEEPING;
                 case PmuEvent::ERROR_OCCURRED:
                     return PmuState::ERROR;
                 default:
@@ -100,11 +115,39 @@ void PmuStateMachine::setWakeType(WakeType type, const PMU::ScheduleEntry *entry
     }
 }
 
+void PmuStateMachine::extendWakeTimeout(uint16_t seconds)
+{
+    // Only effective when awake (POST_BOOT, AWAITING_CTS, or WAKE_ACTIVE)
+    if (state_ != PmuState::POST_BOOT && state_ != PmuState::AWAITING_CTS &&
+        state_ != PmuState::WAKE_ACTIVE) {
+        return;
+    }
+
+    // Reset the start time to now
+    context_.startTime = getTick_();
+
+    // Set new timeout (0 = use default, otherwise use specified seconds)
+    if (seconds > 0) {
+        context_.timeoutMs = static_cast<uint32_t>(seconds) * 1000;
+    } else {
+        context_.timeoutMs = PERIODIC_WAKE_TIMEOUT_MS;
+    }
+}
+
 void PmuStateMachine::tick()
 {
     uint32_t now = getTick_();
 
     switch (state_) {
+        case PmuState::POST_BOOT: {
+            // Check boot grace period timeout
+            uint32_t elapsed = now - context_.startTime;
+            if (elapsed >= BOOT_GRACE_PERIOD_MS) {
+                dispatch(PmuEvent::WAKE_TIMEOUT);
+            }
+            break;
+        }
+
         case PmuState::AWAITING_CTS: {
             // Check CTS timeout
             uint32_t ctsElapsed = now - context_.ctsWaitStartTime;
@@ -140,7 +183,7 @@ void PmuStateMachine::tick()
 // State Entry Actions
 // =============================================================================
 
-void PmuStateMachine::onEnterState(PmuState newState, PmuEvent /* event */)
+void PmuStateMachine::onEnterState(PmuState newState, PmuEvent event)
 {
     uint32_t now = getTick_();
 
@@ -148,6 +191,13 @@ void PmuStateMachine::onEnterState(PmuState newState, PmuEvent /* event */)
         case PmuState::SLEEPING:
             // Reset context when entering sleep
             context_.reset();
+            break;
+
+        case PmuState::POST_BOOT:
+            // Set up boot grace period timing
+            context_.startTime = now;
+            context_.type = WakeType::PERIODIC;
+            context_.timeoutMs = BOOT_GRACE_PERIOD_MS;
             break;
 
         case PmuState::AWAITING_CTS:
@@ -158,8 +208,13 @@ void PmuStateMachine::onEnterState(PmuState newState, PmuEvent /* event */)
             break;
 
         case PmuState::WAKE_ACTIVE:
-            // Keep existing context, just note we're now active
-            // CTS timeout or received - notification should be sent now
+            // Coming from BOOTING with early CTS - set up context
+            if (event == PmuEvent::CTS_RECEIVED && context_.startTime == 0) {
+                context_.startTime = now;
+                context_.type = WakeType::PERIODIC;
+                context_.timeoutMs = PERIODIC_WAKE_TIMEOUT_MS;
+            }
+            // For transitions from POST_BOOT or AWAITING_CTS, context is already set
             break;
 
         case PmuState::BOOTING:
@@ -177,6 +232,7 @@ bool PmuStateMachine::shouldPowerRp2040() const
 {
     switch (state_) {
         case PmuState::BOOTING:
+        case PmuState::POST_BOOT:
         case PmuState::AWAITING_CTS:
         case PmuState::WAKE_ACTIVE:
             return true;
@@ -201,6 +257,8 @@ const char *PmuStateMachine::stateName(PmuState state)
     switch (state) {
         case PmuState::BOOTING:
             return "BOOTING";
+        case PmuState::POST_BOOT:
+            return "POST_BOOT";
         case PmuState::SLEEPING:
             return "SLEEPING";
         case PmuState::AWAITING_CTS:
