@@ -74,9 +74,11 @@ private:
     bool initialized_;
     Logger logger_;
 
-    // Page write buffer: accumulate records before writing a full page
-    LogRecord page_buffer_[2];  // 256 bytes = 1 flash page
-    uint8_t page_buffer_count_;
+    // RAM buffer: accumulate records and flush to flash only before sleep
+    // 64 records = 8KB, enough for a typical wake cycle
+    static constexpr uint8_t RAM_BUFFER_SIZE = 64;
+    LogRecord ram_buffer_[RAM_BUFFER_SIZE];
+    uint8_t ram_buffer_count_;
 
     // Re-entrancy guard to prevent recursive flash writes during error logging
     bool flushing_;

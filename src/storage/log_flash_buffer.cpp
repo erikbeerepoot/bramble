@@ -6,11 +6,11 @@
 #include "sensor_flash_buffer.h"  // For CRC16
 
 LogFlashBuffer::LogFlashBuffer(ExternalFlash &flash)
-    : flash_(flash), initialized_(false), logger_("LogFlash"), page_buffer_count_(0),
+    : flash_(flash), initialized_(false), logger_("LogFlash"), ram_buffer_count_(0),
       flushing_(false), last_erased_sector_(UINT32_MAX)
 {
     memset(&metadata_, 0, sizeof(metadata_));
-    memset(page_buffer_, 0, sizeof(page_buffer_));
+    memset(ram_buffer_, 0, sizeof(ram_buffer_));
 }
 
 bool LogFlashBuffer::init()
@@ -43,7 +43,12 @@ bool LogFlashBuffer::writeLog(uint8_t level, const char *module, const char *mes
     if (!initialized_)
         return false;
 
-    LogRecord &record = page_buffer_[page_buffer_count_];
+    // If buffer is full, drop the log (will be flushed before sleep)
+    if (ram_buffer_count_ >= RAM_BUFFER_SIZE) {
+        return false;
+    }
+
+    LogRecord &record = ram_buffer_[ram_buffer_count_];
     memset(&record, 0, sizeof(LogRecord));
 
     record.timestamp = timestamp;
@@ -56,19 +61,15 @@ bool LogFlashBuffer::writeLog(uint8_t level, const char *module, const char *mes
     record.crc16 = CRC16::calculate(reinterpret_cast<const uint8_t *>(&record),
                                     sizeof(LogRecord) - sizeof(record.crc16));
 
-    page_buffer_count_++;
+    ram_buffer_count_++;
 
-    // Flush when we have a full page (2 records = 256 bytes)
-    if (page_buffer_count_ >= 2) {
-        return flushPageBuffer();
-    }
-
+    // Don't auto-flush - only flush on explicit flush() call before sleep
     return true;
 }
 
 bool LogFlashBuffer::flushPageBuffer()
 {
-    if (page_buffer_count_ == 0)
+    if (ram_buffer_count_ == 0)
         return true;
 
     // Prevent recursion during error logging
@@ -77,40 +78,50 @@ bool LogFlashBuffer::flushPageBuffer()
     }
     flushing_ = true;
 
-    // If we only have 1 record, pad the second slot with 0xFF (erased state)
-    if (page_buffer_count_ == 1) {
-        memset(&page_buffer_[1], 0xFF, sizeof(LogRecord));
+    // Write records in pages (2 records = 256 bytes = 1 flash page)
+    uint8_t records_written = 0;
+    while (records_written < ram_buffer_count_) {
+        // Calculate how many records to write in this page (max 2)
+        uint8_t records_in_page = ram_buffer_count_ - records_written;
+        if (records_in_page > 2) {
+            records_in_page = 2;
+        }
+
+        uint32_t address = getRecordAddress(metadata_.write_index);
+
+        // Ensure the target sector is erased
+        if (!ensureSectorErased(address)) {
+            flushing_ = false;
+            return false;
+        }
+
+        // Also check if the page spans into the next sector
+        uint32_t page_size = records_in_page * sizeof(LogRecord);
+        uint32_t page_end = address + page_size - 1;
+        if (!ensureSectorErased(page_end)) {
+            flushing_ = false;
+            return false;
+        }
+
+        // Prepare page buffer (pad with 0xFF if only 1 record)
+        uint8_t page_data[256];
+        memset(page_data, 0xFF, sizeof(page_data));
+        memcpy(page_data, &ram_buffer_[records_written], records_in_page * sizeof(LogRecord));
+
+        // Write the full page (256 bytes)
+        ExternalFlashResult result = flash_.write(address, page_data, 256);
+        if (result != ExternalFlashResult::Success) {
+            flushing_ = false;
+            return false;
+        }
+
+        // Advance write index
+        metadata_.write_index = (metadata_.write_index + records_in_page) % MAX_RECORDS;
+        metadata_.total_records += records_in_page;
+        records_written += records_in_page;
     }
 
-    uint32_t address = getRecordAddress(metadata_.write_index);
-
-    // Ensure the target sector is erased
-    if (!ensureSectorErased(address)) {
-        flushing_ = false;
-        return false;
-    }
-
-    // Also check if the page spans into the next sector
-    uint32_t page_end = address + sizeof(page_buffer_) - 1;
-    if (!ensureSectorErased(page_end)) {
-        flushing_ = false;
-        return false;
-    }
-
-    // Write the full page (256 bytes)
-    ExternalFlashResult result = flash_.write(
-        address, reinterpret_cast<const uint8_t *>(page_buffer_), sizeof(page_buffer_));
-    if (result != ExternalFlashResult::Success) {
-        logger_.error("Log write failed at 0x%08X", address);
-        flushing_ = false;
-        return false;
-    }
-
-    // Advance write index by the number of actual records written
-    metadata_.write_index = (metadata_.write_index + page_buffer_count_) % MAX_RECORDS;
-    metadata_.total_records += page_buffer_count_;
-    page_buffer_count_ = 0;
-
+    ram_buffer_count_ = 0;
     flushing_ = false;
     return true;
 }
@@ -190,7 +201,7 @@ bool LogFlashBuffer::flush()
     if (!initialized_)
         return false;
     // Flush any buffered records
-    if (page_buffer_count_ > 0) {
+    if (ram_buffer_count_ > 0) {
         if (!flushPageBuffer())
             return false;
     }
@@ -207,7 +218,7 @@ bool LogFlashBuffer::reset()
     if (!saveMetadata())
         return false;
 
-    page_buffer_count_ = 0;
+    ram_buffer_count_ = 0;
     last_erased_sector_ = UINT32_MAX;
     initialized_ = true;
     return true;
