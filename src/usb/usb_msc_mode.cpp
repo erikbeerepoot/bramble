@@ -74,9 +74,8 @@ static void pmu_send_message(uint8_t command, const uint8_t *data, uint8_t data_
  */
 static void pmu_send_keep_awake(uint16_t seconds)
 {
-    uint8_t data[2] = {
-        static_cast<uint8_t>(seconds & 0xFF),
-        static_cast<uint8_t>((seconds >> 8) & 0xFF)};
+    uint8_t data[2] = {static_cast<uint8_t>(seconds & 0xFF),
+                       static_cast<uint8_t>((seconds >> 8) & 0xFF)};
     pmu_send_message(PMU_CMD_KEEP_AWAKE, data, 2);
 }
 
