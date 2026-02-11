@@ -29,7 +29,7 @@ static repeating_timer_t usb_timer;
  * @brief Write characters to USB CDC
  *
  * Blocks until all characters are written or timeout expires.
- * If USB is not connected, returns immediately.
+ * If USB CDC is not connected, returns immediately to avoid blocking.
  */
 static void usb_out_chars(const char *buf, int length)
 {
@@ -38,6 +38,13 @@ static void usb_out_chars(const char *buf, int length)
         if (owner == get_core_num())
             return;  // Avoid recursive deadlock
         mutex_enter_blocking(&usb_mutex);
+    }
+
+    // Skip entirely if CDC is not connected - avoids blocking when using UART only
+    // Check inside mutex to avoid race with tud_task()
+    if (!tud_cdc_connected()) {
+        mutex_exit(&usb_mutex);
+        return;
     }
 
     uint64_t end = time_us_64() + STDOUT_TIMEOUT_US;
@@ -148,5 +155,15 @@ bool usb_stdio_init(void)
 
 bool usb_stdio_connected(void)
 {
-    return tud_cdc_connected();
+    // Use non-blocking mutex check to avoid blocking main loop
+    // If mutex is held (USB operation in progress), return false as a safe default
+    uint32_t owner;
+    if (!mutex_try_enter(&usb_mutex, &owner)) {
+        return false;
+    }
+    // Use tud_ready() instead of tud_cdc_connected() - the latter requires DTR
+    // which some terminals don't assert. tud_ready() just checks if USB is enumerated.
+    bool connected = tud_ready();
+    mutex_exit(&usb_mutex);
+    return connected;
 }
