@@ -54,7 +54,11 @@ void SensorStateMachine::reportRegistrationTimeout()
         return;
     }
     logger.warn("Registration timed out - will retry on next wake");
-    transitionTo(SensorState::READY_FOR_SLEEP);
+    if (usb_connected_) {
+        transitionTo(SensorState::USB_CONNECTED);
+    } else {
+        transitionTo(SensorState::READY_FOR_SLEEP);
+    }
 }
 
 void SensorStateMachine::reportRtcSynced()
@@ -125,6 +129,9 @@ void SensorStateMachine::reportCheckComplete(bool needsTransmit)
     } else if (hasExpectedResponses()) {
         logger.debug("No transmission needed, listening for responses");
         transitionTo(SensorState::LISTENING);
+    } else if (usb_connected_) {
+        logger.debug("No transmission needed, USB connected - staying awake");
+        transitionTo(SensorState::USB_CONNECTED);
     } else {
         logger.debug("No transmission needed, no responses expected");
         transitionTo(SensorState::READY_FOR_SLEEP);
@@ -140,6 +147,9 @@ void SensorStateMachine::reportTransmitComplete()
     if (hasExpectedResponses()) {
         logger.debug("Transmission complete, listening for responses");
         transitionTo(SensorState::LISTENING);
+    } else if (usb_connected_) {
+        logger.debug("Transmission complete, USB connected - staying awake");
+        transitionTo(SensorState::USB_CONNECTED);
     } else {
         logger.debug("Transmission complete, no responses expected");
         transitionTo(SensorState::READY_FOR_SLEEP);
@@ -159,7 +169,40 @@ void SensorStateMachine::reportListenComplete()
         return;
     }
     logger.debug("Listen window complete");
-    transitionTo(SensorState::READY_FOR_SLEEP);
+    if (usb_connected_) {
+        transitionTo(SensorState::USB_CONNECTED);
+    } else {
+        transitionTo(SensorState::READY_FOR_SLEEP);
+    }
+}
+
+void SensorStateMachine::reportUsbConnected()
+{
+    if (usb_connected_) {
+        return;  // Already tracked
+    }
+    usb_connected_ = true;
+    logger.info("USB connected - staying awake");
+
+    // If already in a late-cycle state, transition to USB_CONNECTED
+    if (state_ == SensorState::LISTENING || state_ == SensorState::READY_FOR_SLEEP) {
+        transitionTo(SensorState::USB_CONNECTED);
+    }
+    // Otherwise, USB status will be checked when reaching end of cycle
+}
+
+void SensorStateMachine::reportUsbDisconnected()
+{
+    if (!usb_connected_) {
+        return;  // Already tracked
+    }
+    usb_connected_ = false;
+    logger.info("USB disconnected");
+
+    // If currently in USB_CONNECTED state, go to sleep
+    if (state_ == SensorState::USB_CONNECTED) {
+        transitionTo(SensorState::READY_FOR_SLEEP);
+    }
 }
 
 bool SensorStateMachine::reportWakeFromSleep()
@@ -281,6 +324,8 @@ const char *SensorStateMachine::stateName(SensorState state)
             return "LISTENING";
         case SensorState::READY_FOR_SLEEP:
             return "READY_FOR_SLEEP";
+        case SensorState::USB_CONNECTED:
+            return "USB_CONNECTED";
         case SensorState::DEGRADED_NO_SENSOR:
             return "DEGRADED_NO_SENSOR";
         case SensorState::ERROR:
