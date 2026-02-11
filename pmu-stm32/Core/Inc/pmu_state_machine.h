@@ -27,25 +27,28 @@ enum class PmuEvent : uint8_t {
  * [Power On]
  *     |
  *     v
- *  BOOTING ---> BOOT_COMPLETE ---> SLEEPING
+ *  BOOTING ---> BOOT_COMPLETE ---> POST_BOOT (10s grace period)
  *     |                               |
- *     v (error)                       |
- *   ERROR <--------------------+      |
- *                              |      |
- *                    RTC_WAKEUP       |
- *                              |      |
- *                              v      v
- *  SLEEPING <-------------- AWAITING_CTS
- *     ^                        |
- *     |            CTS_RECEIVED/CTS_TIMEOUT
- *     |                        |
- *     |                        v
- *     +---------------- WAKE_ACTIVE
- *         READY_FOR_SLEEP
- *         or WAKE_TIMEOUT
+ *     | CTS_RECEIVED                  | CTS_RECEIVED --> WAKE_ACTIVE
+ *     v                               | TIMEOUT --> SLEEPING
+ *  WAKE_ACTIVE                        |
+ *     ^                               v
+ *     |                           SLEEPING
+ *     |                               |
+ *     |                    RTC_WAKEUP |
+ *     |                               v
+ *     +-------CTS_RECEIVED---- AWAITING_CTS
+ *     |                               |
+ *     |                    CTS_TIMEOUT|
+ *     +-------------------------------+
+ *     |
+ *     +-------> SLEEPING (READY_FOR_SLEEP or WAKE_TIMEOUT)
+ *
+ *   ERROR <-- any state on ERROR_OCCURRED
  */
 enum class PmuState : uint8_t {
     BOOTING,       ///< Boot animation in progress
+    POST_BOOT,     ///< Grace period after boot, waiting for RP2040 to initialize
     SLEEPING,      ///< Low power STOP mode (or about to enter)
     AWAITING_CTS,  ///< DC/DC on, waiting for RP2040 CTS signal
     WAKE_ACTIVE,   ///< Wake notification sent, RP2040 working
@@ -123,6 +126,8 @@ public:
     static constexpr uint32_t SCHEDULED_GRACE_PERIOD_MS = 30000;  // 30 seconds
     // Default timeout for periodic wakes
     static constexpr uint32_t PERIODIC_WAKE_TIMEOUT_MS = 120000;  // 2 minutes
+    // Boot grace period - stay awake after boot to allow RP2040 to initialize
+    static constexpr uint32_t BOOT_GRACE_PERIOD_MS = 10000;  // 10 seconds
 
     /**
      * @brief Constructor
@@ -196,17 +201,28 @@ public:
     const WakeContext &wakeContext() const { return context_; }
 
     /**
-     * @brief Check if in an active wake state (AWAITING_CTS or WAKE_ACTIVE)
+     * @brief Check if in an active wake state (POST_BOOT, AWAITING_CTS, or WAKE_ACTIVE)
      */
     bool isAwake() const
     {
-        return state_ == PmuState::AWAITING_CTS || state_ == PmuState::WAKE_ACTIVE;
+        return state_ == PmuState::POST_BOOT || state_ == PmuState::AWAITING_CTS ||
+               state_ == PmuState::WAKE_ACTIVE;
     }
 
     /**
      * @brief Check if in error state
      */
     bool isError() const { return state_ == PmuState::ERROR; }
+
+    /**
+     * @brief Extend the wake timeout by the specified number of seconds
+     *
+     * Resets the wake timer and sets a new timeout. Only effective in
+     * AWAITING_CTS or WAKE_ACTIVE states.
+     *
+     * @param seconds Additional seconds to stay awake (0 = use default periodic timeout)
+     */
+    void extendWakeTimeout(uint16_t seconds);
 
     /**
      * @brief Get human-readable state name
