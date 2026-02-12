@@ -50,11 +50,14 @@ class SensorReading:
 
     def to_chart_dict(self) -> dict:
         """Convert to compact dictionary for chart display."""
-        return {
+        result = {
             'timestamp': self.timestamp,
             'temperature_celsius': self.temperature_celsius,
             'humidity_percent': self.humidity_percent,
         }
+        if self.flags:
+            result['flags'] = self.flags
+        return result
 
 
 class WriteBuffer:
@@ -533,7 +536,8 @@ class SensorDatabase:
                     (timestamp / ?) * ? as bucket_timestamp,
                     AVG(temperature_centidegrees) as avg_temp,
                     AVG(humidity_centipercent) as avg_hum,
-                    COUNT(*) as sample_count
+                    COUNT(*) as sample_count,
+                    BIT_OR(flags) as flags
                 FROM sensor_readings
                 WHERE device_id = ?
                   AND timestamp >= ?
@@ -548,6 +552,7 @@ class SensorDatabase:
                     'temperature_celsius': round(row[1] / 100.0, 2) if row[1] else None,
                     'humidity_percent': round(row[2] / 100.0, 2) if row[2] else None,
                     'sample_count': row[3],
+                    **(({'flags': row[4]}) if row[4] else {}),
                 }
                 for row in result.fetchall()
             ]
