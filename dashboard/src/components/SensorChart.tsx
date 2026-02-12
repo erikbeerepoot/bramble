@@ -1,12 +1,23 @@
 import Plot from 'react-plotly.js';
 import type { SensorReading } from '../types';
+import { parseErrorFlags } from '../types';
 
 // Maximum gap (in seconds) between points before breaking the line
 const GAP_THRESHOLD_SECONDS = 10 * 60; // 10 minutes
 
+// Minimum visible width for single-point error regions (seconds)
+const MIN_REGION_WIDTH_SECONDS = 120;
+
 interface DataSegment {
   timestamps: Date[];
   values: number[];
+}
+
+interface ErrorRegion {
+  startTimestamp: number;
+  endTimestamp: number;
+  flags: number;
+  severity: 'warning' | 'error';
 }
 
 /**
@@ -50,31 +61,120 @@ function splitIntoSegments(
   return segments;
 }
 
+/**
+ * Find contiguous regions where error flags are set.
+ * Breaks regions at data gaps (same threshold as chart segments).
+ */
+function buildErrorFlagRegions(sortedReadings: SensorReading[]): ErrorRegion[] {
+  const regions: ErrorRegion[] = [];
+  let regionStart: number | null = null;
+  let regionFlags = 0;
+  let prevTimestamp = 0;
+
+  function closeRegion() {
+    if (regionStart === null) return;
+
+    const errors = parseErrorFlags(regionFlags);
+    const severity = errors.some((e) => e.severity === 'error') ? 'error' : 'warning';
+
+    // Widen single-point regions so they're visible
+    let start = regionStart;
+    let end = prevTimestamp;
+    if (start === end) {
+      start -= MIN_REGION_WIDTH_SECONDS;
+      end += MIN_REGION_WIDTH_SECONDS;
+    }
+
+    regions.push({ startTimestamp: start, endTimestamp: end, flags: regionFlags, severity });
+    regionStart = null;
+    regionFlags = 0;
+  }
+
+  for (let i = 0; i < sortedReadings.length; i++) {
+    const reading = sortedReadings[i];
+    const flags = reading.flags ?? 0;
+
+    // Break region at data gaps
+    if (i > 0 && regionStart !== null) {
+      const gap = reading.timestamp - sortedReadings[i - 1].timestamp;
+      if (gap > GAP_THRESHOLD_SECONDS) {
+        closeRegion();
+      }
+    }
+
+    if (flags !== 0) {
+      if (regionStart === null) {
+        regionStart = reading.timestamp;
+      }
+      regionFlags |= flags;
+      prevTimestamp = reading.timestamp;
+    } else {
+      closeRegion();
+    }
+  }
+
+  closeRegion();
+  return regions;
+}
+
+/**
+ * Convert error regions to Plotly rect shapes for chart overlay.
+ */
+function errorRegionsToShapes(regions: ErrorRegion[]): Partial<Plotly.Shape>[] {
+  return regions.map((region) => ({
+    type: 'rect' as const,
+    xref: 'x' as const,
+    yref: 'paper' as const,
+    x0: new Date(region.startTimestamp * 1000),
+    x1: new Date(region.endTimestamp * 1000),
+    y0: 0,
+    y1: 1,
+    fillcolor: region.severity === 'error' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+    line: { width: 0 },
+    layer: 'below' as const,
+  }));
+}
+
 interface SensorChartProps {
   readings: SensorReading[];
   dataKey: 'temperature_celsius' | 'humidity_percent';
   title: string;
   yAxisLabel: string;
   color: string;
-  startTime?: number;  // Unix timestamp
-  endTime?: number;    // Unix timestamp
+  startTime?: number; // Unix timestamp
+  endTime?: number; // Unix timestamp
 }
 
-function SensorChart({ readings, dataKey, title, yAxisLabel, color, startTime, endTime }: SensorChartProps) {
+function SensorChart({
+  readings,
+  dataKey,
+  title,
+  yAxisLabel,
+  color,
+  startTime,
+  endTime,
+}: SensorChartProps) {
   // Sort readings by timestamp (oldest first for proper line chart)
   const sortedReadings = [...readings].sort((a, b) => a.timestamp - b.timestamp);
 
   // Split into segments at large gaps so fills don't span across gaps
   const segments = splitIntoSegments(sortedReadings, dataKey, GAP_THRESHOLD_SECONDS);
 
+  // Build error flag overlay regions
+  const errorRegions = buildErrorFlagRegions(sortedReadings);
+  const errorShapes = errorRegionsToShapes(errorRegions);
+
   // Calculate statistics from original readings
-  const validValues = sortedReadings.map(r => r[dataKey]).filter(v => v !== null && v !== undefined) as number[];
+  const validValues = sortedReadings
+    .map((r) => r[dataKey])
+    .filter((v) => v !== null && v !== undefined) as number[];
   const min = validValues.length > 0 ? Math.min(...validValues) : 0;
   const max = validValues.length > 0 ? Math.max(...validValues) : 0;
-  const avg = validValues.length > 0 ? validValues.reduce((a, b) => a + b, 0) / validValues.length : 0;
+  const avg =
+    validValues.length > 0 ? validValues.reduce((a, b) => a + b, 0) / validValues.length : 0;
 
   // Calculate y-axis range with 10% padding
-  const yPadding = (max - min) * 0.1 || 1;  // fallback to 1 if min===max
+  const yPadding = (max - min) * 0.1 || 1; // fallback to 1 if min===max
   const yMin = min - yPadding;
   const yMax = max + yPadding;
 
@@ -111,9 +211,10 @@ function SensorChart({ readings, dataKey, title, yAxisLabel, color, startTime, e
             type: 'date',
             tickformat: '%H:%M\n%b %d',
             gridcolor: '#f3f4f6',
-            range: startTime && endTime
-              ? [new Date(startTime * 1000), new Date(endTime * 1000)]
-              : undefined,
+            range:
+              startTime && endTime
+                ? [new Date(startTime * 1000), new Date(endTime * 1000)]
+                : undefined,
           },
           yaxis: {
             title: { text: yAxisLabel },
@@ -124,20 +225,29 @@ function SensorChart({ readings, dataKey, title, yAxisLabel, color, startTime, e
           plot_bgcolor: 'transparent',
           hovermode: 'x unified',
           showlegend: false,
-          shapes: validValues.length > 0 ? [
-            {
-              type: 'line',
-              x0: startTime ? new Date(startTime * 1000) : new Date(sortedReadings[0].timestamp * 1000),
-              x1: endTime ? new Date(endTime * 1000) : new Date(sortedReadings[sortedReadings.length - 1].timestamp * 1000),
-              y0: avg,
-              y1: avg,
-              line: {
-                color: color,
-                width: 1.5,
-                dash: 'dash',
-              },
-            },
-          ] : [],
+          shapes: [
+            ...errorShapes,
+            ...(validValues.length > 0
+              ? [
+                  {
+                    type: 'line' as const,
+                    x0: startTime
+                      ? new Date(startTime * 1000)
+                      : new Date(sortedReadings[0].timestamp * 1000),
+                    x1: endTime
+                      ? new Date(endTime * 1000)
+                      : new Date(sortedReadings[sortedReadings.length - 1].timestamp * 1000),
+                    y0: avg,
+                    y1: avg,
+                    line: {
+                      color: color,
+                      width: 1.5,
+                      dash: 'dash' as const,
+                    },
+                  },
+                ]
+              : []),
+          ],
         }}
         config={{
           responsive: true,
