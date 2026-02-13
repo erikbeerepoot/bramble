@@ -245,17 +245,32 @@ def delete_node(device_id: int):
     """
     try:
         db = get_database()
+        serial = get_serial()
 
         # Look up the node's address for hub command
+        # First try the database
         node_info = db.get_node_by_device_id(device_id)
         address = node_info['address'] if node_info else None
+
+        # If not in database, try to find address from hub's LIST_NODES
+        if address is None:
+            try:
+                responses = serial.send_command('LIST_NODES')
+                for line in responses[1:]:
+                    if line.startswith('NODE '):
+                        parts = line.split()
+                        if len(parts) >= 3 and int(parts[2]) == device_id:
+                            address = int(parts[1])
+                            logger.info(f"Found node {device_id} address {address} from hub")
+                            break
+            except Exception as e:
+                logger.warning(f"Could not query hub for node address: {e}")
 
         # Try to tell the hub to delete the node from its registry
         hub_deleted = False
         hub_error = None
         if address:
             try:
-                serial = get_serial()
                 responses = serial.send_command(f'DELETE_NODE {address}', timeout=2.0)
                 if responses:
                     if responses[0].startswith('DELETED_NODE'):
