@@ -13,6 +13,7 @@
 #include "lora/hub_router.h"
 #include "lora/network_stats.h"
 #include "lora/sx1276.h"
+#include "storage/sensor_data_record.h"
 
 static Logger logger("HubMode");
 
@@ -714,9 +715,12 @@ void HubMode::handleSensorDataBatch(uint16_t source_addr, const SensorDataBatchP
     for (uint8_t i = 0; i < payload->record_count; i++) {
         const BatchSensorRecord &record = payload->records[i];
 
+        // Strip storage-internal flags (VALID/TRANSMITTED) before forwarding to API
+        uint8_t error_flags = record.flags & ~(RECORD_FLAG_VALID | RECORD_FLAG_TRANSMITTED);
+
         // Format: SENSOR_RECORD <node_addr> <device_id> <timestamp> <temp> <humidity> <flags>
         snprintf(response, sizeof(response), "SENSOR_RECORD %u %llu %lu %d %u %u\n", source_addr,
-                 device_id, record.timestamp, record.temperature, record.humidity, record.flags);
+                 device_id, record.timestamp, record.temperature, record.humidity, error_flags);
         uart_puts(API_UART_ID, response);
     }
 
