@@ -1,9 +1,25 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import type { Node, NodeStatistics, SensorReading, TimeRange, NodeMetadata, CustomTimeRange, Zone } from '../types';
-import { TIME_RANGES, parseErrorFlags, formatUptime, getSignalQuality, getBatteryStatus, getHealthStatus } from '../types';
+import type {
+  Node,
+  NodeStatistics,
+  SensorReading,
+  TimeRange,
+  NodeMetadata,
+  CustomTimeRange,
+  Zone,
+} from '../types';
+import {
+  TIME_RANGES,
+  parseErrorFlags,
+  formatUptime,
+  getSignalQuality,
+  getBatteryStatus,
+  getHealthStatus,
+} from '../types';
 import { getNodeSensorData, getNodeStatistics, deleteNode, rebootNode } from '../api/client';
 import NodeNameEditor from './NodeNameEditor';
 import SensorChart from './SensorChart';
+import ErrorEventsTable from './ErrorEventsTable';
 import TimeRangeSelector from './TimeRangeSelector';
 import BatteryGauge from './BatteryGauge';
 import SignalStrength from './SignalStrength';
@@ -141,9 +157,13 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
     }
   };
 
-  const displayName = node.metadata?.name || `Node ${BigInt(node.device_id).toString(16).toUpperCase()}`;
-  const currentZone = zones.find(z => z.id === node.metadata?.zone_id);
-  const healthStatus = useMemo(() => getHealthStatus(node.status?.error_flags ?? null), [node.status?.error_flags]);
+  const displayName =
+    node.metadata?.name || `Node ${BigInt(node.device_id).toString(16).toUpperCase()}`;
+  const currentZone = zones.find((z) => z.id === node.metadata?.zone_id);
+  const healthStatus = useMemo(
+    () => getHealthStatus(node.status?.error_flags ?? null),
+    [node.status?.error_flags]
+  );
   const isHealthy = healthStatus === 'healthy';
   const [statusExpanded, setStatusExpanded] = useState(!isHealthy);
 
@@ -175,9 +195,11 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
             </span>
           )}
           <div className="flex items-center space-x-3 mt-1">
-            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-              node.online ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-            }`}>
+            <span
+              className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                node.online ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+              }`}
+            >
               {node.online ? 'Online' : 'Offline'}
             </span>
             <span className="text-sm text-gray-500">{node.type}</span>
@@ -202,69 +224,108 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
                 <div className="border-t pt-3">
                   <div className="h-3 w-20 bg-gray-200 rounded mb-2" />
                   <div className="grid grid-cols-3 gap-2">
-                    <div><div className="h-3 w-8 bg-gray-200 rounded mb-1" /><div className="h-4 w-12 bg-gray-200 rounded" /></div>
-                    <div><div className="h-3 w-8 bg-gray-200 rounded mb-1" /><div className="h-4 w-12 bg-gray-200 rounded" /></div>
-                    <div><div className="h-3 w-8 bg-gray-200 rounded mb-1" /><div className="h-4 w-12 bg-gray-200 rounded" /></div>
+                    <div>
+                      <div className="h-3 w-8 bg-gray-200 rounded mb-1" />
+                      <div className="h-4 w-12 bg-gray-200 rounded" />
+                    </div>
+                    <div>
+                      <div className="h-3 w-8 bg-gray-200 rounded mb-1" />
+                      <div className="h-4 w-12 bg-gray-200 rounded" />
+                    </div>
+                    <div>
+                      <div className="h-3 w-8 bg-gray-200 rounded mb-1" />
+                      <div className="h-4 w-12 bg-gray-200 rounded" />
+                    </div>
                   </div>
                 </div>
                 <div className="border-t pt-3">
                   <div className="h-3 w-16 bg-gray-200 rounded mb-2" />
                   <div className="grid grid-cols-3 gap-2">
-                    <div><div className="h-3 w-8 bg-gray-200 rounded mb-1" /><div className="h-4 w-12 bg-gray-200 rounded" /></div>
-                    <div><div className="h-3 w-8 bg-gray-200 rounded mb-1" /><div className="h-4 w-12 bg-gray-200 rounded" /></div>
-                    <div><div className="h-3 w-8 bg-gray-200 rounded mb-1" /><div className="h-4 w-12 bg-gray-200 rounded" /></div>
+                    <div>
+                      <div className="h-3 w-8 bg-gray-200 rounded mb-1" />
+                      <div className="h-4 w-12 bg-gray-200 rounded" />
+                    </div>
+                    <div>
+                      <div className="h-3 w-8 bg-gray-200 rounded mb-1" />
+                      <div className="h-4 w-12 bg-gray-200 rounded" />
+                    </div>
+                    <div>
+                      <div className="h-3 w-8 bg-gray-200 rounded mb-1" />
+                      <div className="h-4 w-12 bg-gray-200 rounded" />
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
-          ) : statistics && (
-            <div className="card">
-              <h3 className="text-lg font-medium text-gray-900 mb-4">Statistics</h3>
-              <dl className="space-y-3">
-                <div>
-                  <dt className="text-sm text-gray-500">Total Readings</dt>
-                  <dd className="text-xl font-semibold text-gray-900">{statistics.total_readings.toLocaleString()}</dd>
-                </div>
-                <div className="border-t pt-3">
-                  <dt className="text-sm text-gray-500 mb-2">Temperature</dt>
-                  <div className="grid grid-cols-3 gap-2 text-sm">
-                    <div>
-                      <div className="text-gray-400">Min</div>
-                      <div className="font-medium">{statistics.temperature.min_celsius?.toFixed(1) ?? '-'}C</div>
-                    </div>
-                    <div>
-                      <div className="text-gray-400">Avg</div>
-                      <div className="font-medium">{statistics.temperature.avg_celsius?.toFixed(1) ?? '-'}C</div>
-                    </div>
-                    <div>
-                      <div className="text-gray-400">Max</div>
-                      <div className="font-medium">{statistics.temperature.max_celsius?.toFixed(1) ?? '-'}C</div>
+          ) : (
+            statistics && (
+              <div className="card">
+                <h3 className="text-lg font-medium text-gray-900 mb-4">Statistics</h3>
+                <dl className="space-y-3">
+                  <div>
+                    <dt className="text-sm text-gray-500">Total Readings</dt>
+                    <dd className="text-xl font-semibold text-gray-900">
+                      {statistics.total_readings.toLocaleString()}
+                    </dd>
+                  </div>
+                  <div className="border-t pt-3">
+                    <dt className="text-sm text-gray-500 mb-2">Temperature</dt>
+                    <div className="grid grid-cols-3 gap-2 text-sm">
+                      <div>
+                        <div className="text-gray-400">Min</div>
+                        <div className="font-medium">
+                          {statistics.temperature.min_celsius?.toFixed(1) ?? '-'}C
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-gray-400">Avg</div>
+                        <div className="font-medium">
+                          {statistics.temperature.avg_celsius?.toFixed(1) ?? '-'}C
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-gray-400">Max</div>
+                        <div className="font-medium">
+                          {statistics.temperature.max_celsius?.toFixed(1) ?? '-'}C
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </div>
-                <div className="border-t pt-3">
-                  <dt className="text-sm text-gray-500 mb-2">Humidity</dt>
-                  <div className="grid grid-cols-3 gap-2 text-sm">
-                    <div>
-                      <div className="text-gray-400">Min</div>
-                      <div className="font-medium">{statistics.humidity.min_percent?.toFixed(1) ?? '-'}%</div>
-                    </div>
-                    <div>
-                      <div className="text-gray-400">Avg</div>
-                      <div className="font-medium">{statistics.humidity.avg_percent?.toFixed(1) ?? '-'}%</div>
-                    </div>
-                    <div>
-                      <div className="text-gray-400">Max</div>
-                      <div className="font-medium">{statistics.humidity.max_percent?.toFixed(1) ?? '-'}%</div>
+                  <div className="border-t pt-3">
+                    <dt className="text-sm text-gray-500 mb-2">Humidity</dt>
+                    <div className="grid grid-cols-3 gap-2 text-sm">
+                      <div>
+                        <div className="text-gray-400">Min</div>
+                        <div className="font-medium">
+                          {statistics.humidity.min_percent?.toFixed(1) ?? '-'}%
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-gray-400">Avg</div>
+                        <div className="font-medium">
+                          {statistics.humidity.avg_percent?.toFixed(1) ?? '-'}%
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-gray-400">Max</div>
+                        <div className="font-medium">
+                          {statistics.humidity.max_percent?.toFixed(1) ?? '-'}%
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </dl>
-            </div>
+                </dl>
+              </div>
+            )
           )}
 
           {/* 2. Node Info */}
-          <NodeNameEditor node={node} zones={zones} onUpdate={handleMetadataUpdate} onZoneCreated={onZoneCreated} />
+          <NodeNameEditor
+            node={node}
+            zones={zones}
+            onUpdate={handleMetadataUpdate}
+            onZoneCreated={onZoneCreated}
+          />
 
           {/* 3. Node Status Panel - collapsible */}
           {node.status && (
@@ -275,7 +336,11 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
               >
                 <div className="flex items-center space-x-2">
                   <h3 className="text-lg font-medium text-gray-900">Node Status</h3>
-                  <HealthStatus errorFlags={node.status.error_flags} size="sm" showTooltip={false} />
+                  <HealthStatus
+                    errorFlags={node.status.error_flags}
+                    size="sm"
+                    showTooltip={false}
+                  />
                 </div>
                 <svg
                   className={`w-5 h-5 text-gray-400 transition-transform ${statusExpanded ? 'rotate-180' : ''}`}
@@ -283,7 +348,12 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
                   stroke="currentColor"
                   viewBox="0 0 24 24"
                 >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M19 9l-7 7-7-7"
+                  />
                 </svg>
               </button>
 
@@ -324,14 +394,15 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
                   </div>
 
                   {/* Pending Records */}
-                  {node.status.pending_records !== null && node.status.pending_records !== undefined && (
-                    <div>
-                      <dt className="text-sm text-gray-500 mb-1">Unsent Records</dt>
-                      <dd className="flex items-center space-x-2">
-                        <BacklogStatus pendingRecords={node.status.pending_records} size="md" />
-                      </dd>
-                    </div>
-                  )}
+                  {node.status.pending_records !== null &&
+                    node.status.pending_records !== undefined && (
+                      <div>
+                        <dt className="text-sm text-gray-500 mb-1">Unsent Records</dt>
+                        <dd className="flex items-center space-x-2">
+                          <BacklogStatus pendingRecords={node.status.pending_records} size="md" />
+                        </dd>
+                      </div>
+                    )}
 
                   {/* Active Issues */}
                   {node.status.error_flags !== null && node.status.error_flags !== 0 && (
@@ -378,7 +449,12 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
                 stroke="currentColor"
                 viewBox="0 0 24 24"
               >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M19 9l-7 7-7-7"
+                />
               </svg>
             </button>
 
@@ -467,6 +543,7 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
                   startTime={timeBounds?.start}
                   endTime={timeBounds?.end}
                 />
+                <ErrorEventsTable readings={readings} />
               </div>
             )}
           </div>
@@ -479,8 +556,8 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
           <div className="bg-white rounded-lg p-6 max-w-md mx-4 shadow-xl">
             <h3 className="text-lg font-medium text-gray-900 mb-2">Reboot Node?</h3>
             <p className="text-sm text-gray-500 mb-4">
-              This will queue a reboot command for <strong>{displayName}</strong>.
-              The node will restart on its next heartbeat.
+              This will queue a reboot command for <strong>{displayName}</strong>. The node will
+              restart on its next heartbeat.
             </p>
             <div className="flex space-x-3 justify-end">
               <button
@@ -507,8 +584,8 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
           <div className="bg-white rounded-lg p-6 max-w-md mx-4 shadow-xl">
             <h3 className="text-lg font-medium text-gray-900 mb-2">Delete Node?</h3>
             <p className="text-sm text-gray-500 mb-4">
-              This will permanently delete <strong>{displayName}</strong> and all its sensor data history.
-              This action cannot be undone.
+              This will permanently delete <strong>{displayName}</strong> and all its sensor data
+              history. This action cannot be undone.
             </p>
             <div className="flex space-x-3 justify-end">
               <button
