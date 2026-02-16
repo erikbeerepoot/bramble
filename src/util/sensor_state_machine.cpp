@@ -57,6 +57,16 @@ void SensorStateMachine::reportRegistrationTimeout()
     transitionTo(SensorState::READY_FOR_SLEEP);
 }
 
+void SensorStateMachine::reportSyncTimeout()
+{
+    if (state_ != SensorState::SYNCING_TIME) {
+        logger.warn("reportSyncTimeout() called in unexpected state: %s", stateName(state_));
+        return;
+    }
+    logger.warn("Time sync timed out - sleeping for retry");
+    transitionTo(SensorState::READY_FOR_SLEEP);
+}
+
 void SensorStateMachine::reportRtcSynced()
 {
     if (rtc_synced_) {
