@@ -254,16 +254,16 @@ if(NOT BUILD_TESTS)
         pico_set_program_name(${TARGET_NAME} "${TARGET_NAME}")
         pico_set_program_version(${TARGET_NAME} "${BRAMBLE_VERSION_STRING}")
 
-        # Disable pico_stdio_usb - UART-only debug output
-        pico_enable_stdio_usb(${TARGET_NAME} 0)
         pico_enable_stdio_rtt(${TARGET_NAME} 0)
 
-        # Configure stdio_uart per-target:
-        # - Hub: disabled (UART1 used for API communication with Raspberry Pi)
-        # - Other nodes: enabled (for debug probe UART output)
+        # Configure stdio per-target:
+        # - Hub: USB CDC for debug output (UART1 reserved for Raspberry Pi API)
+        # - Other nodes: UART for debug output (no USB)
         if(TARGET_NAME STREQUAL "bramble_hub")
+            pico_enable_stdio_usb(${TARGET_NAME} 1)
             pico_enable_stdio_uart(${TARGET_NAME} 0)
         else()
+            pico_enable_stdio_usb(${TARGET_NAME} 0)
             pico_enable_stdio_uart(${TARGET_NAME} 1)
         endif()
 
