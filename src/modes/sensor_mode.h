@@ -38,9 +38,11 @@ private:
 
     // Timeout task handles — cancelled when expected response arrives, fires if it doesn't
     uint16_t registration_timeout_id_ = 0;
+    uint16_t syncing_time_timeout_id_ = 0;
 
     // Timeout durations
     static constexpr uint32_t REGISTRATION_TIMEOUT_MS = 5000;  // Allow time for RELIABLE retries
+    static constexpr uint32_t SYNCING_TIME_TIMEOUT_MS = 5000;  // Class A receive window timeout
     static constexpr uint32_t LISTEN_WINDOW_MS = 500;
 
     // I2C pin configuration for CHT832X sensor
