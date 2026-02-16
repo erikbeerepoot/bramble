@@ -70,7 +70,32 @@ class SerialInterface:
             logger.info("Disconnected from hub")
 
     def _read_loop(self):
-        """Background thread to read lines from serial port."""
+        """Background thread to read lines from serial port with auto-reconnect."""
+        while self.running:
+            try:
+                self._read_until_disconnected()
+            except Exception as e:
+                logger.error(f"Read loop error: {e}")
+
+            if not self.running:
+                break
+
+            # Reconnect loop
+            logger.warning(f"Serial connection lost, will retry every 5s")
+            while self.running:
+                try:
+                    if self.serial and self.serial.is_open:
+                        self.serial.close()
+                    self.serial = serial.Serial(self.port, self.baud, timeout=Config.SERIAL_TIMEOUT)
+                    logger.info(f"Reconnected to hub on {self.port}")
+                    break
+                except serial.SerialException:
+                    time.sleep(5)
+
+        logger.info("Read loop exiting")
+
+    def _read_until_disconnected(self):
+        """Read from serial until connection is lost or stopped."""
         buffer = ""
 
         while self.running and self.serial and self.serial.is_open:
@@ -88,8 +113,11 @@ class SerialInterface:
                 else:
                     time.sleep(0.01)  # Avoid busy loop
 
+            except serial.SerialException as e:
+                logger.warning(f"Serial disconnected: {e}")
+                return
             except Exception as e:
-                logger.error(f"Error in read loop: {e}")
+                logger.error(f"Error reading serial: {e}")
                 time.sleep(0.1)
 
     def _handle_line(self, line: str):
