@@ -98,6 +98,32 @@ bool SensorFlashBuffer::writeRecord(const SensorDataRecord &record)
     // Calculate flash address
     uint32_t address = getRecordAddress(metadata_.write_index);
 
+    // If the target location isn't erased, the metadata is stale (e.g. PMU state
+    // was lost and flash metadata is behind). Skip forward to the next erased
+    // location to preserve existing data — the CRC check during read will
+    // validate all records in the range regardless.
+    if (!isLocationErased(address, sizeof(SensorDataRecord))) {
+        uint32_t original_index = metadata_.write_index;
+        uint32_t scanned = 0;
+
+        while (!isLocationErased(address, sizeof(SensorDataRecord)) &&
+               scanned < RECORDS_PER_SECTOR) {
+            metadata_.write_index = (metadata_.write_index + 1) % MAX_RECORDS;
+            address = getRecordAddress(metadata_.write_index);
+            scanned++;
+        }
+
+        if (scanned >= RECORDS_PER_SECTOR) {
+            logger_.error("No erased location found after scanning %lu records from index %lu",
+                          scanned, original_index);
+            healthy_ = false;
+            return false;
+        }
+
+        logger_.warn("Stale write_index: advanced %lu -> %lu (skipped %lu existing records)",
+                     original_index, metadata_.write_index, scanned);
+    }
+
     // Check if we need to erase the sector(s) this record will occupy
     // For MT25QL, we need to erase before writing (NOR flash can only flip 1s to 0s)
     //
@@ -142,18 +168,6 @@ bool SensorFlashBuffer::writeRecord(const SensorDataRecord &record)
         ExternalFlashResult result = flash_.eraseSector(end_sector_start);
         if (result != ExternalFlashResult::Success) {
             logger_.error("Failed to erase sector at 0x%08X", end_sector_start);
-            healthy_ = false;
-            return false;
-        }
-    }
-
-    // Verify target location is erased before writing
-    // This catches pre-existing data that wasn't erased during init
-    if (!isLocationErased(address, sizeof(SensorDataRecord))) {
-        logger_.warn("Target location 0x%08X not erased, forcing sector erase", address);
-        ExternalFlashResult result = flash_.eraseSector(sector_start);
-        if (result != ExternalFlashResult::Success) {
-            logger_.error("Failed to erase sector at 0x%08X", sector_start);
             healthy_ = false;
             return false;
         }
@@ -318,8 +332,6 @@ bool SensorFlashBuffer::readUntransmittedRecords(SensorDataRecord *records, size
         // Verify CRC
         uint16_t calculated_crc = CRC16::calculateRecordCRC(record);
         if (calculated_crc != record.crc16) {
-            logger_.warn("CRC mismatch at index %lu (expected 0x%04X, got 0x%04X), skipping",
-                         current_index, record.crc16, calculated_crc);
             crc_errors++;
             current_index = (current_index + 1) % MAX_RECORDS;
             continue;
