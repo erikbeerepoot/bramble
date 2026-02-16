@@ -19,15 +19,9 @@
 #include "hardware/watchdog.h"
 
 // HAL includes
-#include "hal/external_flash.h"
 #include "hal/flash.h"
 #include "hal/logger.h"
 #include "hal/neopixel.h"
-#include "storage/log_flash_buffer.h"
-
-// USB includes
-#include "usb/msc_disk.h"
-#include "usb/usb_stdio.h"
 
 // LoRa includes
 #include "lora/address_manager.h"
@@ -116,12 +110,6 @@ int main()
     // Initialize stdio (UART configured via CMakeLists.txt)
     stdio_init_all();
 
-    // Initialize composite USB CDC+MSC (replaces pico_stdio_usb)
-    usb_stdio_init();
-
-    // Configure Logger to check USB connection state for power savings
-    Logger::setUsbConnectedCheck(usb_stdio_connected);
-
     // Create main logger
     Logger log("Main");
 
@@ -167,22 +155,6 @@ int main()
         led.setPixel(0, 255, 0, 0);  // Red for error
         led.show();
         // panic("Hardware initialization failed!");
-    }
-
-    // Initialize external flash and log buffer for all modes
-    ExternalFlash log_external_flash;
-    static LogFlashBuffer log_flash_buffer(log_external_flash);
-    if (log_external_flash.init()) {
-        if (log_flash_buffer.init()) {
-            Logger::setFlashSink(&log_flash_buffer);
-            // Initialize MSC disk so log drive is accessible over USB
-            msc_disk_init(&log_flash_buffer, &log_external_flash);
-            log.info("Flash log storage initialized (USB log drive active)");
-        } else {
-            log.warn("Failed to init log flash buffer");
-        }
-    } else {
-        log.warn("Failed to init external flash for logging");
     }
 
     // Initialize network statistics

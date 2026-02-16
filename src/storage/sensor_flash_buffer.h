@@ -41,9 +41,7 @@ private:
  *
  * Layout:
  * - Sector 0 (0x00000000 - 0x00000FFF): Sensor metadata (4KB)
- * - Sector 1 (0x00001000 - 0x00001FFF): Log metadata (4KB)
- * - Data region (0x00002000 - 0x05FFFFFF): Sensor records (~96MB)
- * - Log region  (0x06000000 - 0x07FFFFFF): Log records (32MB) - see LogFlashBuffer
+ * - Data region (0x00001000 onwards): Sensor records
  *
  * Capacity: ~8 million sensor records = ~7.6 years at 30-second intervals
  */
