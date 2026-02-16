@@ -77,6 +77,10 @@ void SensorMode::onStart()
     heartbeat_client_ = std::make_unique<HeartbeatClient>(messenger_);
     heartbeat_client_->setStatusProvider([this]() { return collectHeartbeatStatus(); });
     heartbeat_client_->setResponseCallback([this](const HeartbeatResponsePayload &response) {
+        // Cancel SYNCING_TIME timeout — response arrived
+        task_queue_.cancel(syncing_time_timeout_id_);
+        syncing_time_timeout_id_ = 0;
+
         // SensorMode owns all side effects:
         // - Sync time to PMU if available
         // - Report to state machine
@@ -92,9 +96,17 @@ void SensorMode::onStart()
         }
     });
     heartbeat_client_->setDeliveryCallback([this](bool success) {
-        if (!success && rtc_running()) {
-            sensor_state_.reportRtcSynced();
+        if (!success) {
+            // Delivery failed — no response will come, cancel timeout
+            task_queue_.cancel(syncing_time_timeout_id_);
+            syncing_time_timeout_id_ = 0;
+            if (rtc_running()) {
+                sensor_state_.reportRtcSynced();
+            } else {
+                sensor_state_.reportSyncTimeout();
+            }
         }
+        // On success: wait for response callback or timeout
     });
 
     // Initialize PMU manager
@@ -173,22 +185,32 @@ void SensorMode::onStateChange(SensorState state)
                 this, TaskPriority::High);
             break;
 
-        case SensorState::SYNCING_TIME:
+        case SensorState::SYNCING_TIME: {
             // Waiting for hub response - yellow fast short blink
             led_pattern_ = std::make_unique<ShortBlinkPattern>(led_, 255, 255, 0, 50, 250);
+            // Class A receive window: timeout if HEARTBEAT_RESPONSE doesn't arrive
+            uint32_t now = to_ms_since_boot(get_absolute_time());
+            syncing_time_timeout_id_ = task_queue_.postDelayed(
+                [](void *ctx, uint32_t) -> bool {
+                    SensorMode *self = static_cast<SensorMode *>(ctx);
+                    self->syncing_time_timeout_id_ = 0;
+                    if (rtc_running()) {
+                        logger.warn("Sync timeout - proceeding with existing RTC");
+                        self->sensor_state_.reportRtcSynced();
+                    } else {
+                        logger.warn("Sync timeout - no RTC, sleeping");
+                        self->sensor_state_.reportSyncTimeout();
+                    }
+                    return true;
+                },
+                this, now, SYNCING_TIME_TIMEOUT_MS, TaskPriority::High);
             break;
+        }
 
         case SensorState::TIME_SYNCED:
             // RTC valid - green short blink, initialize timestamps
             led_pattern_ = std::make_unique<ShortBlinkPattern>(led_, 0, 255, 0);
             initializeFlashTimestamps();
-
-            // If we just synced from hub (first boot), resend heartbeat with correct uptime
-            // The initial heartbeat had uptime=0 because RTC wasn't set yet
-            if (sensor_state_.previousState() == SensorState::SYNCING_TIME) {
-                heartbeat_client_->send();
-                sensor_state_.expectResponse();
-            }
 
             // Try to initialize sensor
             task_queue_.postOnce(
@@ -791,21 +813,24 @@ void SensorMode::requestTimeSync()
                         .info("RTC set from PMU: %04d-%02d-%02d %02d:%02d:%02d", dt.year, dt.month,
                               dt.day, dt.hour, dt.min, dt.sec);
 
-                    // Report RTC sync - state callback handles LED pattern change
-                    sensor_state_.reportRtcSynced();
                     if (flash_buffer_ && flash_buffer_->getInitialBootTimestamp() == 0) {
                         uint32_t now = getUnixTimestamp();
                         flash_buffer_->setInitialBootTimestamp(now);
                         logger.info("Set initial_boot_timestamp to %lu (from PMU sync)", now);
                     }
 
-                    // Only sync from hub if it's time to transmit
                     if (time_to_transmit) {
-                        pmu_logger.info("Syncing time by sending heartbeat.");
+                        // Class A: send heartbeat, stay in SYNCING_TIME for response
+                        // RTC is already set from PMU above, so timestamps work
+                        pmu_logger.info("Sending heartbeat - waiting for response before TX");
                         heartbeat_client_->send();
                         sensor_state_.expectResponse();
+                        sensor_state_.reportHeartbeatSent();  // AWAITING_TIME → SYNCING_TIME
+                        // Response callback will call reportRtcSynced() → TIME_SYNCED
                     } else {
+                        // No heartbeat needed — no contention risk, proceed immediately
                         pmu_logger.info("Skip hub sync: not time to transmit yet.");
+                        sensor_state_.reportRtcSynced();
                     }
                 } else {
                     logger.error("Failed to set RTC from PMU time");
