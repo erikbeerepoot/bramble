@@ -270,7 +270,7 @@ uint8_t ReliableMessenger::sendWithCallback(const uint8_t *buffer, size_t length
     pending.length = length;
     pending.dst_addr = dst_addr;
     pending.send_time = bramble::util::time::currentTimeMs();
-    pending.attempts = 1;
+    pending.attempts = 0;
     pending.criticality = criticality;
     pending.retry_config = RetryPolicy::getConfig(criticality);
     pending.ack_callback = ack_callback;
