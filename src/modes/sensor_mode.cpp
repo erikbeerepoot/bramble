@@ -654,7 +654,6 @@ void SensorMode::transmitBacklog()
             [this, total_records_scanned](bool success) {
                 if (success && flash_buffer_) {
                     flash_buffer_->advanceReadIndex(static_cast<uint32_t>(total_records_scanned));
-                    flash_buffer_->updateLastSync(getUnixTimestamp());
 
                     // Check if we should send another batch
                     uint32_t remaining = flash_buffer_->getUntransmittedCount();
@@ -664,6 +663,7 @@ void SensorMode::transmitBacklog()
                         return;  // Don't report complete yet
                     } else if (remaining == 0) {
                         logger.info("All backlog transmitted");
+                        flash_buffer_->updateLastSync(getUnixTimestamp());
                     } else {
                         logger.info("Batch limit reached, %lu records remaining", remaining);
                     }
