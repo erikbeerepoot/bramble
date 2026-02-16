@@ -159,6 +159,15 @@ public:
     void reportRegistrationTimeout();
 
     /**
+     * @brief Report that time sync timed out
+     *
+     * Call when HEARTBEAT_RESPONSE is not received within timeout
+     * and RTC is not running. Transitions SYNCING_TIME → READY_FOR_SLEEP
+     * (retry on next wake).
+     */
+    void reportSyncTimeout();
+
+    /**
      * @brief Check if waiting for registration response
      */
     bool isRegistering() const { return state_ == SensorState::REGISTERING; }
