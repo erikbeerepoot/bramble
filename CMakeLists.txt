@@ -156,7 +156,6 @@ else()
         src/config/node_config.cpp
         src/config/hub_config.cpp
         src/storage/sensor_flash_buffer.cpp
-        src/storage/log_flash_buffer.cpp
         src/util/work_tracker.cpp
         src/util/task_queue.cpp
         src/util/base_state_machine.cpp
@@ -164,9 +163,6 @@ else()
         src/util/irrigation_state_machine.cpp
         src/modes/application_mode.cpp
         src/modes/hub_mode.cpp
-        src/usb/usb_stdio.cpp
-        src/usb/usb_descriptors.c
-        src/usb/msc_disk.cpp
     )
 
     # List of targets to configure
@@ -249,60 +245,6 @@ else()
         message(STATUS "Building GENERIC variant")
     endif()
 
-    # USB MSC log retrieval target - standalone binary for downloading logs
-    if(HARDWARE_VARIANT STREQUAL "ALL" OR HARDWARE_VARIANT STREQUAL "MSC")
-        add_executable(bramble_msc
-            src/usb/usb_msc_mode.cpp
-            src/usb/msc_disk.cpp
-            src/usb/usb_descriptors.c
-            src/hal/external_flash.cpp
-            src/hal/neopixel.cpp
-            src/hal/logger.cpp
-            src/storage/log_flash_buffer.cpp
-            src/storage/sensor_flash_buffer.cpp
-            src/config/config_base.cpp
-        )
-
-        pico_set_program_name(bramble_msc "bramble_msc")
-        pico_set_program_version(bramble_msc "${BRAMBLE_VERSION_STRING}")
-
-        # No pico_enable_stdio_usb - we provide our own TinyUSB configuration
-        pico_enable_stdio_usb(bramble_msc 0)
-        pico_enable_stdio_uart(bramble_msc 0)
-
-        target_include_directories(bramble_msc PRIVATE
-            ${CMAKE_CURRENT_LIST_DIR}
-            ${CMAKE_CURRENT_LIST_DIR}/src
-            ${CMAKE_CURRENT_LIST_DIR}/src/usb
-        )
-
-        target_compile_definitions(bramble_msc PRIVATE
-            BRAMBLE_VERSION_MAJOR=${BRAMBLE_VERSION_MAJOR}
-            BRAMBLE_VERSION_MINOR=${BRAMBLE_VERSION_MINOR}
-            BRAMBLE_VERSION_BUILD=${BRAMBLE_VERSION_BUILD}
-        )
-
-        target_compile_options(bramble_msc PRIVATE -Wno-psabi)
-
-        target_link_libraries(bramble_msc
-            pico_stdlib
-            pico_unique_id
-            tinyusb_device
-            tinyusb_board
-            hardware_spi
-            hardware_timer
-            hardware_clocks
-            hardware_pio
-            hardware_flash
-            hardware_sync
-            hardware_rtc
-        )
-
-        pico_generate_pio_header(bramble_msc ${CMAKE_CURRENT_LIST_DIR}/src/hal/ws2812.pio)
-        pico_add_extra_outputs(bramble_msc)
-        message(STATUS "Building MSC (USB log retrieval) variant")
-    endif()
-
 endif()
 
 # Configure all production targets
@@ -312,7 +254,7 @@ if(NOT BUILD_TESTS)
         pico_set_program_name(${TARGET_NAME} "${TARGET_NAME}")
         pico_set_program_version(${TARGET_NAME} "${BRAMBLE_VERSION_STRING}")
 
-        # Disable pico_stdio_usb - we provide our own composite CDC+MSC driver
+        # Disable pico_stdio_usb - UART-only debug output
         pico_enable_stdio_usb(${TARGET_NAME} 0)
         pico_enable_stdio_rtt(${TARGET_NAME} 0)
 
@@ -345,7 +287,6 @@ if(NOT BUILD_TESTS)
         target_include_directories(${TARGET_NAME} PRIVATE
             ${CMAKE_CURRENT_LIST_DIR}
             ${CMAKE_CURRENT_LIST_DIR}/src
-            ${CMAKE_CURRENT_LIST_DIR}/src/usb
         )
 
         target_link_libraries(${TARGET_NAME}
@@ -361,8 +302,6 @@ if(NOT BUILD_TESTS)
             pico_multicore
             pico_util
             pico_unique_id
-            tinyusb_device
-            tinyusb_board
         )
 
         # Add pico-extras libraries if available
