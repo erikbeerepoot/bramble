@@ -54,7 +54,7 @@ void SensorStateMachine::reportRegistrationTimeout()
         return;
     }
     logger.warn("Registration timed out - will retry on next wake");
-    transitionTo(SensorState::READY_FOR_SLEEP);
+    transitionTo(SensorState::PERSISTING);
 }
 
 void SensorStateMachine::reportSyncTimeout()
@@ -64,7 +64,7 @@ void SensorStateMachine::reportSyncTimeout()
         return;
     }
     logger.warn("Time sync timed out - sleeping for retry");
-    transitionTo(SensorState::READY_FOR_SLEEP);
+    transitionTo(SensorState::PERSISTING);
 }
 
 void SensorStateMachine::reportRtcSynced()
@@ -137,7 +137,7 @@ void SensorStateMachine::reportCheckComplete(bool needsTransmit)
         transitionTo(SensorState::LISTENING);
     } else {
         logger.debug("No transmission needed, no responses expected");
-        transitionTo(SensorState::READY_FOR_SLEEP);
+        transitionTo(SensorState::PERSISTING);
     }
 }
 
@@ -152,7 +152,7 @@ void SensorStateMachine::reportTransmitComplete()
         transitionTo(SensorState::LISTENING);
     } else {
         logger.debug("Transmission complete, no responses expected");
-        transitionTo(SensorState::READY_FOR_SLEEP);
+        transitionTo(SensorState::PERSISTING);
     }
 }
 
@@ -169,6 +169,16 @@ void SensorStateMachine::reportListenComplete()
         return;
     }
     logger.debug("Listen window complete");
+    transitionTo(SensorState::PERSISTING);
+}
+
+void SensorStateMachine::reportPersistComplete()
+{
+    if (state_ != SensorState::PERSISTING) {
+        logger.warn("reportPersistComplete() called in unexpected state: %s", stateName(state_));
+        return;
+    }
+    logger.debug("Flash persistence complete");
     transitionTo(SensorState::READY_FOR_SLEEP);
 }
 
@@ -289,6 +299,8 @@ const char *SensorStateMachine::stateName(SensorState state)
             return "TRANSMITTING";
         case SensorState::LISTENING:
             return "LISTENING";
+        case SensorState::PERSISTING:
+            return "PERSISTING";
         case SensorState::READY_FOR_SLEEP:
             return "READY_FOR_SLEEP";
         case SensorState::DEGRADED_NO_SENSOR:

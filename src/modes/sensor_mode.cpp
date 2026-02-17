@@ -41,8 +41,18 @@ void SensorMode::onStart()
         } else {
             logger.error("Failed to initialize flash buffer!");
         }
+
+        // Restore event log from flash (before recording new boot event)
+        restoreEventLog();
     } else {
         logger.error("Failed to initialize external flash!");
+    }
+
+    // Record boot event (after restore so restored events come first)
+    if (watchdog_caused_reboot()) {
+        event_log_.record(EventType::BOOT_WATCHDOG, EventSeverity::WARNING);
+    } else {
+        event_log_.record(EventType::BOOT_COLD, EventSeverity::INFO);
     }
 
     // Create CHT832X sensor object (lazy init on first read)
@@ -63,6 +73,7 @@ void SensorMode::onStart()
     // Set up registration success callback - transitions REGISTERING → AWAITING_TIME
     messenger_.setRegistrationSuccessCallback([this](uint16_t assigned_addr) {
         pmu_logger.info("Registration success callback: assigned address 0x%04X", assigned_addr);
+        event_log_.record(EventType::REGISTRATION_OK, EventSeverity::INFO);
         task_queue_.cancel(registration_timeout_id_);
         registration_timeout_id_ = 0;
         sensor_state_.reportRegistrationComplete();
@@ -73,6 +84,9 @@ void SensorMode::onStart()
         messenger_,
         BatchTransmitter::Config{.max_batches_per_cycle = 20, .hub_address = HUB_ADDRESS});
 
+    // Initialize event log transmitter
+    event_log_transmitter_ = std::make_unique<EventLogTransmitter>(messenger_, event_log_);
+
     // Initialize heartbeat client
     heartbeat_client_ = std::make_unique<HeartbeatClient>(messenger_);
     heartbeat_client_->setStatusProvider([this]() { return collectHeartbeatStatus(); });
@@ -80,6 +94,15 @@ void SensorMode::onStart()
         // Cancel SYNCING_TIME timeout — response arrived
         task_queue_.cancel(syncing_time_timeout_id_);
         syncing_time_timeout_id_ = 0;
+
+        event_log_.record(EventType::TIME_SYNC_OK, EventSeverity::INFO);
+
+        // Set event log time reference so hub can reconstruct absolute timestamps
+        uint32_t uptime = static_cast<uint32_t>(to_ms_since_boot(get_absolute_time()) / 1000);
+        uint32_t unix_ts = getUnixTimestamp();
+        if (unix_ts > 0) {
+            event_log_.setTimeReference(uptime, unix_ts);
+        }
 
         // SensorMode owns all side effects:
         // - Sync time to PMU if available
@@ -97,6 +120,7 @@ void SensorMode::onStart()
     });
     heartbeat_client_->setDeliveryCallback([this](bool success) {
         if (!success) {
+            event_log_.record(EventType::TX_HEARTBEAT_FAIL, EventSeverity::WARNING);
             // Delivery failed — no response will come, cancel timeout
             task_queue_.cancel(syncing_time_timeout_id_);
             syncing_time_timeout_id_ = 0;
@@ -169,6 +193,11 @@ void SensorMode::onStart()
 
 void SensorMode::onStateChange(SensorState state)
 {
+    // Record state transition in event log
+    event_log_.recordStateTransition(EventType::STATE_SENSOR,
+                                     static_cast<uint8_t>(sensor_state_.previousState()),
+                                     static_cast<uint8_t>(state));
+
     // Centralized task scheduler - reacts to state changes by posting work
     switch (state) {
         case SensorState::AWAITING_TIME:
@@ -194,6 +223,7 @@ void SensorMode::onStateChange(SensorState state)
                 [](void *ctx, uint32_t) -> bool {
                     SensorMode *self = static_cast<SensorMode *>(ctx);
                     self->syncing_time_timeout_id_ = 0;
+                    self->event_log_.record(EventType::TIME_SYNC_TIMEOUT, EventSeverity::WARNING);
                     if (rtc_running()) {
                         logger.warn("Sync timeout - proceeding with existing RTC");
                         self->sensor_state_.reportRtcSynced();
@@ -294,7 +324,24 @@ void SensorMode::onStateChange(SensorState state)
             break;
         }
 
+        case SensorState::PERSISTING:
+            // Flush event log and metadata to flash before sleep
+            task_queue_.postOnce(
+                [](void *ctx, uint32_t time) -> bool {
+                    (void)time;
+                    SensorMode *self = static_cast<SensorMode *>(ctx);
+                    self->persistEventLog();
+                    if (self->flash_buffer_) {
+                        self->flash_buffer_->flush();
+                    }
+                    self->sensor_state_.reportPersistComplete();
+                    return true;
+                },
+                this, TaskPriority::High);
+            break;
+
         case SensorState::READY_FOR_SLEEP:
+            event_log_.record(EventType::SLEEP_ENTER, EventSeverity::INFO);
             // All work done - signal PMU
             if (pmu_manager_) {
                 pmu_manager_->signalReadyForSleep();
@@ -394,8 +441,11 @@ void SensorMode::readAndStoreSensorData(uint32_t current_time)
 
     if (!reading.valid) {
         logger.error("Failed to read sensor");
+        event_log_.record(EventType::SENSOR_READ_FAIL, EventSeverity::ERROR);
         return;
     }
+
+    event_log_.record(EventType::SENSOR_READ_OK, EventSeverity::INFO);
 
     // Get Unix timestamp from RTC
     uint32_t unix_timestamp = getUnixTimestamp();
@@ -619,7 +669,14 @@ void SensorMode::transmitCurrentReading()
 
     if (!transmitter_->transmit(&current_reading_, 1, [this](bool success) {
             if (success) {
+                event_log_.record(EventType::TX_BATCH_OK, EventSeverity::INFO, 1);
                 current_reading_.timestamp = 0;  // Clear to avoid retransmit
+            } else {
+                event_log_.record(EventType::TX_BATCH_FAIL, EventSeverity::WARNING);
+            }
+            // Send event log after sensor data
+            if (event_log_transmitter_) {
+                event_log_transmitter_->transmitIfPending();
             }
             sensor_state_.reportTransmitComplete();
         })) {
@@ -632,6 +689,10 @@ void SensorMode::transmitBacklog()
 {
     if (!flash_buffer_) {
         logger.error("No flash buffer - cannot transmit");
+        // Still send events even if flash is unavailable
+        if (event_log_transmitter_) {
+            event_log_transmitter_->transmitIfPending();
+        }
         sensor_state_.reportTransmitComplete();
         return;
     }
@@ -673,8 +734,10 @@ void SensorMode::transmitBacklog()
 
     if (!transmitter_->transmit(
             records, valid_records_count,
-            [this, total_records_scanned](bool success) {
+            [this, valid_records_count, total_records_scanned](bool success) {
                 if (success && flash_buffer_) {
+                    event_log_.record(EventType::TX_BATCH_OK, EventSeverity::INFO,
+                                      static_cast<uint8_t>(valid_records_count));
                     flash_buffer_->advanceReadIndex(static_cast<uint32_t>(total_records_scanned));
 
                     // Check if we should send another batch
@@ -689,6 +752,12 @@ void SensorMode::transmitBacklog()
                     } else {
                         logger.info("Batch limit reached, %lu records remaining", remaining);
                     }
+                } else {
+                    event_log_.record(EventType::TX_BATCH_FAIL, EventSeverity::WARNING);
+                }
+                // Send event log after sensor data batch completes
+                if (event_log_transmitter_) {
+                    event_log_transmitter_->transmitIfPending();
                 }
                 sensor_state_.reportTransmitComplete();
             },
@@ -769,6 +838,7 @@ bool SensorMode::tryInitSensor()
     if (sensor_->init()) {
         // Report success to state machine (transitions to OPERATIONAL)
         sensor_state_.reportSensorInitSuccess();
+        event_log_.record(EventType::SENSOR_INIT_OK, EventSeverity::INFO);
         logger.debug("CHT832X sensor initialized on I2C1 (SDA=%d, SCL=%d)", PIN_I2C_SDA,
                      PIN_I2C_SCL);
 
@@ -777,6 +847,7 @@ bool SensorMode::tryInitSensor()
 
     // Report failure to state machine (transitions to DEGRADED_NO_SENSOR)
     sensor_state_.reportSensorInitFailure();
+    event_log_.record(EventType::SENSOR_INIT_FAIL, EventSeverity::ERROR);
     logger.error("Failed to initialize CHT832X sensor!");
     logger.error("Check wiring: Red=3.3V, Black=GND, Green=GPIO%d, Yellow=GPIO%d", PIN_I2C_SCL,
                  PIN_I2C_SDA);
@@ -852,6 +923,60 @@ void SensorMode::requestTimeSync()
     }
 }
 
+void SensorMode::persistEventLog()
+{
+    if (!external_flash_ || !external_flash_->isInitialized()) {
+        logger.warn("External flash unavailable - skipping event log persist");
+        return;
+    }
+
+    // Serialize event log to stack buffer
+    // serializedSize() for 64 events = 24 header + 64*6 = 408 bytes
+    uint8_t buffer[EventLog<>::serializedSize()];
+    size_t written = event_log_.serialize(buffer, sizeof(buffer));
+    if (written == 0) {
+        logger.error("Failed to serialize event log");
+        return;
+    }
+
+    // Erase the dedicated sector
+    auto result = external_flash_->eraseSector(EVENT_LOG_FLASH_SECTOR);
+    if (result != ExternalFlashResult::Success) {
+        logger.error("Failed to erase event log sector");
+        return;
+    }
+
+    // Write serialized data
+    result = external_flash_->write(EVENT_LOG_FLASH_SECTOR, buffer, written);
+    if (result != ExternalFlashResult::Success) {
+        logger.error("Failed to write event log to flash");
+        return;
+    }
+
+    logger.debug("Event log persisted (%zu bytes, %zu events pending)", written,
+                 event_log_.pendingCount());
+}
+
+void SensorMode::restoreEventLog()
+{
+    if (!external_flash_ || !external_flash_->isInitialized()) {
+        return;
+    }
+
+    uint8_t buffer[EventLog<>::serializedSize()];
+    auto result = external_flash_->read(EVENT_LOG_FLASH_SECTOR, buffer, sizeof(buffer));
+    if (result != ExternalFlashResult::Success) {
+        logger.debug("No event log to restore from flash");
+        return;
+    }
+
+    if (event_log_.deserialize(buffer, sizeof(buffer))) {
+        logger.info("Restored event log from flash (%zu events pending)",
+                    event_log_.pendingCount());
+    }
+    // If deserialize fails (bad magic, etc.), that's fine - start fresh
+}
+
 void SensorMode::attemptRegistration()
 {
     uint64_t device_id = getDeviceId();
@@ -880,6 +1005,7 @@ void SensorMode::attemptRegistration()
         sensor_state_.expectResponse();
     } else {
         pmu_logger.error("Failed to send registration request");
+        event_log_.record(EventType::REGISTRATION_FAIL, EventSeverity::ERROR);
         // Failed to send - go to sleep and retry next cycle
         sensor_state_.reportRegistrationTimeout();
     }
