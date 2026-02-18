@@ -253,10 +253,10 @@ void SystemClock_Config(void)
      * in the RCC_OscInitTypeDef structure.
      */
     RCC_OscInitStruct.OscillatorType =
-        RCC_OSCILLATORTYPE_HSI | RCC_OSCILLATORTYPE_LSI | RCC_OSCILLATORTYPE_MSI;
+        RCC_OSCILLATORTYPE_HSI | RCC_OSCILLATORTYPE_LSE | RCC_OSCILLATORTYPE_MSI;
     RCC_OscInitStruct.HSIState = RCC_HSI_ON;  // Enable HSI for LPUART in STOP mode
     RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
-    RCC_OscInitStruct.LSIState = RCC_LSI_ON;
+    RCC_OscInitStruct.LSEState = RCC_LSE_ON;  // External 32.768 kHz crystal for RTC accuracy
     RCC_OscInitStruct.MSIState = RCC_MSI_ON;
     RCC_OscInitStruct.MSICalibrationValue = 0;
     RCC_OscInitStruct.MSIClockRange = RCC_MSIRANGE_5;
@@ -286,7 +286,7 @@ void SystemClock_Config(void)
     // HSI is factory-calibrated with ±1% accuracy over temperature range
     // MSI has wider tolerance which caused baud rate to be ~7.5% off (2218 instead of 2400)
     PeriphClkInit.Lpuart1ClockSelection = RCC_LPUART1CLKSOURCE_HSI;
-    PeriphClkInit.RTCClockSelection = RCC_RTCCLKSOURCE_LSI;
+    PeriphClkInit.RTCClockSelection = RCC_RTCCLKSOURCE_LSE;
     if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK) {
         Error_Handler();
     }
@@ -342,10 +342,10 @@ static void MX_RTC_Init(void)
      */
     hrtc.Instance = RTC;
     hrtc.Init.HourFormat = RTC_HOURFORMAT_24;
-    // LSI is ~37kHz, so we need prescalers that divide to 1 Hz for ck_spre
-    // 37000 Hz / (125 × 296) = 37000 / 37000 = 1 Hz
-    hrtc.Init.AsynchPrediv = 124;  // AsynchPrediv + 1 = 125
-    hrtc.Init.SynchPrediv = 295;   // SynchPrediv + 1 = 296
+    // LSE is 32.768 kHz crystal, standard RTC prescalers for 1 Hz
+    // 32768 Hz / (128 × 256) = 32768 / 32768 = 1 Hz
+    hrtc.Init.AsynchPrediv = 127;  // AsynchPrediv + 1 = 128
+    hrtc.Init.SynchPrediv = 255;   // SynchPrediv + 1 = 256
     hrtc.Init.OutPut = RTC_OUTPUT_DISABLE;
     hrtc.Init.OutPutRemap = RTC_OUTPUT_REMAP_NONE;
     hrtc.Init.OutPutPolarity = RTC_OUTPUT_POLARITY_HIGH;
