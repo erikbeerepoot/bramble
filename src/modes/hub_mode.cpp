@@ -722,8 +722,8 @@ void HubMode::handleSensorDataBatch(uint16_t source_addr, const SensorDataBatchP
     for (uint8_t i = 0; i < payload->record_count; i++) {
         const BatchSensorRecord &record = payload->records[i];
 
-        // Strip storage-internal flags (VALID/TRANSMITTED) before forwarding to API
-        uint8_t error_flags = record.flags & ~(RECORD_FLAG_VALID | RECORD_FLAG_TRANSMITTED);
+        // Strip storage-internal VALID flag before forwarding to API
+        uint8_t error_flags = record.flags & ~RECORD_FLAG_VALID;
 
         // Format: SENSOR_RECORD <node_addr> <device_id> <timestamp> <temp> <humidity> <flags>
         snprintf(response, sizeof(response), "SENSOR_RECORD %u %llu %lu %d %u %u\n", source_addr,

@@ -24,7 +24,7 @@ bool BatchTransmitter::transmit(const SensorDataRecord *records, size_t count,
         batch_records[i].temperature = records[i].temperature;
         batch_records[i].humidity = records[i].humidity;
         batch_records[i].flags = records[i].flags;
-        batch_records[i].reserved = records[i].reserved;
+        batch_records[i].transmission_status = records[i].transmission_status;
         batch_records[i].crc16 = records[i].crc16;
     }
 

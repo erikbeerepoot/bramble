@@ -258,8 +258,8 @@ struct __attribute__((packed)) BatchSensorRecord {
     uint32_t timestamp;   // Unix timestamp (seconds since epoch)
     int16_t temperature;  // Temperature in 0.01°C units
     uint16_t humidity;    // Humidity in 0.01% units
-    uint8_t flags;        // Status flags
-    uint8_t reserved;     // Reserved for future use
+    uint8_t flags;                 // Status flags
+    uint8_t transmission_status;   // 0xFF = not transmitted, 0x00 = transmitted
     uint16_t crc16;       // CRC16 of record
 };
 
