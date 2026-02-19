@@ -97,8 +97,8 @@ bool SensorFlashBuffer::writeRecord(const SensorDataRecord &record)
 
     // Create record with CRC
     SensorDataRecord record_with_crc = record;
-    record_with_crc.flags |= RECORD_FLAG_VALID;                       // Mark as valid
-    record_with_crc.transmission_status = RECORD_NOT_TRANSMITTED;     // 0xFF: NOR flash erased state
+    record_with_crc.flags |= RECORD_FLAG_VALID;                    // Mark as valid
+    record_with_crc.transmission_status = RECORD_NOT_TRANSMITTED;  // 0xFF: NOR flash erased state
     record_with_crc.crc16 = CRC16::calculateRecordCRC(record_with_crc);
 
     // Calculate flash address
