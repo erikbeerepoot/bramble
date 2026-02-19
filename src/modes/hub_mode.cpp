@@ -14,6 +14,7 @@
 #include "lora/network_stats.h"
 #include "lora/sx1276.h"
 #include "storage/sensor_data_record.h"
+#include "util/event_log.h"
 
 static Logger logger("HubMode");
 
@@ -193,6 +194,18 @@ void HubMode::processIncomingMessage(uint8_t *rx_buffer, int rx_len, uint32_t cu
             hub_router_->updateRouteOnline(header->src_addr);
 
             // Don't call base class - we've handled the message
+            return;
+        } else if (header->type == MSG_TYPE_EVENT_LOG) {
+            // Forward event log batch to Raspberry Pi
+            size_t payload_length = rx_len - sizeof(MessageHeader);
+            const uint8_t *payload = rx_buffer + sizeof(MessageHeader);
+            handleEventLogBatch(header->src_addr, payload, payload_length);
+
+            // BEST_EFFORT: no ACK needed, no messenger processing required
+            // Update node activity tracking
+            address_manager_->updateLastSeen(header->src_addr, current_time);
+            hub_router_->updateRouteOnline(header->src_addr);
+
             return;
         }
     }
@@ -796,4 +809,67 @@ void HubMode::handleBatchAckResponse(const char *args)
     char response[64];
     snprintf(response, sizeof(response), "BATCH_ACK_SENT %u %d\n", node_addr, count);
     uart_puts(API_UART_ID, response);
+}
+
+void HubMode::handleEventLogBatch(uint16_t source_addr, const uint8_t *payload,
+                                  size_t payload_length)
+{
+    // Minimum payload: EventLogBatchPayload header (11 bytes) + at least 1 record (6 bytes)
+    constexpr size_t header_size = sizeof(EventLogBatchPayload);
+    if (payload_length < header_size + sizeof(EventRecord)) {
+        logger.warn("Event log payload too small from node 0x%04X (%zu bytes)", source_addr,
+                    payload_length);
+        return;
+    }
+
+    const EventLogBatchPayload *batch = reinterpret_cast<const EventLogBatchPayload *>(payload);
+
+    if (batch->record_count == 0 || batch->record_count > MAX_EVENT_BATCH_RECORDS) {
+        logger.warn("Invalid event log record count %u from node 0x%04X", batch->record_count,
+                    source_addr);
+        return;
+    }
+
+    // Verify payload has enough bytes for all records
+    size_t expected_size = header_size + batch->record_count * sizeof(EventRecord);
+    if (payload_length < expected_size) {
+        logger.warn("Event log payload truncated from node 0x%04X (%zu < %zu)", source_addr,
+                    payload_length, expected_size);
+        return;
+    }
+
+    // Look up device_id from address manager
+    uint64_t device_id = 0;
+    const NodeInfo *node = address_manager_->getNodeInfo(source_addr);
+    if (node) {
+        device_id = node->device_id;
+    }
+
+    const EventRecord *records = reinterpret_cast<const EventRecord *>(payload + header_size);
+
+    logger.debug("Event log from node 0x%04X: %u events (ref_uptime=%lu, ref_ts=%lu)", source_addr,
+                 batch->record_count, batch->reference_uptime, batch->reference_timestamp);
+
+    // Forward each event to Raspberry Pi
+    char response[128];
+    for (uint8_t i = 0; i < batch->record_count; i++) {
+        const EventRecord &event = records[i];
+
+        // Reconstruct absolute timestamp if time reference is available
+        uint32_t unix_timestamp = 0;
+        if (batch->reference_timestamp > 0) {
+            unix_timestamp =
+                batch->reference_timestamp +
+                (event.uptime_seconds - static_cast<uint16_t>(batch->reference_uptime));
+        }
+
+        // Format: EVENT <node_addr> <device_id> <unix_timestamp> <event_type> <severity> <detail>
+        // <sequence>
+        snprintf(response, sizeof(response), "EVENT %u %llu %lu %u %u %u %u\n", source_addr,
+                 device_id, unix_timestamp, event.event_type, event.severity, event.detail,
+                 event.sequence);
+        uart_puts(API_UART_ID, response);
+    }
+
+    logger.debug("Forwarded %u events from node 0x%04X to RasPi", batch->record_count, source_addr);
 }

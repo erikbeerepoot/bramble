@@ -45,6 +45,7 @@ private:
     void sendBatchAck(uint16_t dest_addr, uint8_t seq_num, uint8_t status,
                       uint8_t records_received);
     void handleBatchAckResponse(const char *args);  // Parse RasPi BATCH_ACK and forward to node
+    void handleEventLogBatch(uint16_t source_addr, const uint8_t *payload, size_t payload_length);
 
 public:
     using ApplicationMode::ApplicationMode;

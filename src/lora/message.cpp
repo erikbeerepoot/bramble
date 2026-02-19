@@ -35,6 +35,8 @@ const char *MessageHandler::getMessageTypeName(uint8_t type)
             return "SENSOR_DATA_BATCH";
         case MSG_TYPE_BATCH_ACK:
             return "BATCH_ACK";
+        case MSG_TYPE_EVENT_LOG:
+            return "EVENT_LOG";
         default:
             return "UNKNOWN";
     }

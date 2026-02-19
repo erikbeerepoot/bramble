@@ -52,9 +52,12 @@
  *         TRANSMITTING
  *               │
  *               ▼ reportTransmitComplete()
- *         LISTENING or READY_FOR_SLEEP
+ *         LISTENING or PERSISTING
  *               │
  *               ▼ (LISTENING only if expectResponse() was called)
+ *         PERSISTING
+ *               │
+ *               ▼ reportPersistComplete()
  *         READY_FOR_SLEEP
  *               │
  *               └── signalReadyForSleep() ──► [PMU sleeps]
@@ -69,6 +72,7 @@ enum class SensorState : uint8_t {
     CHECKING_BACKLOG,    // Deciding if transmission needed
     TRANSMITTING,        // Sending batch to hub
     LISTENING,           // Receive window open, awaiting hub responses
+    PERSISTING,          // Flushing event log + metadata to flash
     READY_FOR_SLEEP,     // All wake work done
     DEGRADED_NO_SENSOR,  // Sensor failed, can still log timestamps
     ERROR,               // Unrecoverable error
@@ -250,9 +254,17 @@ public:
      * @brief Report that listen window is complete
      *
      * Call after the receive window timeout expires.
-     * Transitions LISTENING → READY_FOR_SLEEP.
+     * Transitions LISTENING → PERSISTING.
      */
     void reportListenComplete();
+
+    /**
+     * @brief Report that flash persistence is complete
+     *
+     * Call after event log and metadata have been flushed to flash.
+     * Transitions PERSISTING → READY_FOR_SLEEP.
+     */
+    void reportPersistComplete();
 
     /**
      * @brief Note that an outgoing message expects a response
@@ -353,6 +365,11 @@ public:
      * @brief Check if in listen window (awaiting hub responses before sleep)
      */
     bool isListening() const { return state_ == SensorState::LISTENING; }
+
+    /**
+     * @brief Check if persisting data to flash
+     */
+    bool isPersisting() const { return state_ == SensorState::PERSISTING; }
 
     /**
      * @brief Get previous state (before last transition)

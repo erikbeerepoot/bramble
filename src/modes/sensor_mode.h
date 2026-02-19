@@ -5,8 +5,10 @@
 #include "../hal/cht832x.h"
 #include "../hal/external_flash.h"
 #include "../lora/batch_transmitter.h"
+#include "../lora/event_log_transmitter.h"
 #include "../lora/heartbeat_client.h"
 #include "../storage/sensor_flash_buffer.h"
+#include "../util/event_log.h"
 #include "../util/sensor_pmu_manager.h"
 #include "../util/sensor_state_machine.h"
 #include "../util/task_queue.h"
@@ -128,12 +130,21 @@ private:
      */
     uint8_t getBatteryLevel();
 
+    // Event log flash persistence
+    static constexpr uint32_t EVENT_LOG_FLASH_SECTOR = 0x00001000;  // Reserved sector 1
+    void persistEventLog();
+    void restoreEventLog();
+
     // Error tracking state
     bool last_sensor_read_valid_ = false;               // Track if last sensor read succeeded
     static constexpr uint8_t TX_FAILURE_THRESHOLD = 3;  // Failures before setting error flag
 
     // Batch transmission
     std::unique_ptr<BatchTransmitter> transmitter_;
+
+    // Event logging
+    EventLog<> event_log_;
+    std::unique_ptr<EventLogTransmitter> event_log_transmitter_;
 
     // Fallback storage for direct transmit when flash unavailable
     SensorDataRecord current_reading_ = {};

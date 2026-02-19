@@ -40,7 +40,8 @@ enum MessageType {
     MSG_TYPE_UPDATE_AVAILABLE = 0x0A,    // Hub → Node: Update response (ACK'd with MSG_TYPE_ACK)
     MSG_TYPE_HEARTBEAT_RESPONSE = 0x0B,  // Hub → Node: Heartbeat response with current time
     MSG_TYPE_SENSOR_DATA_BATCH = 0x0C,   // Batch transmission of sensor records from flash
-    MSG_TYPE_BATCH_ACK = 0x0D            // Batch acknowledgment from hub
+    MSG_TYPE_BATCH_ACK = 0x0D,           // Batch acknowledgment from hub
+    MSG_TYPE_EVENT_LOG = 0x0E            // Batch of event log records (diagnostic)
 };
 
 // Sensor data subtypes
@@ -291,6 +292,26 @@ struct __attribute__((packed)) BatchAckPayload {
     uint8_t ack_seq_num;       // Sequence number being acknowledged
     uint8_t status;            // ACK status (0=success)
     uint8_t records_received;  // Number of records successfully stored
+};
+
+// Event log batch constants
+// Max records limited by LoRa packet size: 247 - 11 (batch header) = 236 bytes
+// 236 / 6 bytes per record = 39.3, but cap at 32 for practical batching
+constexpr size_t MAX_EVENT_BATCH_RECORDS = 32;
+
+/**
+ * @brief Event log batch payload (Node -> Hub)
+ *
+ * Transmits diagnostic event records. The hub uses reference_uptime and
+ * reference_timestamp to convert each event's uptime_seconds to a Unix
+ * timestamp: unix = reference_timestamp + (event.uptime_seconds - reference_uptime).
+ */
+struct __attribute__((packed)) EventLogBatchPayload {
+    uint16_t node_addr;            // Source node address
+    uint32_t reference_uptime;     // Uptime (seconds) at which RTC was synced
+    uint32_t reference_timestamp;  // Unix timestamp at that uptime (0 if never synced)
+    uint8_t record_count;          // Number of events (1-32)
+    uint8_t records[];             // EventRecord records (6 bytes each), flexible array
 };
 
 /**
