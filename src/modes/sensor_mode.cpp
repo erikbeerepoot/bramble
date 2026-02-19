@@ -418,7 +418,7 @@ void SensorMode::readAndStoreSensorData(uint32_t current_time)
                         .temperature = temp_fixed,
                         .humidity = hum_fixed,
                         .flags = 0,
-                        .reserved = 0,
+                        .transmission_status = RECORD_NOT_TRANSMITTED,
                         .crc16 = 0};
 
     // Write to flash (no immediate TX - batch transmission handles delivery)
@@ -674,8 +674,15 @@ void SensorMode::transmitBacklog()
 
     if (!transmitter_->transmit(
             records, valid_records_count,
-            [this, total_records_scanned](bool success) {
+            [this, total_records_scanned, start_index](bool success) {
                 if (success && flash_buffer_) {
+                    // Mark each record's transmission_status in flash (NOR-friendly single-byte write)
+                    for (uint32_t i = 0; i < total_records_scanned; i++) {
+                        uint32_t index =
+                            (start_index + i) % SensorFlashBuffer::MAX_RECORDS;
+                        flash_buffer_->markTransmitted(index);
+                    }
+
                     flash_buffer_->advanceReadIndex(static_cast<uint32_t>(total_records_scanned));
                     flash_buffer_->flush();  // Persist read index to flash for cold start recovery
 

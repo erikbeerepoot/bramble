@@ -93,7 +93,9 @@ public:
     /**
      * @brief Mark a record as transmitted
      *
-     * Sets the RECORD_FLAG_TRANSMITTED bit in the record's flags field.
+     * Writes RECORD_TRANSMITTED (0x00) to the record's transmission_status byte.
+     * This is a single in-place byte write — no sector erase required on NOR flash.
+     * CRC remains valid because calculateRecordCRC() normalizes this field.
      *
      * @param index Record index in circular buffer (0 to MAX_RECORDS-1)
      * @return true if marking successful
@@ -266,10 +268,6 @@ private:
     bool initialized_;
     bool healthy_ = true;  // Track flash write health for fallback decisions
     Logger logger_;
-
-    // Sector buffer for read-modify-write operations
-    // Used by markTransmitted() to preserve other records when updating a single record
-    uint8_t sector_buffer_[SECTOR_SIZE];
 
     /**
      * @brief Load metadata from flash

@@ -40,8 +40,13 @@ uint16_t CRC16::calculate(const uint8_t *data, size_t length, uint16_t initial_v
 
 uint16_t CRC16::calculateRecordCRC(const SensorDataRecord &record)
 {
-    // Calculate CRC over everything except the CRC field itself
-    return calculate(reinterpret_cast<const uint8_t *>(&record),
+    // Normalize transmission_status to 0x00 before calculating CRC.
+    // This allows marking a record as transmitted (writing 0x00 to the
+    // transmission_status byte) without invalidating the CRC.
+    // Backwards compatible: old records already had reserved=0x00.
+    SensorDataRecord normalized = record;
+    normalized.transmission_status = 0x00;
+    return calculate(reinterpret_cast<const uint8_t *>(&normalized),
                      sizeof(SensorDataRecord) - sizeof(record.crc16));
 }
 
@@ -92,7 +97,8 @@ bool SensorFlashBuffer::writeRecord(const SensorDataRecord &record)
 
     // Create record with CRC
     SensorDataRecord record_with_crc = record;
-    record_with_crc.flags |= RECORD_FLAG_VALID;  // Mark as valid
+    record_with_crc.flags |= RECORD_FLAG_VALID;                       // Mark as valid
+    record_with_crc.transmission_status = RECORD_NOT_TRANSMITTED;     // 0xFF: NOR flash erased state
     record_with_crc.crc16 = CRC16::calculateRecordCRC(record_with_crc);
 
     // Calculate flash address
@@ -228,64 +234,41 @@ bool SensorFlashBuffer::markTransmitted(uint32_t index)
         return false;
     }
 
-    // Read the record
     uint32_t address = getRecordAddress(index);
     SensorDataRecord record;
 
     ExternalFlashResult result =
         flash_.read(address, reinterpret_cast<uint8_t *>(&record), sizeof(record));
     if (result != ExternalFlashResult::Success) {
-        logger_.error("Failed to read record at index %lu", index);
+        logger_.error("Failed to read record at index %lu for mark", index);
         return false;
     }
 
-    // Verify CRC
+    // Verify CRC before marking
     uint16_t calculated_crc = CRC16::calculateRecordCRC(record);
     if (calculated_crc != record.crc16) {
-        logger_.warn("CRC mismatch at index %lu", index);
+        logger_.warn("CRC mismatch at index %lu, skipping mark", index);
         return false;
     }
 
-    // Check if already marked
-    if (record.flags & RECORD_FLAG_TRANSMITTED) {
-        return true;  // Already marked, no need to update
+    // Already transmitted — nothing to do
+    if (isRecordTransmitted(record)) {
+        return true;
     }
 
-    // Mark as transmitted
-    record.flags |= RECORD_FLAG_TRANSMITTED;
-    record.crc16 = CRC16::calculateRecordCRC(record);
-
-    // Read-modify-write pattern to preserve all records in the sector
-    // Flash requires erase before write, so we must save all records
-    uint32_t sector_start = (address / SECTOR_SIZE) * SECTOR_SIZE;
-    uint32_t offset_in_sector = address - sector_start;
-
-    // Step 1: Read entire sector into RAM buffer
-    result = flash_.read(sector_start, sector_buffer_, SECTOR_SIZE);
+    // Write just the transmission_status byte in-place.
+    // NOR flash: writing 0x00 over 0xFF only clears bits (no erase needed).
+    // CRC remains valid because calculateRecordCRC() normalizes this byte to 0x00.
+    uint32_t status_address = address + offsetof(SensorDataRecord, transmission_status);
+    uint8_t marker = RECORD_TRANSMITTED;
+    result = flash_.write(status_address, &marker, sizeof(marker));
     if (result != ExternalFlashResult::Success) {
-        logger_.error("Failed to read sector for mark transmitted");
-        return false;
-    }
-
-    // Step 2: Modify the target record in the buffer
-    memcpy(sector_buffer_ + offset_in_sector, &record, sizeof(record));
-
-    // Step 3: Erase the sector
-    result = flash_.eraseSector(sector_start);
-    if (result != ExternalFlashResult::Success) {
-        logger_.error("Failed to erase sector for mark");
-        return false;
-    }
-
-    // Step 4: Write entire sector back
-    result = flash_.write(sector_start, sector_buffer_, SECTOR_SIZE);
-    if (result != ExternalFlashResult::Success) {
-        logger_.error("Failed to write sector after mark");
+        logger_.error("Failed to mark record %lu as transmitted", index);
         return false;
     }
 
     metadata_.records_transmitted++;
-    return saveMetadata();
+    return true;
 }
 
 bool SensorFlashBuffer::readUntransmittedRecords(SensorDataRecord *records, size_t max_count,
@@ -337,8 +320,12 @@ bool SensorFlashBuffer::readUntransmittedRecords(SensorDataRecord *records, size
             continue;
         }
 
-        // Check if valid (we no longer filter by transmitted flag -
-        // read_index tracks what's been sent, timestamps allow deduplication)
+        // Skip already-transmitted records (safety net for stale read_index)
+        if (isRecordTransmitted(record)) {
+            current_index = (current_index + 1) % MAX_RECORDS;
+            continue;
+        }
+
         if (record.flags & RECORD_FLAG_VALID) {
             records[valid_records_count++] = record;
         }
