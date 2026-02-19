@@ -46,6 +46,14 @@ bool ExternalFlash::init()
     constexpr int MAX_ATTEMPTS = 3;
 
     for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+        // Escalating delay between retries: 0ms, 40ms, 80ms
+        // Gives flash more time to stabilize after power-on
+        if (attempt > 0) {
+            uint32_t delay_ms = 40 * attempt;
+            logger_.debug("Waiting %lu ms before retry", delay_ms);
+            sleep_ms(delay_ms);
+        }
+
         // Hardware reset the flash
         hardwareReset();
 
