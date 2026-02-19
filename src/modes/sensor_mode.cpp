@@ -453,8 +453,8 @@ HeartbeatStatus SensorMode::collectHeartbeatStatus()
         pending_records = (count > 0xFFFF) ? 0xFFFF : static_cast<uint16_t>(count);
     }
 
-    return {uptime,         battery_level, signal_strength, active_sensors,
-            error_flags,   pending_records, getDeviceId()};
+    return {uptime,      battery_level,   signal_strength, active_sensors,
+            error_flags, pending_records, getDeviceId()};
 }
 
 uint16_t SensorMode::collectErrorFlags()
