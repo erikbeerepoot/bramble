@@ -88,8 +88,9 @@ bool ReliableMessenger::sendSensorData(uint16_t dst_addr, uint8_t sensor_type, c
 bool ReliableMessenger::sendHeartbeat(uint16_t dst_addr, uint32_t uptime_seconds,
                                       uint8_t battery_level, uint8_t signal_strength,
                                       uint8_t active_sensors, uint16_t error_flags,
-                                      uint16_t pending_records, DeliveryCriticality criticality,
-                                      AckCallback ack_callback, uint64_t user_context)
+                                      uint16_t pending_records, uint64_t device_id,
+                                      DeliveryCriticality criticality, AckCallback ack_callback,
+                                      uint64_t user_context)
 {
     uint8_t seq_num = getNextSequenceNumber();
 
@@ -110,6 +111,7 @@ bool ReliableMessenger::sendHeartbeat(uint16_t dst_addr, uint32_t uptime_seconds
     payload->active_sensors = active_sensors;
     payload->error_flags = error_flags;
     payload->pending_records = pending_records;
+    payload->device_id = device_id;
 
     size_t length = sizeof(MessageHeader) + sizeof(HeartbeatPayload);
 

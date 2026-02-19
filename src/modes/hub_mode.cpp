@@ -597,10 +597,18 @@ void HubMode::handleHeartbeat(uint16_t source_addr, const HeartbeatPayload *payl
     // Compute pending update flags for this node
     uint8_t pending_flags = hub_router_->getPendingUpdateFlags(source_addr);
 
-    // Set REREGISTER flag if the node is unknown to the address manager
+    // Set REREGISTER flag if the node is unknown or device_id doesn't match
     const NodeInfo *node = address_manager_->getNodeInfo(source_addr);
     if (!node) {
         pending_flags |= PENDING_FLAG_REREGISTER;
+    } else if (node->device_id != payload->device_id) {
+        logger.warn("device_id mismatch on addr 0x%04X: registered=0x%016llX, received=0x%016llX",
+                    source_addr, node->device_id, payload->device_id);
+        pending_flags |= PENDING_FLAG_REREGISTER;
+        // Deregister stale mapping so the mismatched sensor gets a fresh address
+        address_manager_->unregisterNode(source_addr);
+        Flash flash_hal;
+        address_manager_->persist(flash_hal);
     }
 
     // Set REBOOT flag if this node has a pending reboot request
@@ -622,10 +630,9 @@ void HubMode::handleHeartbeat(uint16_t source_addr, const HeartbeatPayload *payl
     }
 
     // Forward heartbeat status to Raspberry Pi via UART
-    uint64_t device_id = 0;
-    if (node) {
-        device_id = node->device_id;
-    }
+    // Use device_id from the payload (authoritative) rather than address lookup
+    // This ensures correct reporting even during address mismatch scenarios
+    uint64_t device_id = payload->device_id;
 
     // rssi parameter is measured by hub when receiving this heartbeat (already in dBm)
 

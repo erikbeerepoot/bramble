@@ -184,6 +184,7 @@ struct __attribute__((packed)) HeartbeatPayload {
     uint8_t active_sensors;    // Bitmask of active sensors
     uint16_t error_flags;      // Error status flags (extended to 16 bits)
     uint16_t pending_records;  // Untransmitted sensor records in flash backlog
+    uint64_t device_id;        // Unique device identifier for address mismatch detection
 };
 
 /**
