@@ -453,7 +453,8 @@ HeartbeatStatus SensorMode::collectHeartbeatStatus()
         pending_records = (count > 0xFFFF) ? 0xFFFF : static_cast<uint16_t>(count);
     }
 
-    return {uptime, battery_level, signal_strength, active_sensors, error_flags, pending_records};
+    return {uptime,         battery_level, signal_strength, active_sensors,
+            error_flags,   pending_records, getDeviceId()};
 }
 
 uint16_t SensorMode::collectErrorFlags()
@@ -676,6 +677,7 @@ void SensorMode::transmitBacklog()
             [this, total_records_scanned](bool success) {
                 if (success && flash_buffer_) {
                     flash_buffer_->advanceReadIndex(static_cast<uint32_t>(total_records_scanned));
+                    flash_buffer_->flush();  // Persist read index to flash for cold start recovery
 
                     // Check if we should send another batch
                     uint32_t remaining = flash_buffer_->getUntransmittedCount();

@@ -36,7 +36,7 @@ void HeartbeatClient::send()
 
     messenger_.sendHeartbeat(ADDRESS_HUB, status.uptime, status.battery_level,
                              status.signal_strength, status.active_sensors, status.error_flags,
-                             status.pending_records, RELIABLE,
+                             status.pending_records, status.device_id, RELIABLE,
                              [this](uint8_t seq_num, uint8_t ack_status, uint64_t) {
                                  bool success = (ack_status == 0);
                                  if (!success) {

@@ -14,6 +14,7 @@ struct HeartbeatStatus {
     uint8_t active_sensors;
     uint16_t error_flags;
     uint16_t pending_records;
+    uint64_t device_id;
 };
 
 /**
