@@ -676,10 +676,10 @@ void SensorMode::transmitBacklog()
             records, valid_records_count,
             [this, total_records_scanned, start_index](bool success) {
                 if (success && flash_buffer_) {
-                    // Mark each record's transmission_status in flash (NOR-friendly single-byte write)
+                    // Mark each record's transmission_status in flash (NOR-friendly single-byte
+                    // write)
                     for (uint32_t i = 0; i < total_records_scanned; i++) {
-                        uint32_t index =
-                            (start_index + i) % SensorFlashBuffer::MAX_RECORDS;
+                        uint32_t index = (start_index + i) % SensorFlashBuffer::MAX_RECORDS;
                         flash_buffer_->markTransmitted(index);
                     }
 
