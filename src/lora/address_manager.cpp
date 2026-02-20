@@ -6,6 +6,7 @@
 
 #include "../config/hub_config.h"
 #include "../hal/logger.h"
+#include "../util/format.h"
 #include "../util/time.h"
 
 static Logger logger("AddressManager");
@@ -41,8 +42,10 @@ uint16_t AddressManager::registerNode(uint64_t device_id, uint8_t node_type, uin
     // Check if device is already registered
     if (isDeviceRegistered(device_id)) {
         uint16_t existing_address = getDeviceAddress(device_id);
-        logger.info("Device 0x%016llx already registered with address 0x%04x",
-                    (unsigned long long)device_id, existing_address);
+        char id_hex[17];
+        bramble::format::uint64_to_hex(device_id, id_hex, sizeof(id_hex));
+        logger.info("Device 0x%s already registered with address 0x%04x", id_hex,
+                    existing_address);
 
         // Update node info with potentially new capabilities/firmware
         NodeInfo *node = &node_registry_[existing_address];
@@ -98,8 +101,10 @@ uint16_t AddressManager::registerNode(uint64_t device_id, uint8_t node_type, uin
     node_registry_[assigned_address] = new_node;
     device_to_address_[device_id] = assigned_address;
 
-    logger.info("Registered device 0x%016llx as '%s' with address 0x%04x",
-                (unsigned long long)device_id, new_node.device_name, assigned_address);
+    char id_hex2[17];
+    bramble::format::uint64_to_hex(device_id, id_hex2, sizeof(id_hex2));
+    logger.info("Registered device 0x%s as '%s' with address 0x%04x", id_hex2,
+                new_node.device_name, assigned_address);
 
     return assigned_address;
 }
@@ -231,9 +236,11 @@ void AddressManager::printNetworkStatus()
     logger.info("-------  ----------------  ----------------  ----  ----  ------  ---------");
 
     for (const auto &[address, node] : node_registry_) {
-        logger.info("0x%04x  0x%016llx  %-16s  0x%02x  0x%02x  %-6s  %d ms ago", address,
-                    (unsigned long long)node.device_id, node.device_name, node.node_type,
-                    node.capabilities, node.is_active ? "Yes" : "No",
+        char dev_hex[17];
+        bramble::format::uint64_to_hex(node.device_id, dev_hex, sizeof(dev_hex));
+        logger.info("0x%04x  0x%s  %-16s  0x%02x  0x%02x  %-6s  %lu ms ago", address, dev_hex,
+                    node.device_name, node.node_type, node.capabilities,
+                    node.is_active ? "Yes" : "No",
                     bramble::util::time::currentTimeMs() - node.last_seen_time);
     }
 }

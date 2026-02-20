@@ -9,8 +9,11 @@
 #include <cstring>
 
 #include "pico/stdlib.h"
-#include "pico/stdio_usb.h"
 #include "pico/unique_id.h"
+
+#if LIB_PICO_STDIO_USB
+#include "pico/stdio_usb.h"
+#endif
 
 #include "hardware/clocks.h"
 #include "hardware/gpio.h"
@@ -31,6 +34,9 @@
 #include "lora/network_stats.h"
 #include "lora/reliable_messenger.h"
 #include "lora/sx1276.h"
+
+// Utility includes
+#include "util/format.h"
 
 // Configuration includes
 #include "config/hub_config.h"
@@ -111,7 +117,7 @@ int main()
     // Initialize stdio (UART configured via CMakeLists.txt)
     stdio_init_all();
 
-#if defined(DEFAULT_IS_HUB) && DEFAULT_IS_HUB
+#if LIB_PICO_STDIO_USB
     // Hub uses USB CDC for debug output — wait for host to connect
     // so startup logs aren't lost. Times out after 3s if no host.
     for (int i = 0; i < 30 && !stdio_usb_connected(); i++) {
@@ -358,7 +364,7 @@ bool initializeHardware(SX1276 &lora, NeoPixel &led)
 
     // Configure LoRa parameters
     lora.setFrequency(915000000);  // 915 MHz for US
-    lora.setTxPower(20);           // 17 dBm
+    lora.setTxPower(17);
     lora.setBandwidth(125000);     // 125 kHz
     lora.setSpreadingFactor(9);
     lora.setCodingRate(5);
@@ -400,7 +406,9 @@ bool attemptRegistration(ReliableMessenger &messenger, SX1276 &lora,
     Logger log("Registration");
 
     log.info("Attempting registration with hub...");
-    log.info("Device ID: 0x%016llX", device_id);
+    char id_hex[17];
+    bramble::format::uint64_to_hex(device_id, id_hex, sizeof(id_hex));
+    log.info("Device ID: 0x%s", id_hex);
 
     // Get variant info
     VariantInfo variant = getVariantInfo();
@@ -529,8 +537,10 @@ void processIncomingMessage(uint8_t *rx_buffer, int rx_len, ReliableMessenger &m
         );
 
         if (status == REG_SUCCESS) {
-            log.info("Successfully registered node 0x%016llX with address 0x%04X",
-                     reg_payload->device_id, assigned_addr);
+            char reg_hex[17];
+            bramble::format::uint64_to_hex(reg_payload->device_id, reg_hex, sizeof(reg_hex));
+            log.info("Successfully registered node 0x%s with address 0x%04X", reg_hex,
+                     assigned_addr);
         }
     }
 
@@ -539,7 +549,7 @@ void processIncomingMessage(uint8_t *rx_buffer, int rx_len, ReliableMessenger &m
         const HeartbeatPayload *heartbeat =
             reinterpret_cast<const HeartbeatPayload *>(rx_buffer + sizeof(MessageHeader));
 
-        log.debug("Heartbeat from 0x%04X: uptime=%lus, battery=%u%%, signal=%u, sensors=0x%02X",
+        log.info("Heartbeat from 0x%04X: uptime=%lus, battery=%u%%, signal=%u, sensors=0x%02X",
                   source_address, heartbeat->uptime_seconds, heartbeat->battery_level,
                   heartbeat->signal_strength, heartbeat->active_sensors);
     }
@@ -550,7 +560,7 @@ void processIncomingMessage(uint8_t *rx_buffer, int rx_len, ReliableMessenger &m
         const CheckUpdatesPayload *payload =
             reinterpret_cast<const CheckUpdatesPayload *>(msg->payload);
 
-        log.debug("CHECK_UPDATES from 0x%04X (node_seq=%d)", source_address,
+        log.info("CHECK_UPDATES from 0x%04X (node_seq=%d)", source_address,
                   payload->node_sequence);
 
         hub_router->handleCheckUpdates(source_address, payload->node_sequence);

@@ -8,6 +8,7 @@
 
 #include "hal/flash.h"
 #include "hal/logger.h"
+#include "util/format.h"
 #include "hal/pmu_protocol.h"
 #include "lora/address_manager.h"
 #include "lora/hub_router.h"
@@ -29,23 +30,39 @@ constexpr uint32_t MAINTENANCE_INTERVAL_MS = 300000;      // 5 minutes
 constexpr uint32_t DATETIME_QUERY_INTERVAL_MS = 3600000;  // 1 hour
 constexpr uint32_t DATETIME_RETRY_INTERVAL_MS = 5000;     // 5 seconds retry if RTC not running
 
-// Convert uint64_t to decimal string without relying on %llu in snprintf.
-// newlib-nano's snprintf mishandles long long on 32-bit ARM, corrupting
-// subsequent varargs fields and the output buffer.
-static void uint64_to_str(uint64_t value, char *buf, size_t buf_size)
+// Safe uint64_t formatting — see src/util/format.h for details
+using bramble::format::uint64_to_str;
+using bramble::format::uint64_to_hex;
+
+// ===== Buffered UART Output =====
+// All UART writes go into a software buffer, which is flushed at the top of
+// onLoop() — before any LoRa processing.  This guarantees the hardware TX FIFO
+// is empty when the radio fires, preventing 20 dBm LoRa TX from corrupting
+// UART bytes still on the wire.
+
+void HubMode::uartSend(const char *str)
 {
-    if (value == 0) {
-        snprintf(buf, buf_size, "0");
-        return;
+    if (!str) return;
+    size_t len = strlen(str);
+    size_t available = UART_TX_BUFFER_SIZE - uart_tx_pos_;
+    if (len > available) {
+        // Buffer full — flush now as a safety valve
+        flushUartBuffer();
+        available = UART_TX_BUFFER_SIZE - uart_tx_pos_;
     }
-    char tmp[21];  // max uint64 is 20 digits + NUL
-    int pos = sizeof(tmp) - 1;
-    tmp[pos] = '\0';
-    while (value > 0 && pos > 0) {
-        tmp[--pos] = '0' + (value % 10);
-        value /= 10;
+    if (len > available) {
+        len = available;  // Truncate if still too large after flush
     }
-    snprintf(buf, buf_size, "%s", &tmp[pos]);
+    memcpy(uart_tx_buffer_ + uart_tx_pos_, str, len);
+    uart_tx_pos_ += len;
+}
+
+void HubMode::flushUartBuffer()
+{
+    if (uart_tx_pos_ == 0) return;
+    uart_write_blocking(API_UART_ID, reinterpret_cast<const uint8_t *>(uart_tx_buffer_), uart_tx_pos_);
+    uart_tx_wait_blocking(API_UART_ID);
+    uart_tx_pos_ = 0;
 }
 
 void HubMode::onStart()
@@ -59,6 +76,7 @@ void HubMode::onStart()
 
     // Initialize serial input buffer
     serial_input_pos_ = 0;
+    uart_tx_pos_ = 0;
     last_datetime_sync_ms_ = 0;
     memset(serial_input_buffer_, 0, sizeof(serial_input_buffer_));
 
@@ -140,8 +158,17 @@ void HubMode::onStart()
 
 void HubMode::onLoop()
 {
+    // Flush any buffered UART output from the previous loop iteration.
+    // This runs before LoRa interrupt checks, so the TX FIFO is guaranteed
+    // empty when the radio starts transmitting.
+    flushUartBuffer();
+
     // Process serial input from Raspberry Pi
     processSerialInput();
+
+    // Flush again so command responses (e.g. LIST_NODES) are sent immediately,
+    // before any LoRa processing that could delay or interfere with UART TX.
+    flushUartBuffer();
 
     // Retry GET_DATETIME until RTC is running (belt-and-suspenders approach)
     // This handles cases where RasPi wasn't ready when hub first booted
@@ -281,7 +308,7 @@ void HubMode::handleSerialCommand(const char *cmd)
     } else if (strncmp(cmd, "REBOOT_NODE ", 12) == 0) {
         handleRebootNode(cmd + 12);
     } else {
-        uart_puts(API_UART_ID, "ERROR Unknown command\n");
+        uartSend("ERROR Unknown command\n");
     }
 }
 
@@ -294,7 +321,7 @@ void HubMode::handleListNodes()
     char response[128];
     snprintf(response, sizeof(response), "NODE_LIST %lu\n", count);
     logger.debug("Hub TX: %s", response);  // Debug: confirm we're sending
-    uart_puts(API_UART_ID, response);
+    uartSend(response);
 
     // Iterate all registered nodes
     for (uint16_t addr = ADDRESS_MIN_NODE; addr <= ADDRESS_MAX_NODE; addr++) {
@@ -322,7 +349,7 @@ void HubMode::handleListNodes()
                 response[sizeof(response) - 2] = '\n';
                 response[sizeof(response) - 1] = '\0';
             }
-            uart_puts(API_UART_ID, response);
+            uartSend(response);
         }
     }
 }
@@ -333,7 +360,7 @@ void HubMode::handleGetQueue(const char *args)
     uint16_t node_addr = atoi(args);
 
     if (node_addr < ADDRESS_MIN_NODE || node_addr > ADDRESS_MAX_NODE) {
-        uart_puts(API_UART_ID, "ERROR Invalid node address\n");
+        uartSend("ERROR Invalid node address\n");
         return;
     }
 
@@ -343,7 +370,7 @@ void HubMode::handleGetQueue(const char *args)
     // Send header
     char response[128];
     snprintf(response, sizeof(response), "QUEUE %u %zu\n", node_addr, count);
-    uart_puts(API_UART_ID, response);
+    uartSend(response);
 
     // Send individual update entries
     uint32_t current_time = to_ms_since_boot(get_absolute_time());
@@ -376,7 +403,7 @@ void HubMode::handleGetQueue(const char *args)
             // Format: UPDATE <seq> <type> <age_sec>
             snprintf(response, sizeof(response), "UPDATE %u %s %lu\n", update.sequence, type_str,
                      age_sec);
-            uart_puts(API_UART_ID, response);
+            uartSend(response);
         }
     }
 }
@@ -388,7 +415,7 @@ void HubMode::handleSetSchedule(const char *args)
     uint8_t index, hour, minute, days, valve;
 
     if (!parseScheduleArgs(args, node_addr, index, hour, minute, duration, days, valve)) {
-        uart_puts(API_UART_ID, "ERROR Invalid SET_SCHEDULE syntax\n");
+        uartSend("ERROR Invalid SET_SCHEDULE syntax\n");
         return;
     }
 
@@ -406,9 +433,9 @@ void HubMode::handleSetSchedule(const char *args)
         size_t position = hub_router_->getPendingUpdateCount(node_addr);
         char response[128];
         snprintf(response, sizeof(response), "QUEUED SET_SCHEDULE %u %zu\n", node_addr, position);
-        uart_puts(API_UART_ID, response);
+        uartSend(response);
     } else {
-        uart_puts(API_UART_ID, "ERROR Failed to queue update\n");
+        uartSend("ERROR Failed to queue update\n");
     }
 }
 
@@ -419,7 +446,7 @@ void HubMode::handleRemoveSchedule(const char *args)
     uint8_t index;
 
     if (sscanf(args, "%hu %hhu", &node_addr, &index) != 2) {
-        uart_puts(API_UART_ID, "ERROR Invalid REMOVE_SCHEDULE syntax\n");
+        uartSend("ERROR Invalid REMOVE_SCHEDULE syntax\n");
         return;
     }
 
@@ -429,9 +456,9 @@ void HubMode::handleRemoveSchedule(const char *args)
         char response[128];
         snprintf(response, sizeof(response), "QUEUED REMOVE_SCHEDULE %u %zu\n", node_addr,
                  position);
-        uart_puts(API_UART_ID, response);
+        uartSend(response);
     } else {
-        uart_puts(API_UART_ID, "ERROR Failed to queue removal\n");
+        uartSend("ERROR Failed to queue removal\n");
     }
 }
 
@@ -441,7 +468,7 @@ void HubMode::handleSetWakeInterval(const char *args)
     uint16_t node_addr, interval;
 
     if (sscanf(args, "%hu %hu", &node_addr, &interval) != 2) {
-        uart_puts(API_UART_ID, "ERROR Invalid SET_WAKE_INTERVAL syntax\n");
+        uartSend("ERROR Invalid SET_WAKE_INTERVAL syntax\n");
         return;
     }
 
@@ -451,9 +478,9 @@ void HubMode::handleSetWakeInterval(const char *args)
         char response[128];
         snprintf(response, sizeof(response), "QUEUED SET_WAKE_INTERVAL %u %zu\n", node_addr,
                  position);
-        uart_puts(API_UART_ID, response);
+        uartSend(response);
     } else {
-        uart_puts(API_UART_ID, "ERROR Failed to queue update\n");
+        uartSend("ERROR Failed to queue update\n");
     }
 }
 
@@ -465,7 +492,7 @@ void HubMode::handleSetDateTime(const char *args)
 
     if (sscanf(args, "%hu %d %d %d %d %d %d %d", &node_addr, &year, &month, &day, &weekday, &hour,
                &minute, &second) != 8) {
-        uart_puts(API_UART_ID, "ERROR Invalid SET_DATETIME syntax\n");
+        uartSend("ERROR Invalid SET_DATETIME syntax\n");
         return;
     }
 
@@ -477,9 +504,9 @@ void HubMode::handleSetDateTime(const char *args)
         size_t position = hub_router_->getPendingUpdateCount(node_addr);
         char response[128];
         snprintf(response, sizeof(response), "QUEUED SET_DATETIME %u %zu\n", node_addr, position);
-        uart_puts(API_UART_ID, response);
+        uartSend(response);
     } else {
-        uart_puts(API_UART_ID, "ERROR Failed to queue update\n");
+        uartSend("ERROR Failed to queue update\n");
     }
 }
 
@@ -538,7 +565,7 @@ bool HubMode::parseScheduleArgs(const char *args, uint16_t &node_addr, uint8_t &
 void HubMode::syncTimeFromRaspberryPi()
 {
     // Send request for datetime
-    uart_puts(API_UART_ID, "GET_DATETIME\n");
+    uartSend("GET_DATETIME\n");
     last_datetime_sync_ms_ = to_ms_since_boot(get_absolute_time());
     logger.debug("Requesting datetime from RasPi");
 }
@@ -556,20 +583,20 @@ void HubMode::handleDeleteNode(const char *args)
     uint16_t node_addr = atoi(args);
 
     if (node_addr < ADDRESS_MIN_NODE || node_addr > ADDRESS_MAX_NODE) {
-        uart_puts(API_UART_ID, "ERROR Invalid node address\n");
+        uartSend("ERROR Invalid node address\n");
         return;
     }
 
     // Check if node exists
     const NodeInfo *node = address_manager_->getNodeInfo(node_addr);
     if (!node) {
-        uart_puts(API_UART_ID, "ERROR Node not found\n");
+        uartSend("ERROR Node not found\n");
         return;
     }
 
     // Unregister the node
     if (!address_manager_->unregisterNode(node_addr)) {
-        uart_puts(API_UART_ID, "ERROR Failed to unregister node\n");
+        uartSend("ERROR Failed to unregister node\n");
         return;
     }
 
@@ -583,7 +610,7 @@ void HubMode::handleDeleteNode(const char *args)
     // Send success response
     char response[64];
     snprintf(response, sizeof(response), "DELETED_NODE %u\n", node_addr);
-    uart_puts(API_UART_ID, response);
+    uartSend(response);
 
     logger.info("Deleted node 0x%04X from registry", node_addr);
 }
@@ -592,12 +619,12 @@ void HubMode::handleRebootNode(const char *args)
 {
     uint16_t node_addr;
     if (sscanf(args, "%hu", &node_addr) != 1) {
-        uart_puts(API_UART_ID, "ERROR Invalid REBOOT_NODE syntax\n");
+        uartSend("ERROR Invalid REBOOT_NODE syntax\n");
         return;
     }
 
     if (node_addr < ADDRESS_MIN_NODE || node_addr > ADDRESS_MAX_NODE) {
-        uart_puts(API_UART_ID, "ERROR Invalid node address\n");
+        uartSend("ERROR Invalid node address\n");
         return;
     }
 
@@ -605,7 +632,7 @@ void HubMode::handleRebootNode(const char *args)
 
     char response[64];
     snprintf(response, sizeof(response), "QUEUED REBOOT_NODE %u\n", node_addr);
-    uart_puts(API_UART_ID, response);
+    uartSend(response);
 
     logger.info("Queued reboot for node 0x%04X", node_addr);
 }
@@ -627,8 +654,11 @@ void HubMode::handleHeartbeat(uint16_t source_addr, const HeartbeatPayload *payl
     if (!node) {
         pending_flags |= PENDING_FLAG_REREGISTER;
     } else if (node->device_id != payload->device_id) {
-        logger.warn("device_id mismatch on addr 0x%04X: registered=0x%016llX, received=0x%016llX",
-                    source_addr, node->device_id, payload->device_id);
+        char reg_id[17], rcv_id[17];
+        uint64_to_hex(node->device_id, reg_id, sizeof(reg_id));
+        uint64_to_hex(payload->device_id, rcv_id, sizeof(rcv_id));
+        logger.warn("device_id mismatch on addr 0x%04X: registered=0x%s, received=0x%s",
+                    source_addr, reg_id, rcv_id);
         pending_flags |= PENDING_FLAG_REREGISTER;
         // Deregister stale mapping so the mismatched sensor gets a fresh address
         address_manager_->unregisterNode(source_addr);
@@ -673,7 +703,7 @@ void HubMode::handleHeartbeat(uint16_t source_addr, const HeartbeatPayload *payl
         response[sizeof(response) - 2] = '\n';
         response[sizeof(response) - 1] = '\0';
     }
-    uart_puts(API_UART_ID, response);
+    uartSend(response);
 
     logger.debug("Forwarded heartbeat: node=%u, battery=%u, errors=0x%02X, rssi=%d, pending=%u",
                  source_addr, payload->battery_level, payload->error_flags, rssi,
@@ -713,7 +743,7 @@ void HubMode::handleSensorData(uint16_t source_addr, const SensorPayload *payloa
                 response[sizeof(response) - 2] = '\n';
                 response[sizeof(response) - 1] = '\0';
             }
-            uart_puts(API_UART_ID, response);
+            uartSend(response);
             logger.debug("Forwarded sensor data: node=%u, device_id=%s, type=%s, value=%d",
                          source_addr, device_id_str, type_str, value);
         }
@@ -721,15 +751,15 @@ void HubMode::handleSensorData(uint16_t source_addr, const SensorPayload *payloa
         // Generic sensor data (hex encoded)
         snprintf(response, sizeof(response), "SENSOR_DATA %u %s %u ", source_addr, device_id_str,
                  payload->sensor_type);
-        uart_puts(API_UART_ID, response);
+        uartSend(response);
 
         // Send data as hex
         for (uint8_t i = 0; i < payload->data_length && i < MAX_SENSOR_DATA_LENGTH; i++) {
             char hex[4];
             snprintf(hex, sizeof(hex), "%02X", payload->data[i]);
-            uart_puts(API_UART_ID, hex);
+            uartSend(hex);
         }
-        uart_puts(API_UART_ID, "\n");
+        uartSend("\n");
     }
 }
 
@@ -761,7 +791,7 @@ void HubMode::handleSensorDataBatch(uint16_t source_addr, const SensorDataBatchP
         response[sizeof(response) - 2] = '\n';
         response[sizeof(response) - 1] = '\0';
     }
-    uart_puts(API_UART_ID, response);
+    uartSend(response);
 
     // Forward each record
     for (uint8_t i = 0; i < payload->record_count; i++) {
@@ -778,7 +808,7 @@ void HubMode::handleSensorDataBatch(uint16_t source_addr, const SensorDataBatchP
             response[sizeof(response) - 2] = '\n';
             response[sizeof(response) - 1] = '\0';
         }
-        uart_puts(API_UART_ID, response);
+        uartSend(response);
     }
 
     // Send batch complete marker
@@ -788,7 +818,7 @@ void HubMode::handleSensorDataBatch(uint16_t source_addr, const SensorDataBatchP
         response[sizeof(response) - 2] = '\n';
         response[sizeof(response) - 1] = '\0';
     }
-    uart_puts(API_UART_ID, response);
+    uartSend(response);
 
     logger.debug("Forwarded batch to RasPi: %u records", payload->record_count);
 
@@ -833,7 +863,7 @@ void HubMode::handleBatchAckResponse(const char *args)
     int count, status;
 
     if (sscanf(args, "%hu %d %d", &node_addr, &count, &status) != 3) {
-        uart_puts(API_UART_ID, "ERROR Invalid BATCH_ACK syntax\n");
+        uartSend("ERROR Invalid BATCH_ACK syntax\n");
         return;
     }
 
@@ -856,5 +886,5 @@ void HubMode::handleBatchAckResponse(const char *args)
     // Respond to RasPi
     char response[64];
     snprintf(response, sizeof(response), "BATCH_ACK_SENT %u %d\n", node_addr, count);
-    uart_puts(API_UART_ID, response);
+    uartSend(response);
 }

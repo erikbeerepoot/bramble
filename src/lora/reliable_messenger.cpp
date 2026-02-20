@@ -5,6 +5,7 @@
 
 #include "pico/stdlib.h"
 
+#include "../util/format.h"
 #include "../util/time.h"
 
 ReliableMessenger::ReliableMessenger(SX1276 *lora, uint16_t node_addr, NetworkStats *stats)
@@ -142,7 +143,9 @@ uint8_t ReliableMessenger::sendRegistrationRequest(uint16_t dst_addr, uint64_t d
 {
     uint8_t seq_num = getNextSequenceNumber();
 
-    logger_.info("Sending registration request to hub (device_id=0x%016llX)", device_id);
+    char id_hex[17];
+    bramble::format::uint64_to_hex(device_id, id_hex, sizeof(id_hex));
+    logger_.info("Sending registration request to hub (device_id=0x%s)", id_hex);
 
     bool success = sendWithBuilder(
         [=](uint8_t *buffer) {
@@ -229,9 +232,9 @@ bool ReliableMessenger::send(const uint8_t *buffer, size_t length, DeliveryCriti
     // Add to queue
     message_queue_.push(std::move(outgoing));
 
-    logger_.debug("Queued %s message (seq=%d) to 0x%04X (queue depth: %zu)",
-                  RetryPolicy::getPolicyName(criticality), msg->header.seq_num,
-                  msg->header.dst_addr, message_queue_.size());
+    logger_.info("Queued %s message (seq=%d) to 0x%04X (queue depth: %zu)",
+                 RetryPolicy::getPolicyName(criticality), msg->header.seq_num,
+                 msg->header.dst_addr, message_queue_.size());
 
     return true;
 }
@@ -280,8 +283,8 @@ uint8_t ReliableMessenger::sendWithCallback(const uint8_t *buffer, size_t length
 
     pending_messages_[seq_num] = std::move(pending);
 
-    logger_.debug("Sent %s message seq=%d with callback, awaiting ACK (pending: %zu)",
-                  RetryPolicy::getPolicyName(criticality), seq_num, pending_messages_.size());
+    logger_.info("Sent %s message seq=%d with callback, awaiting ACK (pending: %zu)",
+                 RetryPolicy::getPolicyName(criticality), seq_num, pending_messages_.size());
 
     return seq_num;
 }
@@ -295,9 +298,11 @@ uint8_t ReliableMessenger::sendSensorDataWithCallback(uint16_t dst_addr, uint8_t
     uint8_t flags = MessageBuilder::criticalityToFlags(criticality);
     uint8_t seq_num = getNextSequenceNumber();
 
+    char ctx_str[21];
+    bramble::format::uint64_to_str(user_context, ctx_str, sizeof(ctx_str));
     logger_.debug(
-        "sendSensorDataWithCallback: src=0x%04X, dst=0x%04X, type=%d, criticality=%d, context=%llu",
-        node_addr_, dst_addr, sensor_type, criticality, user_context);
+        "sendSensorDataWithCallback: src=0x%04X, dst=0x%04X, type=%d, criticality=%d, context=%s",
+        node_addr_, dst_addr, sensor_type, criticality, ctx_str);
 
     uint8_t buffer[MESSAGE_MAX_SIZE];
     size_t length = MessageBuilder::createSensorMessage(node_addr_, dst_addr, seq_num, sensor_type,
@@ -344,7 +349,7 @@ uint8_t ReliableMessenger::sendSensorDataBatchWithCallback(
         return 0;
     }
 
-    logger_.debug("Created batch message: %zu bytes (%d records)", length, record_count);
+    logger_.info("Created batch message: %zu bytes (%d records)", length, record_count);
 
     return sendWithCallback(buffer, length, criticality, ack_callback, user_context);
 }
@@ -494,9 +499,11 @@ bool ReliableMessenger::processIncomingMessage(const uint8_t *buffer, size_t len
         const RegistrationPayload *reg_payload =
             reinterpret_cast<const RegistrationPayload *>(message->payload);
         if (reg_payload) {
-            logger_.info("Received registration request: device_id=0x%016llX, type=%d, "
+            char reg_hex[17];
+            bramble::format::uint64_to_hex(reg_payload->device_id, reg_hex, sizeof(reg_hex));
+            logger_.info("Received registration request: device_id=0x%s, type=%d, "
                          "capabilities=0x%02X, name='%s'",
-                         reg_payload->device_id, reg_payload->node_type, reg_payload->capabilities,
+                         reg_hex, reg_payload->node_type, reg_payload->capabilities,
                          reg_payload->device_name);
 
             // TODO: Handle registration request - this should be handled by hub logic
@@ -509,10 +516,11 @@ bool ReliableMessenger::processIncomingMessage(const uint8_t *buffer, size_t len
         const RegistrationResponsePayload *reg_response =
             reinterpret_cast<const RegistrationResponsePayload *>(message->payload);
         if (reg_response) {
-            logger_.info("Received registration response: device_id=0x%016llX, "
+            char resp_hex[17];
+            bramble::format::uint64_to_hex(reg_response->device_id, resp_hex, sizeof(resp_hex));
+            logger_.info("Received registration response: device_id=0x%s, "
                          "assigned_addr=0x%04X, status=%d",
-                         reg_response->device_id, reg_response->assigned_addr,
-                         reg_response->status);
+                         resp_hex, reg_response->assigned_addr, reg_response->status);
 
             if (reg_response->status == REG_SUCCESS) {
                 logger_.info("Registration successful! Assigned address: 0x%04X",
@@ -681,7 +689,7 @@ bool ReliableMessenger::sendMessage(const uint8_t *buffer, size_t length)
             return false;
         }
     }
-    logger_.debug("TX complete after %d ms", wait_count);
+    logger_.info("TX complete after %d ms", wait_count);
 
     // Return to receive mode
     lora_->startReceive();
@@ -703,8 +711,9 @@ void ReliableMessenger::handleAck(const AckPayload *ack_payload)
 
         // Invoke callback if set BEFORE removing from pending
         if (pending.ack_callback) {
-            logger_.debug("Invoking ACK callback for seq=%d, context=%llu", seq_num,
-                          pending.user_context);
+            char ack_ctx[21];
+            bramble::format::uint64_to_str(pending.user_context, ack_ctx, sizeof(ack_ctx));
+            logger_.debug("Invoking ACK callback for seq=%d, context=%s", seq_num, ack_ctx);
             pending.ack_callback(seq_num, ack_payload->status, pending.user_context);
         }
 
@@ -718,7 +727,7 @@ void ReliableMessenger::handleAck(const AckPayload *ack_payload)
         // Remove from pending
         pending_messages_.erase(it);
     } else {
-        logger_.debug("Received ACK for unknown seq=%d", ack_payload->ack_seq_num);
+        logger_.info("Received ACK for unknown seq=%d", ack_payload->ack_seq_num);
     }
 }
 
