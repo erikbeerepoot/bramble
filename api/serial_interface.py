@@ -120,6 +120,14 @@ class SerialInterface:
                 logger.error(f"Error reading serial: {e}")
                 time.sleep(0.1)
 
+    # Known message prefixes that should start a line
+    MESSAGE_PREFIXES = [
+        "HEARTBEAT ", "SENSOR_BATCH ", "SENSOR_RECORD ",
+        "BATCH_COMPLETE ", "SENSOR_DATA ", "HUB_READY",
+        "NODE_LIST ", "NODE ", "GET_DATETIME", "QUEUE ",
+        "QUEUED ", "ERROR ", "DELETED_NODE ", "BATCH_ACK_SENT ",
+    ]
+
     def _handle_line(self, line: str):
         """Process a line received from the hub.
 
@@ -127,6 +135,19 @@ class SerialInterface:
             line: Complete line from hub
         """
         logger.debug(f"Hub: {line}")
+
+        # Check if line contains an embedded message (corruption recovery).
+        # If UART corruption merges two messages on one line, split them so
+        # the embedded message is still processed.
+        for prefix in self.MESSAGE_PREFIXES:
+            idx = line.find(prefix, 1)  # Skip pos 0 (that's the normal start)
+            if idx > 0:
+                logger.warning(f"Detected embedded message at pos {idx}, splitting: {line[:60]}...")
+                self._handle_line(line[idx:])  # Process the embedded message first
+                line = line[:idx].rstrip()
+                if not line:
+                    return
+                break
 
         # Proactively send time when hub signals it's ready
         # This ensures hub gets time regardless of boot order
