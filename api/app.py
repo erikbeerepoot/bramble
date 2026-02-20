@@ -163,13 +163,22 @@ def list_nodes():
     """
     try:
         serial = get_serial()
-        responses = serial.send_command('LIST_NODES')
 
-        # Parse response
-        # Format: NODE_LIST <count>
-        #         NODE <addr> <device_id> <type> <online> <last_seen_sec> [<firmware_version>]
+        # Retry LIST_NODES up to 3 times — the hub may not respond on the first
+        # attempt if it is busy with LoRa operations or if UART bytes are lost.
+        responses = None
+        for attempt in range(Config.MAX_RETRIES):
+            try:
+                responses = serial.send_command('LIST_NODES', timeout=2.0)
+                if responses and responses[0].startswith('NODE_LIST'):
+                    break
+                logger.warning(f"LIST_NODES attempt {attempt + 1}: invalid response {responses}")
+                responses = None
+            except TimeoutError:
+                logger.warning(f"LIST_NODES attempt {attempt + 1}/{Config.MAX_RETRIES} timed out")
+
         if not responses or not responses[0].startswith('NODE_LIST'):
-            logger.warning(f"Invalid LIST_NODES response, falling back to database: {responses}")
+            logger.warning("LIST_NODES failed after retries, falling back to database")
             return _build_nodes_from_database()
 
         header = responses[0].split()
@@ -221,12 +230,9 @@ def list_nodes():
             'source': 'hub'
         })
 
-    except TimeoutError:
-        logger.warning("LIST_NODES timed out, falling back to database")
-        return _build_nodes_from_database()
     except Exception as e:
         logger.error(f"Error listing nodes: {e}")
-        return jsonify({'error': str(e)}), 500
+        return _build_nodes_from_database()
 
 
 @app.route('/api/nodes/<int:device_id>', methods=['GET'])

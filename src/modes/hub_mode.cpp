@@ -284,6 +284,8 @@ void HubMode::handleSerialCommand(const char *cmd)
         return;
     }
 
+    logger.info("Serial RX: %s", cmd);
+
     // Parse command
     if (strcmp(cmd, "LIST_NODES") == 0) {
         handleListNodes();
@@ -314,43 +316,42 @@ void HubMode::handleSerialCommand(const char *cmd)
 
 void HubMode::handleListNodes()
 {
-    // Get node count
-    uint32_t count = address_manager_->getRegisteredNodeCount();
+    // Get registered addresses directly (avoids scanning 65k addresses)
+    auto addresses = address_manager_->getRegisteredAddresses();
 
-    // Send header
+    // Send header with actual count
     char response[128];
-    snprintf(response, sizeof(response), "NODE_LIST %lu\n", count);
-    logger.debug("Hub TX: %s", response);  // Debug: confirm we're sending
+    snprintf(response, sizeof(response), "NODE_LIST %u\n", (unsigned)addresses.size());
+    logger.info("LIST_NODES: responding with %u nodes", (unsigned)addresses.size());
     uartSend(response);
 
-    // Iterate all registered nodes
-    for (uint16_t addr = ADDRESS_MIN_NODE; addr <= ADDRESS_MAX_NODE; addr++) {
+    uint32_t now = to_ms_since_boot(get_absolute_time());
+
+    for (uint16_t addr : addresses) {
         const NodeInfo *node = address_manager_->getNodeInfo(addr);
-        if (node) {
-            // Determine node type
-            const char *type = "UNKNOWN";
-            if (node->capabilities & CAP_VALVE_CONTROL) {
-                type = "IRRIGATION";
-            } else if (node->capabilities & CAP_TEMPERATURE) {
-                type = "SENSOR";
-            }
+        if (!node) continue;
 
-            // Calculate last seen
-            uint32_t now = to_ms_since_boot(get_absolute_time());
-            uint32_t last_seen_sec = (now - node->last_seen_time) / 1000;
-
-            // Send node info (include device_id and firmware version for identification)
-            char device_id_str[21];
-            uint64_to_str(node->device_id, device_id_str, sizeof(device_id_str));
-            int len = snprintf(response, sizeof(response), "NODE %u %s %s %d %lu %lu\n", addr,
-                               device_id_str, type, node->is_active ? 1 : 0, last_seen_sec,
-                               (unsigned long)node->firmware_version);
-            if (len >= (int)sizeof(response)) {
-                response[sizeof(response) - 2] = '\n';
-                response[sizeof(response) - 1] = '\0';
-            }
-            uartSend(response);
+        // Determine node type
+        const char *type = "UNKNOWN";
+        if (node->capabilities & CAP_VALVE_CONTROL) {
+            type = "IRRIGATION";
+        } else if (node->capabilities & CAP_TEMPERATURE) {
+            type = "SENSOR";
         }
+
+        uint32_t last_seen_sec = (now - node->last_seen_time) / 1000;
+
+        // Send node info (include device_id and firmware version for identification)
+        char device_id_str[21];
+        uint64_to_str(node->device_id, device_id_str, sizeof(device_id_str));
+        int len = snprintf(response, sizeof(response), "NODE %u %s %s %d %lu %lu\n", addr,
+                           device_id_str, type, node->is_active ? 1 : 0, last_seen_sec,
+                           (unsigned long)node->firmware_version);
+        if (len >= (int)sizeof(response)) {
+            response[sizeof(response) - 2] = '\n';
+            response[sizeof(response) - 1] = '\0';
+        }
+        uartSend(response);
     }
 }
 

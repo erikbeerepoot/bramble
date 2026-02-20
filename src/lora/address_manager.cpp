@@ -185,6 +185,16 @@ std::vector<uint16_t> AddressManager::getActiveNodes()
     return active_nodes;
 }
 
+std::vector<uint16_t> AddressManager::getRegisteredAddresses() const
+{
+    std::vector<uint16_t> addresses;
+    addresses.reserve(node_registry_.size());
+    for (const auto &[address, node_info] : node_registry_) {
+        addresses.push_back(address);
+    }
+    return addresses;
+}
+
 uint32_t AddressManager::checkForInactiveNodes(uint32_t current_time, uint32_t timeout_ms)
 {
     uint32_t inactive_count = 0;
