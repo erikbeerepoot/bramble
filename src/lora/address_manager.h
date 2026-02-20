@@ -91,6 +91,12 @@ public:
     std::vector<uint16_t> getActiveNodes();
 
     /**
+     * @brief Get list of all registered node addresses
+     * @return Vector of registered node addresses
+     */
+    std::vector<uint16_t> getRegisteredAddresses() const;
+
+    /**
      * @brief Check for inactive nodes and mark them as such
      * @param current_time Current time in milliseconds
      * @param timeout_ms Timeout in milliseconds for considering node inactive

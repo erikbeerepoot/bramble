@@ -184,7 +184,13 @@ class SerialInterface:
             self._handle_batch_complete(line)
             return
 
+        # Handle batch acknowledgment confirmations from hub
+        if line.startswith("BATCH_ACK_SENT "):
+            logger.debug(f"Batch ACK confirmed: {line}")
+            return
+
         # Otherwise, it's a response to our command
+        logger.info(f"Response queued: {line}")
         self.response_queue.put(line)
 
     def _handle_datetime_query(self):
@@ -282,7 +288,7 @@ class SerialInterface:
                 with self.write_lock:
                     self.serial.write(cmd_line.encode('utf-8'))
                     self.serial.flush()
-                logger.debug(f"Sent: {command}")
+                logger.info(f"Sent command: {command}")
             except Exception as e:
                 logger.error(f"Failed to send command: {e}")
                 raise RuntimeError(f"Failed to send command: {e}")
@@ -307,10 +313,10 @@ class SerialInterface:
                         break
                     continue
 
-            if not responses:
-                raise TimeoutError(f"No response received for command: {command}")
+            if responses:
+                return responses
 
-            return responses
+            raise TimeoutError(f"No response received for command: {command}")
 
     def _is_response_complete(self, command: str, responses: list[str]) -> bool:
         """Determine if we've received a complete response.
