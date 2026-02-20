@@ -9,6 +9,7 @@
 #include <cstring>
 
 #include "pico/stdlib.h"
+#include "pico/stdio_usb.h"
 #include "pico/unique_id.h"
 
 #include "hardware/clocks.h"
@@ -109,6 +110,14 @@ int main()
 {
     // Initialize stdio (UART configured via CMakeLists.txt)
     stdio_init_all();
+
+#if defined(DEFAULT_IS_HUB) && DEFAULT_IS_HUB
+    // Hub uses USB CDC for debug output — wait for host to connect
+    // so startup logs aren't lost. Times out after 3s if no host.
+    for (int i = 0; i < 30 && !stdio_usb_connected(); i++) {
+        sleep_ms(100);
+    }
+#endif
 
     // Create main logger
     Logger log("Main");
