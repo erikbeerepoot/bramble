@@ -26,15 +26,15 @@
  *     └─────────► AWAITING_TIME ◄─────────────────────────┘
  *                      │
  *     ┌────────────────┴───────────────────┐
- *     │ (no PMU time)                      │ (PMU has time)
+ *     │ (no PMU time)                      │ (PMU has time, time to TX)
  *     ▼                                    ▼
- * sendHeartbeat()                    reportRtcSynced()
+ * sendHeartbeat()                    sendHeartbeat()
  *     │                                    │
- *     ▼                                    │
+ *     ▼                                    ▼
  * SYNCING_TIME ────(hub responds)─────────►│
- *     │                                    │
- *     ▼                                    ▼
- * reportRtcSynced() ──────────────► TIME_SYNCED
+ *     │                                    │ (PMU has time, not time to TX)
+ *     ▼                                    │
+ * reportTimeSyncComplete() ────────► TIME_SYNCED
  *                                          │
  *                                          ▼ (first boot)
  *                               reportSensorInit*()
@@ -89,8 +89,8 @@ enum class SensorState : uint8_t {
  *   // After hardware setup complete:
  *   state_machine.markInitialized();
  *
- *   // After RTC is set successfully:
- *   state_machine.reportRtcSynced();
+ *   // After time sync completes (hub response or PMU skip):
+ *   state_machine.reportTimeSyncComplete();
  *
  *   // After sensor init:
  *   if (sensor->init()) {
@@ -177,20 +177,12 @@ public:
     // =========================================================================
 
     /**
-     * @brief Report that RTC has been successfully synchronized
+     * @brief Report that time sync is complete (hub response received or PMU skip)
      *
-     * Call after rtc_set_datetime() succeeds.
-     * Transitions to TIME_SYNCED (or OPERATIONAL/DEGRADED if sensor state known).
+     * Call after heartbeat response callback sets RTC, or when PMU time is valid
+     * and no heartbeat is needed. Direct transition AWAITING_TIME/SYNCING_TIME → TIME_SYNCED.
      */
-    void reportRtcSynced();
-
-    /**
-     * @brief Report that RTC synchronization was lost
-     *
-     * Call if RTC stops running unexpectedly.
-     * Transitions back to AWAITING_TIME.
-     */
-    void reportRtcLost();
+    void reportTimeSyncComplete();
 
     /**
      * @brief Report successful sensor initialization
@@ -273,16 +265,11 @@ public:
     /**
      * @brief Report wake from sleep (restart the sensor cycle)
      *
-     * Call when PMU signals a periodic wake. Restarts the cycle based on
-     * current hardware state (RTC synced, sensor working, etc.).
+     * Call when PMU signals a periodic wake. Always transitions to
+     * AWAITING_TIME so requestTimeSync() runs every cycle (which decides
+     * whether a heartbeat is needed based on isTimeToTransmit()).
      *
-     * Transitions:
-     * - If time synced + sensor working: → READING_SENSOR
-     * - If time synced + sensor degraded: → CHECKING_BACKLOG
-     * - If time synced + sensor not tried: → TIME_SYNCED (for sensor init)
-     * - If time not synced: stays in current state (caller should sync time)
-     *
-     * @return true if cycle was restarted, false if time sync needed first
+     * @return true always (wake cycle restarted)
      */
     bool reportWakeFromSleep();
 
@@ -400,7 +387,6 @@ private:
     // Internal state tracking - not accessible from outside
     bool initialized_ = false;
     bool error_ = false;
-    bool rtc_synced_ = false;
     bool sensor_initialized_ = false;
     bool sensor_init_attempted_ = false;
     uint8_t expected_responses_ = 0;
