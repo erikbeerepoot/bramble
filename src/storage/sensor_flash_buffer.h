@@ -220,6 +220,17 @@ public:
     bool scanForWriteIndex();
 
     /**
+     * @brief Fast-forward read_index past already-transmitted records
+     *
+     * On cold start, read_index may be stale (from flash metadata). This method
+     * efficiently advances read_index by reading only the 1-byte transmission_status
+     * field per record, rather than the full 12-byte record.
+     *
+     * @return Number of records skipped
+     */
+    uint32_t fastForwardReadIndex();
+
+    /**
      * @brief Set read index directly (restore from PMU state)
      *
      * Used when restoring state from PMU RAM on warm start. No validation

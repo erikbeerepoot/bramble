@@ -713,10 +713,46 @@ bool SensorFlashBuffer::scanForWriteIndex()
         metadata_.read_index = metadata_.write_index;
     }
 
+    // Fast-forward read_index past any leading transmitted records.
+    // On cold start, read_index comes from stale flash metadata and may point
+    // at records that were already transmitted before PMU state was lost.
+    fastForwardReadIndex();
+
     logger_.info("Scan complete: write_index=%lu, read_index=%lu, untransmitted=%lu",
                  metadata_.write_index, metadata_.read_index, getUntransmittedCount());
 
     return true;
+}
+
+uint32_t SensorFlashBuffer::fastForwardReadIndex()
+{
+    uint32_t skipped = 0;
+
+    while (metadata_.read_index != metadata_.write_index) {
+        uint32_t address =
+            getRecordAddress(metadata_.read_index) + offsetof(SensorDataRecord, transmission_status);
+        uint8_t status = RECORD_NOT_TRANSMITTED;
+
+        ExternalFlashResult result = flash_.read(address, &status, sizeof(status));
+        if (result != ExternalFlashResult::Success) {
+            logger_.warn("Read error at index %lu during fast-forward, stopping", metadata_.read_index);
+            break;
+        }
+
+        if (status != RECORD_TRANSMITTED) {
+            break;
+        }
+
+        metadata_.read_index = (metadata_.read_index + 1) % MAX_RECORDS;
+        skipped++;
+    }
+
+    if (skipped > 0) {
+        logger_.info("Fast-forwarded read_index past %lu transmitted records to %lu", skipped,
+                     metadata_.read_index);
+    }
+
+    return skipped;
 }
 
 bool SensorFlashBuffer::isFull() const
