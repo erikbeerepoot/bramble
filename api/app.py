@@ -111,6 +111,46 @@ def _get_hub_queue_count(serial: SerialInterface, address: int) -> Optional[int]
     return None
 
 
+def _build_nodes_from_database():
+    """Build node list from database when hub UART is unavailable.
+
+    Uses nodes, node_status, and node_metadata tables to construct
+    the same response shape as the hub-based path. Online status is
+    inferred from the last heartbeat timestamp.
+    """
+    db = get_database()
+    all_metadata = db.get_all_node_metadata()
+    all_status = db.get_all_node_status()
+
+    now = int(time.time())
+    nodes = []
+
+    for device_id, status in all_status.items():
+        updated_at = status.get('updated_at', 0)
+        last_seen_seconds = now - updated_at if updated_at else 0
+        online = last_seen_seconds < 300  # Match hub's 5-minute maintenance interval
+
+        node = Node(
+            device_id=device_id,
+            address=status.get('address', 0),
+            node_type='SENSOR',  # Default; node_type not stored in node_status
+            online=online,
+            last_seen_seconds=last_seen_seconds,
+            firmware_version=None  # Only available from hub memory
+        )
+        node_dict = node.to_dict()
+        if device_id in all_metadata:
+            node_dict['metadata'] = all_metadata[device_id]
+        node_dict['status'] = status
+        nodes.append(node_dict)
+
+    return jsonify({
+        'count': len(nodes),
+        'nodes': nodes,
+        'source': 'database'
+    })
+
+
 @app.route('/api/nodes', methods=['GET'])
 def list_nodes():
     """List all registered nodes.
@@ -129,7 +169,8 @@ def list_nodes():
         # Format: NODE_LIST <count>
         #         NODE <addr> <device_id> <type> <online> <last_seen_sec> [<firmware_version>]
         if not responses or not responses[0].startswith('NODE_LIST'):
-            return jsonify({'error': 'Invalid response from hub'}), 500
+            logger.warning(f"Invalid LIST_NODES response, falling back to database: {responses}")
+            return _build_nodes_from_database()
 
         header = responses[0].split()
         count = int(header[1])
@@ -176,11 +217,13 @@ def list_nodes():
 
         return jsonify({
             'count': count,
-            'nodes': nodes
+            'nodes': nodes,
+            'source': 'hub'
         })
 
     except TimeoutError:
-        return jsonify({'error': 'Hub did not respond'}), 504
+        logger.warning("LIST_NODES timed out, falling back to database")
+        return _build_nodes_from_database()
     except Exception as e:
         logger.error(f"Error listing nodes: {e}")
         return jsonify({'error': str(e)}), 500
@@ -202,26 +245,58 @@ def get_node(device_id: int):
 
         # Parse and find the node by device_id
         # Format: NODE <addr> <device_id> <type> <online> <last_seen_sec> [<firmware_version>]
-        for line in responses[1:]:
-            if line.startswith('NODE '):
-                parts = line.split()
-                if len(parts) >= 6 and int(parts[2]) == device_id:
-                    address = int(parts[1])
-                    firmware_version_raw = int(parts[6]) if len(parts) >= 7 else None
-                    node = Node(
-                        device_id=device_id,
-                        address=address,
-                        node_type=parts[3],
-                        online=parts[4] == '1',
-                        last_seen_seconds=int(parts[5]),
-                        firmware_version=format_firmware_version(firmware_version_raw) if firmware_version_raw else None
-                    )
-                    return jsonify(node.to_dict())
+        if responses and responses[0].startswith('NODE_LIST'):
+            for line in responses[1:]:
+                if line.startswith('NODE '):
+                    parts = line.split()
+                    if len(parts) >= 6 and int(parts[2]) == device_id:
+                        address = int(parts[1])
+                        firmware_version_raw = int(parts[6]) if len(parts) >= 7 else None
+                        node = Node(
+                            device_id=device_id,
+                            address=address,
+                            node_type=parts[3],
+                            online=parts[4] == '1',
+                            last_seen_seconds=int(parts[5]),
+                            firmware_version=format_firmware_version(firmware_version_raw) if firmware_version_raw else None
+                        )
+                        return jsonify(node.to_dict())
 
-        return jsonify({'error': f'Node with device_id {device_id} not found'}), 404
+            return jsonify({'error': f'Node with device_id {device_id} not found'}), 404
+
+        # Invalid response — fall through to database fallback
+        logger.warning(f"Invalid LIST_NODES response for get_node, falling back to database")
+
+    except (TimeoutError, RuntimeError):
+        logger.warning(f"Hub unavailable for get_node({device_id}), falling back to database")
 
     except Exception as e:
         logger.error(f"Error getting node {device_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+    # Database fallback
+    try:
+        db = get_database()
+        all_status = db.get_all_node_status()
+        if device_id not in all_status:
+            return jsonify({'error': f'Node with device_id {device_id} not found'}), 404
+
+        status = all_status[device_id]
+        now = int(time.time())
+        updated_at = status.get('updated_at', 0)
+        last_seen_seconds = now - updated_at if updated_at else 0
+
+        node = Node(
+            device_id=device_id,
+            address=status.get('address', 0),
+            node_type='SENSOR',
+            online=last_seen_seconds < 300,
+            last_seen_seconds=last_seen_seconds,
+            firmware_version=None
+        )
+        return jsonify(node.to_dict())
+    except Exception as e:
+        logger.error(f"Database fallback failed for node {device_id}: {e}")
         return jsonify({'error': str(e)}), 500
 
 
