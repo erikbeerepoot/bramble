@@ -36,6 +36,7 @@ class SerialInterface:
         self.response_queue = Queue()
         self.pending_command: Optional[str] = None
         self.command_lock = threading.Lock()
+        self.write_lock = threading.Lock()  # Protects serial.write() from concurrent threads
 
         # Sensor data handling
         self.database = database
@@ -197,8 +198,9 @@ class SerialInterface:
         response = f"DATETIME {now.strftime('%Y-%m-%d %H:%M:%S')} {hub_weekday}\n"
 
         try:
-            self.serial.write(response.encode('utf-8'))
-            self.serial.flush()
+            with self.write_lock:
+                self.serial.write(response.encode('utf-8'))
+                self.serial.flush()
             logger.info(f"Responded to datetime query: {response.strip()}")
         except Exception as e:
             logger.error(f"Failed to send datetime response: {e}")
@@ -277,8 +279,9 @@ class SerialInterface:
             # Send command
             cmd_line = command.strip() + '\n'
             try:
-                self.serial.write(cmd_line.encode('utf-8'))
-                self.serial.flush()
+                with self.write_lock:
+                    self.serial.write(cmd_line.encode('utf-8'))
+                    self.serial.flush()
                 logger.debug(f"Sent: {command}")
             except Exception as e:
                 logger.error(f"Failed to send command: {e}")
@@ -323,6 +326,10 @@ class SerialInterface:
             return False
 
         last_line = responses[-1]
+
+        # Error responses from garbled commands should fail fast
+        if last_line.startswith('ERROR'):
+            return True
 
         # Single-line responses
         if command.startswith('SET_SCHEDULE') or command.startswith('REMOVE_SCHEDULE'):
@@ -548,8 +555,9 @@ class SerialInterface:
 
         try:
             response = f"BATCH_ACK {node_addr} {count} {status}\n"
-            self.serial.write(response.encode('utf-8'))
-            self.serial.flush()
+            with self.write_lock:
+                self.serial.write(response.encode('utf-8'))
+                self.serial.flush()
             logger.info(f"Sent BATCH_ACK: node={node_addr}, count={count}, status={status}")
         except Exception as e:
             logger.error(f"Failed to send BATCH_ACK: {e}")
