@@ -69,7 +69,7 @@
 
 // Default configuration values
 #define SX1276_DEFAULT_FREQUENCY 915000000  // 915 MHz
-#define SX1276_DEFAULT_TX_POWER 14          // 14 dBm
+#define SX1276_DEFAULT_TX_POWER 20          // 20 dBm (PA_BOOST max)
 #define SX1276_DEFAULT_SPREADING_FACTOR 7   // SF7
 #define SX1276_DEFAULT_BANDWIDTH 125000     // 125 kHz
 #define SX1276_DEFAULT_CODING_RATE 5        // 4/5

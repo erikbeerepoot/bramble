@@ -96,19 +96,19 @@ void SX1276::setTxPower(int power_db)
     if (power_db > 20)
         power_db = 20;
 
-    if (power_db <= 14) {
-        // Use RFO pin for lower power
-        writeRegister(SX1276_REG_PA_CONFIG, SX1276_PA_SELECT_RFO | (power_db - 2));
+    // Always use PA_BOOST — the Feather RP2040 RFM95W antenna is wired to PA_BOOST, not RFO.
+    // PA_BOOST formula: Pout = 2 + OutputPower [dBm] (normal mode, PA_DAC disabled)
+    //                   Pout = 5 + OutputPower [dBm] (high power mode, PA_DAC enabled)
+    if (power_db > 17) {
+        writeRegister(SX1276_REG_PA_DAC, 0x87);  // Enable high power mode (+20 dBm)
+        // OutputPower = power_db - 5 (high power formula)
+        writeRegister(SX1276_REG_PA_CONFIG,
+                      SX1276_PA_SELECT_PA_BOOST | 0x70 | (power_db - 5));
     } else {
-        // Use PA_BOOST pin for higher power
-        writeRegister(SX1276_REG_PA_CONFIG, SX1276_PA_SELECT_PA_BOOST | (power_db - 2));
-
-        // Enable high power settings for PA_BOOST
-        if (power_db > 17) {
-            writeRegister(SX1276_REG_PA_DAC, 0x87);  // +20dBm on PA_BOOST
-        } else {
-            writeRegister(SX1276_REG_PA_DAC, 0x84);  // Default +17dBm
-        }
+        writeRegister(SX1276_REG_PA_DAC, 0x84);  // Normal PA_BOOST mode
+        // OutputPower = power_db - 2 (normal formula)
+        writeRegister(SX1276_REG_PA_CONFIG,
+                      SX1276_PA_SELECT_PA_BOOST | 0x70 | (power_db - 2));
     }
 }
 
