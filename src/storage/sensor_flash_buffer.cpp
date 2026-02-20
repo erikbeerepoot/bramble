@@ -755,6 +755,11 @@ uint32_t SensorFlashBuffer::fastForwardReadIndex()
     return skipped;
 }
 
+bool SensorFlashBuffer::isWriteLocationErased()
+{
+    return isLocationErased(getRecordAddress(metadata_.write_index), sizeof(SensorDataRecord));
+}
+
 bool SensorFlashBuffer::isFull() const
 {
     return ((metadata_.write_index + 1) % MAX_RECORDS) == metadata_.read_index;
