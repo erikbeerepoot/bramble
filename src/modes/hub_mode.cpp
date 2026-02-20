@@ -29,6 +29,25 @@ constexpr uint32_t MAINTENANCE_INTERVAL_MS = 300000;      // 5 minutes
 constexpr uint32_t DATETIME_QUERY_INTERVAL_MS = 3600000;  // 1 hour
 constexpr uint32_t DATETIME_RETRY_INTERVAL_MS = 5000;     // 5 seconds retry if RTC not running
 
+// Convert uint64_t to decimal string without relying on %llu in snprintf.
+// newlib-nano's snprintf mishandles long long on 32-bit ARM, corrupting
+// subsequent varargs fields and the output buffer.
+static void uint64_to_str(uint64_t value, char *buf, size_t buf_size)
+{
+    if (value == 0) {
+        snprintf(buf, buf_size, "0");
+        return;
+    }
+    char tmp[21];  // max uint64 is 20 digits + NUL
+    int pos = sizeof(tmp) - 1;
+    tmp[pos] = '\0';
+    while (value > 0 && pos > 0) {
+        tmp[--pos] = '0' + (value % 10);
+        value /= 10;
+    }
+    snprintf(buf, buf_size, "%s", &tmp[pos]);
+}
+
 void HubMode::onStart()
 {
     logger.info("=== HUB MODE ACTIVE ===");
@@ -294,9 +313,15 @@ void HubMode::handleListNodes()
             uint32_t last_seen_sec = (now - node->last_seen_time) / 1000;
 
             // Send node info (include device_id and firmware version for identification)
-            snprintf(response, sizeof(response), "NODE %u %llu %s %d %lu %lu\n", addr,
-                     node->device_id, type, node->is_active ? 1 : 0, last_seen_sec,
-                     (unsigned long)node->firmware_version);
+            char device_id_str[21];
+            uint64_to_str(node->device_id, device_id_str, sizeof(device_id_str));
+            int len = snprintf(response, sizeof(response), "NODE %u %s %s %d %lu %lu\n", addr,
+                               device_id_str, type, node->is_active ? 1 : 0, last_seen_sec,
+                               (unsigned long)node->firmware_version);
+            if (len >= (int)sizeof(response)) {
+                response[sizeof(response) - 2] = '\n';
+                response[sizeof(response) - 1] = '\0';
+            }
             uart_puts(API_UART_ID, response);
         }
     }
@@ -638,10 +663,16 @@ void HubMode::handleHeartbeat(uint16_t source_addr, const HeartbeatPayload *payl
 
     // Format: HEARTBEAT <node_addr> <device_id> <battery> <error_flags> <signal> <uptime>
     // <pending_records>
+    char device_id_str[21];
+    uint64_to_str(device_id, device_id_str, sizeof(device_id_str));
     char response[128];
-    snprintf(response, sizeof(response), "HEARTBEAT %u %llu %u %u %d %lu %u\n", source_addr,
-             device_id, payload->battery_level, payload->error_flags, rssi, payload->uptime_seconds,
-             payload->pending_records);
+    int len = snprintf(response, sizeof(response), "HEARTBEAT %u %s %u %u %d %lu %u\n", source_addr,
+                       device_id_str, payload->battery_level, payload->error_flags, rssi,
+                       payload->uptime_seconds, payload->pending_records);
+    if (len >= (int)sizeof(response)) {
+        response[sizeof(response) - 2] = '\n';
+        response[sizeof(response) - 1] = '\0';
+    }
     uart_puts(API_UART_ID, response);
 
     logger.debug("Forwarded heartbeat: node=%u, battery=%u, errors=0x%02X, rssi=%d, pending=%u",
@@ -668,20 +699,27 @@ void HubMode::handleSensorData(uint16_t source_addr, const SensorPayload *payloa
     // Format: SENSOR_DATA <node_addr> <device_id> <sensor_type> <data_hex>
     char response[128];
 
+    char device_id_str[21];
+    uint64_to_str(device_id, device_id_str, sizeof(device_id_str));
+
     // For temperature/humidity, extract the 2-byte values
     if (payload->sensor_type == SENSOR_TEMPERATURE || payload->sensor_type == SENSOR_HUMIDITY) {
         if (payload->data_length >= 2) {
             int16_t value = static_cast<int16_t>(payload->data[0] | (payload->data[1] << 8));
             const char *type_str = (payload->sensor_type == SENSOR_TEMPERATURE) ? "TEMP" : "HUM";
-            snprintf(response, sizeof(response), "SENSOR_DATA %u %llu %s %d\n", source_addr,
-                     device_id, type_str, value);
+            int len = snprintf(response, sizeof(response), "SENSOR_DATA %u %s %s %d\n", source_addr,
+                               device_id_str, type_str, value);
+            if (len >= (int)sizeof(response)) {
+                response[sizeof(response) - 2] = '\n';
+                response[sizeof(response) - 1] = '\0';
+            }
             uart_puts(API_UART_ID, response);
-            logger.debug("Forwarded sensor data: node=%u, device_id=%llu, type=%s, value=%d",
-                         source_addr, device_id, type_str, value);
+            logger.debug("Forwarded sensor data: node=%u, device_id=%s, type=%s, value=%d",
+                         source_addr, device_id_str, type_str, value);
         }
     } else {
         // Generic sensor data (hex encoded)
-        snprintf(response, sizeof(response), "SENSOR_DATA %u %llu %u ", source_addr, device_id,
+        snprintf(response, sizeof(response), "SENSOR_DATA %u %s %u ", source_addr, device_id_str,
                  payload->sensor_type);
         uart_puts(API_UART_ID, response);
 
@@ -709,13 +747,20 @@ void HubMode::handleSensorDataBatch(uint16_t source_addr, const SensorDataBatchP
         device_id = node->device_id;
     }
 
-    logger.debug("Received batch from node 0x%04X (device_id=%llu): %u records (start_idx=%lu)",
-                 source_addr, device_id, payload->record_count, payload->start_index);
+    char device_id_str[21];
+    uint64_to_str(device_id, device_id_str, sizeof(device_id_str));
+
+    logger.debug("Received batch from node 0x%04X (device_id=%s): %u records (start_idx=%lu)",
+                 source_addr, device_id_str, payload->record_count, payload->start_index);
 
     // Send batch start marker to Raspberry Pi
     char response[128];
-    snprintf(response, sizeof(response), "SENSOR_BATCH %u %llu %u\n", source_addr, device_id,
-             payload->record_count);
+    int len = snprintf(response, sizeof(response), "SENSOR_BATCH %u %s %u\n", source_addr,
+                       device_id_str, payload->record_count);
+    if (len >= (int)sizeof(response)) {
+        response[sizeof(response) - 2] = '\n';
+        response[sizeof(response) - 1] = '\0';
+    }
     uart_puts(API_UART_ID, response);
 
     // Forward each record
@@ -726,14 +771,23 @@ void HubMode::handleSensorDataBatch(uint16_t source_addr, const SensorDataBatchP
         uint8_t error_flags = record.flags & ~RECORD_FLAG_VALID;
 
         // Format: SENSOR_RECORD <node_addr> <device_id> <timestamp> <temp> <humidity> <flags>
-        snprintf(response, sizeof(response), "SENSOR_RECORD %u %llu %lu %d %u %u\n", source_addr,
-                 device_id, record.timestamp, record.temperature, record.humidity, error_flags);
+        len = snprintf(response, sizeof(response), "SENSOR_RECORD %u %s %lu %d %u %u\n",
+                       source_addr, device_id_str, record.timestamp, record.temperature,
+                       record.humidity, error_flags);
+        if (len >= (int)sizeof(response)) {
+            response[sizeof(response) - 2] = '\n';
+            response[sizeof(response) - 1] = '\0';
+        }
         uart_puts(API_UART_ID, response);
     }
 
     // Send batch complete marker
-    snprintf(response, sizeof(response), "BATCH_COMPLETE %u %llu %u\n", source_addr, device_id,
-             payload->record_count);
+    len = snprintf(response, sizeof(response), "BATCH_COMPLETE %u %s %u\n", source_addr,
+                   device_id_str, payload->record_count);
+    if (len >= (int)sizeof(response)) {
+        response[sizeof(response) - 2] = '\n';
+        response[sizeof(response) - 1] = '\0';
+    }
     uart_puts(API_UART_ID, response);
 
     logger.debug("Forwarded batch to RasPi: %u records", payload->record_count);
