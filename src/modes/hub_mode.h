@@ -39,6 +39,13 @@ private:
 
     void syncTimeFromRaspberryPi();  // Initiate time sync
 
+    // Buffered UART output — avoids LoRa TX corrupting UART bytes still in the FIFO
+    static constexpr size_t UART_TX_BUFFER_SIZE = 2048;
+    char uart_tx_buffer_[UART_TX_BUFFER_SIZE];
+    size_t uart_tx_pos_ = 0;
+    void uartSend(const char *str);
+    void flushUartBuffer();
+
     // Sensor data forwarding to Raspberry Pi
     void handleSensorData(uint16_t source_addr, const SensorPayload *payload);
     void handleSensorDataBatch(uint16_t source_addr, const SensorDataBatchPayload *payload);

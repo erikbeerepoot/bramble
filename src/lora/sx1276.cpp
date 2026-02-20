@@ -101,11 +101,16 @@ void SX1276::setTxPower(int power_db)
     //                   Pout = 5 + OutputPower [dBm] (high power mode, PA_DAC enabled)
     if (power_db > 17) {
         writeRegister(SX1276_REG_PA_DAC, 0x87);  // Enable high power mode (+20 dBm)
+        // OCP must be raised for high power — default 100mA is too low for PA_BOOST +20 dBm.
+        // 0x3B = OCP on | OcpTrim=0x1B → 240mA (datasheet Table 10, recommended for +20 dBm)
+        writeRegister(SX1276_REG_OCP, 0x3B);
         // OutputPower = power_db - 5 (high power formula)
         writeRegister(SX1276_REG_PA_CONFIG,
                       SX1276_PA_SELECT_PA_BOOST | 0x70 | (power_db - 5));
     } else {
         writeRegister(SX1276_REG_PA_DAC, 0x84);  // Normal PA_BOOST mode
+        // Restore default OCP for normal power levels (100mA)
+        writeRegister(SX1276_REG_OCP, 0x2B);
         // OutputPower = power_db - 2 (normal formula)
         writeRegister(SX1276_REG_PA_CONFIG,
                       SX1276_PA_SELECT_PA_BOOST | 0x70 | (power_db - 2));
@@ -222,11 +227,14 @@ bool SX1276::send(const uint8_t *data, size_t length)
     writeRegister(SX1276_REG_PAYLOAD_LENGTH, length);
 
     // Write payload to FIFO using bulk transfer
-    uint8_t tx_buf[256];  // Max LoRa packet size + 1 for register
-    SPIError result = spi_.writeBuffer(SX1276_REG_FIFO, data, length, tx_buf);
-    if (result != SPI_SUCCESS) {
-        logger_.error("Failed to write FIFO");
-        return false;
+    // Scoped to reclaim 256 bytes of stack before subsequent calls
+    {
+        uint8_t tx_buf[256];
+        SPIError result = spi_.writeBuffer(SX1276_REG_FIFO, data, length, tx_buf);
+        if (result != SPI_SUCCESS) {
+            logger_.error("Failed to write FIFO");
+            return false;
+        }
     }
 
     // Switch DIO0 mapping to TxDone (01) before entering TX mode
@@ -270,11 +278,14 @@ bool SX1276::sendAsync(const uint8_t *data, size_t length)
     writeRegister(SX1276_REG_PAYLOAD_LENGTH, length);
 
     // Write payload to FIFO using bulk transfer
-    uint8_t tx_buf[256];  // Max LoRa packet size + 1 for register
-    SPIError result = spi_.writeBuffer(SX1276_REG_FIFO, data, length, tx_buf);
-    if (result != SPI_SUCCESS) {
-        logger_.error("Failed to write FIFO");
-        return false;
+    // Scoped to reclaim 256 bytes of stack before subsequent calls
+    {
+        uint8_t tx_buf[256];
+        SPIError result = spi_.writeBuffer(SX1276_REG_FIFO, data, length, tx_buf);
+        if (result != SPI_SUCCESS) {
+            logger_.error("Failed to write FIFO");
+            return false;
+        }
     }
 
     // Switch DIO0 mapping to TxDone (01) before entering TX mode
