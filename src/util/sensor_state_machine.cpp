@@ -11,7 +11,7 @@ void SensorStateMachine::markInitialized()
     }
     initialized_ = true;
     logger.debug("Hardware initialization complete");
-    updateState();
+    transitionTo(SensorState::REGISTERING);
 }
 
 void SensorStateMachine::markError()
@@ -67,24 +67,14 @@ void SensorStateMachine::reportSyncTimeout()
     transitionTo(SensorState::READY_FOR_SLEEP);
 }
 
-void SensorStateMachine::reportRtcSynced()
+void SensorStateMachine::reportTimeSyncComplete()
 {
-    if (rtc_synced_) {
-        return;  // Already synced
+    if (state_ != SensorState::AWAITING_TIME && state_ != SensorState::SYNCING_TIME) {
+        logger.warn("reportTimeSyncComplete() called in unexpected state: %s", stateName(state_));
+        return;
     }
-    rtc_synced_ = true;
-    logger.info("RTC synchronized");
-    updateState();
-}
-
-void SensorStateMachine::reportRtcLost()
-{
-    if (!rtc_synced_) {
-        return;  // Already not synced
-    }
-    rtc_synced_ = false;
-    logger.warn("RTC synchronization lost");
-    updateState();
+    logger.info("Time sync complete");
+    transitionTo(SensorState::TIME_SYNCED);
 }
 
 void SensorStateMachine::reportSensorInitSuccess()
@@ -174,37 +164,13 @@ void SensorStateMachine::reportListenComplete()
 
 bool SensorStateMachine::reportWakeFromSleep()
 {
-    // Only restart cycle if we're actually in READY_FOR_SLEEP
-    // The PMU wake notification can arrive asynchronously after the state machine
-    // has already started processing (e.g., via getDateTime callback path)
     if (state_ != SensorState::READY_FOR_SLEEP) {
         logger.debug("Wake notification ignored - already active (state: %s)", stateName(state_));
-        return true;  // Return true since we're already awake and processing
+        return true;
     }
 
-    // Reset per-cycle state
     expected_responses_ = 0;
-
-    if (!rtc_synced_) {
-        // Need time sync first - caller should send heartbeat
-        logger.info("Wake from sleep but RTC not synced - need time sync");
-        return false;
-    }
-
-    // Restart the sensor cycle based on hardware state
-    if (sensor_initialized_) {
-        // Sensor working - read it
-        logger.info("Wake from sleep - starting sensor read");
-        transitionTo(SensorState::READING_SENSOR);
-    } else if (sensor_init_attempted_) {
-        // Sensor failed (degraded mode) - skip to backlog check
-        logger.info("Wake from sleep (degraded) - checking backlog");
-        transitionTo(SensorState::CHECKING_BACKLOG);
-    } else {
-        // Sensor not yet initialized - go through TIME_SYNCED to try init
-        logger.info("Wake from sleep - attempting sensor init");
-        transitionTo(SensorState::TIME_SYNCED);
-    }
+    transitionTo(SensorState::AWAITING_TIME);
     return true;
 }
 
@@ -214,31 +180,23 @@ void SensorStateMachine::updateState()
 
     // Derive state from internal flags
     // Note: workflow states (REGISTERING, SYNCING_TIME, READING_SENSOR, CHECKING_BACKLOG,
-    // TRANSMITTING, LISTENING, READY_FOR_SLEEP) are handled by transitionTo() instead
+    // TRANSMITTING, LISTENING, READY_FOR_SLEEP) are handled by transitionTo() instead.
+    // INITIALIZING → REGISTERING is handled by markInitialized() directly.
+    // AWAITING_TIME/SYNCING_TIME → TIME_SYNCED is handled by reportTimeSyncComplete() directly.
     if (error_) {
         new_state = SensorState::ERROR;
     } else if (!initialized_) {
         new_state = SensorState::INITIALIZING;
-    } else if (!rtc_synced_) {
-        // Go to REGISTERING from INITIALIZING - state callback will check if needed
-        // Don't override workflow states (REGISTERING, SYNCING_TIME, etc.)
-        if (state_ == SensorState::INITIALIZING) {
-            new_state = SensorState::REGISTERING;
-        }
     } else if (sensor_initialized_) {
-        // RTC synced and sensor working - go to READING_SENSOR
-        // Only from TIME_SYNCED (after sensor init success)
+        // Sensor working - go to READING_SENSOR (only from TIME_SYNCED)
         if (state_ == SensorState::TIME_SYNCED) {
             new_state = SensorState::READING_SENSOR;
         }
     } else if (sensor_init_attempted_) {
-        // Sensor init failed - degraded mode, skip to backlog check
+        // Sensor init failed - degraded mode
         if (state_ == SensorState::TIME_SYNCED) {
             new_state = SensorState::DEGRADED_NO_SENSOR;
         }
-    } else if (state_ == SensorState::AWAITING_TIME || state_ == SensorState::SYNCING_TIME) {
-        // RTC just synced - go to TIME_SYNCED
-        new_state = SensorState::TIME_SYNCED;
     }
 
     // Only log and callback on actual state change

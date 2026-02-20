@@ -89,10 +89,10 @@ void SensorMode::onStart()
                                    response.hour, response.min, response.sec);
             pmu_manager_->syncTime(datetime, [this](bool success) {
                 (void)success;
-                sensor_state_.reportRtcSynced();
+                sensor_state_.reportTimeSyncComplete();
             });
         } else {
-            sensor_state_.reportRtcSynced();
+            sensor_state_.reportTimeSyncComplete();
         }
     });
     heartbeat_client_->setDeliveryCallback([this](bool success) {
@@ -101,7 +101,7 @@ void SensorMode::onStart()
             task_queue_.cancel(syncing_time_timeout_id_);
             syncing_time_timeout_id_ = 0;
             if (rtc_running()) {
-                sensor_state_.reportRtcSynced();
+                sensor_state_.reportTimeSyncComplete();
             } else {
                 sensor_state_.reportSyncTimeout();
             }
@@ -137,14 +137,7 @@ void SensorMode::onStart()
         switch (reason) {
             case PMU::WakeReason::Periodic:
                 pmu_logger.info("Periodic wake.");
-                // Report wake to state machine - it handles the appropriate transition
-                if (!sensor_state_.reportWakeFromSleep()) {
-                    // Need time sync first
-                    pmu_logger.warn("RTC not synced on periodic wake - requesting time");
-                    heartbeat_client_->send();
-                    sensor_state_.expectResponse();
-                    sensor_state_.reportHeartbeatSent();
-                }
+                sensor_state_.reportWakeFromSleep();
                 break;
 
             case PMU::WakeReason::Scheduled:
@@ -196,7 +189,7 @@ void SensorMode::onStateChange(SensorState state)
                     self->syncing_time_timeout_id_ = 0;
                     if (rtc_running()) {
                         logger.warn("Sync timeout - proceeding with existing RTC");
-                        self->sensor_state_.reportRtcSynced();
+                        self->sensor_state_.reportTimeSyncComplete();
                     } else {
                         logger.warn("Sync timeout - no RTC, sleeping");
                         self->sensor_state_.reportSyncTimeout();
@@ -536,7 +529,7 @@ uint8_t SensorMode::getBatteryLevel()
 bool SensorMode::isTimeToTransmit(uint32_t current_timestamp) const
 {
     if (!flash_buffer_) {
-        return false;
+        return true;
     }
 
     // Use provided timestamp or fall back to RTC
@@ -763,8 +756,9 @@ void SensorMode::initializeFlashTimestamps()
 
 bool SensorMode::tryInitSensor()
 {
-    // Already working - no need to re-init
+    // Already working - drive state machine forward from TIME_SYNCED on repeated wake cycles
     if (sensor_state_.hasSensor()) {
+        sensor_state_.reportSensorInitSuccess();
         return true;
     }
 
@@ -835,11 +829,11 @@ void SensorMode::requestTimeSync()
                         heartbeat_client_->send();
                         sensor_state_.expectResponse();
                         sensor_state_.reportHeartbeatSent();  // AWAITING_TIME → SYNCING_TIME
-                        // Response callback will call reportRtcSynced() → TIME_SYNCED
+                        // Response callback will call reportTimeSyncComplete() → TIME_SYNCED
                     } else {
                         // No heartbeat needed — no contention risk, proceed immediately
                         pmu_logger.info("Skip hub sync: not time to transmit yet.");
-                        sensor_state_.reportRtcSynced();
+                        sensor_state_.reportTimeSyncComplete();
                     }
                 } else {
                     logger.error("Failed to set RTC from PMU time");
