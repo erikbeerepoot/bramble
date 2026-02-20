@@ -263,6 +263,16 @@ public:
     uint32_t getWriteIndex() const { return metadata_.write_index; }
 
     /**
+     * @brief Check if write_index points to erased flash (ready for writing)
+     *
+     * Used to validate PMU-restored write_index. If the location isn't erased,
+     * the PMU state is stale and scanForWriteIndex() should be used instead.
+     *
+     * @return true if the location at write_index is erased
+     */
+    bool isWriteLocationErased();
+
+    /**
      * @brief Check if flash is healthy (no recent write failures)
      *
      * Returns false if the most recent write operation failed,

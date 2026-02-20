@@ -216,6 +216,14 @@ void SensorPmuManager::handlePmuWake(PMU::WakeReason reason, const PMU::Schedule
         restored = unpackState(persisted);
     }
 
+    // Validate restored write_index — if flash at that location isn't erased,
+    // PMU state is stale (e.g. firmware upgrade reset it) and we need to scan.
+    if (restored && flash_buffer_ && !flash_buffer_->isWriteLocationErased()) {
+        pmu_logger.warn("PMU write_index=%lu is stale (flash not erased) - falling back to scan",
+                        flash_buffer_->getWriteIndex());
+        restored = false;
+    }
+
     // Cold start: reconstruct state from flash scan
     if (!restored && flash_buffer_) {
         pmu_logger.info("Cold start detected - scanning flash for state");
