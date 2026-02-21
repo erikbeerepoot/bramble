@@ -27,14 +27,10 @@ services:
     image: ${API_IMAGE:-ghcr.io/erikbeerepoot/bramble/api:latest}
     container_name: bramble-worker
     command: uv run huey_consumer command_queue.huey -w 2 -k thread
-    devices:
-      - "/dev/ttyAMA0:/dev/ttyAMA0"
     volumes:
       - bramble-data:/data
     environment:
       - DEBUG=False
-      - SERIAL_PORT=/dev/ttyAMA0
-      - SERIAL_BAUD=115200
       - SENSOR_DB_PATH=/data/sensor_data.duckdb
       - QUEUE_DB_PATH=/data/queue.db
       - DB_MEMORY_LIMIT=128MB
@@ -43,8 +39,6 @@ services:
     restart: unless-stopped
     depends_on:
       - api
-    group_add:
-      - dialout
 
   watchtower:
     image: containrrr/watchtower
