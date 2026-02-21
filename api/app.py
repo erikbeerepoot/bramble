@@ -1364,6 +1364,47 @@ def set_node_zone(device_id: int):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/internal/hub-command', methods=['POST'])
+def internal_hub_command():
+    """Internal endpoint for worker to send hub commands via the API's serial connection.
+
+    This avoids the worker opening its own serial port (which causes dual-reader
+    byte stealing). Only intended for use by the huey worker container.
+
+    Request body:
+        {
+            "command": "SET_SCHEDULE 1 0 14 30 900 127 0",
+            "command_id": "schedule-1-0"
+        }
+
+    Returns:
+        JSON with status and response lines
+    """
+    try:
+        data = request.get_json()
+        if not data or 'command' not in data:
+            return jsonify({'error': 'command is required'}), 400
+
+        command = data['command']
+        command_id = data.get('command_id', 'unknown')
+
+        logger.info(f"[{command_id}] Internal hub command: {command}")
+
+        serial = get_serial()
+        responses = serial.send_command(command)
+
+        return jsonify({
+            'status': 'success',
+            'responses': responses
+        })
+
+    except TimeoutError:
+        return jsonify({'error': 'Hub did not respond'}), 504
+    except Exception as e:
+        logger.error(f"Internal hub command failed: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @app.errorhandler(404)
 def not_found(error):
     """Handle 404 errors."""

@@ -1,7 +1,13 @@
-"""Persistent command queue using huey with SQLite backend."""
+"""Persistent command queue using huey with SQLite backend.
+
+Commands are sent to the hub via the API's internal endpoint, avoiding
+the worker opening its own serial connection (which causes dual-reader
+byte stealing).
+"""
 from huey import SqliteHuey
 from config import Config
 import logging
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -11,10 +17,45 @@ huey = SqliteHuey(
     immediate=Config.QUEUE_IMMEDIATE,
 )
 
+# The API service is reachable at http://api:5000 from within the Docker network
+API_BASE_URL = "http://api:5000"
+
+
+def _send_via_api(command: str, command_id: str) -> dict:
+    """Send a hub command through the API's serial connection.
+
+    Args:
+        command: The serial command string
+        command_id: Unique ID for tracking
+
+    Returns:
+        dict with status and response
+
+    Raises:
+        TimeoutError: If hub does not respond
+        RuntimeError: On other failures
+    """
+    url = f"{API_BASE_URL}/api/internal/hub-command"
+    try:
+        resp = requests.post(url, json={
+            "command": command,
+            "command_id": command_id,
+        }, timeout=10)
+
+        if resp.status_code == 504:
+            raise TimeoutError(f"Hub did not respond to: {command}")
+        resp.raise_for_status()
+        return resp.json()
+
+    except requests.ConnectionError as e:
+        raise RuntimeError(f"Cannot reach API service: {e}")
+    except requests.Timeout:
+        raise TimeoutError(f"API request timed out for: {command}")
+
 
 @huey.task(retries=3, retry_delay=30)
 def send_hub_command(command: str, command_id: str) -> dict:
-    """Send a command to the hub via serial.
+    """Send a command to the hub via the API's serial interface.
 
     Args:
         command: The serial command string (e.g., "SET_SCHEDULE 1 0 14 30 900 127 0")
@@ -23,14 +64,11 @@ def send_hub_command(command: str, command_id: str) -> dict:
     Returns:
         dict with status and response
     """
-    # Import here to avoid circular imports
-    from app import get_serial
-
     logger.info(f"[{command_id}] Sending command: {command}")
 
     try:
-        serial = get_serial()
-        responses = serial.send_command(command)
+        result = _send_via_api(command, command_id)
+        responses = result.get('responses', [])
 
         if responses and responses[0].startswith('QUEUED'):
             logger.info(f"[{command_id}] Command queued on hub: {responses[0]}")
