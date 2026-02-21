@@ -284,9 +284,12 @@ void HubMode::handleSerialCommand(const char *cmd)
         return;
     }
 
-    logger.info("Serial RX: %s", cmd);
-
-    // Parse command
+    // Parse and handle command, then log.
+    // IMPORTANT: logger.info() uses printf() which goes to USB CDC.  When no
+    // serial monitor is connected the CDC buffer fills and printf() blocks for
+    // up to PICO_STDIO_USB_STDOUT_TIMEOUT_US.  By logging AFTER the command
+    // handler (which sends the UART1 response) we guarantee the response is
+    // never delayed by a blocking printf().
     if (strcmp(cmd, "LIST_NODES") == 0) {
         handleListNodes();
     } else if (strncmp(cmd, "GET_QUEUE ", 10) == 0) {
@@ -312,6 +315,8 @@ void HubMode::handleSerialCommand(const char *cmd)
     } else {
         uartSend("ERROR Unknown command\n");
     }
+
+    logger.debug("Serial RX: %s", cmd);
 }
 
 void HubMode::handleListNodes()
@@ -319,10 +324,9 @@ void HubMode::handleListNodes()
     // Get registered addresses directly (avoids scanning 65k addresses)
     auto addresses = address_manager_->getRegisteredAddresses();
 
-    // Send header with actual count
+    // Send header with actual count — uartSend BEFORE logger to avoid USB CDC blocking
     char response[128];
     snprintf(response, sizeof(response), "NODE_LIST %u\n", (unsigned)addresses.size());
-    logger.info("LIST_NODES: responding with %u nodes", (unsigned)addresses.size());
     uartSend(response);
 
     uint32_t now = to_ms_since_boot(get_absolute_time());
@@ -353,6 +357,8 @@ void HubMode::handleListNodes()
         }
         uartSend(response);
     }
+
+    logger.info("LIST_NODES: responded with %u nodes", (unsigned)addresses.size());
 }
 
 void HubMode::handleGetQueue(const char *args)

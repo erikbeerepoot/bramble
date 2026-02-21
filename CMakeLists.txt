@@ -262,6 +262,12 @@ if(NOT BUILD_TESTS)
         if(TARGET_NAME STREQUAL "bramble_hub")
             pico_enable_stdio_usb(${TARGET_NAME} 1)
             pico_enable_stdio_uart(${TARGET_NAME} 0)
+            # Prevent USB CDC printf() from blocking when no serial monitor is
+            # connected.  Without this, a full CDC TX buffer stalls the main loop
+            # for 500ms per printf() call, breaking UART1 command responses.
+            target_compile_definitions(${TARGET_NAME} PRIVATE
+                PICO_STDIO_USB_STDOUT_TIMEOUT_US=0
+            )
         else()
             pico_enable_stdio_usb(${TARGET_NAME} 0)
             pico_enable_stdio_uart(${TARGET_NAME} 1)
