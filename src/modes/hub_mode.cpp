@@ -251,6 +251,17 @@ void HubMode::processIncomingMessage(uint8_t *rx_buffer, int rx_len, uint32_t cu
 
 void HubMode::processSerialInput()
 {
+    // Periodic UART RX hardware diagnostic (every 5 seconds)
+    static uint32_t last_uart_diag = 0;
+    uint32_t now = to_ms_since_boot(get_absolute_time());
+    if (now - last_uart_diag >= 5000) {
+        uart_hw_t *hw = uart_get_hw(API_UART_ID);
+        logger.info("UART1_RX diag: FR=0x%03X DMACR=0x%X readable=%d buf_pos=%u",
+                     hw->fr & 0xFFF, hw->dmacr, uart_is_readable(API_UART_ID),
+                     (unsigned)serial_input_pos_);
+        last_uart_diag = now;
+    }
+
     // Read available characters from UART
     while (uart_is_readable(API_UART_ID)) {
         char c = uart_getc(API_UART_ID);

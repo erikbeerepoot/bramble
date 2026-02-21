@@ -364,7 +364,7 @@ bool initializeHardware(SX1276 &lora, NeoPixel &led)
 
     // Configure LoRa parameters
     lora.setFrequency(915000000);  // 915 MHz for US
-    lora.setTxPower(17);
+    lora.setTxPower(15);           // Max safe power (16 dBm causes UART RX EMI on Feather)
     lora.setBandwidth(125000);     // 125 kHz
     lora.setSpreadingFactor(9);
     lora.setCodingRate(5);
