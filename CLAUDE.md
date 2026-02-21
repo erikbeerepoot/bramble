@@ -139,6 +139,10 @@ cube-cmake --build build/Debug
 ### STM32 Flash Instructions (for user)
 Flash using STM32CubeIDE, ST-Link, or your preferred programmer.
 
+## Code Change Rules
+
+* **Do not change log levels** (e.g. `logger.info` → `logger.debug`) without confirming with the user first.
+
 ## Claude Code Behavior
 
 ### RP2040 Build/Flash
