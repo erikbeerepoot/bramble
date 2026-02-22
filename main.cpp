@@ -379,11 +379,11 @@ bool initializeHardware(RadioInterface &lora, NeoPixel &led)
     // Configure LoRa parameters
     lora.setFrequency(915000000);  // 915 MHz for US
 #if defined(DEFAULT_IS_HUB) && DEFAULT_IS_HUB
-    lora.setTxPower(15);           // Hub: reduced power (16+ dBm causes UART RX EMI on Feather)
+    lora.setTxPower(15);  // Hub: reduced power (16+ dBm causes UART RX EMI on Feather)
 #else
-    lora.setTxPower(20);           // Sensor nodes: max power for range
+    lora.setTxPower(20);  // Sensor nodes: max power for range
 #endif
-    lora.setBandwidth(125000);     // 125 kHz
+    lora.setBandwidth(125000);  // 125 kHz
     lora.setSpreadingFactor(9);
     lora.setCodingRate(5);
     lora.setPreambleLength(8);
@@ -498,7 +498,8 @@ bool attemptRegistration(ReliableMessenger &messenger, RadioInterface &lora,
 
 void processIncomingMessage(uint8_t *rx_buffer, int rx_len, ReliableMessenger &messenger,
                             AddressManager *address_manager, HubRouter *hub_router,
-                            uint32_t current_time, NetworkStats *network_stats, RadioInterface *lora)
+                            uint32_t current_time, NetworkStats *network_stats,
+                            RadioInterface *lora)
 {
     Logger log("Message");
 

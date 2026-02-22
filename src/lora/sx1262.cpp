@@ -12,8 +12,8 @@ SX1262::SX1262(spi_inst_t *spi_port, uint cs_pin, int rst_pin, int dio1_pin, int
       spreading_factor_(SX1262_DEFAULT_SPREADING_FACTOR), bandwidth_(SX1262_DEFAULT_BANDWIDTH),
       coding_rate_(SX1262_DEFAULT_CODING_RATE), preamble_length_(SX1262_DEFAULT_PREAMBLE_LENGTH),
       crc_enabled_(SX1262_DEFAULT_CRC), logger_("SX1262"), interrupt_pending_(false),
-      message_ready_(false), tx_complete_(false), interrupt_enabled_(false), user_callback_(nullptr),
-      last_rssi_(0), last_snr_(0.0f)
+      message_ready_(false), tx_complete_(false), interrupt_enabled_(false),
+      user_callback_(nullptr), last_rssi_(0), last_snr_(0.0f)
 {
     // Configure reset pin
     if (rst_pin_ >= 0) {
@@ -94,7 +94,8 @@ bool SX1262::begin()
     setFrequency(frequency_);
 
     // 7. Set PA config for SX1262 (optimized for +22 dBm max)
-    uint8_t pa_config[4] = {0x04, 0x07, 0x00, 0x01};  // paDutyCycle=4, hpMax=7, deviceSel=0 (SX1262), paLut=1
+    uint8_t pa_config[4] = {0x04, 0x07, 0x00,
+                            0x01};  // paDutyCycle=4, hpMax=7, deviceSel=0 (SX1262), paLut=1
     sendCommand(SX1262_CMD_SET_PA_CONFIG, pa_config, 4);
 
     // 8. Set TX power and ramp time
@@ -110,8 +111,8 @@ bool SX1262::begin()
     setSyncWord(0x1424);
 
     // 12. Configure DIO1 IRQ mapping: TxDone + RxDone + CRC error + Timeout
-    uint16_t irq_mask = SX1262_IRQ_TX_DONE | SX1262_IRQ_RX_DONE | SX1262_IRQ_CRC_ERR |
-                        SX1262_IRQ_TIMEOUT;
+    uint16_t irq_mask =
+        SX1262_IRQ_TX_DONE | SX1262_IRQ_RX_DONE | SX1262_IRQ_CRC_ERR | SX1262_IRQ_TIMEOUT;
     setDioIrqParams(irq_mask, irq_mask);
 
     // 13. Set buffer base addresses (TX at 0, RX at 128)
@@ -401,8 +402,8 @@ bool SX1262::enableInterruptMode(gpio_irq_callback_t callback)
     user_callback_ = callback;
 
     // Configure IRQ mapping: TxDone + RxDone + CRC error + Timeout -> DIO1
-    uint16_t irq_mask = SX1262_IRQ_TX_DONE | SX1262_IRQ_RX_DONE | SX1262_IRQ_CRC_ERR |
-                        SX1262_IRQ_TIMEOUT;
+    uint16_t irq_mask =
+        SX1262_IRQ_TX_DONE | SX1262_IRQ_RX_DONE | SX1262_IRQ_CRC_ERR | SX1262_IRQ_TIMEOUT;
     setDioIrqParams(irq_mask, irq_mask);
 
     // Register interrupt handler
@@ -650,10 +651,14 @@ void SX1262::clearIrqStatus(uint16_t flags)
 void SX1262::setDioIrqParams(uint16_t irq_mask, uint16_t dio1_mask)
 {
     uint8_t params[8] = {
-        (uint8_t)(irq_mask >> 8),  (uint8_t)(irq_mask & 0xFF),   // IRQ mask
-        (uint8_t)(dio1_mask >> 8), (uint8_t)(dio1_mask & 0xFF),   // DIO1 mask
-        0x00,                      0x00,                           // DIO2 mask (unused)
-        0x00,                      0x00                            // DIO3 mask (unused)
+        (uint8_t)(irq_mask >> 8),
+        (uint8_t)(irq_mask & 0xFF),  // IRQ mask
+        (uint8_t)(dio1_mask >> 8),
+        (uint8_t)(dio1_mask & 0xFF),  // DIO1 mask
+        0x00,
+        0x00,  // DIO2 mask (unused)
+        0x00,
+        0x00  // DIO3 mask (unused)
     };
     sendCommand(SX1262_CMD_SET_DIO_IRQ_PARAMS, params, 8);
 }
@@ -678,11 +683,11 @@ void SX1262::configurePacketParams(uint8_t payload_length)
 {
     uint8_t params[6] = {
         (uint8_t)(preamble_length_ >> 8),  // Preamble MSB
-        (uint8_t)(preamble_length_),        // Preamble LSB
-        SX1262_LORA_HEADER_EXPLICIT,        // Explicit header
-        payload_length,                      // Payload length
+        (uint8_t)(preamble_length_),       // Preamble LSB
+        SX1262_LORA_HEADER_EXPLICIT,       // Explicit header
+        payload_length,                    // Payload length
         (uint8_t)(crc_enabled_ ? SX1262_LORA_CRC_ON : SX1262_LORA_CRC_OFF),
-        SX1262_LORA_IQ_STANDARD             // Standard IQ
+        SX1262_LORA_IQ_STANDARD  // Standard IQ
     };
     sendCommand(SX1262_CMD_SET_PACKET_PARAMS, params, 6);
 }
