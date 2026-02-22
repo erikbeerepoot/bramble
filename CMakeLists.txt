@@ -133,9 +133,14 @@ else()
     set_property(CACHE HARDWARE_VARIANT PROPERTY STRINGS
         ALL GENERIC HUB CONTROLLER IRRIGATION SENSOR)
 
-    # Common source files for all variants
+    # Radio chip selection (SX1276 default, SX1262 for new boards)
+    set(RADIO_CHIP "SX1276" CACHE STRING "Radio chip type (SX1276 or SX1262)")
+    set_property(CACHE RADIO_CHIP PROPERTY STRINGS SX1276 SX1262)
+
+    # Common source files for all variants (both radio drivers always compile)
     set(COMMON_SOURCES
         src/lora/sx1276.cpp
+        src/lora/sx1262.cpp
         src/lora/message.cpp
         src/lora/reliable_messenger.cpp
         src/lora/address_manager.cpp
@@ -284,6 +289,11 @@ if(NOT BUILD_TESTS)
             BRAMBLE_VERSION_MINOR=${BRAMBLE_VERSION_MINOR}
             BRAMBLE_VERSION_BUILD=${BRAMBLE_VERSION_BUILD}
         )
+
+        # Radio chip selection
+        if(RADIO_CHIP STREQUAL "SX1262")
+            target_compile_definitions(${TARGET_NAME} PRIVATE RADIO_SX1262=1)
+        endif()
 
         # Suppress GCC ARM ABI notes (safe for standalone firmware)
         target_compile_options(${TARGET_NAME} PRIVATE -Wno-psabi)
