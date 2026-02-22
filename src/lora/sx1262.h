@@ -99,17 +99,17 @@
 #define SX1262_REG_SYNC_WORD_LSB 0x0741
 
 // Default configuration values
-#define SX1262_DEFAULT_FREQUENCY 915000000   // 915 MHz
-#define SX1262_DEFAULT_TX_POWER 17           // 17 dBm
-#define SX1262_DEFAULT_SPREADING_FACTOR 7    // SF7
-#define SX1262_DEFAULT_BANDWIDTH 125000      // 125 kHz
-#define SX1262_DEFAULT_CODING_RATE 5         // 4/5
-#define SX1262_DEFAULT_PREAMBLE_LENGTH 8     // 8 symbols
-#define SX1262_DEFAULT_CRC true              // CRC enabled
+#define SX1262_DEFAULT_FREQUENCY 915000000  // 915 MHz
+#define SX1262_DEFAULT_TX_POWER 17          // 17 dBm
+#define SX1262_DEFAULT_SPREADING_FACTOR 7   // SF7
+#define SX1262_DEFAULT_BANDWIDTH 125000     // 125 kHz
+#define SX1262_DEFAULT_CODING_RATE 5        // 4/5
+#define SX1262_DEFAULT_PREAMBLE_LENGTH 8    // 8 symbols
+#define SX1262_DEFAULT_CRC true             // CRC enabled
 
 // Timing constants
-#define SX1262_BUSY_TIMEOUT_MS 10    // Max wait for BUSY to go low
-#define SX1262_RESET_DELAY_MS 5      // Delay after reset pulse
+#define SX1262_BUSY_TIMEOUT_MS 10  // Max wait for BUSY to go low
+#define SX1262_RESET_DELAY_MS 5    // Delay after reset pulse
 
 /**
  * @brief SX1262 LoRa transceiver driver for Raspberry Pi Pico
