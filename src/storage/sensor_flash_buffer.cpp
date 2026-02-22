@@ -634,114 +634,57 @@ bool SensorFlashBuffer::scanForWriteIndex()
     return true;
 }
 
-bool SensorFlashBuffer::isReadIndexValid()
-{
-    if (metadata_.read_index == metadata_.write_index) {
-        logger_.info("read_index equals write_index (%lu) - no pending records",
-                     metadata_.read_index);
-        return true;
-    }
-
-    if (metadata_.read_index > metadata_.write_index) {
-        // read_index > write_index implies buffer wrapped. Verify by checking if
-        // the location at write_index is erased (if erased, we haven't wrapped yet)
-        uint32_t write_address = getRecordAddress(metadata_.write_index);
-        if (isLocationErased(write_address, sizeof(SensorDataRecord))) {
-            logger_.warn("read_index=%lu > write_index=%lu but buffer hasn't wrapped (write "
-                         "location erased)",
-                         metadata_.read_index, metadata_.write_index);
-            return false;
-        }
-
-        // Buffer has wrapped - verify record at read_index is valid
-        uint32_t read_address = getRecordAddress(metadata_.read_index);
-        SensorDataRecord read_record;
-        ExternalFlashResult result = flash_.read(
-            read_address, reinterpret_cast<uint8_t *>(&read_record), sizeof(read_record));
-
-        if (result != ExternalFlashResult::Success) {
-            logger_.warn("Failed to read record at read_index=%lu", metadata_.read_index);
-            return false;
-        }
-
-        uint16_t read_crc = CRC16::calculateRecordCRC(read_record);
-        if (read_crc == read_record.crc16 && (read_record.flags & RECORD_FLAG_VALID)) {
-            logger_.info("Preserved read_index=%lu (buffer wrapped, record valid)",
-                         metadata_.read_index);
-            return true;
-        }
-
-        logger_.warn("Record at read_index=%lu is invalid (wrapped buffer)",
-                     metadata_.read_index);
-        return false;
-    }
-
-    // Normal case: read_index < write_index - verify record at read_index is valid
-    uint32_t read_address = getRecordAddress(metadata_.read_index);
-    SensorDataRecord read_record;
-    ExternalFlashResult result = flash_.read(
-        read_address, reinterpret_cast<uint8_t *>(&read_record), sizeof(read_record));
-
-    if (result != ExternalFlashResult::Success) {
-        logger_.warn("Failed to read record at read_index=%lu", metadata_.read_index);
-        return false;
-    }
-
-    uint16_t read_crc = CRC16::calculateRecordCRC(read_record);
-    if (read_crc == read_record.crc16 && (read_record.flags & RECORD_FLAG_VALID)) {
-        logger_.info("Preserved read_index=%lu from flash metadata (record valid)",
-                     metadata_.read_index);
-        return true;
-    }
-
-    logger_.warn("Record at read_index=%lu is invalid (CRC: expected 0x%04X, got "
-                 "0x%04X, flags=0x%02X)",
-                 metadata_.read_index, read_record.crc16, read_crc, read_record.flags);
-    return false;
-}
-
 void SensorFlashBuffer::recoverReadIndex()
 {
-    if (!isReadIndexValid()) {
-        logger_.warn("Resetting read_index to write_index=%lu (stale metadata)",
-                     metadata_.write_index);
-        metadata_.read_index = metadata_.write_index;
+    // Scan backward from write_index to find the first untransmitted record.
+    // The transmitted flag is the source of truth — no reliance on stale metadata.
+    // Read only the 1-byte transmission_status field per record for efficiency.
+
+    if (metadata_.write_index == 0) {
+        // No records written yet
+        metadata_.read_index = 0;
+        logger_.info("No records written, read_index=0");
+        return;
     }
 
-    // Fast-forward past any already-transmitted records
-    fastForwardReadIndex();
-}
+    uint32_t candidate = metadata_.write_index;
+    uint32_t scanned = 0;
 
-uint32_t SensorFlashBuffer::fastForwardReadIndex()
-{
-    uint32_t skipped = 0;
+    while (scanned < metadata_.write_index) {
+        // Step backward one position
+        uint32_t prev = (candidate == 0) ? MAX_RECORDS - 1 : candidate - 1;
 
-    while (metadata_.read_index != metadata_.write_index) {
-        uint32_t address = getRecordAddress(metadata_.read_index) +
-                           offsetof(SensorDataRecord, transmission_status);
+        uint32_t address =
+            getRecordAddress(prev) + offsetof(SensorDataRecord, transmission_status);
         uint8_t status = RECORD_NOT_TRANSMITTED;
 
         ExternalFlashResult result = flash_.read(address, &status, sizeof(status));
         if (result != ExternalFlashResult::Success) {
-            logger_.warn("Read error at index %lu during fast-forward, stopping",
-                         metadata_.read_index);
+            logger_.warn("Read error at index %lu during backward scan, stopping", prev);
             break;
         }
 
-        if (status != RECORD_TRANSMITTED) {
+        // Check if location is erased (no record here — we've reached the start of data)
+        if (status == RECORD_NOT_TRANSMITTED) {
+            // Could be an untransmitted record or erased flash — check if the full
+            // location is erased to distinguish
+            if (isLocationErased(getRecordAddress(prev), sizeof(SensorDataRecord))) {
+                break;
+            }
+        }
+
+        if (status == RECORD_TRANSMITTED) {
+            // Found the boundary — candidate is the first untransmitted record
             break;
         }
 
-        metadata_.read_index = (metadata_.read_index + 1) % MAX_RECORDS;
-        skipped++;
+        candidate = prev;
+        scanned++;
     }
 
-    if (skipped > 0) {
-        logger_.info("Fast-forwarded read_index past %lu transmitted records to %lu", skipped,
-                     metadata_.read_index);
-    }
-
-    return skipped;
+    metadata_.read_index = candidate;
+    logger_.info("Recovered read_index=%lu (scanned %lu records backward from write_index=%lu)",
+                 metadata_.read_index, scanned, metadata_.write_index);
 }
 
 bool SensorFlashBuffer::isWriteLocationErased()
