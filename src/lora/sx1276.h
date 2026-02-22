@@ -70,12 +70,12 @@
 
 // Default configuration values
 #define SX1276_DEFAULT_FREQUENCY 915000000  // 915 MHz
-#define SX1276_DEFAULT_TX_POWER 17          // 17 dBm (PA_BOOST normal mode, avoids PA_DAC high-power EMI)
-#define SX1276_DEFAULT_SPREADING_FACTOR 7   // SF7
-#define SX1276_DEFAULT_BANDWIDTH 125000     // 125 kHz
-#define SX1276_DEFAULT_CODING_RATE 5        // 4/5
-#define SX1276_DEFAULT_PREAMBLE_LENGTH 8    // 8 symbols
-#define SX1276_DEFAULT_CRC true             // CRC enabled
+#define SX1276_DEFAULT_TX_POWER 17  // 17 dBm (PA_BOOST normal mode, avoids PA_DAC high-power EMI)
+#define SX1276_DEFAULT_SPREADING_FACTOR 7  // SF7
+#define SX1276_DEFAULT_BANDWIDTH 125000    // 125 kHz
+#define SX1276_DEFAULT_CODING_RATE 5       // 4/5
+#define SX1276_DEFAULT_PREAMBLE_LENGTH 8   // 8 symbols
+#define SX1276_DEFAULT_CRC true            // CRC enabled
 
 // Timing constants
 #define SX1276_MODE_READY_TIMEOUT_MS 100  // 100ms timeout for mode changes

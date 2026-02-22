@@ -8,13 +8,13 @@
 
 #include "hal/flash.h"
 #include "hal/logger.h"
-#include "util/format.h"
 #include "hal/pmu_protocol.h"
 #include "lora/address_manager.h"
 #include "lora/hub_router.h"
 #include "lora/network_stats.h"
 #include "lora/sx1276.h"
 #include "storage/sensor_data_record.h"
+#include "util/format.h"
 
 static Logger logger("HubMode");
 
@@ -31,8 +31,8 @@ constexpr uint32_t DATETIME_QUERY_INTERVAL_MS = 3600000;  // 1 hour
 constexpr uint32_t DATETIME_RETRY_INTERVAL_MS = 5000;     // 5 seconds retry if RTC not running
 
 // Safe uint64_t formatting — see src/util/format.h for details
-using bramble::format::uint64_to_str;
 using bramble::format::uint64_to_hex;
+using bramble::format::uint64_to_str;
 
 // ===== Buffered UART Output =====
 // All UART writes go into a software buffer, which is flushed at the top of
@@ -42,7 +42,8 @@ using bramble::format::uint64_to_hex;
 
 void HubMode::uartSend(const char *str)
 {
-    if (!str) return;
+    if (!str)
+        return;
     size_t len = strlen(str);
     size_t available = UART_TX_BUFFER_SIZE - uart_tx_pos_;
     if (len > available) {
@@ -59,8 +60,10 @@ void HubMode::uartSend(const char *str)
 
 void HubMode::flushUartBuffer()
 {
-    if (uart_tx_pos_ == 0) return;
-    uart_write_blocking(API_UART_ID, reinterpret_cast<const uint8_t *>(uart_tx_buffer_), uart_tx_pos_);
+    if (uart_tx_pos_ == 0)
+        return;
+    uart_write_blocking(API_UART_ID, reinterpret_cast<const uint8_t *>(uart_tx_buffer_),
+                        uart_tx_pos_);
     uart_tx_wait_blocking(API_UART_ID);
     uart_tx_pos_ = 0;
 }
@@ -256,9 +259,8 @@ void HubMode::processSerialInput()
     uint32_t now = to_ms_since_boot(get_absolute_time());
     if (now - last_uart_diag >= 5000) {
         uart_hw_t *hw = uart_get_hw(API_UART_ID);
-        logger.info("UART1_RX diag: FR=0x%03X DMACR=0x%X readable=%d buf_pos=%u",
-                     hw->fr & 0xFFF, hw->dmacr, uart_is_readable(API_UART_ID),
-                     (unsigned)serial_input_pos_);
+        logger.info("UART1_RX diag: FR=0x%03X DMACR=0x%X readable=%d buf_pos=%u", hw->fr & 0xFFF,
+                    hw->dmacr, uart_is_readable(API_UART_ID), (unsigned)serial_input_pos_);
         last_uart_diag = now;
     }
 
@@ -344,7 +346,8 @@ void HubMode::handleListNodes()
 
     for (uint16_t addr : addresses) {
         const NodeInfo *node = address_manager_->getNodeInfo(addr);
-        if (!node) continue;
+        if (!node)
+            continue;
 
         // Determine node type
         const char *type = "UNKNOWN";

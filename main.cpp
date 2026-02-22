@@ -379,11 +379,11 @@ bool initializeHardware(RadioInterface &lora, NeoPixel &led)
     // Configure LoRa parameters
     lora.setFrequency(915000000);  // 915 MHz for US
 #if defined(DEFAULT_IS_HUB) && DEFAULT_IS_HUB
-    lora.setTxPower(15);           // Hub: reduced power (16+ dBm causes UART RX EMI on Feather)
+    lora.setTxPower(15);  // Hub: reduced power (16+ dBm causes UART RX EMI on Feather)
 #else
-    lora.setTxPower(20);           // Sensor nodes: max power for range
+    lora.setTxPower(20);  // Sensor nodes: max power for range
 #endif
-    lora.setBandwidth(125000);     // 125 kHz
+    lora.setBandwidth(125000);  // 125 kHz
     lora.setSpreadingFactor(9);
     lora.setCodingRate(5);
     lora.setPreambleLength(8);
@@ -498,7 +498,8 @@ bool attemptRegistration(ReliableMessenger &messenger, RadioInterface &lora,
 
 void processIncomingMessage(uint8_t *rx_buffer, int rx_len, ReliableMessenger &messenger,
                             AddressManager *address_manager, HubRouter *hub_router,
-                            uint32_t current_time, NetworkStats *network_stats, RadioInterface *lora)
+                            uint32_t current_time, NetworkStats *network_stats,
+                            RadioInterface *lora)
 {
     Logger log("Message");
 
@@ -568,8 +569,8 @@ void processIncomingMessage(uint8_t *rx_buffer, int rx_len, ReliableMessenger &m
             reinterpret_cast<const HeartbeatPayload *>(rx_buffer + sizeof(MessageHeader));
 
         log.info("Heartbeat from 0x%04X: uptime=%lus, battery=%u%%, signal=%u, sensors=0x%02X",
-                  source_address, heartbeat->uptime_seconds, heartbeat->battery_level,
-                  heartbeat->signal_strength, heartbeat->active_sensors);
+                 source_address, heartbeat->uptime_seconds, heartbeat->battery_level,
+                 heartbeat->signal_strength, heartbeat->active_sensors);
     }
 
     // Handle CHECK_UPDATES from nodes
@@ -578,8 +579,7 @@ void processIncomingMessage(uint8_t *rx_buffer, int rx_len, ReliableMessenger &m
         const CheckUpdatesPayload *payload =
             reinterpret_cast<const CheckUpdatesPayload *>(msg->payload);
 
-        log.info("CHECK_UPDATES from 0x%04X (node_seq=%d)", source_address,
-                  payload->node_sequence);
+        log.info("CHECK_UPDATES from 0x%04X (node_seq=%d)", source_address, payload->node_sequence);
 
         hub_router->handleCheckUpdates(source_address, payload->node_sequence);
     }

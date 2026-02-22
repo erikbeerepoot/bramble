@@ -233,8 +233,8 @@ bool ReliableMessenger::send(const uint8_t *buffer, size_t length, DeliveryCriti
     message_queue_.push(std::move(outgoing));
 
     logger_.info("Queued %s message (seq=%d) to 0x%04X (queue depth: %zu)",
-                 RetryPolicy::getPolicyName(criticality), msg->header.seq_num,
-                 msg->header.dst_addr, message_queue_.size());
+                 RetryPolicy::getPolicyName(criticality), msg->header.seq_num, msg->header.dst_addr,
+                 message_queue_.size());
 
     return true;
 }

@@ -23,7 +23,8 @@ namespace format {
  */
 inline void uint64_to_str(uint64_t value, char *buf, size_t buf_size)
 {
-    if (buf_size == 0) return;
+    if (buf_size == 0)
+        return;
     if (value == 0) {
         snprintf(buf, buf_size, "0");
         return;
@@ -46,7 +47,8 @@ inline void uint64_to_str(uint64_t value, char *buf, size_t buf_size)
  */
 inline void uint64_to_hex(uint64_t value, char *buf, size_t buf_size)
 {
-    if (buf_size == 0) return;
+    if (buf_size == 0)
+        return;
     uint32_t hi = static_cast<uint32_t>(value >> 32);
     uint32_t lo = static_cast<uint32_t>(value);
     snprintf(buf, buf_size, "%08lX%08lX", hi, lo);
