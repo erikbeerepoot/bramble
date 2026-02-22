@@ -10,8 +10,8 @@
 #include "message_builder.h"
 #include "message_validator.h"
 #include "network_stats.h"
+#include "radio_interface.h"
 #include "retry_policy.h"
-#include "sx1276.h"
 
 /**
  * @brief Recently seen message for deduplication
@@ -84,7 +84,7 @@ public:
     // Callback type for registration success (provides new assigned address)
     using RegistrationSuccessCallback = std::function<void(uint16_t new_address)>;
 
-    ReliableMessenger(SX1276 *lora, uint16_t node_addr, NetworkStats *stats = nullptr);
+    ReliableMessenger(RadioInterface *lora, uint16_t node_addr, NetworkStats *stats = nullptr);
 
     /**
      * @brief Send an actuator command with specified criticality
@@ -341,7 +341,7 @@ public:
     bool cancelPendingMessage(uint8_t seq_num);
 
 private:
-    SX1276 *lora_;
+    RadioInterface *lora_;
     uint16_t node_addr_;
     uint8_t next_seq_num_;
     std::map<uint8_t, PendingMessage> pending_messages_;

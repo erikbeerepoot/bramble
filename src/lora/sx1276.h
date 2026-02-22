@@ -7,6 +7,7 @@
 
 #include "../hal/logger.h"
 #include "../hal/spi_device.h"
+#include "radio_interface.h"
 
 // SX1276 Register Map
 #define SX1276_REG_FIFO 0x00
@@ -83,7 +84,7 @@
 /**
  * @brief SX1276 LoRa transceiver driver for Raspberry Pi Pico
  */
-class SX1276 {
+class SX1276 : public RadioInterface {
 public:
     /**
      * @brief Construct SX1276 driver
@@ -94,180 +95,42 @@ public:
      */
     SX1276(spi_inst_t *spi_port, uint cs_pin, int rst_pin = -1, int dio0_pin = -1);
 
-    /**
-     * @brief Initialize the SX1276 module
-     * @return true if initialization successful, false otherwise
-     */
-    bool begin();
+    // --- RadioInterface implementation ---
 
-    /**
-     * @brief Check if SX1276 is connected and responding
-     * @return true if module responds correctly
-     */
-    bool isConnected();
+    bool begin() override;
+    bool isConnected() override;
+    void reset() override;
 
-    /**
-     * @brief Set transmit power
-     * @param power_db Power in dBm (2-20)
-     */
-    void setTxPower(int power_db);
+    void setTxPower(int power_db) override;
+    void setFrequency(uint32_t frequency_hz) override;
+    void setSpreadingFactor(int sf) override;
+    void setBandwidth(uint32_t bandwidth_hz) override;
+    void setCodingRate(int denominator) override;
+    void setPreambleLength(int length) override;
+    void setCrc(bool enable_crc) override;
 
-    /**
-     * @brief Set carrier frequency
-     * @param frequency_hz Frequency in Hz (e.g., 915000000 for 915 MHz)
-     */
-    void setFrequency(uint32_t frequency_hz);
+    bool send(const uint8_t *data, size_t length) override;
+    bool sendAsync(const uint8_t *data, size_t length) override;
+    bool isTxDone() override;
 
-    /**
-     * @brief Set spreading factor
-     * @param sf Spreading factor (6-12)
-     */
-    void setSpreadingFactor(int sf);
+    int receive(uint8_t *buffer, size_t max_length) override;
+    bool available() override;
+    void startReceive() override;
 
-    /**
-     * @brief Set signal bandwidth
-     * @param bandwidth_hz Bandwidth in Hz (7800, 10400, 15600, 20800, 31250, 41700, 62500, 125000,
-     * 250000, 500000)
-     */
-    void setBandwidth(uint32_t bandwidth_hz);
+    int getRssi() override;
+    float getSnr() override;
 
-    /**
-     * @brief Set coding rate
-     * @param denominator Coding rate denominator (5-8 for 4/5, 4/6, 4/7, 4/8)
-     */
-    void setCodingRate(int denominator);
+    void sleep() override;
+    void wakeup() override;
 
-    /**
-     * @brief Set preamble length
-     * @param length Preamble length in symbols (6-65535)
-     */
-    void setPreambleLength(int length);
-
-    /**
-     * @brief Enable or disable CRC
-     * @param enable_crc true to enable CRC, false to disable
-     */
-    void setCrc(bool enable_crc);
-
-    /**
-     * @brief Send a packet (blocking in non-interrupt mode)
-     * @param data Pointer to data buffer
-     * @param length Length of data to send (max 255 bytes)
-     * @return true if packet was queued for transmission
-     */
-    bool send(const uint8_t *data, size_t length);
-
-    /**
-     * @brief Send a packet asynchronously (non-blocking, requires interrupt mode)
-     * @param data Data to send
-     * @param length Data length (max 255 bytes)
-     * @return true if transmission started successfully
-     */
-    bool sendAsync(const uint8_t *data, size_t length);
-
-    /**
-     * @brief Check if transmission is complete
-     * @return true if transmission finished
-     */
-    bool isTxDone();
-
-    /**
-     * @brief Receive a packet
-     * @param buffer Buffer to store received data
-     * @param max_length Maximum buffer size
-     * @return Number of bytes received, 0 if no packet available, -1 on error
-     */
-    int receive(uint8_t *buffer, size_t max_length);
-
-    /**
-     * @brief Check if a packet is available for reading
-     * @return true if packet available
-     */
-    bool available();
-
-    /**
-     * @brief Get RSSI of last received packet
-     * @return RSSI in dBm
-     */
-    int getRssi();
-
-    /**
-     * @brief Get SNR of last received packet
-     * @return SNR in dB
-     */
-    float getSnr();
-
-    /**
-     * @brief Put module in sleep mode to save power
-     */
-    void sleep();
-
-    /**
-     * @brief Wake module from sleep mode
-     */
-    void wakeup();
-
-    /**
-     * @brief Set module to continuous receive mode
-     */
-    void startReceive();
-
-    /**
-     * @brief Enable interrupt mode using DIO0 pin
-     * @param callback Function to call when interrupt fires (optional)
-     * @return true if interrupt mode enabled successfully
-     */
-    bool enableInterruptMode(gpio_irq_callback_t callback = nullptr);
-
-    /**
-     * @brief Disable interrupt mode
-     */
-    void disableInterruptMode();
-
-    /**
-     * @brief Check if an interrupt has fired (must be called from main context)
-     * @return true if interrupt pending
-     */
-    bool isInterruptPending() const { return interrupt_pending_; }
-
-    /**
-     * @brief Handle pending interrupt (call after isInterruptPending returns true)
-     * @return Interrupt flags that were set
-     */
-    uint8_t handleInterrupt();
-
-    /**
-     * @brief Check for missed RX done interrupt via register poll
-     *
-     * Fallback for unreliable DIO0 GPIO interrupts. Reads the IRQ flags
-     * register directly and processes any RX done that the interrupt missed.
-     * Should be called in the main loop after handleInterrupt().
-     *
-     * @return true if a missed interrupt was recovered
-     */
-    bool checkForMissedRxInterrupt();
-
-    /**
-     * @brief Check if a message is ready after interrupt
-     * @return true if RX done with valid message
-     */
-    bool isMessageReady() const { return message_ready_; }
-
-    /**
-     * @brief Check if transmission is complete after interrupt
-     * @return true if TX done
-     */
-    bool isTxComplete() const { return tx_complete_; }
-
-    /**
-     * @brief Clear interrupt flags
-     */
-    void clearInterruptFlags();
-
-    /**
-     * @brief Reset the module (if reset pin connected)
-     */
-    void reset();
+    bool enableInterruptMode(gpio_irq_callback_t callback = nullptr) override;
+    void disableInterruptMode() override;
+    bool isInterruptPending() const override { return interrupt_pending_; }
+    uint8_t handleInterrupt() override;
+    bool checkForMissedRxInterrupt() override;
+    bool isMessageReady() const override { return message_ready_; }
+    bool isTxComplete() const override { return tx_complete_; }
+    void clearInterruptFlags() override;
 
     // For interrupt handler access
     int getDio0Pin() const { return dio0_pin_; }
