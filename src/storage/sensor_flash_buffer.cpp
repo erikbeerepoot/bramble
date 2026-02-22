@@ -600,28 +600,20 @@ bool SensorFlashBuffer::scanForWriteIndex()
         return false;
     }
 
-    logger_.info("Scanning flash for write index (cold start recovery)...");
-
-    // Strategy: Binary search for the boundary between written and erased locations.
-    // We check if a location is erased (all 0xFF) rather than checking CRC validity.
-    // This is robust to mid-buffer corruption: a corrupted record is still "written"
-    // (not all-0xFF), so a single bad CRC won't fool the binary search.
-
-    // Detect buffer wrap-around: if both index 0 and the last index are non-erased,
-    // the buffer has wrapped and the single-transition assumption doesn't hold.
     // TODO(wrap-around): implement wrap-aware scan — binary search assumes a single
     //   erased/written boundary which breaks when the circular buffer wraps.
-    bool first_erased = isLocationErased(getRecordAddress(0), sizeof(SensorDataRecord));
-    bool last_erased = isLocationErased(getRecordAddress(MAX_RECORDS - 1), sizeof(SensorDataRecord));
-    if (!first_erased && !last_erased) {
+    if (detectBufferWrapAround()) {
         logger_.error("!!! BUFFER WRAP-AROUND DETECTED !!! Both index 0 and index %lu contain "
                       "data. Binary search scan will produce incorrect results. "
                       "Wrap-aware scan is NOT YET IMPLEMENTED.",
                       MAX_RECORDS - 1);
+
+        return false;
     }
+    logger_.info("Scanning flash for write index (cold start recovery)...");
 
     // Check if flash is empty (first location erased)
-    if (first_erased) {
+    if (isLocationErased(getRecordAddress(0), sizeof(SensorDataRecord))) {
         logger_.info("Flash appears empty, setting write_index to 0");
         metadata_.write_index = 0;
         metadata_.read_index = 0;
@@ -760,6 +752,13 @@ bool SensorFlashBuffer::isWriteLocationErased()
 bool SensorFlashBuffer::isFull() const
 {
     return ((metadata_.write_index + 1) % MAX_RECORDS) == metadata_.read_index;
+}
+
+bool SensorFlashBuffer::detectBufferWrapAround()
+{
+    bool first_erased = isLocationErased(getRecordAddress(0), sizeof(SensorDataRecord));
+    bool last_erased = isLocationErased(getRecordAddress(MAX_RECORDS - 1), sizeof(SensorDataRecord));
+    return !first_erased && !last_erased;
 }
 
 bool SensorFlashBuffer::isLocationErased(uint32_t address, size_t length)
