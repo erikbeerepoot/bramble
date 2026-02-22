@@ -41,7 +41,7 @@ bool CHT832X::isConnected()
 {
     // Try to read a single byte to check if device responds
     uint8_t dummy;
-    int result = i2c_read_blocking(i2c_, I2C_ADDRESS, &dummy, 1, false);
+    int result = i2c_read_timeout_us(i2c_, I2C_ADDRESS, &dummy, 1, false, I2C_TIMEOUT_US);
     return result >= 0;
 }
 
@@ -56,7 +56,7 @@ CHT832X::Reading CHT832X::read()
 
     // Send measurement command (high precision mode)
     uint8_t cmd[2] = {CMD_MEASURE_HIGH, CMD_MEASURE_LOW};
-    int result = i2c_write_blocking(i2c_, I2C_ADDRESS, cmd, 2, false);
+    int result = i2c_write_timeout_us(i2c_, I2C_ADDRESS, cmd, 2, false, I2C_TIMEOUT_US);
 
     if (result != 2) {
         logger.error("Failed to send measurement command");
@@ -68,7 +68,7 @@ CHT832X::Reading CHT832X::read()
 
     // Read 6 bytes: temp_msb, temp_lsb, temp_crc, hum_msb, hum_lsb, hum_crc
     uint8_t data[6];
-    result = i2c_read_blocking(i2c_, I2C_ADDRESS, data, 6, false);
+    result = i2c_read_timeout_us(i2c_, I2C_ADDRESS, data, 6, false, I2C_TIMEOUT_US);
 
     if (result != 6) {
         logger.error("Failed to read sensor data (got %d bytes)", result);
