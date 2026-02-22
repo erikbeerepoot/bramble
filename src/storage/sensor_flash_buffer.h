@@ -220,29 +220,13 @@ public:
     bool scanForWriteIndex();
 
     /**
-     * @brief Fast-forward read_index past already-transmitted records
-     *
-     * On cold start, read_index may be stale (from flash metadata). This method
-     * efficiently advances read_index by reading only the 1-byte transmission_status
-     * field per record, rather than the full 12-byte record.
-     *
-     * @return Number of records skipped
-     */
-    /**
-     * @brief Check if the current read_index points to a valid record
-     * @return true if read_index is valid
-     */
-    bool isReadIndexValid();
-
-    /**
      * @brief Recover read_index after cold start
      *
-     * Validates the read_index from flash metadata, resets it if invalid,
-     * then fast-forwards past any already-transmitted records.
+     * Scans backward from write_index using the transmission_status flag
+     * to find the first untransmitted record. This is the source of truth
+     * for read position — no reliance on stale metadata.
      */
     void recoverReadIndex();
-
-    uint32_t fastForwardReadIndex();
 
     /**
      * @brief Set read index directly (restore from PMU state)
