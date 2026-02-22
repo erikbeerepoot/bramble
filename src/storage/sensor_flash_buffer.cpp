@@ -50,6 +50,27 @@ uint16_t CRC16::calculateRecordCRC(const SensorDataRecord &record)
                      sizeof(SensorDataRecord) - sizeof(record.crc16));
 }
 
+// Generic binary search: finds the last index in [low, high] where predicate returns true.
+// Assumes a single monotonic transition (pred true, ..., pred true, pred false, ..., pred false).
+template <typename Predicate>
+static uint32_t binarySearch(uint32_t low, uint32_t high, Predicate pred)
+{
+    uint32_t result = low;
+    while (low <= high) {
+        uint32_t mid = low + (high - low) / 2;
+        if (pred(mid)) {
+            result = mid;
+            low = mid + 1;
+        } else {
+            if (mid == 0) {
+                break;
+            }
+            high = mid - 1;
+        }
+    }
+    return result;
+}
+
 // SensorFlashBuffer implementation
 
 SensorFlashBuffer::SensorFlashBuffer(ExternalFlash &flash)
@@ -112,14 +133,17 @@ bool SensorFlashBuffer::writeRecord(const SensorDataRecord &record)
         uint32_t original_index = metadata_.write_index;
         uint32_t scanned = 0;
 
+        // Scan up to 4 sectors ahead — stale gaps can span multiple sectors
+        // when PMU state is lost and write_index falls behind
+        constexpr uint32_t MAX_SCAN = RECORDS_PER_SECTOR * 4;
         while (!isLocationErased(address, sizeof(SensorDataRecord)) &&
-               scanned < RECORDS_PER_SECTOR) {
+               scanned < MAX_SCAN) {
             metadata_.write_index = (metadata_.write_index + 1) % MAX_RECORDS;
             address = getRecordAddress(metadata_.write_index);
             scanned++;
         }
 
-        if (scanned >= RECORDS_PER_SECTOR) {
+        if (scanned >= MAX_SCAN) {
             logger_.error("No erased location found after scanning %lu records from index %lu",
                           scanned, original_index);
             healthy_ = false;
@@ -578,150 +602,122 @@ bool SensorFlashBuffer::scanForWriteIndex()
 
     logger_.info("Scanning flash for write index (cold start recovery)...");
 
-    // Strategy: Binary search to find the boundary between valid and invalid records.
-    // Valid records have correct CRC and RECORD_FLAG_VALID set.
-    // The write_index is the first invalid record (or 0 if all are invalid).
+    // Strategy: Binary search for the boundary between written and erased locations.
+    // We check if a location is erased (all 0xFF) rather than checking CRC validity.
+    // This is robust to mid-buffer corruption: a corrupted record is still "written"
+    // (not all-0xFF), so a single bad CRC won't fool the binary search.
 
-    // First, check if flash is empty (first record invalid)
-    SensorDataRecord record;
-    uint32_t address = getRecordAddress(0);
-    ExternalFlashResult result =
-        flash_.read(address, reinterpret_cast<uint8_t *>(&record), sizeof(record));
-
-    if (result != ExternalFlashResult::Success) {
-        logger_.error("Failed to read first record during scan");
-        return false;
+    // Detect buffer wrap-around: if both index 0 and the last index are non-erased,
+    // the buffer has wrapped and the single-transition assumption doesn't hold.
+    // TODO(wrap-around): implement wrap-aware scan — binary search assumes a single
+    //   erased/written boundary which breaks when the circular buffer wraps.
+    bool first_erased = isLocationErased(getRecordAddress(0), sizeof(SensorDataRecord));
+    bool last_erased = isLocationErased(getRecordAddress(MAX_RECORDS - 1), sizeof(SensorDataRecord));
+    if (!first_erased && !last_erased) {
+        logger_.error("!!! BUFFER WRAP-AROUND DETECTED !!! Both index 0 and index %lu contain "
+                      "data. Binary search scan will produce incorrect results. "
+                      "Wrap-aware scan is NOT YET IMPLEMENTED.",
+                      MAX_RECORDS - 1);
     }
 
-    uint16_t crc = CRC16::calculateRecordCRC(record);
-    bool first_valid = (crc == record.crc16) && (record.flags & RECORD_FLAG_VALID);
-
-    if (!first_valid) {
-        // Flash is empty or corrupted from the start
+    // Check if flash is empty (first location erased)
+    if (first_erased) {
         logger_.info("Flash appears empty, setting write_index to 0");
         metadata_.write_index = 0;
         metadata_.read_index = 0;
         return true;
     }
 
-    // Binary search for the transition point from valid to invalid records
-    // This assumes records are written sequentially and there's a single transition point
-    uint32_t low = 0;
-    uint32_t high = MAX_RECORDS - 1;
-    uint32_t last_valid = 0;
+    // Binary search for the last non-erased (written) location
+    uint32_t last_written = binarySearch(0, MAX_RECORDS - 1, [this](uint32_t index) {
+        return !isLocationErased(getRecordAddress(index), sizeof(SensorDataRecord));
+    });
 
-    while (low <= high) {
-        uint32_t mid = low + (high - low) / 2;
+    // Write index is one past the last written location
+    metadata_.write_index = (last_written + 1) % MAX_RECORDS;
 
-        address = getRecordAddress(mid);
-        result = flash_.read(address, reinterpret_cast<uint8_t *>(&record), sizeof(record));
+    logger_.info("Scan complete: write_index=%lu (last written=%lu)", metadata_.write_index,
+                 last_written);
 
-        if (result != ExternalFlashResult::Success) {
-            logger_.warn("Read error at index %lu during scan", mid);
-            // Treat read error as invalid
-            high = mid - 1;
-            continue;
-        }
+    return true;
+}
 
-        crc = CRC16::calculateRecordCRC(record);
-        bool is_valid = (crc == record.crc16) && (record.flags & RECORD_FLAG_VALID);
-
-        if (is_valid) {
-            last_valid = mid;
-            low = mid + 1;
-        } else {
-            if (mid == 0) {
-                break;
-            }
-            high = mid - 1;
-        }
-    }
-
-    // Write index is one past the last valid record
-    metadata_.write_index = (last_valid + 1) % MAX_RECORDS;
-
-    // Preserve read_index from flash metadata (loaded in init())
-    // This prevents re-transmitting already-ACKed records after cold start.
-    // Validate that read_index is still valid by checking:
-    // 1. If read_index == write_index, buffer is empty (valid)
-    // 2. If read_index < write_index, normal case - verify record at read_index is valid
-    // 3. If read_index > write_index, buffer claims to have wrapped - verify this is true
-    bool read_index_valid = false;
-
+bool SensorFlashBuffer::isReadIndexValid()
+{
     if (metadata_.read_index == metadata_.write_index) {
-        // Buffer appears empty from read perspective - valid state
-        read_index_valid = true;
         logger_.info("read_index equals write_index (%lu) - no pending records",
                      metadata_.read_index);
-    } else if (metadata_.read_index > metadata_.write_index) {
+        return true;
+    }
+
+    if (metadata_.read_index > metadata_.write_index) {
         // read_index > write_index implies buffer wrapped. Verify by checking if
         // the location at write_index is erased (if erased, we haven't wrapped yet)
         uint32_t write_address = getRecordAddress(metadata_.write_index);
         if (isLocationErased(write_address, sizeof(SensorDataRecord))) {
-            // Location at write_index is erased - buffer hasn't wrapped, read_index is stale
             logger_.warn("read_index=%lu > write_index=%lu but buffer hasn't wrapped (write "
                          "location erased)",
                          metadata_.read_index, metadata_.write_index);
-            read_index_valid = false;
-        } else {
-            // Buffer has wrapped - verify record at read_index is valid
-            uint32_t read_address = getRecordAddress(metadata_.read_index);
-            SensorDataRecord read_record;
-            ExternalFlashResult result = flash_.read(
-                read_address, reinterpret_cast<uint8_t *>(&read_record), sizeof(read_record));
-
-            if (result == ExternalFlashResult::Success) {
-                uint16_t read_crc = CRC16::calculateRecordCRC(read_record);
-                if (read_crc == read_record.crc16 && (read_record.flags & RECORD_FLAG_VALID)) {
-                    read_index_valid = true;
-                    logger_.info("Preserved read_index=%lu (buffer wrapped, record valid)",
-                                 metadata_.read_index);
-                } else {
-                    logger_.warn("Record at read_index=%lu is invalid (wrapped buffer)",
-                                 metadata_.read_index);
-                }
-            } else {
-                logger_.warn("Failed to read record at read_index=%lu", metadata_.read_index);
-            }
+            return false;
         }
-    } else {
-        // Normal case: read_index < write_index - verify record at read_index is valid
+
+        // Buffer has wrapped - verify record at read_index is valid
         uint32_t read_address = getRecordAddress(metadata_.read_index);
         SensorDataRecord read_record;
         ExternalFlashResult result = flash_.read(
             read_address, reinterpret_cast<uint8_t *>(&read_record), sizeof(read_record));
 
-        if (result == ExternalFlashResult::Success) {
-            uint16_t read_crc = CRC16::calculateRecordCRC(read_record);
-            if (read_crc == read_record.crc16 && (read_record.flags & RECORD_FLAG_VALID)) {
-                read_index_valid = true;
-                logger_.info("Preserved read_index=%lu from flash metadata (record valid)",
-                             metadata_.read_index);
-            } else {
-                logger_.warn("Record at read_index=%lu is invalid (CRC: expected 0x%04X, got "
-                             "0x%04X, flags=0x%02X)",
-                             metadata_.read_index, read_record.crc16, read_crc, read_record.flags);
-            }
-        } else {
+        if (result != ExternalFlashResult::Success) {
             logger_.warn("Failed to read record at read_index=%lu", metadata_.read_index);
+            return false;
         }
+
+        uint16_t read_crc = CRC16::calculateRecordCRC(read_record);
+        if (read_crc == read_record.crc16 && (read_record.flags & RECORD_FLAG_VALID)) {
+            logger_.info("Preserved read_index=%lu (buffer wrapped, record valid)",
+                         metadata_.read_index);
+            return true;
+        }
+
+        logger_.warn("Record at read_index=%lu is invalid (wrapped buffer)",
+                     metadata_.read_index);
+        return false;
     }
 
-    if (!read_index_valid) {
+    // Normal case: read_index < write_index - verify record at read_index is valid
+    uint32_t read_address = getRecordAddress(metadata_.read_index);
+    SensorDataRecord read_record;
+    ExternalFlashResult result = flash_.read(
+        read_address, reinterpret_cast<uint8_t *>(&read_record), sizeof(read_record));
+
+    if (result != ExternalFlashResult::Success) {
+        logger_.warn("Failed to read record at read_index=%lu", metadata_.read_index);
+        return false;
+    }
+
+    uint16_t read_crc = CRC16::calculateRecordCRC(read_record);
+    if (read_crc == read_record.crc16 && (read_record.flags & RECORD_FLAG_VALID)) {
+        logger_.info("Preserved read_index=%lu from flash metadata (record valid)",
+                     metadata_.read_index);
+        return true;
+    }
+
+    logger_.warn("Record at read_index=%lu is invalid (CRC: expected 0x%04X, got "
+                 "0x%04X, flags=0x%02X)",
+                 metadata_.read_index, read_record.crc16, read_crc, read_record.flags);
+    return false;
+}
+
+void SensorFlashBuffer::recoverReadIndex()
+{
+    if (!isReadIndexValid()) {
         logger_.warn("Resetting read_index to write_index=%lu (stale metadata)",
                      metadata_.write_index);
         metadata_.read_index = metadata_.write_index;
     }
 
-    // Fast-forward read_index past any leading transmitted records.
-    // On cold start, read_index comes from stale flash metadata and may point
-    // at records that were already transmitted before PMU state was lost.
+    // Fast-forward past any already-transmitted records
     fastForwardReadIndex();
-
-    logger_.info("Scan complete: write_index=%lu, read_index=%lu, untransmitted=%lu",
-                 metadata_.write_index, metadata_.read_index, getUntransmittedCount());
-
-    return true;
 }
 
 uint32_t SensorFlashBuffer::fastForwardReadIndex()
