@@ -32,8 +32,13 @@
 #include "lora/hub_router.h"
 #include "lora/message.h"
 #include "lora/network_stats.h"
+#include "lora/radio_interface.h"
 #include "lora/reliable_messenger.h"
+#ifdef RADIO_SX1262
+#include "lora/sx1262.h"
+#else
 #include "lora/sx1276.h"
+#endif
 
 // Utility includes
 #include "util/format.h"
@@ -63,8 +68,13 @@ constexpr uint PIN_MISO = 8;   // SPI1 RX
 constexpr uint PIN_SCK = 14;   // SPI1 SCK
 constexpr uint PIN_MOSI = 15;  // SPI1 TX
 constexpr uint PIN_CS = 16;    // GPIO as chip select
-constexpr uint PIN_RST = 17;   // Reset pin (directly to RFM95W)
-constexpr uint PIN_DIO0 = 21;  // DIO0 interrupt pin (RFM_IO0)
+constexpr uint PIN_RST = 17;   // Reset pin
+#ifdef RADIO_SX1262
+constexpr uint PIN_DIO1 = 22;  // DIO1 interrupt pin (SX1262)
+constexpr uint PIN_BUSY = 23;  // BUSY pin (SX1262)
+#else
+constexpr uint PIN_DIO0 = 21;  // DIO0 interrupt pin (SX1276 / RFM95W)
+#endif
 constexpr uint PIN_NEOPIXEL = 4;
 
 // Controller input pins (Adafruit Feather RP2040)
@@ -101,9 +111,9 @@ inline VariantInfo getVariantInfo()
 }
 
 // Forward declarations
-bool initializeHardware(SX1276 &lora, NeoPixel &led);
+bool initializeHardware(RadioInterface &lora, NeoPixel &led);
 uint64_t getDeviceId();
-bool attemptRegistration(ReliableMessenger &messenger, SX1276 &lora,
+bool attemptRegistration(ReliableMessenger &messenger, RadioInterface &lora,
                          NodeConfigManager &config_manager, uint64_t device_id);
 
 /**
@@ -163,8 +173,12 @@ int main()
         led.show();
     }
 
-    // Initialize LoRa
+    // Initialize LoRa radio
+#ifdef RADIO_SX1262
+    SX1262 lora(SPI_PORT, PIN_CS, PIN_RST, PIN_DIO1, PIN_BUSY);
+#else
     SX1276 lora(SPI_PORT, PIN_CS, PIN_RST, PIN_DIO0);
+#endif
 
     if (!initializeHardware(lora, led)) {
         led.setPixel(0, 255, 0, 0);  // Red for error
@@ -338,7 +352,7 @@ int main()
     return 0;  // Should never reach here
 }
 
-bool initializeHardware(SX1276 &lora, NeoPixel &led)
+bool initializeHardware(RadioInterface &lora, NeoPixel &led)
 {
     Logger log("Hardware");
 
@@ -404,7 +418,7 @@ uint64_t getDeviceId()
     return id;
 }
 
-bool attemptRegistration(ReliableMessenger &messenger, SX1276 &lora,
+bool attemptRegistration(ReliableMessenger &messenger, RadioInterface &lora,
                          NodeConfigManager &config_manager, uint64_t device_id)
 {
     Logger log("Registration");
@@ -484,7 +498,7 @@ bool attemptRegistration(ReliableMessenger &messenger, SX1276 &lora,
 
 void processIncomingMessage(uint8_t *rx_buffer, int rx_len, ReliableMessenger &messenger,
                             AddressManager *address_manager, HubRouter *hub_router,
-                            uint32_t current_time, NetworkStats *network_stats, SX1276 *lora)
+                            uint32_t current_time, NetworkStats *network_stats, RadioInterface *lora)
 {
     Logger log("Message");
 

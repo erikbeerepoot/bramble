@@ -8,7 +8,7 @@
 #include "../util/format.h"
 #include "../util/time.h"
 
-ReliableMessenger::ReliableMessenger(SX1276 *lora, uint16_t node_addr, NetworkStats *stats)
+ReliableMessenger::ReliableMessenger(RadioInterface *lora, uint16_t node_addr, NetworkStats *stats)
     : lora_(lora), node_addr_(node_addr), logger_("ReliableMessenger"), network_stats_(stats),
       is_transmitting_(false)
 {
