@@ -228,6 +228,20 @@ public:
      *
      * @return Number of records skipped
      */
+    /**
+     * @brief Check if the current read_index points to a valid record
+     * @return true if read_index is valid
+     */
+    bool isReadIndexValid();
+
+    /**
+     * @brief Recover read_index after cold start
+     *
+     * Validates the read_index from flash metadata, resets it if invalid,
+     * then fast-forwards past any already-transmitted records.
+     */
+    void recoverReadIndex();
+
     uint32_t fastForwardReadIndex();
 
     /**
@@ -325,6 +339,17 @@ private:
      * @return true if buffer is full
      */
     bool isFull() const;
+
+    /**
+     * @brief Detect if the circular buffer has wrapped around
+     *
+     * Checks if both index 0 and MAX_RECORDS-1 contain data (non-erased),
+     * which indicates the buffer has wrapped and the single-transition
+     * assumption used by scanForWriteIndex() no longer holds.
+     *
+     * @return true if wrap-around detected
+     */
+    bool detectBufferWrapAround();
 
     /**
      * @brief Check if a flash location is erased (all 0xFF)
