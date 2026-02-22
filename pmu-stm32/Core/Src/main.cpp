@@ -59,6 +59,9 @@ static uint8_t uartRxByte;
 // RTC wakeup flag - set by interrupt, handled in main loop
 static volatile bool rtcWakeupFlag = false;
 
+// Clock source fallback flag - set if LSE crystal fails to start
+static bool usingLSIFallback = false;
+
 // Boot animation parameters
 namespace BootAnimationConfig {
 constexpr int TOTAL_FLICKERS = 5;  // 5 flickers = 1 second total
@@ -160,6 +163,16 @@ int main(void)
     led.init();
     led.off();
 
+    // Log LSE crystal failure with red LED blinks
+    if (usingLSIFallback) {
+        for (int i = 0; i < 3; i++) {
+            led.setColor(LED::RED);
+            HAL_Delay(200);
+            led.off();
+            HAL_Delay(200);
+        }
+    }
+
     // Initialize DC/DC converter (start enabled, then we can program the rp2040)
     dcdc.init();
     dcdc.enable();
@@ -251,6 +264,7 @@ void SystemClock_Config(void)
 
     /** Initializes the RCC Oscillators according to the specified parameters
      * in the RCC_OscInitTypeDef structure.
+     * Try LSE (external 32.768 kHz crystal) first, fall back to LSI if it fails.
      */
     RCC_OscInitStruct.OscillatorType =
         RCC_OSCILLATORTYPE_HSI | RCC_OSCILLATORTYPE_LSE | RCC_OSCILLATORTYPE_MSI;
@@ -262,7 +276,15 @@ void SystemClock_Config(void)
     RCC_OscInitStruct.MSIClockRange = RCC_MSIRANGE_5;
     RCC_OscInitStruct.PLL.PLLState = RCC_PLL_NONE;
     if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK) {
-        Error_Handler();
+        // LSE crystal failed to start — fall back to LSI internal oscillator
+        usingLSIFallback = true;
+        RCC_OscInitStruct.OscillatorType =
+            RCC_OSCILLATORTYPE_HSI | RCC_OSCILLATORTYPE_LSI | RCC_OSCILLATORTYPE_MSI;
+        RCC_OscInitStruct.LSEState = RCC_LSE_OFF;
+        RCC_OscInitStruct.LSIState = RCC_LSI_ON;
+        if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK) {
+            Error_Handler();
+        }
     }
 
     // Explicitly disable HSI divider to ensure 16 MHz clock for LPUART
@@ -286,7 +308,8 @@ void SystemClock_Config(void)
     // HSI is factory-calibrated with ±1% accuracy over temperature range
     // MSI has wider tolerance which caused baud rate to be ~7.5% off (2218 instead of 2400)
     PeriphClkInit.Lpuart1ClockSelection = RCC_LPUART1CLKSOURCE_HSI;
-    PeriphClkInit.RTCClockSelection = RCC_RTCCLKSOURCE_LSE;
+    PeriphClkInit.RTCClockSelection =
+        usingLSIFallback ? RCC_RTCCLKSOURCE_LSI : RCC_RTCCLKSOURCE_LSE;
     if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK) {
         Error_Handler();
     }
@@ -342,10 +365,18 @@ static void MX_RTC_Init(void)
      */
     hrtc.Instance = RTC;
     hrtc.Init.HourFormat = RTC_HOURFORMAT_24;
-    // LSE is 32.768 kHz crystal, standard RTC prescalers for 1 Hz
-    // 32768 Hz / (128 × 256) = 32768 / 32768 = 1 Hz
-    hrtc.Init.AsynchPrediv = 127;  // AsynchPrediv + 1 = 128
-    hrtc.Init.SynchPrediv = 255;   // SynchPrediv + 1 = 256
+    if (usingLSIFallback) {
+        // LSI is ~37 kHz internal oscillator, prescalers for ~1 Hz
+        // 37000 Hz / (125 × 296) = 37000 / 37000 = 1 Hz
+        // Note: LSI accuracy is ±5-10%, so timing will drift
+        hrtc.Init.AsynchPrediv = 124;  // AsynchPrediv + 1 = 125
+        hrtc.Init.SynchPrediv = 295;   // SynchPrediv + 1 = 296
+    } else {
+        // LSE is 32.768 kHz crystal, standard RTC prescalers for 1 Hz
+        // 32768 Hz / (128 × 256) = 32768 / 32768 = 1 Hz
+        hrtc.Init.AsynchPrediv = 127;  // AsynchPrediv + 1 = 128
+        hrtc.Init.SynchPrediv = 255;   // SynchPrediv + 1 = 256
+    }
     hrtc.Init.OutPut = RTC_OUTPUT_DISABLE;
     hrtc.Init.OutPutRemap = RTC_OUTPUT_REMAP_NONE;
     hrtc.Init.OutPutPolarity = RTC_OUTPUT_POLARITY_HIGH;
