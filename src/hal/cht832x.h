@@ -57,9 +57,9 @@ private:
     uint scl_pin_;
     bool initialized_;
 
-    static constexpr uint32_t I2C_BAUDRATE = 100000;         // 100kHz
-    static constexpr uint32_t MEASUREMENT_DELAY_MS = 60;     // Wait for measurement
-    static constexpr uint32_t I2C_TIMEOUT_US = 100 * 1000;   // 100ms I2C timeout
+    static constexpr uint32_t I2C_BAUDRATE = 100000;        // 100kHz
+    static constexpr uint32_t MEASUREMENT_DELAY_MS = 60;    // Wait for measurement
+    static constexpr uint32_t I2C_TIMEOUT_US = 100 * 1000;  // 100ms I2C timeout
 
     // CHT832X commands
     static constexpr uint8_t CMD_MEASURE_HIGH = 0x24;
