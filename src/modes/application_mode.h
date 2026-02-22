@@ -13,7 +13,7 @@
 
 // Forward declarations
 class ReliableMessenger;
-class SX1276;
+class RadioInterface;
 class AddressManager;
 class HubRouter;
 class NetworkStats;
@@ -28,7 +28,7 @@ public:
     // Callback type for reregistration required (hub doesn't recognize node)
     using ReregistrationCallback = std::function<void()>;
 
-    ApplicationMode(ReliableMessenger &messenger, SX1276 &lora, NeoPixel &led,
+    ApplicationMode(ReliableMessenger &messenger, RadioInterface &lora, NeoPixel &led,
                     AddressManager *address_manager = nullptr, HubRouter *hub_router = nullptr,
                     NetworkStats *network_stats = nullptr, bool use_multicore = false)
         : messenger_(messenger), lora_(lora), led_(led), address_manager_(address_manager),
@@ -54,7 +54,7 @@ public:
 
 protected:
     ReliableMessenger &messenger_;
-    SX1276 &lora_;
+    RadioInterface &lora_;
     NeoPixel &led_;
     AddressManager *address_manager_;
     HubRouter *hub_router_;

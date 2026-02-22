@@ -8,8 +8,8 @@
 #include "lora/address_manager.h"
 #include "lora/hub_router.h"
 #include "lora/network_stats.h"
+#include "lora/radio_interface.h"
 #include "lora/reliable_messenger.h"
-#include "lora/sx1276.h"
 
 static Logger logger("AppMode");
 
@@ -17,7 +17,7 @@ static Logger logger("AppMode");
 extern void processIncomingMessage(uint8_t *rx_buffer, int rx_len, ReliableMessenger &messenger,
                                    AddressManager *address_manager, HubRouter *hub_router,
                                    uint32_t current_time, NetworkStats *network_stats,
-                                   SX1276 *lora);
+                                   RadioInterface *lora);
 
 void ApplicationMode::run()
 {
