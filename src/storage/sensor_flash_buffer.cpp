@@ -729,13 +729,14 @@ uint32_t SensorFlashBuffer::fastForwardReadIndex()
     uint32_t skipped = 0;
 
     while (metadata_.read_index != metadata_.write_index) {
-        uint32_t address =
-            getRecordAddress(metadata_.read_index) + offsetof(SensorDataRecord, transmission_status);
+        uint32_t address = getRecordAddress(metadata_.read_index) +
+                           offsetof(SensorDataRecord, transmission_status);
         uint8_t status = RECORD_NOT_TRANSMITTED;
 
         ExternalFlashResult result = flash_.read(address, &status, sizeof(status));
         if (result != ExternalFlashResult::Success) {
-            logger_.warn("Read error at index %lu during fast-forward, stopping", metadata_.read_index);
+            logger_.warn("Read error at index %lu during fast-forward, stopping",
+                         metadata_.read_index);
             break;
         }
 

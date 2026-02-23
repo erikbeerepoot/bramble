@@ -105,15 +105,13 @@ void SX1276::setTxPower(int power_db)
         // 0x3B = OCP on | OcpTrim=0x1B → 240mA (datasheet Table 10, recommended for +20 dBm)
         writeRegister(SX1276_REG_OCP, 0x3B);
         // OutputPower = power_db - 5 (high power formula)
-        writeRegister(SX1276_REG_PA_CONFIG,
-                      SX1276_PA_SELECT_PA_BOOST | 0x70 | (power_db - 5));
+        writeRegister(SX1276_REG_PA_CONFIG, SX1276_PA_SELECT_PA_BOOST | 0x70 | (power_db - 5));
     } else {
         writeRegister(SX1276_REG_PA_DAC, 0x84);  // Normal PA_BOOST mode
         // Restore default OCP for normal power levels (100mA)
         writeRegister(SX1276_REG_OCP, 0x2B);
         // OutputPower = power_db - 2 (normal formula)
-        writeRegister(SX1276_REG_PA_CONFIG,
-                      SX1276_PA_SELECT_PA_BOOST | 0x70 | (power_db - 2));
+        writeRegister(SX1276_REG_PA_CONFIG, SX1276_PA_SELECT_PA_BOOST | 0x70 | (power_db - 2));
     }
 }
 
