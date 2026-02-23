@@ -845,7 +845,7 @@ uint32_t SensorMode::stateWatchdogMs(SensorState state)
         case SensorState::TRANSMITTING:
             return 30000;  // Max for batch TX + retries
         default:
-            return 0;
+            return 60000;  // Safety net: any unlisted state gets a 60s watchdog
     }
 }
 
