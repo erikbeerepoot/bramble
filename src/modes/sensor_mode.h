@@ -36,20 +36,15 @@ private:
     std::unique_ptr<HeartbeatClient> heartbeat_client_;
     TaskQueue task_queue_;  // Unified task coordination
 
-    // Timeout task handles — cancelled when expected response arrives, fires if it doesn't
-    uint16_t registration_timeout_id_ = 0;
-    uint16_t syncing_time_timeout_id_ = 0;
-
-    // Timeout durations
-    static constexpr uint32_t REGISTRATION_TIMEOUT_MS = 5000;  // Allow time for RELIABLE retries
-    static constexpr uint32_t SYNCING_TIME_TIMEOUT_MS = 5000;  // Class A receive window timeout
-    static constexpr uint32_t LISTEN_WINDOW_MS = 500;
+    // Generic per-state watchdog — cancelled when expected event arrives, fires on timeout
+    uint16_t state_watchdog_id_ = 0;
 
     // I2C pin configuration for CHT832X sensor
     static constexpr uint PIN_I2C_SDA = 26;  // GPIO26 (A0)
     static constexpr uint PIN_I2C_SCL = 27;  // GPIO27 (A1)
 
     // Timing configuration
+    static constexpr uint32_t LISTEN_WINDOW_MS = 500;
     static constexpr uint32_t SENSOR_READ_INTERVAL_MS = 30000;
     static constexpr uint32_t HEARTBEAT_INTERVAL_MS = 60000;
     static constexpr uint32_t BACKLOG_TX_INTERVAL_MS = 120000;
@@ -174,4 +169,24 @@ private:
      * On failure to send, transitions to READY_FOR_SLEEP to retry next cycle.
      */
     void attemptRegistration();
+
+    /**
+     * @brief Arm (or re-arm) the per-state watchdog timer
+     *
+     * Cancels any existing watchdog and schedules a new one if the state has a
+     * non-zero timeout (see stateWatchdogMs). Called at the top of onStateChange
+     * so every state transition automatically starts and cancels the right timer.
+     *
+     * @param state State just entered
+     */
+    void armStateWatchdog(SensorState state);
+
+    /**
+     * @brief Return the watchdog timeout for a given state (0 = no watchdog)
+     *
+     * States that block waiting for an external event (REGISTERING, SYNCING_TIME,
+     * READING_SENSOR, TRANSMITTING) have a non-zero timeout. All other states
+     * return 0 and are not watchdog-monitored.
+     */
+    static uint32_t stateWatchdogMs(SensorState state);
 };

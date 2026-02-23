@@ -63,8 +63,8 @@ void SensorMode::onStart()
     // Set up registration success callback - transitions REGISTERING → AWAITING_TIME
     messenger_.setRegistrationSuccessCallback([this](uint16_t assigned_addr) {
         pmu_logger.info("Registration success callback: assigned address 0x%04X", assigned_addr);
-        task_queue_.cancel(registration_timeout_id_);
-        registration_timeout_id_ = 0;
+        task_queue_.cancel(state_watchdog_id_);
+        state_watchdog_id_ = 0;
         sensor_state_.reportRegistrationComplete();
     });
 
@@ -77,9 +77,9 @@ void SensorMode::onStart()
     heartbeat_client_ = std::make_unique<HeartbeatClient>(messenger_);
     heartbeat_client_->setStatusProvider([this]() { return collectHeartbeatStatus(); });
     heartbeat_client_->setResponseCallback([this](const HeartbeatResponsePayload &response) {
-        // Cancel SYNCING_TIME timeout — response arrived
-        task_queue_.cancel(syncing_time_timeout_id_);
-        syncing_time_timeout_id_ = 0;
+        // Cancel SYNCING_TIME watchdog — response arrived
+        task_queue_.cancel(state_watchdog_id_);
+        state_watchdog_id_ = 0;
 
         // SensorMode owns all side effects:
         // - Sync time to PMU if available
@@ -97,9 +97,9 @@ void SensorMode::onStart()
     });
     heartbeat_client_->setDeliveryCallback([this](bool success) {
         if (!success) {
-            // Delivery failed — no response will come, cancel timeout
-            task_queue_.cancel(syncing_time_timeout_id_);
-            syncing_time_timeout_id_ = 0;
+            // Delivery failed — no response will come, cancel watchdog
+            task_queue_.cancel(state_watchdog_id_);
+            state_watchdog_id_ = 0;
             if (rtc_running()) {
                 sensor_state_.reportTimeSyncComplete();
             } else {
@@ -162,6 +162,8 @@ void SensorMode::onStart()
 
 void SensorMode::onStateChange(SensorState state)
 {
+    armStateWatchdog(state);
+
     // Centralized task scheduler - reacts to state changes by posting work
     switch (state) {
         case SensorState::AWAITING_TIME:
@@ -178,27 +180,11 @@ void SensorMode::onStateChange(SensorState state)
                 this, TaskPriority::High);
             break;
 
-        case SensorState::SYNCING_TIME: {
+        case SensorState::SYNCING_TIME:
             // Waiting for hub response - yellow fast short blink
+            // Watchdog is armed by armStateWatchdog() above
             led_pattern_ = std::make_unique<ShortBlinkPattern>(led_, 255, 255, 0, 50, 250);
-            // Class A receive window: timeout if HEARTBEAT_RESPONSE doesn't arrive
-            uint32_t now = to_ms_since_boot(get_absolute_time());
-            syncing_time_timeout_id_ = task_queue_.postDelayed(
-                [](void *ctx, uint32_t) -> bool {
-                    SensorMode *self = static_cast<SensorMode *>(ctx);
-                    self->syncing_time_timeout_id_ = 0;
-                    if (rtc_running()) {
-                        logger.warn("Sync timeout - proceeding with existing RTC");
-                        self->sensor_state_.reportTimeSyncComplete();
-                    } else {
-                        logger.warn("Sync timeout - no RTC, sleeping");
-                        self->sensor_state_.reportSyncTimeout();
-                    }
-                    return true;
-                },
-                this, now, SYNCING_TIME_TIMEOUT_MS, TaskPriority::High);
             break;
-        }
 
         case SensorState::TIME_SYNCED:
             // RTC valid - green short blink, initialize timestamps
@@ -295,17 +281,9 @@ void SensorMode::onStateChange(SensorState state)
             break;
 
         case SensorState::DEGRADED_NO_SENSOR:
-            // Sensor failed - orange short blink, skip to backlog check
+            // Sensor failed - orange short blink, sleep and retry init on next wake
             led_pattern_ = std::make_unique<ShortBlinkPattern>(led_, 255, 165, 0);
-            task_queue_.postOnce(
-                [](void *ctx, uint32_t time) -> bool {
-                    (void)time;
-                    SensorMode *self = static_cast<SensorMode *>(ctx);
-                    bool needsTx = self->checkNeedsTransmission();
-                    self->sensor_state_.reportCheckComplete(needsTx);
-                    return true;
-                },
-                this, TaskPriority::High);
+            sensor_state_.reportDegradedSleepReady();
             break;
 
         case SensorState::ERROR:
@@ -855,6 +833,50 @@ void SensorMode::requestTimeSync()
     }
 }
 
+uint32_t SensorMode::stateWatchdogMs(SensorState state)
+{
+    switch (state) {
+        case SensorState::REGISTERING:    return 5000;   // Allow time for RELIABLE retries
+        case SensorState::SYNCING_TIME:   return 5000;   // Class A receive window timeout
+        case SensorState::READING_SENSOR: return 3000;   // Sensor read timeout
+        case SensorState::TRANSMITTING:   return 30000;  // Max for batch TX + retries
+        default:                          return 0;
+    }
+}
+
+void SensorMode::armStateWatchdog(SensorState state)
+{
+    if (state_watchdog_id_ != 0) {
+        task_queue_.cancel(state_watchdog_id_);
+        state_watchdog_id_ = 0;
+    }
+    const uint32_t watchdog_ms = stateWatchdogMs(state);
+    if (watchdog_ms == 0) {
+        return;
+    }
+    uint32_t now = to_ms_since_boot(get_absolute_time());
+    state_watchdog_id_ = task_queue_.postDelayed(
+        [](void *ctx, uint32_t) -> bool {
+            SensorMode *self = static_cast<SensorMode *>(ctx);
+            self->state_watchdog_id_ = 0;
+            SensorState current = self->sensor_state_.state();
+            logger.error("State watchdog fired in %s", SensorStateMachine::stateName(current));
+            if (current == SensorState::SYNCING_TIME) {
+                if (rtc_running()) {
+                    self->sensor_state_.reportTimeSyncComplete();
+                } else {
+                    self->sensor_state_.reportSyncTimeout();
+                }
+            } else if (current == SensorState::TRANSMITTING) {
+                self->sensor_state_.reportTransmitComplete();
+            } else {
+                self->sensor_state_.reportWatchdogTimeout();
+            }
+            return true;
+        },
+        this, now, watchdog_ms, TaskPriority::High);
+}
+
 void SensorMode::attemptRegistration()
 {
     uint64_t device_id = getDeviceId();
@@ -867,17 +889,7 @@ void SensorMode::attemptRegistration()
 
     if (seq != 0) {
         pmu_logger.info("Registration request sent (seq=%d)", seq);
-        // Start registration timeout — fires if hub never responds
-        uint32_t now = to_ms_since_boot(get_absolute_time());
-        registration_timeout_id_ = task_queue_.postDelayed(
-            [](void *ctx, uint32_t) -> bool {
-                SensorMode *self = static_cast<SensorMode *>(ctx);
-                pmu_logger.warn("Registration timeout - will retry on next wake");
-                self->registration_timeout_id_ = 0;
-                self->sensor_state_.reportRegistrationTimeout();
-                return true;
-            },
-            this, now, REGISTRATION_TIMEOUT_MS, TaskPriority::High);
+        // Watchdog is already armed by armStateWatchdog(REGISTERING) in onStateChange
         sensor_state_.reportRegistrationSent();
         // Expect registration response - ensures we enter LISTENING before sleep
         sensor_state_.expectResponse();

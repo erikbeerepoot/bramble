@@ -43,8 +43,9 @@
  *               ▼                                                  ▼
  *         READING_SENSOR                                  DEGRADED_NO_SENSOR
  *               │                                                  │
- *               ▼ reportReadComplete()                             │
- *         CHECKING_BACKLOG ◄───────────────────────────────────────┘
+ *               ▼ reportReadComplete()                             │ reportDegradedSleepReady()
+ *         CHECKING_BACKLOG                                         ▼
+ *                                                          READY_FOR_SLEEP (retry on next wake)
  *               │
  *               ├── (not time to TX) ──► LISTENING or READY_FOR_SLEEP
  *               │
@@ -196,9 +197,19 @@ public:
      * @brief Report failed sensor initialization
      *
      * Call after sensor->init() returns false.
-     * Transitions to DEGRADED_NO_SENSOR (then to CHECKING_BACKLOG).
+     * Transitions to DEGRADED_NO_SENSOR. Call reportDegradedSleepReady() from
+     * the DEGRADED_NO_SENSOR state callback to proceed to sleep for lazy retry.
      */
     void reportSensorInitFailure();
+
+    /**
+     * @brief Report that degraded state is ready for sleep (lazy retry)
+     *
+     * Call from DEGRADED_NO_SENSOR state callback to transition to READY_FOR_SLEEP.
+     * On the next periodic wake the full cycle restarts, giving the sensor another
+     * init attempt before escalating to permanent degraded mode.
+     */
+    void reportDegradedSleepReady();
 
     // =========================================================================
     // Wake Cycle Events - report these as work progresses
@@ -272,6 +283,15 @@ public:
      * @return true always (wake cycle restarted)
      */
     bool reportWakeFromSleep();
+
+    /**
+     * @brief Report that a per-state watchdog fired (generic timeout)
+     *
+     * Used by the armStateWatchdog() helper in SensorMode when a state takes
+     * too long and no more specific timeout handler applies. Transitions to
+     * READY_FOR_SLEEP from any watchdog-monitored state.
+     */
+    void reportWatchdogTimeout();
 
     // =========================================================================
     // State Queries - the ONLY way to check state

@@ -93,6 +93,22 @@ void SensorStateMachine::reportSensorInitFailure()
     updateState();
 }
 
+void SensorStateMachine::reportDegradedSleepReady()
+{
+    if (state_ != SensorState::DEGRADED_NO_SENSOR) {
+        logger.warn("reportDegradedSleepReady() called in unexpected state: %s", stateName(state_));
+        return;
+    }
+    logger.info("Sensor degraded - sleeping for lazy retry on next wake");
+    transitionTo(SensorState::READY_FOR_SLEEP);
+}
+
+void SensorStateMachine::reportWatchdogTimeout()
+{
+    logger.warn("State watchdog timeout in %s - forcing sleep", stateName(state_));
+    transitionTo(SensorState::READY_FOR_SLEEP);
+}
+
 void SensorStateMachine::reportHeartbeatSent()
 {
     if (state_ != SensorState::AWAITING_TIME) {
