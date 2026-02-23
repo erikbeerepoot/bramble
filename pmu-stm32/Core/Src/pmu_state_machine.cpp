@@ -55,7 +55,6 @@ PmuState PmuStateMachine::reduce(PmuState state, PmuEvent event)
         case PmuState::AWAITING_CTS:
             switch (event) {
                 case PmuEvent::CTS_RECEIVED:
-                case PmuEvent::CTS_TIMEOUT:
                     return PmuState::WAKE_ACTIVE;
                 case PmuEvent::WAKE_TIMEOUT:
                     return PmuState::SLEEPING;
@@ -149,14 +148,8 @@ void PmuStateMachine::tick()
         }
 
         case PmuState::AWAITING_CTS: {
-            // Check CTS timeout
-            uint32_t ctsElapsed = now - context_.ctsWaitStartTime;
-            if (ctsElapsed >= CTS_TIMEOUT_MS) {
-                dispatch(PmuEvent::CTS_TIMEOUT);
-                return;
-            }
-
-            // Also check overall wake timeout as safety
+            // Check overall wake timeout as safety net
+            // (RP2040 should always send CTS eventually)
             uint32_t wakeElapsed = now - context_.startTime;
             if (wakeElapsed >= context_.timeoutMs) {
                 dispatch(PmuEvent::WAKE_TIMEOUT);
@@ -204,7 +197,6 @@ void PmuStateMachine::onEnterState(PmuState newState, PmuEvent event)
             // Set up timing for wake context
             // Wake type and timeout are set by callback via setWakeType()
             context_.startTime = now;
-            context_.ctsWaitStartTime = now;
             break;
 
         case PmuState::WAKE_ACTIVE:
@@ -281,8 +273,6 @@ const char *PmuStateMachine::eventName(PmuEvent event)
             return "RTC_WAKEUP";
         case PmuEvent::CTS_RECEIVED:
             return "CTS_RECEIVED";
-        case PmuEvent::CTS_TIMEOUT:
-            return "CTS_TIMEOUT";
         case PmuEvent::READY_FOR_SLEEP:
             return "READY_FOR_SLEEP";
         case PmuEvent::WAKE_TIMEOUT:
