@@ -44,8 +44,7 @@ uint16_t AddressManager::registerNode(uint64_t device_id, uint8_t node_type, uin
         uint16_t existing_address = getDeviceAddress(device_id);
         char id_hex[17];
         bramble::format::uint64_to_hex(device_id, id_hex, sizeof(id_hex));
-        logger.info("Device 0x%s already registered with address 0x%04x", id_hex,
-                    existing_address);
+        logger.info("Device 0x%s already registered with address 0x%04x", id_hex, existing_address);
 
         // Update node info with potentially new capabilities/firmware
         NodeInfo *node = &node_registry_[existing_address];
@@ -103,8 +102,8 @@ uint16_t AddressManager::registerNode(uint64_t device_id, uint8_t node_type, uin
 
     char id_hex2[17];
     bramble::format::uint64_to_hex(device_id, id_hex2, sizeof(id_hex2));
-    logger.info("Registered device 0x%s as '%s' with address 0x%04x", id_hex2,
-                new_node.device_name, assigned_address);
+    logger.info("Registered device 0x%s as '%s' with address 0x%04x", id_hex2, new_node.device_name,
+                assigned_address);
 
     return assigned_address;
 }
