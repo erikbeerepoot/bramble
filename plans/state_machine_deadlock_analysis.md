@@ -202,8 +202,9 @@ TRANSMITTING state itself. If the messenger gets into an unexpected state (e.g.,
 task queue starvation, SPI bus lockup), the callback may never fire and the state
 machine halts.
 
-**Verdict: MEDIUM RISK** — No safety timeout. Add a transmit watchdog timeout
-(e.g., 30s) that calls `reportTransmitComplete()` as a failsafe.
+**Verdict: MEDIUM RISK** — No safety timeout. This, combined with the existing
+per-state timeouts for REGISTERING and SYNCING_TIME, suggests a generic
+per-state watchdog mechanism (see §Generic State Watchdog below).
 
 ---
 
@@ -261,8 +262,8 @@ switch (reason) {
 }
 ```
 
-For the no-PMU case, consider a software watchdog fallback in onLoop that
-detects prolonged READY_FOR_SLEEP without a wake and triggers recovery.
+For the no-PMU case, use `postDelayed` to schedule the next wake cycle directly
+(see §Generic State Watchdog — READY_FOR_SLEEP software timer).
 
 ---
 
@@ -346,6 +347,127 @@ retrying.
 
 ---
 
+---
+
+## Generic State Watchdog
+
+Multiple states need safety timeouts (REGISTERING, SYNCING_TIME, TRANSMITTING,
+READING_SENSOR). Rather than maintaining separate per-state timeout IDs, a
+single generic watchdog can cover all of them.
+
+### Current situation
+
+Two ad-hoc timeout IDs exist in `sensor_mode.h`:
+```cpp
+uint16_t registration_timeout_id_ = 0;  // guards REGISTERING
+uint16_t syncing_time_timeout_id_ = 0;  // guards SYNCING_TIME
+```
+TRANSMITTING has no watchdog at all. Each has bespoke cancellation code.
+
+### Generic design
+
+Replace both IDs with a single `state_watchdog_id_`. In `onStateChange`, cancel
+the previous watchdog and arm a new one based on a static table:
+
+```cpp
+// sensor_mode.h — replace both per-state IDs with one:
+uint16_t state_watchdog_id_ = 0;
+
+// sensor_mode.cpp — add timeout table:
+static uint32_t stateWatchdogMs(SensorState state) {
+    switch (state) {
+        case SensorState::REGISTERING:    return 5'000;
+        case SensorState::SYNCING_TIME:   return 5'000;
+        case SensorState::READING_SENSOR: return 3'000;
+        case SensorState::TRANSMITTING:   return 30'000;
+        default:                          return 0;  // no watchdog
+    }
+}
+```
+
+At the top of `onStateChange`, cancel the previous watchdog and arm a new one:
+
+```cpp
+void SensorMode::onStateChange(SensorState state) {
+    // Generic watchdog: cancel previous, arm new if state has a timeout
+    if (state_watchdog_id_ != 0) {
+        task_queue_.cancel(state_watchdog_id_);
+        state_watchdog_id_ = 0;
+    }
+    uint32_t watchdog_ms = stateWatchdogMs(state);
+    if (watchdog_ms > 0) {
+        uint32_t now = to_ms_since_boot(get_absolute_time());
+        state_watchdog_id_ = task_queue_.postDelayed(
+            [](void *ctx, uint32_t) -> bool {
+                SensorMode *self = static_cast<SensorMode *>(ctx);
+                self->state_watchdog_id_ = 0;
+                SensorState current = self->sensor_state_.state();
+                logger.error("State watchdog fired in %s",
+                             SensorStateMachine::stateName(current));
+                // SYNCING_TIME has special recovery logic (RTC may still be valid)
+                if (current == SensorState::SYNCING_TIME) {
+                    if (rtc_running()) {
+                        self->sensor_state_.reportTimeSyncComplete();
+                    } else {
+                        self->sensor_state_.reportSyncTimeout();
+                    }
+                } else {
+                    // All other states: sleep and retry on next wake
+                    self->sensor_state_.reportWatchdogTimeout();  // → READY_FOR_SLEEP
+                }
+                return true;
+            },
+            this, now, watchdog_ms, TaskPriority::High);
+    }
+    // ... LED, work dispatch, etc.
+}
+```
+
+Add `reportWatchdogTimeout()` to `SensorStateMachine` with appropriate guards:
+
+```cpp
+void SensorStateMachine::reportWatchdogTimeout() {
+    logger.error("Watchdog timeout in state %s — forcing READY_FOR_SLEEP",
+                 stateName(state_));
+    transitionTo(SensorState::READY_FOR_SLEEP);
+}
+```
+
+### What this eliminates
+
+- `registration_timeout_id_` — gone; cancellation is automatic in `onStateChange`
+- `syncing_time_timeout_id_` — gone; same
+- The per-state `postDelayed` block in `onStateChange(SYNCING_TIME)` — folded into the generic handler
+- The explicit `task_queue_.cancel(registration_timeout_id_)` in the registration success callback becomes redundant (harmless to leave, or remove for clarity)
+
+### What to keep separate
+
+- **LISTENING** uses a fixed 500ms advance timer (always fires, never cancelled).
+  This is a scheduled advance, not a safety watchdog — keep it as its own `postDelayed`.
+- **READY_FOR_SLEEP (no-PMU)** uses a software timer to simulate the next wake.
+  This is also a scheduled advance — keep it separate.
+
+### Optional: pull the table into `SensorStateMachine`
+
+```cpp
+// sensor_state_machine.h
+static constexpr uint32_t stateWatchdogMs(SensorState state) {
+    switch (state) {
+        case SensorState::REGISTERING:    return 5'000;
+        case SensorState::SYNCING_TIME:   return 5'000;
+        case SensorState::READING_SENSOR: return 3'000;
+        case SensorState::TRANSMITTING:   return 30'000;
+        default:                          return 0;
+    }
+}
+```
+
+This is architecturally cleaner — the state machine owns its timing requirements,
+and adding a new state makes it obvious whether a watchdog is needed. `SensorMode`
+calls `SensorStateMachine::stateWatchdogMs(state)` instead of its own local table.
+
+---
+
 ## Issue Summary
 
 | # | Severity | State | Issue | Impact |
@@ -372,8 +494,12 @@ retrying.
 
 ### Soon (robustness)
 
-3. **Add TRANSMITTING safety timeout** — Post a 30s watchdog in
-   `onStateChange(TRANSMITTING)` that calls `reportTransmitComplete()`.
+3. **Implement generic per-state watchdog** — Replace `registration_timeout_id_`
+   and `syncing_time_timeout_id_` with a single `state_watchdog_id_` armed/cancelled
+   in `onStateChange`. Add `stateWatchdogMs()` table covering REGISTERING (5s),
+   SYNCING_TIME (5s), READING_SENSOR (3s), TRANSMITTING (30s). Add
+   `reportWatchdogTimeout()` to `SensorStateMachine`. See §Generic State Watchdog
+   for full design.
 
 4. **Handle all PMU wake reasons** — Transition on Scheduled/External wakes in
    the PMU callback.
@@ -381,11 +507,12 @@ retrying.
 5. **Defend TIME_SYNCED null sensor path** — Call `reportSensorInitFailure()`
    when `sensor_` is null in `tryInitSensor()`.
 
+6. **Add READY_FOR_SLEEP software timer (no-PMU)** — Use `postDelayed` in
+   `onStateChange(READY_FOR_SLEEP)` when PMU is unavailable to schedule the next
+   wake cycle via `reportWakeFromSleep()`.
+
 ### Later (cleanup)
 
-6. **Fix no-PMU bootstrap sequence** — Move the heartbeat send to after
+7. **Fix no-PMU bootstrap sequence** — Move the heartbeat send to after
    AWAITING_TIME is reached, or gate `expectResponse()` on successful
    `reportHeartbeatSent()`.
-
-7. **Add READY_FOR_SLEEP software watchdog** — Detect prolonged sleep state
-   without PMU and trigger recovery (e.g., reboot via watchdog).
