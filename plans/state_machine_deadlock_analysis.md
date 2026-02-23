@@ -366,60 +366,74 @@ TRANSMITTING has no watchdog at all. Each has bespoke cancellation code.
 
 ### Generic design
 
-Replace both IDs with a single `state_watchdog_id_`. In `onStateChange`, cancel
-the previous watchdog and arm a new one based on a static table:
+Replace both IDs with a single `state_watchdog_id_`. Extract watchdog
+arming into a dedicated `armStateWatchdog()` helper so `onStateChange`
+remains readable without having to parse timer setup mechanics.
+
+**`sensor_mode.h`** — replace both per-state IDs, add helper declaration,
+and add the timeout table:
 
 ```cpp
-// sensor_mode.h — replace both per-state IDs with one:
+// Replace registration_timeout_id_ and syncing_time_timeout_id_ with:
 uint16_t state_watchdog_id_ = 0;
 
-// sensor_mode.cpp — add timeout table:
+// Private helper
+void armStateWatchdog(SensorState state);
+
+// Timeout table — returns 0 for states that need no watchdog
 static uint32_t stateWatchdogMs(SensorState state) {
     switch (state) {
         case SensorState::REGISTERING:    return 5'000;
         case SensorState::SYNCING_TIME:   return 5'000;
         case SensorState::READING_SENSOR: return 3'000;
         case SensorState::TRANSMITTING:   return 30'000;
-        default:                          return 0;  // no watchdog
+        default:                          return 0;
     }
 }
 ```
 
-At the top of `onStateChange`, cancel the previous watchdog and arm a new one:
+**`sensor_mode.cpp`** — call `armStateWatchdog` at the top of `onStateChange`
+(one line, intent is self-evident):
 
 ```cpp
 void SensorMode::onStateChange(SensorState state) {
-    // Generic watchdog: cancel previous, arm new if state has a timeout
+    armStateWatchdog(state);
+    // ... LED patterns, work dispatch, etc.
+}
+```
+
+Implement the helper separately, keeping all watchdog mechanics in one place:
+
+```cpp
+void SensorMode::armStateWatchdog(SensorState state) {
     if (state_watchdog_id_ != 0) {
         task_queue_.cancel(state_watchdog_id_);
         state_watchdog_id_ = 0;
     }
-    uint32_t watchdog_ms = stateWatchdogMs(state);
-    if (watchdog_ms > 0) {
-        uint32_t now = to_ms_since_boot(get_absolute_time());
-        state_watchdog_id_ = task_queue_.postDelayed(
-            [](void *ctx, uint32_t) -> bool {
-                SensorMode *self = static_cast<SensorMode *>(ctx);
-                self->state_watchdog_id_ = 0;
-                SensorState current = self->sensor_state_.state();
-                logger.error("State watchdog fired in %s",
-                             SensorStateMachine::stateName(current));
-                // SYNCING_TIME has special recovery logic (RTC may still be valid)
-                if (current == SensorState::SYNCING_TIME) {
-                    if (rtc_running()) {
-                        self->sensor_state_.reportTimeSyncComplete();
-                    } else {
-                        self->sensor_state_.reportSyncTimeout();
-                    }
+    const uint32_t watchdog_ms = stateWatchdogMs(state);
+    if (watchdog_ms == 0) return;
+
+    const uint32_t now = to_ms_since_boot(get_absolute_time());
+    state_watchdog_id_ = task_queue_.postDelayed(
+        [](void *ctx, uint32_t) -> bool {
+            SensorMode *self = static_cast<SensorMode *>(ctx);
+            self->state_watchdog_id_ = 0;
+            const SensorState current = self->sensor_state_.state();
+            logger.error("State watchdog fired in %s",
+                         SensorStateMachine::stateName(current));
+            // SYNCING_TIME: RTC may still be valid even without a hub response
+            if (current == SensorState::SYNCING_TIME) {
+                if (rtc_running()) {
+                    self->sensor_state_.reportTimeSyncComplete();
                 } else {
-                    // All other states: sleep and retry on next wake
-                    self->sensor_state_.reportWatchdogTimeout();  // → READY_FOR_SLEEP
+                    self->sensor_state_.reportSyncTimeout();
                 }
-                return true;
-            },
-            this, now, watchdog_ms, TaskPriority::High);
-    }
-    // ... LED, work dispatch, etc.
+            } else {
+                self->sensor_state_.reportWatchdogTimeout();  // → READY_FOR_SLEEP
+            }
+            return true;
+        },
+        this, now, watchdog_ms, TaskPriority::High);
 }
 ```
 
