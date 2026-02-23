@@ -232,9 +232,6 @@ int main(void)
 
             case PmuState::SLEEPING:
                 dcdc.disable();
-                led.setColor(LED::GREEN);
-                HAL_Delay(100);
-                led.off();
                 enterStopMode();
                 wakeupFromStopMode();
                 break;

@@ -13,7 +13,6 @@ enum class PmuEvent : uint8_t {
     BOOT_COMPLETE,    ///< Boot animation finished
     RTC_WAKEUP,       ///< RTC woke us (any type - scheduled or periodic)
     CTS_RECEIVED,     ///< RP2040 sent ClearToSend
-    CTS_TIMEOUT,      ///< Waited too long for CTS
     READY_FOR_SLEEP,  ///< RP2040 signaled work complete
     WAKE_TIMEOUT,     ///< Overall wake timeout expired
     ERROR_OCCURRED    ///< Unrecoverable error
@@ -39,8 +38,7 @@ enum class PmuEvent : uint8_t {
  *     |                               v
  *     +-------CTS_RECEIVED---- AWAITING_CTS
  *     |                               |
- *     |                    CTS_TIMEOUT|
- *     +-------------------------------+
+ *     |                    WAKE_TIMEOUT --> SLEEPING
  *     |
  *     +-------> SLEEPING (READY_FOR_SLEEP or WAKE_TIMEOUT)
  *
@@ -74,7 +72,6 @@ struct WakeContext {
     WakeType type = WakeType::NONE;  ///< Type of wake event
     uint32_t startTime = 0;          ///< HAL tick when wake started
     uint32_t timeoutMs = 0;          ///< Maximum wake duration in ms
-    uint32_t ctsWaitStartTime = 0;   ///< HAL tick when CTS wait started
 
     // Optional schedule entry (only valid when type == SCHEDULED)
     bool hasScheduleEntry = false;
@@ -85,7 +82,6 @@ struct WakeContext {
         type = WakeType::NONE;
         startTime = 0;
         timeoutMs = 0;
-        ctsWaitStartTime = 0;
         hasScheduleEntry = false;
         scheduleEntry = PMU::ScheduleEntry();
     }
@@ -120,8 +116,6 @@ public:
     using GetTickCallback = uint32_t (*)();
     using StateCallback = std::function<void(PmuState)>;
 
-    // CTS timeout - fallback for old firmware that doesn't send CTS
-    static constexpr uint32_t CTS_TIMEOUT_MS = 2000;  // 2 seconds
     // Grace period added to schedule duration for timeouts
     static constexpr uint32_t SCHEDULED_GRACE_PERIOD_MS = 30000;  // 30 seconds
     // Default timeout for periodic wakes
@@ -151,8 +145,8 @@ public:
     /**
      * @brief Check timeouts and dispatch timeout events
      *
-     * Call this periodically in the main loop. Generates CTS_TIMEOUT
-     * or WAKE_TIMEOUT events when appropriate.
+     * Call this periodically in the main loop. Generates WAKE_TIMEOUT
+     * events when appropriate.
      */
     void tick();
 
