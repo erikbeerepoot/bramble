@@ -134,6 +134,19 @@ init), giving the sensor a fresh opportunity to initialize. A retry counter can
 cap the number of attempts before escalating to DEGRADED_NO_SENSOR, so a truly
 absent sensor is still reported correctly after N failed cycles.
 
+**Why the retry works with existing flag logic:** `reportSensorInitFailure()`
+already sets `sensor_initialized_ = false` (line 91 of `sensor_state_machine.cpp`).
+Since `hasSensor()` returns `sensor_initialized_`, `tryInitSensor()` will not take
+the "already working" shortcut on the retry cycle — it will call `sensor_->init()`
+again. No changes to flag handling in `tryInitSensor()` are needed beyond adding
+the DEGRADED_NO_SENSOR exit transition.
+
+**Retry counter placement:** For a per-wake-cycle retry counter,
+`reportWakeFromSleep()` should reset `sensor_init_attempted_` alongside
+`expected_responses_`. Without that reset, the counter state must be maintained
+externally in `SensorMode`. Either approach works; resetting inside the state
+machine keeps all retry bookkeeping in one place.
+
 ---
 
 ### 6. READING_SENSOR
