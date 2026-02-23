@@ -210,8 +210,9 @@ private:
      * @param opcode Command opcode
      * @param params Parameter bytes (can be nullptr)
      * @param param_count Number of parameter bytes
+     * @return true if command was sent and BUSY cleared, false on timeout
      */
-    void sendCommand(uint8_t opcode, const uint8_t *params = nullptr, size_t param_count = 0);
+    bool sendCommand(uint8_t opcode, const uint8_t *params = nullptr, size_t param_count = 0);
 
     /**
      * @brief Send a command and read response data

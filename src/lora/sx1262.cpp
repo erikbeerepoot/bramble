@@ -55,8 +55,7 @@ bool SX1262::begin()
 
     // 1. Set standby mode (RC oscillator)
     uint8_t standby_mode = SX1262_STDBY_RC;
-    sendCommand(SX1262_CMD_SET_STANDBY, &standby_mode, 1);
-    if (!waitBusy()) {
+    if (!sendCommand(SX1262_CMD_SET_STANDBY, &standby_mode, 1)) {
         logger_.error("Failed to enter standby");
         return false;
     }
@@ -64,24 +63,21 @@ bool SX1262::begin()
     // 2. Configure DIO3 as TCXO control (3.3V, 5ms timeout)
     //    Timeout = value * 15.625 us; 320 * 15.625 = 5ms
     uint8_t tcxo_params[4] = {SX1262_TCXO_3_3V, 0x00, 0x01, 0x40};  // 3.3V, 320 = 0x000140
-    sendCommand(SX1262_CMD_SET_DIO3_AS_TCXO_CTRL, tcxo_params, 4);
-    if (!waitBusy()) {
+    if (!sendCommand(SX1262_CMD_SET_DIO3_AS_TCXO_CTRL, tcxo_params, 4)) {
         logger_.error("Failed to configure TCXO");
         return false;
     }
 
     // 3. Calibrate all blocks (after TCXO is running)
     uint8_t calib_param = 0x7F;  // Calibrate all
-    sendCommand(SX1262_CMD_CALIBRATE, &calib_param, 1);
-    if (!waitBusy(50)) {
+    if (!sendCommand(SX1262_CMD_CALIBRATE, &calib_param, 1)) {
         logger_.error("Calibration failed");
         return false;
     }
 
     // 4. Set regulator mode to DC-DC (more efficient)
     uint8_t reg_mode = SX1262_REGULATOR_DC_DC;
-    sendCommand(SX1262_CMD_SET_REGULATOR_MODE, &reg_mode, 1);
-    if (!waitBusy()) {
+    if (!sendCommand(SX1262_CMD_SET_REGULATOR_MODE, &reg_mode, 1)) {
         logger_.error("Failed to set regulator mode");
         return false;
     }
@@ -526,9 +522,11 @@ bool SX1262::waitBusy(uint32_t timeout_ms)
     return true;
 }
 
-void SX1262::sendCommand(uint8_t opcode, const uint8_t *params, size_t param_count)
+bool SX1262::sendCommand(uint8_t opcode, const uint8_t *params, size_t param_count)
 {
-    waitBusy();
+    if (!waitBusy()) {
+        return false;
+    }
 
     // Build TX buffer: opcode + params
     uint8_t tx_buf[16];
@@ -541,8 +539,9 @@ void SX1262::sendCommand(uint8_t opcode, const uint8_t *params, size_t param_cou
 
     // Wait for command to complete (except sleep commands)
     if (opcode != SX1262_CMD_SET_SLEEP) {
-        waitBusy();
+        return waitBusy();
     }
+    return true;
 }
 
 void SX1262::readCommand(uint8_t opcode, const uint8_t *params, size_t param_count,
