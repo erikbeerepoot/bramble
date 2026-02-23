@@ -123,6 +123,17 @@ if (!sensor_) {
 }
 ```
 
+**Design note — lazy init retry for transient failures:** Sensor initialization
+failures are not always permanent. I²C bus glitches, power-on settling delays,
+and similar transient conditions can cause a single init attempt to fail even
+when the hardware is functioning. Rather than sending the state machine
+permanently to `DEGRADED_NO_SENSOR` on first failure, consider a lazy retry
+approach: on init failure, transition to `READY_FOR_SLEEP` instead. On the next
+Periodic wake the full cycle restarts (AWAITING_TIME → TIME_SYNCED → sensor
+init), giving the sensor a fresh opportunity to initialize. A retry counter can
+cap the number of attempts before escalating to DEGRADED_NO_SENSOR, so a truly
+absent sensor is still reported correctly after N failed cycles.
+
 ---
 
 ### 6. READING_SENSOR
@@ -272,36 +283,43 @@ device halts permanently in this state.
 **Verdict: CONFIRMED DEADLOCK** — This is the most critical bug. Any sensor
 initialization failure permanently halts the wake cycle.
 
-**Fix options:**
+**Fix — transition to READY_FOR_SLEEP and retry on next wake cycle:**
 
-Option A — Transition through CHECKING_BACKLOG first:
+The correct exit from DEGRADED_NO_SENSOR is `READY_FOR_SLEEP`, not
+`CHECKING_BACKLOG`. This allows the device to sleep and then repeat the full
+wake cycle on the next Periodic PMU event, giving the sensor another
+initialization attempt. This implements the lazy-retry strategy described in the
+TIME_SYNCED section above — sensor failures are often transient, and sleeping
+then retrying is safer than either halting or routing through unrelated backlog
+logic.
+
+Add a dedicated `reportSensorRetry()` transition (or reuse an existing one) that
+exits DEGRADED_NO_SENSOR directly to READY_FOR_SLEEP:
+
+```cpp
+// In SensorStateMachine, add a new event:
+void SensorStateMachine::reportSensorRetry()
+{
+    if (state_ != SensorState::DEGRADED_NO_SENSOR) {
+        logger.warn("reportSensorRetry() called in unexpected state: %s", ...);
+        return;
+    }
+    transitionTo(SensorState::READY_FOR_SLEEP);
+}
+```
+
+Then call it from `onStateChange` for DEGRADED_NO_SENSOR:
 ```cpp
 case SensorState::DEGRADED_NO_SENSOR:
     led_pattern_ = std::make_unique<ShortBlinkPattern>(led_, 255, 165, 0);
-    // Transition to CHECKING_BACKLOG, then check
-    sensor_state_.reportReadComplete();  // Won't work either — same guard issue
-```
-This won't work because `reportReadComplete()` also checks for READING_SENSOR.
-
-Option B — Allow `reportCheckComplete()` from DEGRADED_NO_SENSOR:
-```cpp
-void SensorStateMachine::reportCheckComplete(bool needsTransmit)
-{
-    if (state_ != SensorState::CHECKING_BACKLOG &&
-        state_ != SensorState::DEGRADED_NO_SENSOR) {
-        // ...reject
-    }
+    // Sleep and retry init on next wake
+    sensor_state_.reportSensorRetry();
+    break;
 ```
 
-Option C — Add a dedicated transition for degraded mode:
-```cpp
-void SensorStateMachine::reportDegradedCheckComplete(bool needsTransmit);
-```
-
-**Recommendation:** Option B is simplest and most aligned with the existing
-architecture. DEGRADED_NO_SENSOR is functionally equivalent to "checked backlog
-with no sensor read" — the intent is clearly to flow into TRANSMITTING or
-READY_FOR_SLEEP.
+A retry counter should guard against infinite loops on permanently absent
+hardware — after N failed wake cycles the machine may escalate to ERROR or stop
+retrying.
 
 ---
 
@@ -319,7 +337,7 @@ READY_FOR_SLEEP.
 
 | # | Severity | State | Issue | Impact |
 |---|----------|-------|-------|--------|
-| 1 | **CRITICAL** | DEGRADED_NO_SENSOR | `reportCheckComplete()` rejected — no exit transition | Device halts permanently on sensor init failure |
+| 1 | **CRITICAL** | DEGRADED_NO_SENSOR | No exit transition; `reportCheckComplete()` rejected | Device halts permanently on sensor init failure; fix: transition to READY_FOR_SLEEP and retry on next wake |
 | 2 | **CRITICAL** | AWAITING_TIME | `rtc_set_datetime()` failure — no transition, no timeout | Device halts permanently if RTC set fails |
 | 3 | **MEDIUM** | TRANSMITTING | No safety timeout | Device halts if transmit callback never fires |
 | 4 | **MEDIUM** | READY_FOR_SLEEP | Scheduled/External wakes don't transition; no PMU = stuck | Device may halt permanently |
@@ -331,8 +349,10 @@ READY_FOR_SLEEP.
 
 ### Immediate (blocks normal operation)
 
-1. **Fix DEGRADED_NO_SENSOR deadlock** — Allow `reportCheckComplete()` from
-   DEGRADED_NO_SENSOR state in `sensor_state_machine.cpp`.
+1. **Fix DEGRADED_NO_SENSOR deadlock** — Add a `reportSensorRetry()` transition
+   that exits DEGRADED_NO_SENSOR directly to READY_FOR_SLEEP. On the next
+   Periodic wake the full cycle restarts and sensor init is retried. Guard with
+   a retry counter to escalate to ERROR after N consecutive failures.
 
 2. **Fix AWAITING_TIME deadlock** — Add hub-sync fallback when
    `rtc_set_datetime()` fails in `sensor_mode.cpp:requestTimeSync()`.
