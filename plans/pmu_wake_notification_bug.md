@@ -118,61 +118,31 @@ This is unlikely in normal operation (RP2040 won't retry after receiving ACK) bu
 could occur if the ACK was corrupted on the wire, causing the RP2040 to retry
 CTS while the STM32 is building/sending the WakeNotification.
 
-## Recommended Fixes
+## Resolution
 
-### Fix 1: Resend WakeNotification when CTS arrives in WAKE_ACTIVE
+After analysis, the cleanest fix addresses both root causes by removing the
+`CTS_TIMEOUT` entirely and eliminating the SLEEPING race window.
 
-In `onStateChange` or directly in the main loop, detect CTS_RECEIVED while already
-in WAKE_ACTIVE and resend the WakeNotification:
+### Change 1: Remove `CTS_TIMEOUT` — rely on `WAKE_TIMEOUT` as safety net
 
-```cpp
-// main.cpp main loop
-if (protocol.isCtsReceived()) {
-    bool wasAlreadyActive = (pmuState.state() == PmuState::WAKE_ACTIVE);
-    pmuState.dispatch(PmuEvent::CTS_RECEIVED);
-    protocol.clearCtsReceived();
+**Files**: `pmu_state_machine.h`, `pmu_state_machine.cpp`
 
-    // If we were already in WAKE_ACTIVE, the state machine won't transition,
-    // but we still need to send the wake notification for the late CTS
-    if (wasAlreadyActive) {
-        sendWakeNotification();
-    }
-}
-```
+Removed `CTS_TIMEOUT_MS`, `PmuEvent::CTS_TIMEOUT`, and the CTS timeout check in
+`tick()`. The 2-minute `PERIODIC_WAKE_TIMEOUT_MS` is the safety net for the
+pathological case where the RP2040 crashes and never sends CTS.
 
-### Fix 2: Check CTS flag before entering STOP mode
+Without `CTS_TIMEOUT`, the PMU stays in `AWAITING_CTS` until the RP2040 finishes
+booting (1.2–2.2s) and sends CTS. The state machine then transitions correctly
+to `WAKE_ACTIVE` and sends the `WakeNotification`.
 
-Add a guard in the SLEEPING handler to abort STOP entry if CTS was received:
+### Change 2: Remove `HAL_Delay(100)` from `SLEEPING` handler
 
-```cpp
-case PmuState::SLEEPING:
-    dcdc.disable();
-    led.setColor(LED::GREEN);
-    HAL_Delay(100);
-    led.off();
+**File**: `main.cpp`
 
-    // Check if CTS arrived during the delay - don't sleep if so
-    if (!protocol.isCtsReceived()) {
-        enterStopMode();
-        wakeupFromStopMode();
-    }
-    break;
-```
+The 100ms delay was the entire race window where CTS could arrive during
+`SLEEPING` and be ACKed, but the STM32 would still re-enter STOP mode on the
+next iteration without processing the CTS flag.
 
-### Fix 3: Increase CTS_TIMEOUT or remove it
-
-The 2-second CTS_TIMEOUT is too aggressive for the RP2040 boot time. Options:
-- Increase to 5+ seconds to accommodate worst-case boot time
-- Or remove CTS_TIMEOUT entirely and only rely on the overall WAKE_TIMEOUT
-  (currently 120s for periodic wakes)
-
-The CTS_TIMEOUT was designed as a "fallback for old firmware that doesn't send CTS"
-(per the comment in `pmu_state_machine.h:123`). If all firmware now sends CTS,
-increasing this timeout is safe.
-
-### Fix Priority
-- **Fix 1 is the most important** - it handles the common case where CTS arrives
-  after the timeout has already transitioned to WAKE_ACTIVE
-- **Fix 2 prevents the SLEEPING race** - important for USB-powered development
-- **Fix 3 prevents the root timing issue** - but Fix 1 is needed regardless as
-  a safety net
+Removing the delay eliminates this window entirely. If CTS arrives after the
+STM32 has entered STOP mode, the LPUART start-bit detection wakes the MCU
+immediately, and the main loop processes the CTS flag on the next iteration.
