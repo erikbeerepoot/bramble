@@ -550,8 +550,8 @@ void processIncomingMessage(uint8_t *rx_buffer, int rx_len, ReliableMessenger &m
             reinterpret_cast<const HeartbeatPayload *>(rx_buffer + sizeof(MessageHeader));
 
         log.info("Heartbeat from 0x%04X: uptime=%lus, battery=%u%%, signal=%u, sensors=0x%02X",
-                  source_address, heartbeat->uptime_seconds, heartbeat->battery_level,
-                  heartbeat->signal_strength, heartbeat->active_sensors);
+                 source_address, heartbeat->uptime_seconds, heartbeat->battery_level,
+                 heartbeat->signal_strength, heartbeat->active_sensors);
     }
 
     // Handle CHECK_UPDATES from nodes
@@ -560,8 +560,7 @@ void processIncomingMessage(uint8_t *rx_buffer, int rx_len, ReliableMessenger &m
         const CheckUpdatesPayload *payload =
             reinterpret_cast<const CheckUpdatesPayload *>(msg->payload);
 
-        log.info("CHECK_UPDATES from 0x%04X (node_seq=%d)", source_address,
-                  payload->node_sequence);
+        log.info("CHECK_UPDATES from 0x%04X (node_seq=%d)", source_address, payload->node_sequence);
 
         hub_router->handleCheckUpdates(source_address, payload->node_sequence);
     }

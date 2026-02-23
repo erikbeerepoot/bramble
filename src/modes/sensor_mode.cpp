@@ -424,8 +424,8 @@ HeartbeatStatus SensorMode::collectHeartbeatStatus()
         pending_records = (count > 0xFFFF) ? 0xFFFF : static_cast<uint16_t>(count);
     }
 
-    return {uptime,         battery_level, signal_strength, active_sensors,
-            error_flags,   pending_records, getDeviceId()};
+    return {uptime,      battery_level,   signal_strength, active_sensors,
+            error_flags, pending_records, getDeviceId()};
 }
 
 uint16_t SensorMode::collectErrorFlags()
@@ -836,11 +836,16 @@ void SensorMode::requestTimeSync()
 uint32_t SensorMode::stateWatchdogMs(SensorState state)
 {
     switch (state) {
-        case SensorState::REGISTERING:    return 5000;   // Allow time for RELIABLE retries
-        case SensorState::SYNCING_TIME:   return 5000;   // Class A receive window timeout
-        case SensorState::READING_SENSOR: return 3000;   // Sensor read timeout
-        case SensorState::TRANSMITTING:   return 30000;  // Max for batch TX + retries
-        default:                          return 0;
+        case SensorState::REGISTERING:
+            return 5000;  // Allow time for RELIABLE retries
+        case SensorState::SYNCING_TIME:
+            return 5000;  // Class A receive window timeout
+        case SensorState::READING_SENSOR:
+            return 3000;  // Sensor read timeout
+        case SensorState::TRANSMITTING:
+            return 30000;  // Max for batch TX + retries
+        default:
+            return 0;
     }
 }
 
