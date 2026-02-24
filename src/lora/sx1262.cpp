@@ -55,8 +55,7 @@ bool SX1262::begin()
 
     // 1. Set standby mode (RC oscillator)
     uint8_t standby_mode = SX1262_STDBY_RC;
-    sendCommand(SX1262_CMD_SET_STANDBY, &standby_mode, 1);
-    if (!waitBusy()) {
+    if (!sendCommand(SX1262_CMD_SET_STANDBY, &standby_mode, 1)) {
         logger_.error("Failed to enter standby");
         return false;
     }
@@ -64,24 +63,21 @@ bool SX1262::begin()
     // 2. Configure DIO3 as TCXO control (3.3V, 5ms timeout)
     //    Timeout = value * 15.625 us; 320 * 15.625 = 5ms
     uint8_t tcxo_params[4] = {SX1262_TCXO_3_3V, 0x00, 0x01, 0x40};  // 3.3V, 320 = 0x000140
-    sendCommand(SX1262_CMD_SET_DIO3_AS_TCXO_CTRL, tcxo_params, 4);
-    if (!waitBusy()) {
+    if (!sendCommand(SX1262_CMD_SET_DIO3_AS_TCXO_CTRL, tcxo_params, 4)) {
         logger_.error("Failed to configure TCXO");
         return false;
     }
 
     // 3. Calibrate all blocks (after TCXO is running)
     uint8_t calib_param = 0x7F;  // Calibrate all
-    sendCommand(SX1262_CMD_CALIBRATE, &calib_param, 1);
-    if (!waitBusy(50)) {
+    if (!sendCommand(SX1262_CMD_CALIBRATE, &calib_param, 1)) {
         logger_.error("Calibration failed");
         return false;
     }
 
     // 4. Set regulator mode to DC-DC (more efficient)
     uint8_t reg_mode = SX1262_REGULATOR_DC_DC;
-    sendCommand(SX1262_CMD_SET_REGULATOR_MODE, &reg_mode, 1);
-    if (!waitBusy()) {
+    if (!sendCommand(SX1262_CMD_SET_REGULATOR_MODE, &reg_mode, 1)) {
         logger_.error("Failed to set regulator mode");
         return false;
     }
@@ -246,7 +242,10 @@ bool SX1262::send(const uint8_t *data, size_t length)
     configurePacketParams(length);
 
     // Write payload to TX buffer (offset 0)
-    writeBuffer(0x00, data, length);
+    if (!writeBuffer(0x00, data, length)) {
+        logger_.error("Failed to write TX buffer (BUSY timeout)");
+        return false;
+    }
 
     // Set TX mode (timeout 0 = no timeout, TX until done)
     uint8_t tx_params[3] = {0x00, 0x00, 0x00};  // Timeout = 0 (wait for TxDone)
@@ -321,7 +320,10 @@ int SX1262::receive(uint8_t *buffer, size_t max_length)
 
     // Get RX buffer status: payload length and start offset
     uint8_t rx_status[2] = {0};
-    readCommand(SX1262_CMD_GET_RX_BUFFER_STATUS, nullptr, 0, rx_status, 2);
+    if (!readCommand(SX1262_CMD_GET_RX_BUFFER_STATUS, nullptr, 0, rx_status, 2)) {
+        logger_.error("Failed to read RX buffer status (BUSY timeout)");
+        return -1;
+    }
     uint8_t payload_length = rx_status[0];
     uint8_t rx_start_offset = rx_status[1];
 
@@ -330,7 +332,10 @@ int SX1262::receive(uint8_t *buffer, size_t max_length)
     }
 
     // Read payload from buffer
-    readBuffer(rx_start_offset, buffer, payload_length);
+    if (!readBuffer(rx_start_offset, buffer, payload_length)) {
+        logger_.error("Failed to read RX buffer (BUSY timeout)");
+        return -1;
+    }
 
     // Get packet status for RSSI and SNR
     uint8_t pkt_status[3] = {0};
@@ -384,8 +389,9 @@ void SX1262::wakeup()
 {
     // Any command wakes the SX1262. Send GetStatus to wake it.
     uint8_t status = 0;
-    readCommand(SX1262_CMD_GET_STATUS, nullptr, 0, &status, 1);
-    waitBusy();
+    if (!readCommand(SX1262_CMD_GET_STATUS, nullptr, 0, &status, 1)) {
+        logger_.error("Failed to wake chip (BUSY timeout)");
+    }
 
     // Return to standby
     uint8_t standby_mode = SX1262_STDBY_RC;
@@ -526,9 +532,11 @@ bool SX1262::waitBusy(uint32_t timeout_ms)
     return true;
 }
 
-void SX1262::sendCommand(uint8_t opcode, const uint8_t *params, size_t param_count)
+bool SX1262::sendCommand(uint8_t opcode, const uint8_t *params, size_t param_count)
 {
-    waitBusy();
+    if (!waitBusy()) {
+        return false;
+    }
 
     // Build TX buffer: opcode + params
     uint8_t tx_buf[16];
@@ -541,14 +549,17 @@ void SX1262::sendCommand(uint8_t opcode, const uint8_t *params, size_t param_cou
 
     // Wait for command to complete (except sleep commands)
     if (opcode != SX1262_CMD_SET_SLEEP) {
-        waitBusy();
+        return waitBusy();
     }
+    return true;
 }
 
-void SX1262::readCommand(uint8_t opcode, const uint8_t *params, size_t param_count,
+bool SX1262::readCommand(uint8_t opcode, const uint8_t *params, size_t param_count,
                          uint8_t *response, size_t response_count)
 {
-    waitBusy();
+    if (!waitBusy()) {
+        return false;
+    }
 
     // TX: opcode + params + NOP byte + NOP bytes for response
     // RX: skip opcode + params + status byte, then read response
@@ -570,12 +581,14 @@ void SX1262::readCommand(uint8_t opcode, const uint8_t *params, size_t param_cou
         memcpy(response, &rx_buf[response_offset], response_count);
     }
 
-    waitBusy();
+    return waitBusy();
 }
 
-void SX1262::writeBuffer(uint8_t offset, const uint8_t *data, size_t length)
+bool SX1262::writeBuffer(uint8_t offset, const uint8_t *data, size_t length)
 {
-    waitBusy();
+    if (!waitBusy()) {
+        return false;
+    }
 
     // WriteBuffer: opcode(0x0E) + offset + data bytes
     uint8_t tx_buf[258];  // 1 opcode + 1 offset + 256 max data
@@ -585,12 +598,14 @@ void SX1262::writeBuffer(uint8_t offset, const uint8_t *data, size_t length)
 
     spi_.transfer(tx_buf, nullptr, 2 + length);
 
-    waitBusy();
+    return waitBusy();
 }
 
-void SX1262::readBuffer(uint8_t offset, uint8_t *data, size_t length)
+bool SX1262::readBuffer(uint8_t offset, uint8_t *data, size_t length)
 {
-    waitBusy();
+    if (!waitBusy()) {
+        return false;
+    }
 
     // ReadBuffer: opcode(0x1E) + offset + NOP + data
     size_t total_len = 3 + length;  // opcode + offset + NOP + data
@@ -606,23 +621,28 @@ void SX1262::readBuffer(uint8_t offset, uint8_t *data, size_t length)
     // Data starts at index 3 (after opcode + offset + status)
     memcpy(data, &rx_buf[3], length);
 
-    waitBusy();
+    return waitBusy();
 }
 
-void SX1262::writeRegister(uint16_t address, uint8_t value)
+bool SX1262::writeRegister(uint16_t address, uint8_t value)
 {
-    waitBusy();
+    if (!waitBusy()) {
+        return false;
+    }
 
     uint8_t tx_buf[4] = {SX1262_CMD_WRITE_REGISTER, (uint8_t)(address >> 8),
                          (uint8_t)(address & 0xFF), value};
     spi_.transfer(tx_buf, nullptr, 4);
 
-    waitBusy();
+    return waitBusy();
 }
 
 uint8_t SX1262::readRegister(uint16_t address)
 {
-    waitBusy();
+    if (!waitBusy()) {
+        logger_.error("readRegister(0x%04X): BUSY timeout before transfer", address);
+        return 0;
+    }
 
     // ReadRegister: opcode + addr_msb + addr_lsb + NOP + data
     uint8_t tx_buf[5] = {SX1262_CMD_READ_REGISTER, (uint8_t)(address >> 8),
@@ -631,7 +651,9 @@ uint8_t SX1262::readRegister(uint16_t address)
 
     spi_.transfer(tx_buf, rx_buf, 5);
 
-    waitBusy();
+    if (!waitBusy()) {
+        logger_.error("readRegister(0x%04X): BUSY timeout after transfer", address);
+    }
     return rx_buf[4];  // Data is in last byte
 }
 

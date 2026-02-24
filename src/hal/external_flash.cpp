@@ -193,7 +193,17 @@ ExternalFlashResult ExternalFlash::writeEnable()
     // Verify write enable latch is set
     uint8_t status = readStatus();
     if (!(status & MT25QLStatus::WRITE_ENABLED)) {
-        logger_.error("Write enable failed");
+        logger_.error("Write enable failed (status=0x%02X)", status);
+        if (status == 0xFF || status == 0x00) {
+            logger_.error("  -> Flash not responding (SPI bus issue or not powered)");
+        } else if (status & 0x01) {
+            logger_.error("  -> Flash busy with previous operation, WREN ignored");
+        } else if (status & 0x3C) {
+            logger_.error("  -> Block protection enabled (BP=0x%02X), regions may be locked",
+                          (status >> 2) & 0x0F);
+        } else {
+            logger_.error("  -> WREN command not received (possible SPI bus contention)");
+        }
         return ExternalFlashResult::ErrorHardware;
     }
 
