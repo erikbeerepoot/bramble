@@ -142,12 +142,14 @@ void SX1276::setSpreadingFactor(int sf)
     writeRegister(SX1276_REG_MODEM_CONFIG_2, config2);
 
     // Enable/disable low data rate optimization for SF11 and SF12
+    // Always preserve AgcAutoOn (bit 2) — clearing it degrades receive sensitivity
     uint8_t config3 = readRegister(SX1276_REG_MODEM_CONFIG_3);
     if (sf >= 11) {
         config3 |= 0x08;  // Enable low data rate optimization
     } else {
         config3 &= ~0x08;  // Disable low data rate optimization
     }
+    config3 |= 0x04;  // Ensure AgcAutoOn stays enabled
     writeRegister(SX1276_REG_MODEM_CONFIG_3, config3);
 }
 
@@ -505,6 +507,17 @@ void SX1276::configureLoRa()
     uint8_t config1 = readRegister(SX1276_REG_MODEM_CONFIG_1);
     config1 &= ~0x01;  // Explicit header mode
     writeRegister(SX1276_REG_MODEM_CONFIG_1, config1);
+
+    // Configure LNA for maximum receive sensitivity
+    // Bits [7:5] = 001 (G1, maximum gain)
+    // Bits [1:0] = 11 (LNA boost for HF band, +3dB at 915 MHz)
+    writeRegister(SX1276_REG_LNA, 0x23);
+
+    // Enable AGC (Automatic Gain Control) to auto-optimize LNA gain per packet
+    // Bit 2 of RegModemConfig3 = AgcAutoOn
+    uint8_t config3 = readRegister(SX1276_REG_MODEM_CONFIG_3);
+    config3 |= 0x04;  // Set AgcAutoOn
+    writeRegister(SX1276_REG_MODEM_CONFIG_3, config3);
 
     // Set RX timeout to max
     writeRegister(SX1276_REG_SYMB_TIMEOUT_LSB, 0xFF);
