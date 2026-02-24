@@ -210,8 +210,9 @@ private:
      * @param opcode Command opcode
      * @param params Parameter bytes (can be nullptr)
      * @param param_count Number of parameter bytes
+     * @return true if command was sent and BUSY cleared, false on timeout
      */
-    void sendCommand(uint8_t opcode, const uint8_t *params = nullptr, size_t param_count = 0);
+    bool sendCommand(uint8_t opcode, const uint8_t *params = nullptr, size_t param_count = 0);
 
     /**
      * @brief Send a command and read response data
@@ -220,8 +221,9 @@ private:
      * @param param_count Number of parameter bytes
      * @param response Buffer to store response
      * @param response_count Number of response bytes to read
+     * @return true if command completed successfully, false on BUSY timeout
      */
-    void readCommand(uint8_t opcode, const uint8_t *params, size_t param_count, uint8_t *response,
+    bool readCommand(uint8_t opcode, const uint8_t *params, size_t param_count, uint8_t *response,
                      size_t response_count);
 
     /**
@@ -229,28 +231,31 @@ private:
      * @param offset Buffer offset
      * @param data Data to write
      * @param length Number of bytes
+     * @return true if write completed successfully, false on BUSY timeout
      */
-    void writeBuffer(uint8_t offset, const uint8_t *data, size_t length);
+    bool writeBuffer(uint8_t offset, const uint8_t *data, size_t length);
 
     /**
      * @brief Read data from the RX buffer
      * @param offset Buffer offset
      * @param data Buffer to store read data
      * @param length Number of bytes to read
+     * @return true if read completed successfully, false on BUSY timeout
      */
-    void readBuffer(uint8_t offset, uint8_t *data, size_t length);
+    bool readBuffer(uint8_t offset, uint8_t *data, size_t length);
 
     /**
      * @brief Write to an SX1262 register
      * @param address 16-bit register address
      * @param value Byte to write
+     * @return true if write completed successfully, false on BUSY timeout
      */
-    void writeRegister(uint16_t address, uint8_t value);
+    bool writeRegister(uint16_t address, uint8_t value);
 
     /**
      * @brief Read from an SX1262 register
      * @param address 16-bit register address
-     * @return Register value
+     * @return Register value (0 on BUSY timeout)
      */
     uint8_t readRegister(uint16_t address);
 
