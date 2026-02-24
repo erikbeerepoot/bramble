@@ -162,7 +162,19 @@ void SensorMode::onStart()
 
 void SensorMode::onStateChange(SensorState state)
 {
-    armStateWatchdog(state);
+    if (state == SensorState::SYNCING_TIME) {
+        armStateWatchdog(state, [this]() {
+            if (rtc_running()) {
+                sensor_state_.reportTimeSyncComplete();
+            } else {
+                sensor_state_.reportSyncTimeout();
+            }
+        });
+    } else if (state == SensorState::TRANSMITTING) {
+        armStateWatchdog(state, [this]() { sensor_state_.reportTransmitComplete(); });
+    } else {
+        armStateWatchdog(state, [this]() { sensor_state_.reportWatchdogTimeout(); });
+    }
 
     // Centralized task scheduler - reacts to state changes by posting work
     switch (state) {
@@ -849,7 +861,7 @@ uint32_t SensorMode::stateWatchdogMs(SensorState state)
     }
 }
 
-void SensorMode::armStateWatchdog(SensorState state)
+void SensorMode::armStateWatchdog(SensorState state, std::function<void()> on_timeout)
 {
     if (state_watchdog_id_ != 0) {
         task_queue_.cancel(state_watchdog_id_);
@@ -859,23 +871,16 @@ void SensorMode::armStateWatchdog(SensorState state)
     if (watchdog_ms == 0) {
         return;
     }
+    watchdog_expiry_callback_ = std::move(on_timeout);
     uint32_t now = to_ms_since_boot(get_absolute_time());
     state_watchdog_id_ = task_queue_.postDelayed(
         [](void *ctx, uint32_t) -> bool {
             SensorMode *self = static_cast<SensorMode *>(ctx);
             self->state_watchdog_id_ = 0;
-            SensorState current = self->sensor_state_.state();
-            logger.error("State watchdog fired in %s", SensorStateMachine::stateName(current));
-            if (current == SensorState::SYNCING_TIME) {
-                if (rtc_running()) {
-                    self->sensor_state_.reportTimeSyncComplete();
-                } else {
-                    self->sensor_state_.reportSyncTimeout();
-                }
-            } else if (current == SensorState::TRANSMITTING) {
-                self->sensor_state_.reportTransmitComplete();
-            } else {
-                self->sensor_state_.reportWatchdogTimeout();
+            logger.error("State watchdog fired in %s",
+                         SensorStateMachine::stateName(self->sensor_state_.state()));
+            if (self->watchdog_expiry_callback_) {
+                self->watchdog_expiry_callback_();
             }
             return true;
         },
