@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 
 #include "../hal/cht832x.h"
@@ -38,6 +39,7 @@ private:
 
     // Generic per-state watchdog — cancelled when expected event arrives, fires on timeout
     uint16_t state_watchdog_id_ = 0;
+    std::function<void()> watchdog_expiry_callback_;
 
     // I2C pin configuration for CHT832X sensor
     static constexpr uint PIN_I2C_SDA = 26;  // GPIO26 (A0)
@@ -177,9 +179,13 @@ private:
      * non-zero timeout (see stateWatchdogMs). Called at the top of onStateChange
      * so every state transition automatically starts and cancels the right timer.
      *
+     * on_timeout contains the recovery action for this specific state — keeping
+     * policy out of the timer mechanism and in the caller.
+     *
      * @param state State just entered
+     * @param on_timeout Callback invoked if watchdog fires before expected event arrives
      */
-    void armStateWatchdog(SensorState state);
+    void armStateWatchdog(SensorState state, std::function<void()> on_timeout);
 
     /**
      * @brief Return the watchdog timeout for a given state (0 = no watchdog)
