@@ -133,14 +133,20 @@ else()
     set_property(CACHE HARDWARE_VARIANT PROPERTY STRINGS
         ALL GENERIC HUB CONTROLLER IRRIGATION SENSOR)
 
-    # Radio chip selection (SX1276 default, SX1262 for new boards)
-    set(RADIO_CHIP "SX1276" CACHE STRING "Radio chip type (SX1276 or SX1262)")
+    # Radio chip selection (determines which driver is compiled)
+    set(RADIO_CHIP "SX1262" CACHE STRING "Radio chip: SX1276 or SX1262")
     set_property(CACHE RADIO_CHIP PROPERTY STRINGS SX1276 SX1262)
 
-    # Common source files for all variants (both radio drivers always compile)
+    if(RADIO_CHIP STREQUAL "SX1276")
+        set(RADIO_SOURCE src/lora/sx1276.cpp)
+    else()
+        set(RADIO_SOURCE src/lora/sx1262.cpp)
+    endif()
+    message(STATUS "Radio chip: ${RADIO_CHIP} (${RADIO_SOURCE})")
+
+    # Common source files for all variants
     set(COMMON_SOURCES
-        src/lora/sx1276.cpp
-        src/lora/sx1262.cpp
+        ${RADIO_SOURCE}
         src/lora/message.cpp
         src/lora/reliable_messenger.cpp
         src/lora/address_manager.cpp
@@ -250,6 +256,13 @@ else()
         message(STATUS "Building GENERIC variant")
     endif()
 
+    # Add RADIO_SX1262 compile definition when using SX1262 chip
+    if(RADIO_CHIP STREQUAL "SX1262")
+        foreach(TARGET_NAME IN LISTS BUILD_TARGETS)
+            target_compile_definitions(${TARGET_NAME} PRIVATE RADIO_SX1262=1)
+        endforeach()
+    endif()
+
 endif()
 
 # Configure all production targets
@@ -289,11 +302,6 @@ if(NOT BUILD_TESTS)
             BRAMBLE_VERSION_MINOR=${BRAMBLE_VERSION_MINOR}
             BRAMBLE_VERSION_BUILD=${BRAMBLE_VERSION_BUILD}
         )
-
-        # Radio chip selection
-        if(RADIO_CHIP STREQUAL "SX1262")
-            target_compile_definitions(${TARGET_NAME} PRIVATE RADIO_SX1262=1)
-        endif()
 
         # Suppress GCC ARM ABI notes (safe for standalone firmware)
         target_compile_options(${TARGET_NAME} PRIVATE -Wno-psabi)
