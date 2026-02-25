@@ -367,6 +367,14 @@ bool initializeHardware(RadioInterface &lora, NeoPixel &led)
     gpio_set_dir(PIN_CS, GPIO_OUT);
     gpio_put(PIN_CS, 1);
 
+    // Deselect external flash CS (GPIO 6) BEFORE any SPI operations.
+    // Flash shares SPI1 with LoRa — if its CS floats LOW during LoRa init,
+    // the flash drives MISO and corrupts SX1262 register reads.
+    constexpr uint PIN_FLASH_CS = 6;
+    gpio_init(PIN_FLASH_CS);
+    gpio_set_dir(PIN_FLASH_CS, GPIO_OUT);
+    gpio_put(PIN_FLASH_CS, 1);  // Deselect flash
+
     log.debug("System Clock: %d Hz, USB Clock: %d Hz", clock_get_hz(clk_sys),
               clock_get_hz(clk_usb));
 
