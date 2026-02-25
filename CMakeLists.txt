@@ -139,8 +139,10 @@ else()
 
     if(RADIO_CHIP STREQUAL "SX1276")
         set(RADIO_SOURCE src/lora/sx1276.cpp)
+        set(RADIO_SUFFIX "_sx1276")
     else()
         set(RADIO_SOURCE src/lora/sx1262.cpp)
+        set(RADIO_SUFFIX "_sx1262")
     endif()
     message(STATUS "Radio chip: ${RADIO_CHIP} (${RADIO_SOURCE})")
 
@@ -181,7 +183,7 @@ else()
 
     # Build specialized executables (ALL builds every variant)
     if(HARDWARE_VARIANT STREQUAL "ALL" OR HARDWARE_VARIANT STREQUAL "IRRIGATION")
-        add_executable(bramble_irrigation
+        add_executable(bramble_irrigation${RADIO_SUFFIX}
             main.cpp
             src/modes/irrigation_mode.cpp
             src/hal/valve_controller.cpp
@@ -189,70 +191,70 @@ else()
             src/hal/valve_indexer.cpp
             ${COMMON_SOURCES}
         )
-        target_compile_definitions(bramble_irrigation PRIVATE
+        target_compile_definitions(bramble_irrigation${RADIO_SUFFIX} PRIVATE
             HARDWARE_IRRIGATION=1
             DEFAULT_IS_HUB=0
         )
-        list(APPEND BUILD_TARGETS bramble_irrigation)
+        list(APPEND BUILD_TARGETS bramble_irrigation${RADIO_SUFFIX})
         message(STATUS "Building IRRIGATION variant")
     endif()
 
     if(HARDWARE_VARIANT STREQUAL "ALL" OR HARDWARE_VARIANT STREQUAL "CONTROLLER")
-        add_executable(bramble_controller
+        add_executable(bramble_controller${RADIO_SUFFIX}
             main.cpp
             src/modes/controller_mode.cpp
             src/hal/controller_inputs.cpp
             ${COMMON_SOURCES}
         )
-        target_compile_definitions(bramble_controller PRIVATE
+        target_compile_definitions(bramble_controller${RADIO_SUFFIX} PRIVATE
             HARDWARE_CONTROLLER=1
             DEFAULT_IS_HUB=1
         )
-        list(APPEND BUILD_TARGETS bramble_controller)
+        list(APPEND BUILD_TARGETS bramble_controller${RADIO_SUFFIX})
         message(STATUS "Building CONTROLLER variant")
     endif()
 
     if(HARDWARE_VARIANT STREQUAL "ALL" OR HARDWARE_VARIANT STREQUAL "HUB")
-        add_executable(bramble_hub
+        add_executable(bramble_hub${RADIO_SUFFIX}
             main.cpp
             src/modes/hub_mode.cpp
             ${COMMON_SOURCES}
         )
-        target_compile_definitions(bramble_hub PRIVATE
+        target_compile_definitions(bramble_hub${RADIO_SUFFIX} PRIVATE
             HARDWARE_GENERIC=1
             DEFAULT_IS_HUB=1
         )
-        list(APPEND BUILD_TARGETS bramble_hub)
+        list(APPEND BUILD_TARGETS bramble_hub${RADIO_SUFFIX})
         message(STATUS "Building HUB variant (pure hub mode)")
     endif()
 
     if(HARDWARE_VARIANT STREQUAL "ALL" OR HARDWARE_VARIANT STREQUAL "SENSOR")
-        add_executable(bramble_sensor
+        add_executable(bramble_sensor${RADIO_SUFFIX}
             main.cpp
             src/modes/sensor_mode.cpp
             src/hal/cht832x.cpp
             src/util/sensor_pmu_manager.cpp
             ${COMMON_SOURCES}
         )
-        target_compile_definitions(bramble_sensor PRIVATE
+        target_compile_definitions(bramble_sensor${RADIO_SUFFIX} PRIVATE
             HARDWARE_SENSOR=1
             DEFAULT_IS_HUB=0
         )
-        list(APPEND BUILD_TARGETS bramble_sensor)
+        list(APPEND BUILD_TARGETS bramble_sensor${RADIO_SUFFIX})
         message(STATUS "Building SENSOR variant")
     endif()
 
     if(HARDWARE_VARIANT STREQUAL "ALL" OR HARDWARE_VARIANT STREQUAL "GENERIC")
-        add_executable(bramble_generic
+        add_executable(bramble_generic${RADIO_SUFFIX}
             main.cpp
             src/modes/application_mode.cpp
             ${COMMON_SOURCES}
         )
-        target_compile_definitions(bramble_generic PRIVATE
+        target_compile_definitions(bramble_generic${RADIO_SUFFIX} PRIVATE
             HARDWARE_GENERIC=1
             DEFAULT_IS_HUB=0
         )
-        list(APPEND BUILD_TARGETS bramble_generic)
+        list(APPEND BUILD_TARGETS bramble_generic${RADIO_SUFFIX})
         message(STATUS "Building GENERIC variant")
     endif()
 
@@ -277,7 +279,7 @@ if(NOT BUILD_TESTS)
         # Configure stdio per-target:
         # - Hub: USB CDC for debug output (UART1 reserved for Raspberry Pi API)
         # - Other nodes: UART for debug output (no USB)
-        if(TARGET_NAME STREQUAL "bramble_hub")
+        if(TARGET_NAME MATCHES "^bramble_hub")
             pico_enable_stdio_usb(${TARGET_NAME} 1)
             pico_enable_stdio_uart(${TARGET_NAME} 0)
             # Prevent USB CDC printf() from blocking when no serial monitor is
