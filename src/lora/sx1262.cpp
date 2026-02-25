@@ -117,10 +117,10 @@ bool SX1262::begin()
     uint8_t packet_type = SX1262_PACKET_TYPE_LORA;
     sendCommand(SX1262_CMD_SET_PACKET_TYPE, &packet_type, 1);
 
-    // 6. Set RF frequency
+    // 7. Set RF frequency
     setFrequency(frequency_);
 
-    // 6b. Calibrate image rejection for 902-928 MHz ISM band
+    // 7b. Calibrate image rejection for 902-928 MHz ISM band
     //     Must be done AFTER SetRfFrequency. The Calibrate(0x7F) above used the
     //     default frequency which is wrong for 915 MHz.
     {
@@ -128,12 +128,12 @@ bool SX1262::begin()
         sendCommand(SX1262_CMD_CALIBRATE_IMAGE, cal_freq, 2);
     }
 
-    // 7. Set PA config for SX1262 (optimized for +22 dBm max)
+    // 8. Set PA config for SX1262 (optimized for +22 dBm max)
     uint8_t pa_config[4] = {0x04, 0x07, 0x00,
                             0x01};  // paDutyCycle=4, hpMax=7, deviceSel=0 (SX1262), paLut=1
     sendCommand(SX1262_CMD_SET_PA_CONFIG, pa_config, 4);
 
-    // 7b. Set OCP (Over-Current Protection) for high-power PA
+    // 8b. Set OCP (Over-Current Protection) for high-power PA
     //     Default after reset is 60 mA — far too low for +22 dBm PA config.
     //     Set to 140 mA (0x38 * 2.5 mA) per Semtech reference design.
     uint8_t ocp_before = readRegister(SX1262_REG_OCP);
@@ -141,53 +141,56 @@ bool SX1262::begin()
     uint8_t ocp_after = readRegister(SX1262_REG_OCP);
     logger_.info("OCP: 0x%02X -> 0x%02X (expect 0x38)", ocp_before, ocp_after);
 
-    // 7c. TxClampConfig workaround (datasheet section 15.2 errata)
+    // 8c. TxClampConfig workaround (datasheet section 15.2 errata)
     //     PA clamping threshold is "overly protective" by default, causing
     //     5-6 dB less output power. Fix: set register 0x08D8 bits [4:1] = 1111.
     uint8_t tx_clamp = readRegister(SX1262_REG_TX_CLAMP_CONFIG);
     tx_clamp |= 0x1E;  // Set bits 4:1 to 1111
     writeRegister(SX1262_REG_TX_CLAMP_CONFIG, tx_clamp);
 
-    // 8. Set TX power and ramp time
+    // 9. Set TX power and ramp time
     setTxPower(tx_power_);
 
-    // 9. Set modulation parameters
+    // 10. Set modulation parameters
     configureModulation();
 
-    // 10. Set packet parameters
+    // 11. Set packet parameters
     configurePacketParams(255);
 
-    // 11. Configure DIO1 IRQ mapping: TxDone + RxDone + CRC error + Timeout
+    // 12. Configure DIO1 IRQ mapping: TxDone + RxDone + CRC error + Timeout
     uint16_t irq_mask =
         SX1262_IRQ_TX_DONE | SX1262_IRQ_RX_DONE | SX1262_IRQ_CRC_ERR | SX1262_IRQ_TIMEOUT;
     setDioIrqParams(irq_mask, irq_mask);
 
-    // 12. Set buffer base addresses (TX at 0, RX at 128)
+    // 13. Set buffer base addresses (TX at 0, RX at 128)
     uint8_t buf_base[2] = {0x00, 0x80};
     sendCommand(SX1262_CMD_SET_BUFFER_BASE_ADDRESS, buf_base, 2);
 
-    // 13. Enable RX boosted gain mode for maximum receive sensitivity
+    // 14. Enable RX boosted gain mode for maximum receive sensitivity
     //     Register 0x08AC defaults to 0x94 (power-saving RX). Writing 0x96
     //     enables boosted gain (~3dB better sensitivity, ~2mA extra during RX).
     //     Equivalent to the SX1276 LNA boost + AGC enable.
     writeRegister(SX1262_REG_RX_GAIN, 0x96);
 
-    // 14. Clear any stale IRQ flags
+    // 15. Clear any stale IRQ flags
     clearIrqStatus(SX1262_IRQ_ALL);
 
-    // 15. Set sync word LAST — other commands (especially setDioIrqParams) can
+    // 16. Set sync word LAST — other commands (especially setDioIrqParams) can
     //     corrupt the sync word register. Verify and retry until correct.
-    retryWithBackoff(5, 200, "Sync word set", logger_, [this]() {
-        setSyncWord(0x1424);
-        uint8_t sw_msb = readRegister(SX1262_REG_SYNC_WORD_MSB);
-        uint8_t sw_lsb = readRegister(SX1262_REG_SYNC_WORD_LSB);
-        if (sw_msb == 0x14 && sw_lsb == 0x24) {
-            logger_.info("Sync word: 0x1424 (ok)");
-            return true;
-        }
-        logger_.warn("Sync word mismatch: 0x%02X%02X (expected 0x1424)", sw_msb, sw_lsb);
+    if (!retryWithBackoff(5, 200, "Sync word set", logger_, [this]() {
+            setSyncWord(0x1424);
+            uint8_t sw_msb = readRegister(SX1262_REG_SYNC_WORD_MSB);
+            uint8_t sw_lsb = readRegister(SX1262_REG_SYNC_WORD_LSB);
+            if (sw_msb == 0x14 && sw_lsb == 0x24) {
+                logger_.info("Sync word: 0x1424 (ok)");
+                return true;
+            }
+            logger_.warn("Sync word mismatch: 0x%02X%02X (expected 0x1424)", sw_msb, sw_lsb);
+            return false;
+        })) {
+        logger_.error("Failed to set sync word — initialization aborted");
         return false;
-    });
+    }
 
     // Verify chip is responding by reading status
     if (!isConnected()) {
@@ -321,7 +324,9 @@ bool SX1262::send(const uint8_t *data, size_t length)
     uint8_t standby_mode = SX1262_STDBY_XOSC;
     if (!sendCommand(SX1262_CMD_SET_STANDBY, &standby_mode, 1)) {
         logger_.error("TX: Failed to enter standby — performing full recovery");
-        performFullRecovery();
+        if (!performFullRecovery()) {
+            logger_.error("TX: Recovery failed — chip may be unresponsive");
+        }
         return false;
     }
 
@@ -347,7 +352,9 @@ bool SX1262::send(const uint8_t *data, size_t length)
     // Write payload to TX buffer (offset 0)
     if (!writeBuffer(0x00, data, length)) {
         logger_.error("TX: Failed to write buffer (BUSY timeout) — performing full recovery");
-        performFullRecovery();
+        if (!performFullRecovery()) {
+            logger_.error("TX: Recovery failed — chip may be unresponsive");
+        }
         return false;
     }
 
@@ -355,7 +362,9 @@ bool SX1262::send(const uint8_t *data, size_t length)
     uint8_t tx_params[3] = {0x00, 0x00, 0x00};
     if (!sendCommand(SX1262_CMD_SET_TX, tx_params, 3)) {
         logger_.error("TX: SetTx BUSY timeout — performing full recovery");
-        performFullRecovery();
+        if (!performFullRecovery()) {
+            logger_.error("TX: Recovery failed — chip may be unresponsive");
+        }
         return false;
     }
 
@@ -372,7 +381,9 @@ bool SX1262::send(const uint8_t *data, size_t length)
             uint16_t errors = ((uint16_t)dev_errors[0] << 8) | dev_errors[1];
             logger_.error("TX: stuck in FS mode (errors=0x%04X) — performing full recovery",
                           errors);
-            performFullRecovery();
+            if (!performFullRecovery()) {
+                logger_.error("TX: Recovery failed — chip may be unresponsive");
+            }
             return false;
         } else if (chip_mode != 0x06) {
             // Not in TX and not FS — could be STDBY (TX completed instantly?) or unknown
@@ -420,7 +431,9 @@ int SX1262::checkAndHandleTxDone()
         // (which will timeout and retry with a healthy chip).
         logger_.error("TX_DONE with chip stuck in FS (mode=4) — packet not sent, recovering");
         clearIrqStatus(SX1262_IRQ_TX_DONE);
-        performFullRecovery();
+        if (!performFullRecovery()) {
+            logger_.error("isTxDone: Recovery failed — chip may be unresponsive");
+        }
         return -1;
     }
 
@@ -686,11 +699,15 @@ void SX1262::clearInterruptFlags()
 
 // --- Private methods ---
 
-void SX1262::performFullRecovery()
+bool SX1262::performFullRecovery()
 {
     reset();
-    begin();
+    if (!begin()) {
+        logger_.error("performFullRecovery: re-initialization failed — chip may be unresponsive");
+        return false;
+    }
     startReceive();
+    return true;
 }
 
 bool SX1262::waitBusy(uint32_t timeout_ms)

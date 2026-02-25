@@ -296,8 +296,9 @@ private:
      * Used when the chip enters an unrecoverable state (stuck in FS mode,
      * BUSY timeout, etc). Resets the chip, runs full initialization, and
      * restarts continuous receive.
+     * @return true if recovery succeeded, false if re-initialization failed
      */
-    void performFullRecovery();
+    bool performFullRecovery();
 
     /**
      * @brief Configure modulation parameters
