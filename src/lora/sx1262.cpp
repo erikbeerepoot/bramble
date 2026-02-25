@@ -188,10 +188,16 @@ bool SX1262::begin()
     uint8_t buf_base[2] = {0x00, 0x80};
     sendCommand(SX1262_CMD_SET_BUFFER_BASE_ADDRESS, buf_base, 2);
 
-    // 13. Clear any stale IRQ flags
+    // 13. Enable RX boosted gain mode for maximum receive sensitivity
+    //     Register 0x08AC defaults to 0x94 (power-saving RX). Writing 0x96
+    //     enables boosted gain (~3dB better sensitivity, ~2mA extra during RX).
+    //     Equivalent to the SX1276 LNA boost + AGC enable.
+    writeRegister(SX1262_REG_RX_GAIN, 0x96);
+
+    // 14. Clear any stale IRQ flags
     clearIrqStatus(SX1262_IRQ_ALL);
 
-    // 14. Set sync word LAST — other commands (especially setDioIrqParams) can
+    // 15. Set sync word LAST — other commands (especially setDioIrqParams) can
     //     corrupt the sync word register. Verify and retry until correct.
     for (int sw_attempt = 0; sw_attempt < 5; sw_attempt++) {
         setSyncWord(0x1424);
@@ -591,6 +597,9 @@ void SX1262::startReceive()
     // Set RX mode with continuous receive (timeout = 0xFFFFFF)
     uint8_t rx_params[3] = {0xFF, 0xFF, 0xFF};
     sendCommand(SX1262_CMD_SET_RX, rx_params, 3);
+
+    // Re-apply RX boosted gain — SetRx resets register 0x08AC to power-saving (0x94)
+    writeRegister(SX1262_REG_RX_GAIN, 0x96);
 }
 
 int SX1262::getRssi()
