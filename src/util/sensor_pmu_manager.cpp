@@ -228,6 +228,7 @@ void SensorPmuManager::handlePmuWake(PMU::WakeReason reason, const PMU::Schedule
     if (!restored && flash_buffer_) {
         pmu_logger.info("Cold start detected - scanning flash for state");
         if (flash_buffer_->scanForWriteIndex()) {
+            flash_buffer_->recoverReadIndex();
             pmu_logger.info("Flash scan complete: write_index=%lu, read_index=%lu",
                             flash_buffer_->getWriteIndex(), flash_buffer_->getReadIndex());
         } else {
