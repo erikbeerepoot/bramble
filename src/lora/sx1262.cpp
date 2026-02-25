@@ -6,6 +6,17 @@
 
 #include "../hal/gpio_interrupt_manager.h"
 
+// Static instance pointer for raw ISR
+SX1262 *SX1262::isr_instance_ = nullptr;
+
+void SX1262::dio1Isr(uint gpio, uint32_t events)
+{
+    if (isr_instance_ && (events & GPIO_IRQ_EDGE_RISE)) {
+        isr_instance_->isr_call_count_++;
+        isr_instance_->interrupt_pending_ = true;
+    }
+}
+
 SX1262::SX1262(spi_inst_t *spi_port, uint cs_pin, int rst_pin, int dio1_pin, int busy_pin)
     : spi_(spi_port, cs_pin), rst_pin_(rst_pin), dio1_pin_(dio1_pin), busy_pin_(busy_pin),
       frequency_(SX1262_DEFAULT_FREQUENCY), tx_power_(SX1262_DEFAULT_TX_POWER),
@@ -41,15 +52,29 @@ bool SX1262::begin()
     logger_.debug("begin() - RST pin: %d, DIO1 pin: %d, BUSY pin: %d", rst_pin_, dio1_pin_,
                   busy_pin_);
 
-    // Hardware reset
-    if (rst_pin_ >= 0) {
-        reset();
-        sleep_ms(10);
-    }
+    // Hardware reset with retry — chip can get stuck if previous session ended mid-TX
+    bool chip_ready = false;
+    for (int reset_attempt = 0; reset_attempt < 3 && !chip_ready; reset_attempt++) {
+        if (reset_attempt > 0) {
+            logger_.warn("Reset retry %d/3", reset_attempt + 1);
+        }
+        if (rst_pin_ >= 0) {
+            // Aggressive reset: 5ms low pulse, 10ms recovery
+            gpio_put(rst_pin_, 0);
+            sleep_ms(5);
+            gpio_put(rst_pin_, 1);
+            sleep_ms(10);
+        }
 
-    // Wait for chip to be ready after reset
-    if (!waitBusy(100)) {
-        logger_.error("Chip not ready after reset (BUSY stuck high)");
+        if (waitBusy(100)) {
+            chip_ready = true;
+        } else {
+            logger_.error("Chip not ready after reset (BUSY stuck high), attempt %d/3",
+                          reset_attempt + 1);
+        }
+    }
+    if (!chip_ready) {
+        logger_.error("Chip unresponsive after 3 reset attempts");
         return false;
     }
 
@@ -60,18 +85,29 @@ bool SX1262::begin()
         return false;
     }
 
-    // 2. Configure DIO3 as TCXO control (3.3V, 5ms timeout)
-    //    Timeout = value * 15.625 us; 320 * 15.625 = 5ms
-    uint8_t tcxo_params[4] = {SX1262_TCXO_3_3V, 0x00, 0x01, 0x40};  // 3.3V, 320 = 0x000140
+    // 2. Configure DIO3 as TCXO control (3.3V, 10ms timeout)
+    //    Timeout = value * 15.625 us; 640 * 15.625 = 10ms
+    uint8_t tcxo_params[4] = {SX1262_TCXO_3_3V, 0x00, 0x02, 0x80};  // 3.3V, 640 = 0x000280
     if (!sendCommand(SX1262_CMD_SET_DIO3_AS_TCXO_CTRL, tcxo_params, 4)) {
         logger_.error("Failed to configure TCXO");
         return false;
     }
 
-    // 3. Calibrate all blocks (after TCXO is running)
+    // 3. Calibrate all blocks
+    //    TCXO starts automatically during calibration. With TCXO delay (10ms) +
+    //    calibration (~3.5ms * 7 blocks = ~25ms), total BUSY time can reach ~35ms.
+    //    Use 100ms timeout for margin.
     uint8_t calib_param = 0x7F;  // Calibrate all
-    if (!sendCommand(SX1262_CMD_CALIBRATE, &calib_param, 1)) {
-        logger_.error("Calibration failed");
+    if (!waitBusy()) {
+        logger_.error("BUSY before calibration");
+        return false;
+    }
+    {
+        uint8_t tx_buf[2] = {SX1262_CMD_CALIBRATE, calib_param};
+        spi_.transfer(tx_buf, nullptr, 2);
+    }
+    if (!waitBusy(100)) {  // 100ms timeout for TCXO startup + full calibration
+        logger_.error("Calibration failed (BUSY timeout)");
         return false;
     }
 
@@ -82,17 +118,57 @@ bool SX1262::begin()
         return false;
     }
 
-    // 5. Set packet type to LoRa
+    // 5. Configure DIO2 as RF switch control
+    //    The LoRa1262 module has an integrated antenna switch controlled by DIO2.
+    //    Without this, no RF signal reaches the antenna.
+    uint8_t rf_switch_enable = 0x01;
+    if (!sendCommand(SX1262_CMD_SET_DIO2_AS_RF_SWITCH_CTRL, &rf_switch_enable, 1)) {
+        logger_.error("Failed to configure DIO2 as RF switch");
+        return false;
+    }
+
+    // Force back to known state after DIO2 config — it can leave the chip in RX/FS mode
+    sleep_ms(5);
+    standby_mode = SX1262_STDBY_RC;
+    if (!sendCommand(SX1262_CMD_SET_STANDBY, &standby_mode, 1)) {
+        logger_.error("Failed to return to standby after DIO2 config");
+        return false;
+    }
+
+    // 6. Set packet type to LoRa
     uint8_t packet_type = SX1262_PACKET_TYPE_LORA;
     sendCommand(SX1262_CMD_SET_PACKET_TYPE, &packet_type, 1);
 
     // 6. Set RF frequency
     setFrequency(frequency_);
 
+    // 6b. Calibrate image rejection for 902-928 MHz ISM band
+    //     Must be done AFTER SetRfFrequency. The Calibrate(0x7F) above used the
+    //     default frequency which is wrong for 915 MHz.
+    {
+        uint8_t cal_freq[2] = {0xE1, 0xE9};  // 902 MHz, 928 MHz
+        sendCommand(SX1262_CMD_CALIBRATE_IMAGE, cal_freq, 2);
+    }
+
     // 7. Set PA config for SX1262 (optimized for +22 dBm max)
     uint8_t pa_config[4] = {0x04, 0x07, 0x00,
                             0x01};  // paDutyCycle=4, hpMax=7, deviceSel=0 (SX1262), paLut=1
     sendCommand(SX1262_CMD_SET_PA_CONFIG, pa_config, 4);
+
+    // 7b. Set OCP (Over-Current Protection) for high-power PA
+    //     Default after reset is 60 mA — far too low for +22 dBm PA config.
+    //     Set to 140 mA (0x38 * 2.5 mA) per Semtech reference design.
+    uint8_t ocp_before = readRegister(SX1262_REG_OCP);
+    writeRegister(SX1262_REG_OCP, 0x38);
+    uint8_t ocp_after = readRegister(SX1262_REG_OCP);
+    logger_.info("OCP: 0x%02X -> 0x%02X (expect 0x38)", ocp_before, ocp_after);
+
+    // 7c. TxClampConfig workaround (datasheet section 15.2 errata)
+    //     PA clamping threshold is "overly protective" by default, causing
+    //     5-6 dB less output power. Fix: set register 0x08D8 bits [4:1] = 1111.
+    uint8_t tx_clamp = readRegister(SX1262_REG_TX_CLAMP_CONFIG);
+    tx_clamp |= 0x1E;  // Set bits 4:1 to 1111
+    writeRegister(SX1262_REG_TX_CLAMP_CONFIG, tx_clamp);
 
     // 8. Set TX power and ramp time
     setTxPower(tx_power_);
@@ -103,25 +179,52 @@ bool SX1262::begin()
     // 10. Set packet parameters
     configurePacketParams(255);
 
-    // 11. Set sync word for private network (compatible with SX1276 sync word 0x12)
-    setSyncWord(0x1424);
-
-    // 12. Configure DIO1 IRQ mapping: TxDone + RxDone + CRC error + Timeout
+    // 11. Configure DIO1 IRQ mapping: TxDone + RxDone + CRC error + Timeout
     uint16_t irq_mask =
         SX1262_IRQ_TX_DONE | SX1262_IRQ_RX_DONE | SX1262_IRQ_CRC_ERR | SX1262_IRQ_TIMEOUT;
     setDioIrqParams(irq_mask, irq_mask);
 
-    // 13. Set buffer base addresses (TX at 0, RX at 128)
+    // 12. Set buffer base addresses (TX at 0, RX at 128)
     uint8_t buf_base[2] = {0x00, 0x80};
     sendCommand(SX1262_CMD_SET_BUFFER_BASE_ADDRESS, buf_base, 2);
 
-    // 14. Clear any stale IRQ flags
+    // 13. Clear any stale IRQ flags
     clearIrqStatus(SX1262_IRQ_ALL);
+
+    // 14. Set sync word LAST — other commands (especially setDioIrqParams) can
+    //     corrupt the sync word register. Verify and retry until correct.
+    for (int sw_attempt = 0; sw_attempt < 5; sw_attempt++) {
+        setSyncWord(0x1424);
+        uint8_t sw_msb = readRegister(SX1262_REG_SYNC_WORD_MSB);
+        uint8_t sw_lsb = readRegister(SX1262_REG_SYNC_WORD_LSB);
+        if (sw_msb == 0x14 && sw_lsb == 0x24) {
+            logger_.info("Sync word: 0x1424 (ok%s)", sw_attempt > 0 ? ", after retry" : "");
+            break;
+        }
+        logger_.warn("Sync word mismatch: 0x%02X%02X (expected 0x1424), retry %d/5",
+                     sw_msb, sw_lsb, sw_attempt + 1);
+        sleep_us(200);
+        if (sw_attempt == 4) {
+            logger_.error("Sync word could not be set correctly after 5 attempts!");
+        }
+    }
 
     // Verify chip is responding by reading status
     if (!isConnected()) {
         logger_.error("Chip not responding after initialization");
         return false;
+    }
+
+    // Check and clear any device errors from calibration
+    {
+        uint8_t dev_errors[2] = {0};
+        readCommand(SX1262_CMD_GET_DEVICE_ERRORS, nullptr, 0, dev_errors, 2);
+        uint16_t errors = ((uint16_t)dev_errors[0] << 8) | dev_errors[1];
+        if (errors) {
+            logger_.warn("Device errors after init: 0x%04X (clearing)", errors);
+            uint8_t clear[2] = {0x00, 0x00};
+            sendCommand(SX1262_CMD_CLEAR_DEVICE_ERRORS, clear, 2);
+        }
     }
 
     logger_.info("Initialized successfully");
@@ -146,9 +249,9 @@ void SX1262::reset()
 {
     if (rst_pin_ >= 0) {
         gpio_put(rst_pin_, 0);
-        sleep_ms(1);
+        sleep_ms(5);   // Datasheet min 100µs, use 5ms for margin
         gpio_put(rst_pin_, 1);
-        sleep_ms(SX1262_RESET_DELAY_MS);
+        sleep_ms(10);  // Wait for startup (BUSY goes low when ready)
     }
 }
 
@@ -231,27 +334,107 @@ bool SX1262::send(const uint8_t *data, size_t length)
     // Clear TX complete flag
     tx_complete_ = false;
 
-    // Switch to standby
-    uint8_t standby_mode = SX1262_STDBY_RC;
-    sendCommand(SX1262_CMD_SET_STANDBY, &standby_mode, 1);
+    logger_.info("TX start: SF=%d, BW=%lu, %zu bytes", spreading_factor_, bandwidth_, length);
 
-    // Clear IRQ flags
+    // Switch to STDBY_XOSC so TCXO starts now (datasheet section 13.3.6).
+    // Going directly to TX from STDBY_RC would hold BUSY for the full TCXO delay.
+    uint8_t standby_mode = SX1262_STDBY_XOSC;
+    if (!sendCommand(SX1262_CMD_SET_STANDBY, &standby_mode, 1)) {
+        logger_.error("TX: Failed to enter standby — performing full recovery");
+        reset();
+        begin();
+        startReceive();
+        return false;
+    }
+
+    // Clear IRQ flags and verify they're cleared
     clearIrqStatus(SX1262_IRQ_ALL);
+    uint16_t irq_after_clear = getIrqStatus();
+    if (irq_after_clear & SX1262_IRQ_TX_DONE) {
+        logger_.warn("TX: Stale TX_DONE after clear (irq=0x%04X), retrying clear", irq_after_clear);
+        clearIrqStatus(SX1262_IRQ_ALL);
+    }
+
+    // Re-apply packet type + modulation params from STDBY
+    // (datasheet: SetPacketType must precede SetModulationParams)
+    uint8_t packet_type = SX1262_PACKET_TYPE_LORA;
+    sendCommand(SX1262_CMD_SET_PACKET_TYPE, &packet_type, 1);
+    configureModulation();
+
+    // Re-apply sync word (can be corrupted by state transitions)
+    setSyncWord(0x1424);
+
+    // Re-apply PA config — SPI corruption can reset PA registers, causing
+    // the chip to get stuck in FS mode (mode=4) instead of ramping to TX.
+    // Must be done in STDBY before SetTx.
+    uint8_t pa_config[4] = {0x04, 0x07, 0x00, 0x01};  // paDutyCycle=4, hpMax=7, SX1262, paLut=1
+    sendCommand(SX1262_CMD_SET_PA_CONFIG, pa_config, 4);
+    writeRegister(SX1262_REG_OCP, 0x38);  // 140mA OCP (default 60mA too low for +22dBm)
+
+    // TxClampConfig errata fix (datasheet section 15.2)
+    uint8_t tx_clamp = readRegister(SX1262_REG_TX_CLAMP_CONFIG);
+    tx_clamp |= 0x1E;  // Set bits [4:1] = 1111
+    writeRegister(SX1262_REG_TX_CLAMP_CONFIG, tx_clamp);
+
+    // Re-apply TX power (depends on PA config being set first)
+    setTxPower(tx_power_);
 
     // Set payload length in packet params
     configurePacketParams(length);
 
     // Write payload to TX buffer (offset 0)
     if (!writeBuffer(0x00, data, length)) {
-        logger_.error("Failed to write TX buffer (BUSY timeout)");
+        logger_.error("TX: Failed to write buffer (BUSY timeout) — performing full recovery");
+        reset();
+        begin();
+        startReceive();
         return false;
     }
 
-    // Set TX mode (timeout 0 = no timeout, TX until done)
-    uint8_t tx_params[3] = {0x00, 0x00, 0x00};  // Timeout = 0 (wait for TxDone)
-    sendCommand(SX1262_CMD_SET_TX, tx_params, 3);
+    // Re-apply DIO1 IRQ mapping — mode transitions can corrupt it
+    {
+        uint16_t irq_mask =
+            SX1262_IRQ_TX_DONE | SX1262_IRQ_RX_DONE | SX1262_IRQ_CRC_ERR | SX1262_IRQ_TIMEOUT;
+        setDioIrqParams(irq_mask, irq_mask);
+    }
 
-    logger_.debug("Started transmission (%zu bytes)", length);
+    // Start TX (timeout 0 = no timeout, TX until done)
+    uint8_t tx_params[3] = {0x00, 0x00, 0x00};
+    if (!sendCommand(SX1262_CMD_SET_TX, tx_params, 3)) {
+        logger_.error("TX: SetTx BUSY timeout — performing full recovery");
+        reset();
+        begin();
+        startReceive();
+        return false;
+    }
+
+    // Verify chip entered TX mode (chip_mode: 2=STDBY_RC, 3=STDBY_XOSC, 4=FS, 5=RX, 6=TX)
+    {
+        uint8_t st = 0;
+        readCommand(SX1262_CMD_GET_STATUS, nullptr, 0, &st, 1);
+        uint8_t chip_mode = (st >> 4) & 0x07;
+
+        if (chip_mode == 0x04) {
+            // Stuck in FS — PA failed to ramp. Full recovery needed.
+            uint8_t dev_errors[2] = {0};
+            readCommand(SX1262_CMD_GET_DEVICE_ERRORS, nullptr, 0, dev_errors, 2);
+            uint16_t errors = ((uint16_t)dev_errors[0] << 8) | dev_errors[1];
+            logger_.error("TX: stuck in FS mode (errors=0x%04X) — performing full recovery", errors);
+            reset();
+            begin();
+            startReceive();
+            return false;
+        } else if (chip_mode != 0x06) {
+            // Not in TX and not FS — could be STDBY (TX completed instantly?) or unknown
+            uint16_t irq = getIrqStatus();
+            if (irq & SX1262_IRQ_TX_DONE) {
+                logger_.info("TX: completed immediately (mode=%d, irq=0x%04X)", chip_mode, irq);
+            } else {
+                logger_.error("TX: unexpected mode=%d after SetTx (irq=0x%04X)", chip_mode, irq);
+            }
+        }
+    }
+
     return true;
 }
 
@@ -280,7 +463,27 @@ bool SX1262::isTxDone()
         // Fallback: poll IRQ register
         uint16_t irq = getIrqStatus();
         if (irq & SX1262_IRQ_TX_DONE) {
-            logger_.warn("TX done in register but interrupt missed!");
+            uint8_t status = 0;
+            readCommand(SX1262_CMD_GET_STATUS, nullptr, 0, &status, 1);
+            uint8_t chip_mode = (status >> 4) & 0x07;
+            if (chip_mode == 0x06) {
+                // Still in TX — TX_DONE is spurious (SPI read corruption)
+                return false;
+            }
+            if (chip_mode == 0x04) {
+                // Stuck in FS — PA never ramped, packet never sent.
+                // Recover and report TX "done" so caller moves to ACK-wait
+                // (which will timeout and retry with a healthy chip).
+                logger_.error("TX_DONE with chip stuck in FS (mode=4) — packet not sent, recovering");
+                clearIrqStatus(SX1262_IRQ_TX_DONE);
+                reset();
+                begin();
+                startReceive();  // Back to RX so we can receive ACKs/packets
+                tx_complete_ = true;
+                return true;
+            }
+            logger_.info("TX done (polled, DIO1=%s, chip_mode=%d, isr_count=%lu)",
+                         gpio_get(dio1_pin_) ? "HIGH" : "LOW", chip_mode, isr_call_count_);
             clearIrqStatus(SX1262_IRQ_TX_DONE);
             tx_complete_ = true;
             return true;
@@ -290,6 +493,19 @@ bool SX1262::isTxDone()
         // Polling mode
         uint16_t irq = getIrqStatus();
         if (irq & SX1262_IRQ_TX_DONE) {
+            uint8_t status = 0;
+            readCommand(SX1262_CMD_GET_STATUS, nullptr, 0, &status, 1);
+            uint8_t chip_mode = (status >> 4) & 0x07;
+            if (chip_mode == 0x06) {
+                return false;  // Spurious — still transmitting
+            }
+            if (chip_mode == 0x04) {
+                clearIrqStatus(SX1262_IRQ_TX_DONE);
+                reset();
+                begin();
+                startReceive();
+                return true;
+            }
             clearIrqStatus(SX1262_IRQ_TX_DONE);
             return true;
         }
@@ -359,8 +575,18 @@ bool SX1262::available()
 
 void SX1262::startReceive()
 {
+    // Switch to STDBY_XOSC so TCXO starts now (datasheet section 13.3.6).
+    // SetRx from STDBY_RC would hold BUSY for the full TCXO delay.
+    uint8_t standby_mode = SX1262_STDBY_XOSC;
+    sendCommand(SX1262_CMD_SET_STANDBY, &standby_mode, 1);
+
     // Clear IRQ flags
     clearIrqStatus(SX1262_IRQ_ALL);
+
+    // Re-apply DIO1 IRQ mapping — mode transitions can corrupt it
+    uint16_t irq_mask =
+        SX1262_IRQ_TX_DONE | SX1262_IRQ_RX_DONE | SX1262_IRQ_CRC_ERR | SX1262_IRQ_TIMEOUT;
+    setDioIrqParams(irq_mask, irq_mask);
 
     // Set RX mode with continuous receive (timeout = 0xFFFFFF)
     uint8_t rx_params[3] = {0xFF, 0xFF, 0xFF};
@@ -412,18 +638,41 @@ bool SX1262::enableInterruptMode(gpio_irq_callback_t callback)
         SX1262_IRQ_TX_DONE | SX1262_IRQ_RX_DONE | SX1262_IRQ_CRC_ERR | SX1262_IRQ_TIMEOUT;
     setDioIrqParams(irq_mask, irq_mask);
 
-    // Register interrupt handler
-    GpioInterruptManager::getInstance().registerHandler(
-        dio1_pin_, GPIO_IRQ_EDGE_RISE, [this](uint gpio, uint32_t events) {
-            if (gpio == (uint)dio1_pin_ && (events & GPIO_IRQ_EDGE_RISE)) {
-                setInterruptPending();
-            }
-        });
+    // Verify DIO IRQ params were accepted by reading back chip status
+    uint8_t status = 0;
+    readCommand(SX1262_CMD_GET_STATUS, nullptr, 0, &status, 1);
+    uint8_t chip_mode = (status >> 4) & 0x07;
+    uint8_t cmd_status = (status >> 1) & 0x07;
+    logger_.info("enableInterruptMode: chip_mode=%d, cmd_status=%d (2=ok, 3/4/5=err)",
+                 chip_mode, cmd_status);
+
+    // Verify by reading GetIrqStatus — if mask was set, pending IRQs would show
+    uint16_t irq_check = getIrqStatus();
+    logger_.info("IRQ status after DIO config: 0x%04X (should be 0x0000 if cleared)", irq_check);
+
+    // Register interrupt handler — use direct static ISR (bypasses GpioInterruptManager
+    // to eliminate std::function overhead in ISR context as potential issue)
+    isr_instance_ = this;
+    isr_call_count_ = 0;
+    gpio_set_irq_enabled_with_callback(dio1_pin_, GPIO_IRQ_EDGE_RISE, true, &SX1262::dio1Isr);
 
     interrupt_enabled_ = true;
     interrupt_pending_ = false;
     message_ready_ = false;
     tx_complete_ = false;
+
+    // Diagnostic: check DIO1 physical state after setup
+    bool dio1_state = gpio_get(dio1_pin_);
+    logger_.info("DIO1 (GPIO %d) state after IRQ setup: %s", dio1_pin_,
+                 dio1_state ? "HIGH" : "LOW");
+
+    if (dio1_state) {
+        logger_.warn("DIO1 already HIGH - clearing stale IRQ flags");
+        clearIrqStatus(SX1262_IRQ_ALL);
+        sleep_us(100);
+        dio1_state = gpio_get(dio1_pin_);
+        logger_.debug("DIO1 after clear: %s", dio1_state ? "HIGH (stuck!)" : "LOW (ok)");
+    }
 
     logger_.debug("Interrupt mode enabled on DIO1 (GPIO %d)", dio1_pin_);
     return true;
@@ -432,7 +681,8 @@ bool SX1262::enableInterruptMode(gpio_irq_callback_t callback)
 void SX1262::disableInterruptMode()
 {
     if (dio1_pin_ >= 0 && interrupt_enabled_) {
-        GpioInterruptManager::getInstance().unregisterHandler(dio1_pin_);
+        gpio_set_irq_enabled(dio1_pin_, GPIO_IRQ_EDGE_RISE, false);
+        isr_instance_ = nullptr;
         interrupt_enabled_ = false;
         logger_.info("Interrupt mode disabled");
     }
@@ -449,8 +699,14 @@ uint8_t SX1262::handleInterrupt()
     uint16_t irq_flags = getIrqStatus();
     logger_.debug("Interrupt fired, flags=0x%04X", irq_flags);
 
-    // Clear all active flags
+    // Clear all active flags then re-apply DIO1 mapping — SX1262 DIO config
+    // can get corrupted by mode transitions and repeated IRQ clear cycles
     clearIrqStatus(irq_flags);
+    {
+        uint16_t irq_mask =
+            SX1262_IRQ_TX_DONE | SX1262_IRQ_RX_DONE | SX1262_IRQ_CRC_ERR | SX1262_IRQ_TIMEOUT;
+        setDioIrqParams(irq_mask, irq_mask);
+    }
 
     if (irq_flags & SX1262_IRQ_RX_DONE) {
         if (irq_flags & SX1262_IRQ_CRC_ERR) {
@@ -495,7 +751,9 @@ bool SX1262::checkForMissedRxInterrupt()
 
     uint16_t irq = getIrqStatus();
     if (irq & SX1262_IRQ_RX_DONE) {
-        logger_.warn("RX done flag set but interrupt was missed!");
+        bool dio1_state = gpio_get(dio1_pin_);
+        logger_.warn("RX done flag set but interrupt was missed! (DIO1=%s, isr_count=%lu)",
+                     dio1_state ? "HIGH" : "LOW", isr_call_count_);
         interrupt_pending_ = true;
         handleInterrupt();
         return true;
@@ -538,8 +796,15 @@ bool SX1262::sendCommand(uint8_t opcode, const uint8_t *params, size_t param_cou
         return false;
     }
 
+    // Largest SPI command is 9 bytes (opcode + 8 params for setDioIrqParams)
+    static constexpr size_t MAX_PARAM_COUNT = 15;
+    if (param_count > MAX_PARAM_COUNT) {
+        logger_.error("sendCommand: param_count %u exceeds max %u", param_count, MAX_PARAM_COUNT);
+        return false;
+    }
+
     // Build TX buffer: opcode + params
-    uint8_t tx_buf[16];
+    uint8_t tx_buf[1 + MAX_PARAM_COUNT];
     tx_buf[0] = opcode;
     if (params && param_count > 0) {
         memcpy(&tx_buf[1], params, param_count);
@@ -698,7 +963,11 @@ void SX1262::configureModulation()
     uint8_t params[4] = {(uint8_t)spreading_factor_, bw_code,
                          (uint8_t)(coding_rate_ - 4),  // CR 4/5 -> 0x01, 4/8 -> 0x04
                          ldro};
-    sendCommand(SX1262_CMD_SET_MODULATION_PARAMS, params, 4);
+    bool ok = sendCommand(SX1262_CMD_SET_MODULATION_PARAMS, params, 4);
+    if (!ok) {
+        logger_.error("SetModulationParams FAILED: SF=%d BW=%lu CR=4/%d",
+                      spreading_factor_, bandwidth_, coding_rate_);
+    }
 }
 
 void SX1262::configurePacketParams(uint8_t payload_length)
