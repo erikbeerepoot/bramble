@@ -141,6 +141,7 @@ uint8_t ReliableMessenger::sendRegistrationRequest(uint16_t dst_addr, uint64_t d
                                                    uint8_t node_type, uint8_t capabilities,
                                                    uint32_t firmware_ver, const char *device_name)
 {
+    device_id_ = device_id;
     uint8_t seq_num = getNextSequenceNumber();
 
     char id_hex[17];
@@ -521,6 +522,14 @@ bool ReliableMessenger::processIncomingMessage(const uint8_t *buffer, size_t len
             logger_.info("Received registration response: device_id=0x%s, "
                          "assigned_addr=0x%04X, status=%d",
                          resp_hex, reg_response->assigned_addr, reg_response->status);
+
+            if (device_id_ != 0 && reg_response->device_id != device_id_) {
+                char expected_hex[17];
+                bramble::format::uint64_to_hex(device_id_, expected_hex, sizeof(expected_hex));
+                logger_.warn("REG_RESPONSE device_id mismatch: expected=0x%s, got=0x%s — ignoring",
+                                expected_hex, resp_hex);
+                return false;
+            }
 
             if (reg_response->status == REG_SUCCESS) {
                 logger_.info("Registration successful! Assigned address: 0x%04X",
