@@ -175,13 +175,6 @@ public:
     int getDio1Pin() const { return dio1_pin_; }
     void setInterruptPending() { interrupt_pending_ = true; }
 
-    // Diagnostic: ISR call counter (incremented in raw ISR, checked in polling)
-    volatile uint32_t isr_call_count_ = 0;
-
-    // Static ISR for direct GPIO callback (bypasses GpioInterruptManager)
-    static void dio1Isr(uint gpio, uint32_t events);
-    static SX1262 *isr_instance_;
-
 private:
     SPIDevice spi_;
     int rst_pin_;
@@ -288,6 +281,23 @@ private:
      * @param dio1_mask IRQ sources to route to DIO1
      */
     void setDioIrqParams(uint16_t irq_mask, uint16_t dio1_mask);
+
+    /**
+     * @brief Check IRQ register for TX_DONE, validate chip mode, and handle recovery
+     *
+     * Shared logic between interrupt and polling branches of isTxDone().
+     * @return 1 = TX done, 0 = not done yet, -1 = recovered from stuck FS
+     */
+    int checkAndHandleTxDone();
+
+    /**
+     * @brief Perform full chip recovery (reset, reinitialize, resume receive)
+     *
+     * Used when the chip enters an unrecoverable state (stuck in FS mode,
+     * BUSY timeout, etc). Resets the chip, runs full initialization, and
+     * restarts continuous receive.
+     */
+    void performFullRecovery();
 
     /**
      * @brief Configure modulation parameters
