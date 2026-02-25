@@ -35,6 +35,9 @@
 #define SX1262_CMD_SET_DIO2_AS_RF_SWITCH_CTRL 0x9D
 #define SX1262_CMD_WRITE_REGISTER 0x0D
 #define SX1262_CMD_READ_REGISTER 0x1D
+#define SX1262_CMD_CALIBRATE_IMAGE 0x98
+#define SX1262_CMD_GET_DEVICE_ERRORS 0x17
+#define SX1262_CMD_CLEAR_DEVICE_ERRORS 0x07
 
 // Standby modes
 #define SX1262_STDBY_RC 0x00
@@ -53,8 +56,8 @@
 #define SX1262_IRQ_PREAMBLE_DETECTED (1 << 2)
 #define SX1262_IRQ_SYNC_WORD_VALID (1 << 3)
 #define SX1262_IRQ_HEADER_VALID (1 << 4)
-#define SX1262_IRQ_CRC_ERR (1 << 5)
-#define SX1262_IRQ_HEADER_ERR (1 << 6)
+#define SX1262_IRQ_HEADER_ERR (1 << 5)
+#define SX1262_IRQ_CRC_ERR (1 << 6)
 #define SX1262_IRQ_CAD_DONE (1 << 7)
 #define SX1262_IRQ_CAD_ACTIVITY_DETECTED (1 << 8)
 #define SX1262_IRQ_TIMEOUT (1 << 9)
@@ -95,6 +98,7 @@
 // Register addresses (for direct register access)
 #define SX1262_REG_RX_GAIN 0x08AC
 #define SX1262_REG_OCP 0x08E7
+#define SX1262_REG_TX_CLAMP_CONFIG 0x08D8
 #define SX1262_REG_SYNC_WORD_MSB 0x0740
 #define SX1262_REG_SYNC_WORD_LSB 0x0741
 
@@ -108,7 +112,7 @@
 #define SX1262_DEFAULT_CRC true             // CRC enabled
 
 // Timing constants
-#define SX1262_BUSY_TIMEOUT_MS 10  // Max wait for BUSY to go low
+#define SX1262_BUSY_TIMEOUT_MS 20  // Max wait for BUSY to go low (must exceed TCXO delay)
 #define SX1262_RESET_DELAY_MS 5    // Delay after reset pulse
 
 /**
@@ -170,6 +174,13 @@ public:
     // SX1262-specific (not in RadioInterface)
     int getDio1Pin() const { return dio1_pin_; }
     void setInterruptPending() { interrupt_pending_ = true; }
+
+    // Diagnostic: ISR call counter (incremented in raw ISR, checked in polling)
+    volatile uint32_t isr_call_count_ = 0;
+
+    // Static ISR for direct GPIO callback (bypasses GpioInterruptManager)
+    static void dio1Isr(uint gpio, uint32_t events);
+    static SX1262 *isr_instance_;
 
 private:
     SPIDevice spi_;
