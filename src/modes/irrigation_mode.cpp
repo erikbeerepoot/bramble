@@ -94,7 +94,7 @@ void IrrigationMode::onStart()
                     switchToOperationalPattern();
                     work_tracker_.completeWork(WorkType::RtcSync);
                 } else {
-                    logger.error("Failed to set RTC from PMU time");
+                    logger.error("Failed to set RTC from PMU time - falling back to hub sync");
                 }
             } else {
                 pmu_logger.info("PMU time not valid (first boot?) - waiting for hub sync");

@@ -12,7 +12,6 @@
 #include "lora/address_manager.h"
 #include "lora/hub_router.h"
 #include "lora/network_stats.h"
-#include "lora/sx1276.h"
 #include "storage/sensor_data_record.h"
 #include "util/format.h"
 
