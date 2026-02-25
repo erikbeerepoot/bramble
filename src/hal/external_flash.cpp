@@ -5,6 +5,7 @@
 #include "pico/stdlib.h"
 
 #include "hardware/gpio.h"
+#include "hardware/spi.h"
 
 ExternalFlash::ExternalFlash(spi_inst_t *spi, const ExternalFlashPins &pins)
     : spi_(spi), pins_(pins), initialized_(false), logger_("EXTFLASH")
@@ -102,8 +103,16 @@ void ExternalFlash::hardwareReset()
     sleep_ms(10);  // Device recovery time (tPUW)
 }
 
+void ExternalFlash::drainSpiFifo()
+{
+    while (spi_is_readable(spi_)) {
+        (void)spi_get_hw(spi_)->dr;
+    }
+}
+
 void ExternalFlash::csSelect()
 {
+    drainSpiFifo();
     gpio_put(pins_.cs, 0);
     // Small delay for CS setup time
     __asm volatile("nop\nnop\nnop\nnop");
@@ -186,28 +195,46 @@ ExternalFlashResult ExternalFlash::waitReady(uint32_t timeout_ms)
 
 ExternalFlashResult ExternalFlash::writeEnable()
 {
-    csSelect();
-    spiWriteByte(MT25QLCommands::WRITE_ENABLE);
-    csDeselect();
+    constexpr int MAX_ATTEMPTS = 3;
 
-    // Verify write enable latch is set
-    uint8_t status = readStatus();
-    if (!(status & MT25QLStatus::WRITE_ENABLED)) {
-        logger_.error("Write enable failed (status=0x%02X)", status);
-        if (status == 0xFF || status == 0x00) {
-            logger_.error("  -> Flash not responding (SPI bus issue or not powered)");
-        } else if (status & 0x01) {
-            logger_.error("  -> Flash busy with previous operation, WREN ignored");
-        } else if (status & 0x3C) {
-            logger_.error("  -> Block protection enabled (BP=0x%02X), regions may be locked",
-                          (status >> 2) & 0x0F);
-        } else {
-            logger_.error("  -> WREN command not received (possible SPI bus contention)");
+    for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+        if (attempt > 0) {
+            sleep_us(100 * attempt);  // Escalating delay between retries
         }
-        return ExternalFlashResult::ErrorHardware;
+
+        drainSpiFifo();
+
+        csSelect();
+        spiWriteByte(MT25QLCommands::WRITE_ENABLE);
+        csDeselect();
+
+        sleep_us(1);  // Allow SPI bus to settle (shared bus with SX1262)
+
+        uint8_t status = readStatus();
+        if (status & MT25QLStatus::WRITE_ENABLED) {
+            if (attempt > 0) {
+                logger_.debug("Write enable succeeded on attempt %d", attempt + 1);
+            }
+            return ExternalFlashResult::Success;
+        }
+
+        if (attempt == 0) {
+            logger_.error("Write enable failed (status=0x%02X)", status);
+            if (status == 0xFF || status == 0x00) {
+                logger_.error("  -> Flash not responding (SPI bus issue or not powered)");
+            } else if (status & 0x01) {
+                logger_.error("  -> Flash busy with previous operation, WREN ignored");
+            } else if (status & 0x3C) {
+                logger_.error("  -> Block protection enabled (BP=0x%02X), regions may be locked",
+                              (status >> 2) & 0x0F);
+            } else {
+                logger_.error("  -> WREN command not received (possible SPI bus contention)");
+            }
+        }
     }
 
-    return ExternalFlashResult::Success;
+    logger_.error("Write enable failed after %d attempts", MAX_ATTEMPTS);
+    return ExternalFlashResult::ErrorHardware;
 }
 
 ExternalFlashResult ExternalFlash::read(uint32_t address, uint8_t *buffer, size_t length)

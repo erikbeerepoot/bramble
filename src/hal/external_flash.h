@@ -203,6 +203,9 @@ private:
     // Write a single page (max 256 bytes)
     ExternalFlashResult writePage(uint32_t address, const uint8_t *data, size_t length);
 
+    // Drain any stale data from SPI RX FIFO (shared bus contention mitigation)
+    void drainSpiFifo();
+
     // Initialize GPIO pins (CS and RESET only)
     bool initGpio();
 
