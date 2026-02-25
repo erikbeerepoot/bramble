@@ -263,25 +263,20 @@ void SystemClock_Config(void)
      * in the RCC_OscInitTypeDef structure.
      * Try LSE (external 32.768 kHz crystal) first, fall back to LSI if it fails.
      */
+    // Use LSI directly — LSE crystal is not populated on current hardware
+    usingLSIFallback = true;
     RCC_OscInitStruct.OscillatorType =
-        RCC_OSCILLATORTYPE_HSI | RCC_OSCILLATORTYPE_LSE | RCC_OSCILLATORTYPE_MSI;
+        RCC_OSCILLATORTYPE_HSI | RCC_OSCILLATORTYPE_LSI | RCC_OSCILLATORTYPE_MSI;
     RCC_OscInitStruct.HSIState = RCC_HSI_ON;  // Enable HSI for LPUART in STOP mode
     RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
-    RCC_OscInitStruct.LSEState = RCC_LSE_ON;  // External 32.768 kHz crystal for RTC accuracy
+    RCC_OscInitStruct.LSEState = RCC_LSE_OFF;
+    RCC_OscInitStruct.LSIState = RCC_LSI_ON;
     RCC_OscInitStruct.MSIState = RCC_MSI_ON;
     RCC_OscInitStruct.MSICalibrationValue = 0;
     RCC_OscInitStruct.MSIClockRange = RCC_MSIRANGE_5;
     RCC_OscInitStruct.PLL.PLLState = RCC_PLL_NONE;
     if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK) {
-        // LSE crystal failed to start — fall back to LSI internal oscillator
-        usingLSIFallback = true;
-        RCC_OscInitStruct.OscillatorType =
-            RCC_OSCILLATORTYPE_HSI | RCC_OSCILLATORTYPE_LSI | RCC_OSCILLATORTYPE_MSI;
-        RCC_OscInitStruct.LSEState = RCC_LSE_OFF;
-        RCC_OscInitStruct.LSIState = RCC_LSI_ON;
-        if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK) {
-            Error_Handler();
-        }
+        Error_Handler();
     }
 
     // Explicitly disable HSI divider to ensure 16 MHz clock for LPUART
@@ -819,11 +814,11 @@ static void onStateChange(PmuState newState)
     // Send wake notification when entering WAKE_ACTIVE
     // This centralizes the notification logic - no need to call it explicitly
     if (newState == PmuState::WAKE_ACTIVE) {
-        // For POST_BOOT -> WAKE_ACTIVE (CTS received during boot grace period)
-        // or BOOTING -> WAKE_ACTIVE (early CTS during boot animation),
-        // we need to determine wake type and send notification
-        // For AWAITING_CTS -> WAKE_ACTIVE, wake type is already set
-        determineWakeType();
+        // Only determine wake type if not already set (i.e., fast path from
+        // POST_BOOT/BOOTING -> WAKE_ACTIVE that skipped AWAITING_CTS)
+        if (pmuState.wakeType() == WakeType::NONE) {
+            determineWakeType();
+        }
         sendWakeNotification();
     }
 }
