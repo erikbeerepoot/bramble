@@ -136,8 +136,7 @@ bool SensorFlashBuffer::writeRecord(const SensorDataRecord &record)
         // Scan up to 4 sectors ahead — stale gaps can span multiple sectors
         // when PMU state is lost and write_index falls behind
         constexpr uint32_t MAX_SCAN = RECORDS_PER_SECTOR * 4;
-        while (!isLocationErased(address, sizeof(SensorDataRecord)) &&
-               scanned < MAX_SCAN) {
+        while (!isLocationErased(address, sizeof(SensorDataRecord)) && scanned < MAX_SCAN) {
             metadata_.write_index = (metadata_.write_index + 1) % MAX_RECORDS;
             address = getRecordAddress(metadata_.write_index);
             scanned++;
@@ -654,8 +653,7 @@ void SensorFlashBuffer::recoverReadIndex()
         // Step backward one position
         uint32_t prev = (candidate == 0) ? MAX_RECORDS - 1 : candidate - 1;
 
-        uint32_t address =
-            getRecordAddress(prev) + offsetof(SensorDataRecord, transmission_status);
+        uint32_t address = getRecordAddress(prev) + offsetof(SensorDataRecord, transmission_status);
         uint8_t status = RECORD_NOT_TRANSMITTED;
 
         ExternalFlashResult result = flash_.read(address, &status, sizeof(status));
@@ -700,7 +698,8 @@ bool SensorFlashBuffer::isFull() const
 bool SensorFlashBuffer::detectBufferWrapAround()
 {
     bool first_erased = isLocationErased(getRecordAddress(0), sizeof(SensorDataRecord));
-    bool last_erased = isLocationErased(getRecordAddress(MAX_RECORDS - 1), sizeof(SensorDataRecord));
+    bool last_erased =
+        isLocationErased(getRecordAddress(MAX_RECORDS - 1), sizeof(SensorDataRecord));
     return !first_erased && !last_erased;
 }
 

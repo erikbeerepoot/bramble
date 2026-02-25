@@ -207,8 +207,8 @@ bool SX1262::begin()
             logger_.info("Sync word: 0x1424 (ok%s)", sw_attempt > 0 ? ", after retry" : "");
             break;
         }
-        logger_.warn("Sync word mismatch: 0x%02X%02X (expected 0x1424), retry %d/5",
-                     sw_msb, sw_lsb, sw_attempt + 1);
+        logger_.warn("Sync word mismatch: 0x%02X%02X (expected 0x1424), retry %d/5", sw_msb, sw_lsb,
+                     sw_attempt + 1);
         sleep_us(200);
         if (sw_attempt == 4) {
             logger_.error("Sync word could not be set correctly after 5 attempts!");
@@ -255,7 +255,7 @@ void SX1262::reset()
 {
     if (rst_pin_ >= 0) {
         gpio_put(rst_pin_, 0);
-        sleep_ms(5);   // Datasheet min 100µs, use 5ms for margin
+        sleep_ms(5);  // Datasheet min 100µs, use 5ms for margin
         gpio_put(rst_pin_, 1);
         sleep_ms(10);  // Wait for startup (BUSY goes low when ready)
     }
@@ -425,7 +425,8 @@ bool SX1262::send(const uint8_t *data, size_t length)
             uint8_t dev_errors[2] = {0};
             readCommand(SX1262_CMD_GET_DEVICE_ERRORS, nullptr, 0, dev_errors, 2);
             uint16_t errors = ((uint16_t)dev_errors[0] << 8) | dev_errors[1];
-            logger_.error("TX: stuck in FS mode (errors=0x%04X) — performing full recovery", errors);
+            logger_.error("TX: stuck in FS mode (errors=0x%04X) — performing full recovery",
+                          errors);
             reset();
             begin();
             startReceive();
@@ -480,7 +481,8 @@ bool SX1262::isTxDone()
                 // Stuck in FS — PA never ramped, packet never sent.
                 // Recover and report TX "done" so caller moves to ACK-wait
                 // (which will timeout and retry with a healthy chip).
-                logger_.error("TX_DONE with chip stuck in FS (mode=4) — packet not sent, recovering");
+                logger_.error(
+                    "TX_DONE with chip stuck in FS (mode=4) — packet not sent, recovering");
                 clearIrqStatus(SX1262_IRQ_TX_DONE);
                 reset();
                 begin();
@@ -652,8 +654,8 @@ bool SX1262::enableInterruptMode(gpio_irq_callback_t callback)
     readCommand(SX1262_CMD_GET_STATUS, nullptr, 0, &status, 1);
     uint8_t chip_mode = (status >> 4) & 0x07;
     uint8_t cmd_status = (status >> 1) & 0x07;
-    logger_.info("enableInterruptMode: chip_mode=%d, cmd_status=%d (2=ok, 3/4/5=err)",
-                 chip_mode, cmd_status);
+    logger_.info("enableInterruptMode: chip_mode=%d, cmd_status=%d (2=ok, 3/4/5=err)", chip_mode,
+                 cmd_status);
 
     // Verify by reading GetIrqStatus — if mask was set, pending IRQs would show
     uint16_t irq_check = getIrqStatus();
@@ -974,8 +976,8 @@ void SX1262::configureModulation()
                          ldro};
     bool ok = sendCommand(SX1262_CMD_SET_MODULATION_PARAMS, params, 4);
     if (!ok) {
-        logger_.error("SetModulationParams FAILED: SF=%d BW=%lu CR=4/%d",
-                      spreading_factor_, bandwidth_, coding_rate_);
+        logger_.error("SetModulationParams FAILED: SF=%d BW=%lu CR=4/%d", spreading_factor_,
+                      bandwidth_, coding_rate_);
     }
 }
 

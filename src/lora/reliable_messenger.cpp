@@ -527,7 +527,7 @@ bool ReliableMessenger::processIncomingMessage(const uint8_t *buffer, size_t len
                 char expected_hex[17];
                 bramble::format::uint64_to_hex(device_id_, expected_hex, sizeof(expected_hex));
                 logger_.warn("REG_RESPONSE device_id mismatch: expected=0x%s, got=0x%s — ignoring",
-                                expected_hex, resp_hex);
+                             expected_hex, resp_hex);
                 return false;
             }
 
