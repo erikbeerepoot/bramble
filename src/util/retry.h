@@ -1,7 +1,8 @@
 #pragma once
 
-#include "../hal/logger.h"
 #include "pico/stdlib.h"
+
+#include "../hal/logger.h"
 
 /**
  * @brief Retry an action up to maxAttempts times with a fixed delay between attempts.
