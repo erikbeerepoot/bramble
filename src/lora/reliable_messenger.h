@@ -353,6 +353,7 @@ private:
     UpdateCallback update_callback_;
     HeartbeatResponseCallback heartbeat_response_callback_;
     RegistrationSuccessCallback registration_success_callback_;
+    uint64_t device_id_ = 0;
 
     // Deduplication: ring buffer of recently seen messages
     SeenMessage seen_messages_[SEEN_MESSAGE_BUFFER_SIZE] = {};
