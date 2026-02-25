@@ -3,6 +3,7 @@
 #include <cstring>
 
 #include "../config/config_base.h"
+#include "../util/retry.h"
 
 // CRC16-CCITT lookup table (polynomial 0x1021)
 const uint16_t CRC16::crc16_table[256] = {
@@ -315,15 +316,10 @@ bool SensorFlashBuffer::readUntransmittedRecords(SensorDataRecord *records, size
 
         // Retry read up to 3 times on failure (transient flash issues)
         ExternalFlashResult result = ExternalFlashResult::ErrorHardware;
-        for (int retry = 0; retry < 3; retry++) {
+        retryWithBackoff(3, 0, "Flash record read", logger_, [&]() {
             result = flash_.read(address, reinterpret_cast<uint8_t *>(&record), sizeof(record));
-            if (result == ExternalFlashResult::Success) {
-                break;
-            }
-            if (retry < 2) {
-                logger_.warn("Read retry %d for index %lu", retry + 1, current_index);
-            }
-        }
+            return result == ExternalFlashResult::Success;
+        });
 
         if (result != ExternalFlashResult::Success) {
             // Persistent read failure after retries - stop here but don't fail
