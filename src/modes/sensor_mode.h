@@ -114,7 +114,7 @@ private:
      * @brief Collect current error flags based on hardware status
      * @return Bitmask of ERR_FLAG_* constants from message.h
      */
-    uint16_t collectErrorFlags();
+    uint16_t collectErrorFlags() const;
     uint16_t collectHardwareErrors() const;
     uint16_t collectStorageErrors() const;
     uint16_t collectNetworkErrors() const;

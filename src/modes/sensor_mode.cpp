@@ -25,7 +25,7 @@ static Logger pmu_logger("PMU");
 
 uint16_t SensorMode::deferOnce(std::function<void()> action, TaskPriority priority)
 {
-    return task_queue_.postOnce(
+    return task_queue_.post(
         [action = std::move(action)](uint32_t) {
             action();
             return true;
@@ -380,7 +380,7 @@ HeartbeatStatus SensorMode::collectHeartbeatStatus()
             error_flags, pending_records, getDeviceId()};
 }
 
-uint16_t SensorMode::collectErrorFlags()
+uint16_t SensorMode::collectErrorFlags() const
 {
     return collectHardwareErrors() | collectStorageErrors() | collectNetworkErrors();
 }

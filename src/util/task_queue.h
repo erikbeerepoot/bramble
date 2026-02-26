@@ -33,7 +33,6 @@ enum class TaskState : uint8_t {
  * or execution after another task completes.
  *
  * Key features:
- * - Static allocation (no heap after construction)
  * - Priority-based scheduling
  * - Delayed execution support
  * - Task dependencies
@@ -88,18 +87,6 @@ public:
      * @return Task ID (non-zero), or INVALID_ID if queue is full
      */
     uint16_t post(TaskFunction func, TaskPriority priority = TaskPriority::Normal);
-
-    /**
-     * @brief Post a task for immediate execution (no deduplication)
-     * @param func Task function to execute
-     * @param priority Task priority (default: Normal)
-     * @return Task ID, or INVALID_ID if queue is full
-     *
-     * Note: with std::function, identity-based deduplication is not supported.
-     * Callers that need to avoid duplicate tasks should use cancel() or track
-     * task IDs themselves.
-     */
-    uint16_t postOnce(TaskFunction func, TaskPriority priority = TaskPriority::Normal);
 
     /**
      * @brief Post a task to run after a delay
