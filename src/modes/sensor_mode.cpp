@@ -23,65 +23,10 @@ constexpr uint16_t HUB_ADDRESS = ADDRESS_HUB;
 static Logger logger("SENSOR");
 static Logger pmu_logger("PMU");
 
-// ── Static trampolines for TaskQueue (C-style function pointer compatible) ──
-
-bool SensorMode::task_requestTimeSync(void *ctx, uint32_t)
+uint16_t SensorMode::deferOnce(std::function<void()> action, TaskPriority priority)
 {
-    static_cast<SensorMode *>(ctx)->requestTimeSync();
-    return true;
-}
-
-bool SensorMode::task_tryInitSensor(void *ctx, uint32_t)
-{
-    static_cast<SensorMode *>(ctx)->tryInitSensor();
-    return true;
-}
-
-bool SensorMode::task_readAndStore(void *ctx, uint32_t)
-{
-    auto *self = static_cast<SensorMode *>(ctx);
-    self->readAndStoreSensorData(to_ms_since_boot(get_absolute_time()));
-    self->sensor_state_.reportReadComplete();
-    return true;
-}
-
-bool SensorMode::task_checkBacklog(void *ctx, uint32_t)
-{
-    auto *self = static_cast<SensorMode *>(ctx);
-    bool needs_tx = self->checkNeedsTransmission();
-    self->sensor_state_.reportCheckComplete(needs_tx);
-    return true;
-}
-
-bool SensorMode::task_transmitBacklog(void *ctx, uint32_t)
-{
-    static_cast<SensorMode *>(ctx)->transmitBacklog();
-    return true;
-}
-
-bool SensorMode::task_transmitCurrentReading(void *ctx, uint32_t)
-{
-    static_cast<SensorMode *>(ctx)->transmitCurrentReading();
-    return true;
-}
-
-bool SensorMode::task_attemptRegistration(void *ctx, uint32_t)
-{
-    static_cast<SensorMode *>(ctx)->attemptRegistration();
-    return true;
-}
-
-bool SensorMode::task_listenWindowClose(void *ctx, uint32_t)
-{
-    auto *self = static_cast<SensorMode *>(ctx);
-    logger.info("Receive window closed");
-    self->sensor_state_.reportListenComplete();
-    return true;
-}
-
-uint16_t SensorMode::deferOnce(TaskQueue::TaskFunction func, TaskPriority priority)
-{
-    return task_queue_.postOnce(func, this, priority);
+    return task_queue_.postOnce([action = std::move(action)](uint32_t) { action(); return true; },
+                                priority);
 }
 
 SensorMode::~SensorMode() = default;
@@ -241,7 +186,7 @@ void SensorMode::onStateChange(SensorState state)
     switch (state) {
         case SensorState::AWAITING_TIME:
             // Defer to avoid reentrancy when called from PMU callback
-            deferOnce(task_requestTimeSync);
+            deferOnce([this] { requestTimeSync(); });
             break;
 
         case SensorState::SYNCING_TIME:
@@ -253,31 +198,42 @@ void SensorMode::onStateChange(SensorState state)
             // RTC valid - green short blink, initialize timestamps
             led_pattern_ = std::make_unique<ShortBlinkPattern>(led_, 0, 255, 0);
             initializeFlashTimestamps();
-            deferOnce(task_tryInitSensor);
+            deferOnce([this] { tryInitSensor(); });
             break;
 
         case SensorState::READING_SENSOR:
-            deferOnce(task_readAndStore);
+            deferOnce([this] {
+                readAndStoreSensorData(to_ms_since_boot(get_absolute_time()));
+                sensor_state_.reportReadComplete();
+            });
             break;
 
         case SensorState::CHECKING_BACKLOG:
-            deferOnce(task_checkBacklog);
+            deferOnce([this] {
+                bool needs_tx = checkNeedsTransmission();
+                sensor_state_.reportCheckComplete(needs_tx);
+            });
             break;
 
         case SensorState::TRANSMITTING:
             transmitter_->resetCycleCounter();
             if (flash_buffer_ && flash_buffer_->isHealthy()) {
-                deferOnce(task_transmitBacklog);
+                deferOnce([this] { transmitBacklog(); });
             } else {
-                deferOnce(task_transmitCurrentReading);
+                deferOnce([this] { transmitCurrentReading(); });
             }
             break;
 
         case SensorState::LISTENING: {
             uint32_t now = to_ms_since_boot(get_absolute_time());
             logger.info("Receive window open (%lu ms)", LISTEN_WINDOW_MS);
-            task_queue_.postDelayed(task_listenWindowClose, this, now, LISTEN_WINDOW_MS,
-                                    TaskPriority::High);
+            task_queue_.postDelayed(
+                [this](uint32_t) {
+                    logger.info("Receive window closed");
+                    sensor_state_.reportListenComplete();
+                    return true;
+                },
+                now, LISTEN_WINDOW_MS, TaskPriority::High);
             break;
         }
 
@@ -307,7 +263,7 @@ void SensorMode::onStateChange(SensorState state)
                             messenger_.getNodeAddress());
                 sensor_state_.reportRegistrationComplete();
             } else {
-                deferOnce(task_attemptRegistration);
+                deferOnce([this] { attemptRegistration(); });
             }
             break;
     }
@@ -667,7 +623,7 @@ void SensorMode::transmitBacklog()
                     uint32_t remaining = flash_buffer_->getUntransmittedCount();
                     if (remaining > 0 && transmitter_->canSendMore()) {
                         logger.info("More backlog (%lu records) - sending next batch", remaining);
-                        deferOnce(task_transmitBacklog);
+                        deferOnce([this] { transmitBacklog(); });
                         return;  // Don't report complete yet
                     } else if (remaining == 0) {
                         logger.info("All backlog transmitted");
@@ -868,17 +824,16 @@ void SensorMode::armStateWatchdog(SensorState state, std::function<void()> on_ti
     watchdog_expiry_callback_ = std::move(on_timeout);
     uint32_t now = to_ms_since_boot(get_absolute_time());
     state_watchdog_id_ = task_queue_.postDelayed(
-        [](void *ctx, uint32_t) -> bool {
-            SensorMode *self = static_cast<SensorMode *>(ctx);
-            self->state_watchdog_id_ = 0;
+        [this](uint32_t) -> bool {
+            state_watchdog_id_ = 0;
             logger.error("State watchdog fired in %s",
-                         SensorStateMachine::stateName(self->sensor_state_.state()));
-            if (self->watchdog_expiry_callback_) {
-                self->watchdog_expiry_callback_();
+                         SensorStateMachine::stateName(sensor_state_.state()));
+            if (watchdog_expiry_callback_) {
+                watchdog_expiry_callback_();
             }
             return true;
         },
-        this, now, watchdog_ms, TaskPriority::High);
+        now, watchdog_ms, TaskPriority::High);
 }
 
 void SensorMode::attemptRegistration()
