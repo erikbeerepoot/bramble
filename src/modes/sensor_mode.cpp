@@ -25,8 +25,12 @@ static Logger pmu_logger("PMU");
 
 uint16_t SensorMode::deferOnce(std::function<void()> action, TaskPriority priority)
 {
-    return task_queue_.postOnce([action = std::move(action)](uint32_t) { action(); return true; },
-                                priority);
+    return task_queue_.postOnce(
+        [action = std::move(action)](uint32_t) {
+            action();
+            return true;
+        },
+        priority);
 }
 
 SensorMode::~SensorMode() = default;
