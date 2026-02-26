@@ -154,7 +154,6 @@ private:
     PMU::ReliablePmuClient *reliable_pmu_ = nullptr;
     bool pmu_available_ = false;
     bool sleep_pending_ = false;
-    bool sleep_task_posted_ = false;
     uint16_t wake_timeout_id_ = 0;
 
     InitCallback init_callback_;
