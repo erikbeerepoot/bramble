@@ -23,11 +23,6 @@ uint16_t TaskQueue::post(TaskFunction func, TaskPriority priority)
     return postInternal(std::move(func), 0, INVALID_ID, priority);
 }
 
-uint16_t TaskQueue::postOnce(TaskFunction func, TaskPriority priority)
-{
-    return postInternal(std::move(func), 0, INVALID_ID, priority);
-}
-
 uint16_t TaskQueue::postDelayed(TaskFunction func, uint32_t current_time, uint32_t delay_ms,
                                 TaskPriority priority)
 {
@@ -91,6 +86,7 @@ bool TaskQueue::cancel(uint16_t task_id)
     }
 
     logger.debug("Cancelled task %u", task_id);
+    task->function = nullptr;  // Release captured resources immediately
     task->state = TaskState::Empty;
     task->id = INVALID_ID;
 
