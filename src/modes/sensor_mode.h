@@ -202,8 +202,7 @@ private:
      * Convenience wrapper to eliminate repeated postOnce boilerplate.
      * The function must have TaskQueue::TaskFunction signature.
      */
-    uint16_t deferOnce(TaskQueue::TaskFunction func,
-                       TaskPriority priority = TaskPriority::High);
+    uint16_t deferOnce(TaskQueue::TaskFunction func, TaskPriority priority = TaskPriority::High);
 
     // Static trampolines for TaskQueue (C-style function pointer compatible).
     // Each casts ctx back to SensorMode* and calls the corresponding method.
