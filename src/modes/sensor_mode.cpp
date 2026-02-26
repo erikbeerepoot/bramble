@@ -23,6 +23,67 @@ constexpr uint16_t HUB_ADDRESS = ADDRESS_HUB;
 static Logger logger("SENSOR");
 static Logger pmu_logger("PMU");
 
+// ── Static trampolines for TaskQueue (C-style function pointer compatible) ──
+
+bool SensorMode::task_requestTimeSync(void *ctx, uint32_t)
+{
+    static_cast<SensorMode *>(ctx)->requestTimeSync();
+    return true;
+}
+
+bool SensorMode::task_tryInitSensor(void *ctx, uint32_t)
+{
+    static_cast<SensorMode *>(ctx)->tryInitSensor();
+    return true;
+}
+
+bool SensorMode::task_readAndStore(void *ctx, uint32_t)
+{
+    auto *self = static_cast<SensorMode *>(ctx);
+    self->readAndStoreSensorData(to_ms_since_boot(get_absolute_time()));
+    self->sensor_state_.reportReadComplete();
+    return true;
+}
+
+bool SensorMode::task_checkBacklog(void *ctx, uint32_t)
+{
+    auto *self = static_cast<SensorMode *>(ctx);
+    bool needs_tx = self->checkNeedsTransmission();
+    self->sensor_state_.reportCheckComplete(needs_tx);
+    return true;
+}
+
+bool SensorMode::task_transmitBacklog(void *ctx, uint32_t)
+{
+    static_cast<SensorMode *>(ctx)->transmitBacklog();
+    return true;
+}
+
+bool SensorMode::task_transmitCurrentReading(void *ctx, uint32_t)
+{
+    static_cast<SensorMode *>(ctx)->transmitCurrentReading();
+    return true;
+}
+
+bool SensorMode::task_attemptRegistration(void *ctx, uint32_t)
+{
+    static_cast<SensorMode *>(ctx)->attemptRegistration();
+    return true;
+}
+
+bool SensorMode::task_listenWindowClose(void *ctx, uint32_t)
+{
+    auto *self = static_cast<SensorMode *>(ctx);
+    logger.info("Receive window closed");
+    self->sensor_state_.reportListenComplete();
+    return true;
+}
+
+uint16_t SensorMode::deferOnce(TaskQueue::TaskFunction func, TaskPriority priority)
+{
+    return task_queue_.postOnce(func, this, priority);
+}
+
 SensorMode::~SensorMode() = default;
 
 void SensorMode::onStart()
@@ -62,7 +123,7 @@ void SensorMode::onStart()
 
     // Set up registration success callback - transitions REGISTERING → AWAITING_TIME
     messenger_.setRegistrationSuccessCallback([this](uint16_t assigned_addr) {
-        pmu_logger.info("Registration success callback: assigned address 0x%04X", assigned_addr);
+        logger.info("Registration success callback: assigned address 0x%04X", assigned_addr);
         task_queue_.cancel(state_watchdog_id_);
         state_watchdog_id_ = 0;
         sensor_state_.reportRegistrationComplete();
@@ -179,22 +240,12 @@ void SensorMode::onStateChange(SensorState state)
     // Centralized task scheduler - reacts to state changes by posting work
     switch (state) {
         case SensorState::AWAITING_TIME:
-            // Request time sync (PMU first, then hub fallback)
-            // Called after state is restored (markInitialized triggers this state)
-            // Use task queue to defer - avoids reentrancy issues when called from PMU callback
-            task_queue_.postOnce(
-                [](void *ctx, uint32_t time) -> bool {
-                    (void)time;
-                    SensorMode *self = static_cast<SensorMode *>(ctx);
-                    self->requestTimeSync();
-                    return true;
-                },
-                this, TaskPriority::High);
+            // Defer to avoid reentrancy when called from PMU callback
+            deferOnce(task_requestTimeSync);
             break;
 
         case SensorState::SYNCING_TIME:
             // Waiting for hub response - yellow fast short blink
-            // Watchdog is armed by armStateWatchdog() above
             led_pattern_ = std::make_unique<ShortBlinkPattern>(led_, 255, 255, 0, 50, 250);
             break;
 
@@ -202,132 +253,61 @@ void SensorMode::onStateChange(SensorState state)
             // RTC valid - green short blink, initialize timestamps
             led_pattern_ = std::make_unique<ShortBlinkPattern>(led_, 0, 255, 0);
             initializeFlashTimestamps();
-
-            // Try to initialize sensor
-            task_queue_.postOnce(
-                [](void *ctx, uint32_t time) -> bool {
-                    (void)time;
-                    SensorMode *self = static_cast<SensorMode *>(ctx);
-                    self->tryInitSensor();
-                    // State machine handles transition based on sensor init result
-                    return true;
-                },
-                this, TaskPriority::High);
+            deferOnce(task_tryInitSensor);
             break;
 
         case SensorState::READING_SENSOR:
-            // Take sensor reading
-            task_queue_.postOnce(
-                [](void *ctx, uint32_t time) -> bool {
-                    (void)time;
-                    SensorMode *self = static_cast<SensorMode *>(ctx);
-                    self->readAndStoreSensorData(to_ms_since_boot(get_absolute_time()));
-                    self->sensor_state_.reportReadComplete();
-                    return true;
-                },
-                this, TaskPriority::High);
+            deferOnce(task_readAndStore);
             break;
 
         case SensorState::CHECKING_BACKLOG:
-            // Check if transmission needed
-            task_queue_.postOnce(
-                [](void *ctx, uint32_t time) -> bool {
-                    (void)time;
-                    SensorMode *self = static_cast<SensorMode *>(ctx);
-                    bool needsTx = self->checkNeedsTransmission();
-                    self->sensor_state_.reportCheckComplete(needsTx);
-                    return true;
-                },
-                this, TaskPriority::High);
+            deferOnce(task_checkBacklog);
             break;
 
         case SensorState::TRANSMITTING:
-            // Reset batch counter for this wake cycle
             transmitter_->resetCycleCounter();
-
-            // Branch based on flash availability and health
             if (flash_buffer_ && flash_buffer_->isHealthy()) {
-                // Normal path: transmit from flash backlog
-                task_queue_.postOnce(
-                    [](void *ctx, uint32_t time) -> bool {
-                        (void)time;
-                        SensorMode *self = static_cast<SensorMode *>(ctx);
-                        self->transmitBacklog();
-                        // Note: reportTransmitComplete called in transmitter callback
-                        return true;
-                    },
-                    this, TaskPriority::High);
+                deferOnce(task_transmitBacklog);
             } else {
-                // Fallback path: direct transmit current reading (flash unavailable/unhealthy)
-                task_queue_.postOnce(
-                    [](void *ctx, uint32_t time) -> bool {
-                        (void)time;
-                        SensorMode *self = static_cast<SensorMode *>(ctx);
-                        self->transmitCurrentReading();
-                        return true;
-                    },
-                    this, TaskPriority::High);
+                deferOnce(task_transmitCurrentReading);
             }
             break;
 
         case SensorState::LISTENING: {
-            // Receive window open - stay awake briefly for hub responses
             uint32_t now = to_ms_since_boot(get_absolute_time());
             logger.info("Receive window open (%lu ms)", LISTEN_WINDOW_MS);
-            task_queue_.postDelayed(
-                [](void *ctx, uint32_t) -> bool {
-                    SensorMode *self = static_cast<SensorMode *>(ctx);
-                    logger.info("Receive window closed");
-                    self->sensor_state_.reportListenComplete();
-                    return true;
-                },
-                this, now, LISTEN_WINDOW_MS, TaskPriority::High);
+            task_queue_.postDelayed(task_listenWindowClose, this, now, LISTEN_WINDOW_MS,
+                                    TaskPriority::High);
             break;
         }
 
         case SensorState::READY_FOR_SLEEP:
-            // All work done - signal PMU
             if (pmu_manager_) {
                 pmu_manager_->signalReadyForSleep();
             }
             break;
 
         case SensorState::DEGRADED_NO_SENSOR:
-            // Sensor failed - orange short blink, sleep and retry init on next wake
             led_pattern_ = std::make_unique<ShortBlinkPattern>(led_, 255, 165, 0);
             sensor_state_.reportDegradedSleepReady();
             break;
 
         case SensorState::ERROR:
-            // Red short blink for error
             led_pattern_ = std::make_unique<ShortBlinkPattern>(led_, 255, 0, 0);
             logger.error("Entered ERROR state");
             break;
 
         case SensorState::INITIALIZING:
-            // Initial state - nothing to do yet
             break;
 
         case SensorState::REGISTERING:
-            // Yellow fast blink while checking/waiting for registration
             led_pattern_ = std::make_unique<ShortBlinkPattern>(led_, 255, 255, 0, 50, 250);
-
-            // Check if we actually need to register
             if (messenger_.getNodeAddress() != ADDRESS_UNREGISTERED) {
-                // Already registered - skip to AWAITING_TIME
                 logger.info("Already registered (addr=0x%04X) - skipping registration",
                             messenger_.getNodeAddress());
                 sensor_state_.reportRegistrationComplete();
             } else {
-                // Need to register - send message via deferred task to avoid reentrancy
-                task_queue_.postOnce(
-                    [](void *ctx, uint32_t time) -> bool {
-                        (void)time;
-                        SensorMode *self = static_cast<SensorMode *>(ctx);
-                        self->attemptRegistration();
-                        return true;
-                    },
-                    this, TaskPriority::High);
+                deferOnce(task_attemptRegistration);
             }
             break;
     }
@@ -442,17 +422,47 @@ HeartbeatStatus SensorMode::collectHeartbeatStatus()
 
 uint16_t SensorMode::collectErrorFlags()
 {
+    return collectHardwareErrors() | collectStorageErrors() | collectNetworkErrors();
+}
+
+uint16_t SensorMode::collectHardwareErrors() const
+{
     uint16_t flags = ERR_FLAG_NONE;
 
-    // Check sensor health via state machine
+    // Sensor health
     if (sensor_state_.isDegraded()) {
         flags |= ERR_FLAG_SENSOR_FAILURE;
     } else if (sensor_state_.hasSensor() && !last_sensor_read_valid_) {
-        // Sensor initialized but last read failed
         flags |= ERR_FLAG_SENSOR_FAILURE;
     }
 
-    // Check flash status - include health check for write failures
+    // PMU availability
+    if (!pmu_manager_ || !pmu_manager_->isAvailable()) {
+        flags |= ERR_FLAG_PMU_FAILURE;
+    }
+
+    // RTC — only flag if sync failed, not during normal boot sequence
+    if (!sensor_state_.isTimeSynced() && !sensor_state_.isAwaitingTime()) {
+        flags |= ERR_FLAG_RTC_NOT_SYNCED;
+    }
+
+    // Battery
+    uint8_t battery = getBatteryLevel();
+    if (battery != 255) {  // 255 = external power
+        if (battery < 10) {
+            flags |= ERR_FLAG_BATTERY_CRITICAL;
+        } else if (battery < 20) {
+            flags |= ERR_FLAG_BATTERY_LOW;
+        }
+    }
+
+    return flags;
+}
+
+uint16_t SensorMode::collectStorageErrors() const
+{
+    uint16_t flags = ERR_FLAG_NONE;
+
     if (!external_flash_ || !flash_buffer_ || !flash_buffer_->isHealthy()) {
         flags |= ERR_FLAG_FLASH_FAILURE;
     } else {
@@ -466,33 +476,17 @@ uint16_t SensorMode::collectErrorFlags()
         }
     }
 
-    // Check PMU availability
-    if (!pmu_manager_ || !pmu_manager_->isAvailable()) {
-        flags |= ERR_FLAG_PMU_FAILURE;
-    }
+    return flags;
+}
 
-    // Only flag RTC error if sync failed, not during normal boot sequence
-    // (AWAITING_TIME/SYNCING_TIME are expected states, not errors)
-    if (!sensor_state_.isTimeSynced() && !sensor_state_.isAwaitingTime()) {
-        flags |= ERR_FLAG_RTC_NOT_SYNCED;
-    }
+uint16_t SensorMode::collectNetworkErrors() const
+{
+    uint16_t flags = ERR_FLAG_NONE;
 
-    // Check battery level for warnings
-    uint8_t battery = getBatteryLevel();
-    if (battery != 255) {  // 255 = external power
-        if (battery < 10) {
-            flags |= ERR_FLAG_BATTERY_CRITICAL;
-        } else if (battery < 20) {
-            flags |= ERR_FLAG_BATTERY_LOW;
-        }
-    }
-
-    // Check consecutive transmission failures
     if (transmitter_ && transmitter_->consecutiveFailures() >= TX_FAILURE_THRESHOLD) {
         flags |= ERR_FLAG_TX_FAILURES;
     }
 
-    // Check network timeout rate from statistics
     if (network_stats_) {
         const auto &global = network_stats_->getGlobalStats();
         uint32_t total_reliable =
@@ -500,7 +494,7 @@ uint16_t SensorMode::collectErrorFlags()
         uint32_t total_timeouts = global.criticality_totals[RELIABLE].timeouts +
                                   global.criticality_totals[CRITICAL].timeouts;
 
-        // Flag if >25% of reliable/critical messages are timing out (with minimum sample size)
+        // Flag if >25% of reliable/critical messages are timing out (min 10 messages)
         if (total_reliable >= 10 && total_timeouts * 4 > total_reliable) {
             flags |= ERR_FLAG_HIGH_TIMEOUTS;
         }
@@ -673,7 +667,7 @@ void SensorMode::transmitBacklog()
                     uint32_t remaining = flash_buffer_->getUntransmittedCount();
                     if (remaining > 0 && transmitter_->canSendMore()) {
                         logger.info("More backlog (%lu records) - sending next batch", remaining);
-                        transmitBacklog();
+                        deferOnce(task_transmitBacklog);
                         return;  // Don't report complete yet
                     } else if (remaining == 0) {
                         logger.info("All backlog transmitted");
@@ -891,20 +885,20 @@ void SensorMode::attemptRegistration()
 {
     uint64_t device_id = getDeviceId();
 
-    pmu_logger.info("Sending registration (device_id=0x%016llX)", device_id);
+    logger.info("Sending registration (device_id=0x%016llX)", device_id);
 
     uint8_t seq = messenger_.sendRegistrationRequest(ADDRESS_HUB, device_id, NODE_TYPE_SENSOR,
                                                      CAP_TEMPERATURE | CAP_HUMIDITY,
                                                      BRAMBLE_FIRMWARE_VERSION, "Sensor Node");
 
     if (seq != 0) {
-        pmu_logger.info("Registration request sent (seq=%d)", seq);
+        logger.info("Registration request sent (seq=%d)", seq);
         // Watchdog is already armed by armStateWatchdog(REGISTERING) in onStateChange
         sensor_state_.reportRegistrationSent();
         // Expect registration response - ensures we enter LISTENING before sleep
         sensor_state_.expectResponse();
     } else {
-        pmu_logger.error("Failed to send registration request");
+        logger.error("Failed to send registration request");
         // Failed to send - go to sleep and retry next cycle
         sensor_state_.reportRegistrationTimeout();
     }

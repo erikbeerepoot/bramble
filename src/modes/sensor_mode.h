@@ -47,9 +47,6 @@ private:
 
     // Timing configuration
     static constexpr uint32_t LISTEN_WINDOW_MS = 500;
-    static constexpr uint32_t SENSOR_READ_INTERVAL_MS = 30000;
-    static constexpr uint32_t HEARTBEAT_INTERVAL_MS = 60000;
-    static constexpr uint32_t BACKLOG_TX_INTERVAL_MS = 120000;
     static constexpr uint32_t TRANSMIT_INTERVAL_S = 600;
 
     /**
@@ -118,6 +115,9 @@ private:
      * @return Bitmask of ERR_FLAG_* constants from message.h
      */
     uint16_t collectErrorFlags();
+    uint16_t collectHardwareErrors() const;
+    uint16_t collectStorageErrors() const;
+    uint16_t collectNetworkErrors() const;
 
     /**
      * @brief Get current battery level
@@ -195,4 +195,24 @@ private:
      * return 0 and are not watchdog-monitored.
      */
     static uint32_t stateWatchdogMs(SensorState state);
+
+    /**
+     * @brief Post a C-style task function with `this` as context
+     *
+     * Convenience wrapper to eliminate repeated postOnce boilerplate.
+     * The function must have TaskQueue::TaskFunction signature.
+     */
+    uint16_t deferOnce(TaskQueue::TaskFunction func,
+                       TaskPriority priority = TaskPriority::High);
+
+    // Static trampolines for TaskQueue (C-style function pointer compatible).
+    // Each casts ctx back to SensorMode* and calls the corresponding method.
+    static bool task_requestTimeSync(void *ctx, uint32_t);
+    static bool task_tryInitSensor(void *ctx, uint32_t);
+    static bool task_readAndStore(void *ctx, uint32_t);
+    static bool task_checkBacklog(void *ctx, uint32_t);
+    static bool task_transmitBacklog(void *ctx, uint32_t);
+    static bool task_transmitCurrentReading(void *ctx, uint32_t);
+    static bool task_attemptRegistration(void *ctx, uint32_t);
+    static bool task_listenWindowClose(void *ctx, uint32_t);
 };

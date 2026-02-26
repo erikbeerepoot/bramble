@@ -21,13 +21,12 @@ void SensorStateMachine::markError()
     }
     error_ = true;
     logger.error("Unrecoverable error reported");
-    updateState();
+    transitionTo(SensorState::ERROR);
 }
 
 void SensorStateMachine::reportRegistrationSent()
 {
-    // This is now just a logging method - the transition to REGISTERING
-    // happens via markInitialized() -> updateState()
+    // Logging-only — the transition to REGISTERING happens via markInitialized()
     if (state_ != SensorState::REGISTERING) {
         logger.warn("reportRegistrationSent() called in unexpected state: %s", stateName(state_));
         return;
@@ -79,18 +78,26 @@ void SensorStateMachine::reportTimeSyncComplete()
 
 void SensorStateMachine::reportSensorInitSuccess()
 {
+    if (state_ != SensorState::TIME_SYNCED) {
+        logger.warn("reportSensorInitSuccess() called in unexpected state: %s", stateName(state_));
+        return;
+    }
     sensor_init_attempted_ = true;
     sensor_initialized_ = true;
     logger.info("Sensor initialization successful");
-    updateState();
+    transitionTo(SensorState::READING_SENSOR);
 }
 
 void SensorStateMachine::reportSensorInitFailure()
 {
+    if (state_ != SensorState::TIME_SYNCED) {
+        logger.warn("reportSensorInitFailure() called in unexpected state: %s", stateName(state_));
+        return;
+    }
     sensor_init_attempted_ = true;
     sensor_initialized_ = false;
     logger.warn("Sensor initialization failed");
-    updateState();
+    transitionTo(SensorState::DEGRADED_NO_SENSOR);
 }
 
 void SensorStateMachine::reportDegradedSleepReady()
@@ -188,43 +195,6 @@ bool SensorStateMachine::reportWakeFromSleep()
     expected_responses_ = 0;
     transitionTo(SensorState::AWAITING_TIME);
     return true;
-}
-
-void SensorStateMachine::updateState()
-{
-    SensorState new_state = state_;
-
-    // Derive state from internal flags
-    // Note: workflow states (REGISTERING, SYNCING_TIME, READING_SENSOR, CHECKING_BACKLOG,
-    // TRANSMITTING, LISTENING, READY_FOR_SLEEP) are handled by transitionTo() instead.
-    // INITIALIZING → REGISTERING is handled by markInitialized() directly.
-    // AWAITING_TIME/SYNCING_TIME → TIME_SYNCED is handled by reportTimeSyncComplete() directly.
-    if (error_) {
-        new_state = SensorState::ERROR;
-    } else if (!initialized_) {
-        new_state = SensorState::INITIALIZING;
-    } else if (sensor_initialized_) {
-        // Sensor working - go to READING_SENSOR (only from TIME_SYNCED)
-        if (state_ == SensorState::TIME_SYNCED) {
-            new_state = SensorState::READING_SENSOR;
-        }
-    } else if (sensor_init_attempted_) {
-        // Sensor init failed - degraded mode
-        if (state_ == SensorState::TIME_SYNCED) {
-            new_state = SensorState::DEGRADED_NO_SENSOR;
-        }
-    }
-
-    // Only log and callback on actual state change
-    if (new_state != state_) {
-        logger.info("State: %s -> %s", stateName(state_), stateName(new_state));
-        previous_state_ = state_;
-        state_ = new_state;
-
-        if (callback_) {
-            callback_(state_);
-        }
-    }
 }
 
 void SensorStateMachine::transitionTo(SensorState newState)
