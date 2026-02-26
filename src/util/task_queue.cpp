@@ -15,41 +15,32 @@ TaskQueue::TaskQueue() : next_id_(1)
     // Initialize completion callback slots
     for (size_t i = 0; i < MAX_COMPLETIONS; i++) {
         completions_[i].task_id = INVALID_ID;
-        completions_[i].callback = nullptr;
     }
 }
 
-uint16_t TaskQueue::post(TaskFunction func, void *context, TaskPriority priority)
+uint16_t TaskQueue::post(TaskFunction func, TaskPriority priority)
 {
-    return postInternal(func, context, 0, INVALID_ID, priority);
+    return postInternal(std::move(func), 0, INVALID_ID, priority);
 }
 
-uint16_t TaskQueue::postOnce(TaskFunction func, void *context, TaskPriority priority)
+uint16_t TaskQueue::postOnce(TaskFunction func, TaskPriority priority)
 {
-    // Check if a task with this function is already queued
-    const Task *existing = findByFunction(func);
-    if (existing) {
-        logger.debug("Task with function already queued (id=%u), skipping duplicate", existing->id);
-        return existing->id;
-    }
-
-    return postInternal(func, context, 0, INVALID_ID, priority);
+    return postInternal(std::move(func), 0, INVALID_ID, priority);
 }
 
-uint16_t TaskQueue::postDelayed(TaskFunction func, void *context, uint32_t current_time,
-                                uint32_t delay_ms, TaskPriority priority)
+uint16_t TaskQueue::postDelayed(TaskFunction func, uint32_t current_time, uint32_t delay_ms,
+                                TaskPriority priority)
 {
-    return postInternal(func, context, current_time + delay_ms, INVALID_ID, priority);
+    return postInternal(std::move(func), current_time + delay_ms, INVALID_ID, priority);
 }
 
-uint16_t TaskQueue::postAfter(TaskFunction func, void *context, uint16_t depends_on,
-                              TaskPriority priority)
+uint16_t TaskQueue::postAfter(TaskFunction func, uint16_t depends_on, TaskPriority priority)
 {
-    return postInternal(func, context, 0, depends_on, priority);
+    return postInternal(std::move(func), 0, depends_on, priority);
 }
 
-uint16_t TaskQueue::postInternal(TaskFunction func, void *context, uint32_t run_after,
-                                 uint16_t depends_on, TaskPriority priority)
+uint16_t TaskQueue::postInternal(TaskFunction func, uint32_t run_after, uint16_t depends_on,
+                                 TaskPriority priority)
 {
     if (!func) {
         logger.warn("Attempted to post null task function");
@@ -64,8 +55,7 @@ uint16_t TaskQueue::postInternal(TaskFunction func, void *context, uint32_t run_
 
     uint16_t id = getNextId();
 
-    slot->function = func;
-    slot->context = context;
+    slot->function = std::move(func);
     slot->run_after = run_after;
     slot->id = id;
     slot->depends_on = depends_on;
@@ -125,7 +115,7 @@ bool TaskQueue::isActive(uint16_t task_id) const
     return task != nullptr && task->state != TaskState::Empty;
 }
 
-bool TaskQueue::onComplete(uint16_t task_id, CompletionCallback callback, void *context)
+bool TaskQueue::onComplete(uint16_t task_id, CompletionCallback callback)
 {
     if (task_id == INVALID_ID || !callback) {
         return false;
@@ -141,8 +131,7 @@ bool TaskQueue::onComplete(uint16_t task_id, CompletionCallback callback, void *
     for (size_t i = 0; i < MAX_COMPLETIONS; i++) {
         if (completions_[i].task_id == INVALID_ID) {
             completions_[i].task_id = task_id;
-            completions_[i].callback = callback;
-            completions_[i].context = context;
+            completions_[i].callback = std::move(callback);
             return true;
         }
     }
@@ -178,7 +167,7 @@ size_t TaskQueue::process(uint32_t current_time)
             task.state = TaskState::Running;
             logger.debug("Executing task %u", task.id);
 
-            bool complete = task.function(task.context, current_time);
+            bool complete = task.function(current_time);
             executed++;
 
             if (complete) {
@@ -262,26 +251,12 @@ const TaskQueue::Task *TaskQueue::findById(uint16_t id) const
     return nullptr;
 }
 
-const TaskQueue::Task *TaskQueue::findByFunction(TaskFunction func) const
-{
-    if (!func) {
-        return nullptr;
-    }
-
-    for (size_t i = 0; i < MAX_TASKS; i++) {
-        if (tasks_[i].function == func && tasks_[i].state != TaskState::Empty) {
-            return &tasks_[i];
-        }
-    }
-    return nullptr;
-}
-
 void TaskQueue::markComplete(uint16_t task_id)
 {
     // Fire any registered completion callbacks
     for (size_t i = 0; i < MAX_COMPLETIONS; i++) {
         if (completions_[i].task_id == task_id && completions_[i].callback) {
-            completions_[i].callback(task_id, completions_[i].context);
+            completions_[i].callback(task_id);
             completions_[i].task_id = INVALID_ID;
             completions_[i].callback = nullptr;
         }

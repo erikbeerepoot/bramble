@@ -72,17 +72,16 @@ bool SensorPmuManager::initialize(InitCallback init_callback)
             // Start timeout — if WakeNotification doesn't arrive, proceed without PMU state
             uint32_t now = to_ms_since_boot(get_absolute_time());
             wake_timeout_id_ = task_queue_.postDelayed(
-                [](void *ctx, uint32_t) -> bool {
-                    SensorPmuManager *self = static_cast<SensorPmuManager *>(ctx);
+                [this](uint32_t) -> bool {
                     pmu_logger.warn("WakeNotification timeout - proceeding without PMU state");
-                    self->wake_timeout_id_ = 0;
-                    if (self->init_callback_) {
-                        self->init_callback_(false, PMU::WakeReason::Periodic);
-                        self->init_callback_ = nullptr;
+                    wake_timeout_id_ = 0;
+                    if (init_callback_) {
+                        init_callback_(false, PMU::WakeReason::Periodic);
+                        init_callback_ = nullptr;
                     }
                     return true;
                 },
-                this, now, WAKE_NOTIFICATION_TIMEOUT_MS, TaskPriority::High);
+                now, WAKE_NOTIFICATION_TIMEOUT_MS, TaskPriority::High);
         }
     });
 
@@ -151,26 +150,23 @@ void SensorPmuManager::signalReadyForSleep()
     pmu_logger.debug("Requesting sleep (posting deferred task)");
 
     task_queue_.postOnce(
-        [](void *ctx, uint32_t time) -> bool {
-            (void)time;
-            SensorPmuManager *self = static_cast<SensorPmuManager *>(ctx);
-
+        [this](uint32_t) -> bool {
             // Pack state fresh at send time
             SensorPersistedState state;
-            self->packState(state);
+            packState(state);
 
             pmu_logger.info(
                 "Sending ReadyForSleep with state (seq=%u, addr=0x%04X, read=%lu, write=%lu)",
                 state.next_seq_num, state.assigned_address, state.read_index, state.write_index);
 
-            self->reliable_pmu_->readyForSleep(
+            reliable_pmu_->readyForSleep(
                 reinterpret_cast<const uint8_t *>(&state),
-                [self](bool success, PMU::ErrorCode error) {
+                [this](bool success, PMU::ErrorCode error) {
                     if (success) {
                         pmu_logger.info("Ready for sleep acknowledged - halting");
                         // Set flag to halt main loop - prevents UART activity from keeping
                         // STM32 awake when USB power keeps RP2040 running after dcdc.disable()
-                        self->sleep_pending_ = true;
+                        sleep_pending_ = true;
                     } else {
                         pmu_logger.error("Ready for sleep failed: error %d",
                                          static_cast<int>(error));
@@ -178,7 +174,7 @@ void SensorPmuManager::signalReadyForSleep()
                 });
             return true;  // Task complete
         },
-        this, TaskPriority::Low);
+        TaskPriority::Low);
 }
 
 void SensorPmuManager::requestSystemReset()

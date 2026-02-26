@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 
 /**
  * @brief Priority levels for task execution
@@ -42,14 +43,17 @@ enum class TaskState : uint8_t {
  *   TaskQueue queue;
  *
  *   // Simple task
- *   queue.post([](void* ctx, uint32_t time) { doWork(); return true; });
+ *   queue.post([](uint32_t) { doWork(); return true; });
+ *
+ *   // Capturing lambda (no void* context needed)
+ *   queue.post([&obj](uint32_t t) { obj.doWork(t); return true; });
  *
  *   // Delayed task (run after 100ms)
- *   queue.postDelayed(myFunc, context, 100);
+ *   queue.postDelayed([](uint32_t) { doWork(); return true; }, current_time, 100);
  *
  *   // Dependent task (run after another completes)
  *   uint16_t first = queue.post(firstTask);
- *   queue.postAfter(secondTask, nullptr, first);
+ *   queue.postAfter(secondTask, first);
  *
  *   // In main loop
  *   queue.process(current_time_ms);
@@ -58,18 +62,16 @@ class TaskQueue {
 public:
     /**
      * @brief Task function signature
-     * @param context User-provided context pointer
      * @param current_time Current system time in milliseconds
      * @return true if task is complete, false to re-queue for retry
      */
-    using TaskFunction = bool (*)(void *context, uint32_t current_time);
+    using TaskFunction = std::function<bool(uint32_t)>;
 
     /**
      * @brief Completion callback signature
      * @param task_id ID of the completed task
-     * @param context User-provided context pointer
      */
-    using CompletionCallback = void (*)(uint16_t task_id, void *context);
+    using CompletionCallback = std::function<void(uint16_t)>;
 
     static constexpr size_t MAX_TASKS = 16;
     static constexpr size_t MAX_COMPLETIONS = 8;
@@ -82,42 +84,37 @@ public:
     /**
      * @brief Post a task for immediate execution
      * @param func Task function to execute
-     * @param context Optional context pointer passed to func
      * @param priority Task priority (default: Normal)
      * @return Task ID (non-zero), or INVALID_ID if queue is full
      */
-    uint16_t post(TaskFunction func, void *context = nullptr,
-                  TaskPriority priority = TaskPriority::Normal);
+    uint16_t post(TaskFunction func, TaskPriority priority = TaskPriority::Normal);
 
     /**
-     * @brief Post a task only if no task with the same function is already queued
+     * @brief Post a task for immediate execution (no deduplication)
      * @param func Task function to execute
-     * @param context Optional context pointer passed to func
      * @param priority Task priority (default: Normal)
-     * @return Task ID if posted, existing task ID if already queued, or INVALID_ID if queue full
+     * @return Task ID, or INVALID_ID if queue is full
      *
-     * Use this for idempotent operations where multiple requests should coalesce
-     * into a single execution (e.g., sleep signals, flush requests).
+     * Note: with std::function, identity-based deduplication is not supported.
+     * Callers that need to avoid duplicate tasks should use cancel() or track
+     * task IDs themselves.
      */
-    uint16_t postOnce(TaskFunction func, void *context = nullptr,
-                      TaskPriority priority = TaskPriority::Normal);
+    uint16_t postOnce(TaskFunction func, TaskPriority priority = TaskPriority::Normal);
 
     /**
      * @brief Post a task to run after a delay
      * @param func Task function to execute
-     * @param context Context pointer passed to func
      * @param current_time Current system time in milliseconds
      * @param delay_ms Minimum delay before execution in milliseconds
      * @param priority Task priority
      * @return Task ID, or INVALID_ID if queue is full
      */
-    uint16_t postDelayed(TaskFunction func, void *context, uint32_t current_time, uint32_t delay_ms,
+    uint16_t postDelayed(TaskFunction func, uint32_t current_time, uint32_t delay_ms,
                          TaskPriority priority = TaskPriority::Normal);
 
     /**
      * @brief Post a task that runs after another task completes
      * @param func Task function to execute
-     * @param context Context pointer passed to func
      * @param depends_on ID of task that must complete first
      * @param priority Task priority
      * @return Task ID, or INVALID_ID if queue is full
@@ -125,7 +122,7 @@ public:
      * If depends_on is INVALID_ID or refers to a non-existent task,
      * the task will run immediately (no dependency).
      */
-    uint16_t postAfter(TaskFunction func, void *context, uint16_t depends_on,
+    uint16_t postAfter(TaskFunction func, uint16_t depends_on,
                        TaskPriority priority = TaskPriority::Normal);
 
     // === Task Management ===
@@ -148,14 +145,13 @@ public:
      * @brief Set callback for when a specific task completes
      * @param task_id ID of task to watch
      * @param callback Function to call on completion
-     * @param context Context pointer passed to callback
      * @return true if callback was registered, false if no slots available
      *
      * The callback fires once when the task completes successfully
      * (returns true from its function). It does not fire if the task
      * is cancelled.
      */
-    bool onComplete(uint16_t task_id, CompletionCallback callback, void *context);
+    bool onComplete(uint16_t task_id, CompletionCallback callback);
 
     // === Processing ===
 
@@ -197,7 +193,6 @@ private:
      */
     struct Task {
         TaskFunction function;  // Function to execute
-        void *context;          // User context
         uint32_t run_after;     // Earliest run time (0 = immediate)
         uint16_t id;            // Unique task ID
         uint16_t depends_on;    // Task ID that must complete first (0 = none)
@@ -211,7 +206,6 @@ private:
     struct CompletionEntry {
         uint16_t task_id;
         CompletionCallback callback;
-        void *context;
     };
 
     Task tasks_[MAX_TASKS];
@@ -230,12 +224,6 @@ private:
      */
     Task *findById(uint16_t id);
     const Task *findById(uint16_t id) const;
-
-    /**
-     * @brief Find a pending/running task by function pointer
-     * @return Pointer to task, or nullptr if not found
-     */
-    const Task *findByFunction(TaskFunction func) const;
 
     /**
      * @brief Mark a task as complete and fire callbacks
@@ -267,12 +255,11 @@ private:
     /**
      * @brief Internal task posting with all parameters
      * @param func Task function
-     * @param context User context
      * @param run_after Absolute time to run (0 = immediate)
      * @param depends_on Task ID dependency (INVALID_ID = none)
      * @param priority Task priority
      * @return Task ID, or INVALID_ID if queue is full
      */
-    uint16_t postInternal(TaskFunction func, void *context, uint32_t run_after, uint16_t depends_on,
+    uint16_t postInternal(TaskFunction func, uint32_t run_after, uint16_t depends_on,
                           TaskPriority priority);
 };

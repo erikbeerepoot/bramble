@@ -197,21 +197,10 @@ private:
     static uint32_t stateWatchdogMs(SensorState state);
 
     /**
-     * @brief Post a C-style task function with `this` as context
+     * @brief Post a deferred void action via the task queue
      *
-     * Convenience wrapper to eliminate repeated postOnce boilerplate.
-     * The function must have TaskQueue::TaskFunction signature.
+     * Wraps the action in a TaskFunction that always returns true (completed).
+     * Convenience to avoid writing the bool-returning lambda boilerplate at callsites.
      */
-    uint16_t deferOnce(TaskQueue::TaskFunction func, TaskPriority priority = TaskPriority::High);
-
-    // Static trampolines for TaskQueue (C-style function pointer compatible).
-    // Each casts ctx back to SensorMode* and calls the corresponding method.
-    static bool task_requestTimeSync(void *ctx, uint32_t);
-    static bool task_tryInitSensor(void *ctx, uint32_t);
-    static bool task_readAndStore(void *ctx, uint32_t);
-    static bool task_checkBacklog(void *ctx, uint32_t);
-    static bool task_transmitBacklog(void *ctx, uint32_t);
-    static bool task_transmitCurrentReading(void *ctx, uint32_t);
-    static bool task_attemptRegistration(void *ctx, uint32_t);
-    static bool task_listenWindowClose(void *ctx, uint32_t);
+    uint16_t deferOnce(std::function<void()> action, TaskPriority priority = TaskPriority::High);
 };
