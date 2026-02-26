@@ -385,14 +385,6 @@ public:
 
 private:
     /**
-     * @brief Derive state from internal flags and transition if changed
-     *
-     * Used for flag-based states (INITIALIZING, AWAITING_TIME, TIME_SYNCED,
-     * DEGRADED_NO_SENSOR, ERROR).
-     */
-    void updateState();
-
-    /**
      * @brief Directly transition to a new state
      *
      * Used for workflow states (SYNCING_TIME, READING_SENSOR, CHECKING_BACKLOG,
