@@ -123,7 +123,7 @@ private:
      * @brief Get current battery level
      * @return Battery percentage (0-100), or 255 for external power
      */
-    uint8_t getBatteryLevel();
+    uint8_t getBatteryLevel() const;
 
     // Error tracking state
     bool last_sensor_read_valid_ = false;               // Track if last sensor read succeeded

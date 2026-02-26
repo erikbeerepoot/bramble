@@ -463,7 +463,7 @@ uint16_t SensorMode::collectNetworkErrors() const
     return flags;
 }
 
-uint8_t SensorMode::getBatteryLevel()
+uint8_t SensorMode::getBatteryLevel() const
 {
     // TODO: Query PMU for actual battery level when battery monitoring is implemented
     // For now, return 255 (external power) since current hardware doesn't have battery

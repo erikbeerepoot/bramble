@@ -145,11 +145,16 @@ void SensorPmuManager::signalReadyForSleep()
 
     // Post deferred task to send sleep signal in main loop
     // This avoids calling PMU protocol directly from callback chains (stack safety)
-    // Using postOnce() to deduplicate - multiple code paths call this but we only
+    // Guard with flag to deduplicate - multiple code paths call this but we only
     // need one ReadyForSleep command per wake cycle
+    if (sleep_task_posted_) {
+        pmu_logger.debug("Sleep task already posted, skipping");
+        return;
+    }
+    sleep_task_posted_ = true;
     pmu_logger.debug("Requesting sleep (posting deferred task)");
 
-    task_queue_.postOnce(
+    task_queue_.post(
         [this](uint32_t) -> bool {
             // Pack state fresh at send time
             SensorPersistedState state;
