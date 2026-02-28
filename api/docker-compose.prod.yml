@@ -40,6 +40,16 @@ services:
     depends_on:
       - api
 
+  dashboard:
+    image: ${DASHBOARD_IMAGE:-ghcr.io/erikbeerepoot/bramble/dashboard:latest}
+    container_name: bramble-dashboard
+    ports:
+      - "3000:80"
+    mem_limit: 64m
+    restart: unless-stopped
+    depends_on:
+      - api
+
   watchtower:
     image: containrrr/watchtower
     container_name: watchtower
