@@ -45,6 +45,17 @@ services:
     depends_on:
       - api
 
+  dashboard:
+    build:
+      context: ../dashboard
+      dockerfile: Dockerfile
+    container_name: bramble-dashboard
+    ports:
+      - "3000:80"
+    restart: unless-stopped
+    depends_on:
+      - api
+
 volumes:
   bramble-data:
     name: bramble-data  # Explicit name prevents "api_" prefix
