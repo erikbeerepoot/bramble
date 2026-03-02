@@ -12,10 +12,10 @@ PmuState PmuStateMachine::reduce(PmuState state, PmuEvent event)
         case PmuState::BOOTING:
             switch (event) {
                 case PmuEvent::BOOT_COMPLETE:
-                    // Boot animation done - wait for RP2040 CTS with grace period
-                    return PmuState::AWAITING_CTS;
-                case PmuEvent::CTS_RECEIVED:
-                    // CTS received during boot - go directly to WAKE_ACTIVE
+                    // Boot animation done - start sending WakeNotification
+                    return PmuState::AWAITING_ACK;
+                case PmuEvent::NOTIFICATION_ACK:
+                    // RP2040 acked during boot - go directly to WAKE_ACTIVE
                     return PmuState::WAKE_ACTIVE;
                 case PmuEvent::ERROR_OCCURRED:
                     return PmuState::ERROR;
@@ -26,9 +26,9 @@ PmuState PmuStateMachine::reduce(PmuState state, PmuEvent event)
         case PmuState::SLEEPING:
             switch (event) {
                 case PmuEvent::RTC_WAKEUP:
-                    return PmuState::AWAITING_CTS;
-                case PmuEvent::CTS_RECEIVED:
-                    // CTS can wake us from sleep (UART interrupt) - go directly to WAKE_ACTIVE
+                    return PmuState::AWAITING_ACK;
+                case PmuEvent::NOTIFICATION_ACK:
+                    // UART activity can wake us from sleep - go directly to WAKE_ACTIVE
                     return PmuState::WAKE_ACTIVE;
                 case PmuEvent::ERROR_OCCURRED:
                     return PmuState::ERROR;
@@ -36,9 +36,9 @@ PmuState PmuStateMachine::reduce(PmuState state, PmuEvent event)
                     return state;
             }
 
-        case PmuState::AWAITING_CTS:
+        case PmuState::AWAITING_ACK:
             switch (event) {
-                case PmuEvent::CTS_RECEIVED:
+                case PmuEvent::NOTIFICATION_ACK:
                     return PmuState::WAKE_ACTIVE;
                 case PmuEvent::WAKE_TIMEOUT:
                     return PmuState::SLEEPING;
@@ -100,8 +100,8 @@ void PmuStateMachine::setWakeType(WakeType type, const PMU::ScheduleEntry *entry
 
 void PmuStateMachine::extendWakeTimeout(uint16_t seconds)
 {
-    // Only effective when awake (AWAITING_CTS or WAKE_ACTIVE)
-    if (state_ != PmuState::AWAITING_CTS && state_ != PmuState::WAKE_ACTIVE) {
+    // Only effective when awake (AWAITING_ACK or WAKE_ACTIVE)
+    if (state_ != PmuState::AWAITING_ACK && state_ != PmuState::WAKE_ACTIVE) {
         return;
     }
 
@@ -121,7 +121,7 @@ void PmuStateMachine::tick()
     uint32_t now = getTick_();
 
     switch (state_) {
-        case PmuState::AWAITING_CTS:
+        case PmuState::AWAITING_ACK:
         case PmuState::WAKE_ACTIVE: {
             // Check wake timeout (safety net for both states)
             uint32_t elapsed = now - context_.startTime;
@@ -151,7 +151,7 @@ void PmuStateMachine::onEnterState(PmuState newState, PmuEvent event)
             context_.reset();
             break;
 
-        case PmuState::AWAITING_CTS:
+        case PmuState::AWAITING_ACK:
             context_.startTime = now;
             if (event == PmuEvent::BOOT_COMPLETE) {
                 // After boot animation: short grace period, periodic wake
@@ -164,13 +164,13 @@ void PmuStateMachine::onEnterState(PmuState newState, PmuEvent event)
             break;
 
         case PmuState::WAKE_ACTIVE:
-            // Coming from BOOTING or SLEEPING with early CTS - set up context
+            // Coming from BOOTING or SLEEPING with early ack - set up context
             if (context_.startTime == 0) {
                 context_.startTime = now;
                 context_.type = WakeType::PERIODIC;
                 context_.timeoutMs = PERIODIC_WAKE_TIMEOUT_MS;
             }
-            // For transitions from AWAITING_CTS, context is already set
+            // For transitions from AWAITING_ACK, context is already set
             break;
 
         case PmuState::BOOTING:
@@ -188,7 +188,7 @@ bool PmuStateMachine::shouldPowerRp2040() const
 {
     switch (state_) {
         case PmuState::BOOTING:
-        case PmuState::AWAITING_CTS:
+        case PmuState::AWAITING_ACK:
         case PmuState::WAKE_ACTIVE:
             return true;
 
@@ -214,8 +214,8 @@ const char *PmuStateMachine::stateName(PmuState state)
             return "BOOTING";
         case PmuState::SLEEPING:
             return "SLEEPING";
-        case PmuState::AWAITING_CTS:
-            return "AWAITING_CTS";
+        case PmuState::AWAITING_ACK:
+            return "AWAITING_ACK";
         case PmuState::WAKE_ACTIVE:
             return "WAKE_ACTIVE";
         case PmuState::ERROR:
@@ -232,8 +232,8 @@ const char *PmuStateMachine::eventName(PmuEvent event)
             return "BOOT_COMPLETE";
         case PmuEvent::RTC_WAKEUP:
             return "RTC_WAKEUP";
-        case PmuEvent::CTS_RECEIVED:
-            return "CTS_RECEIVED";
+        case PmuEvent::NOTIFICATION_ACK:
+            return "NOTIFICATION_ACK";
         case PmuEvent::READY_FOR_SLEEP:
             return "READY_FOR_SLEEP";
         case PmuEvent::WAKE_TIMEOUT:

@@ -317,9 +317,9 @@ bool ReliablePmuClient::getDateTime(DateTimeCallback callback)
     });
 }
 
-bool ReliablePmuClient::clearToSend(CommandCallback callback)
+bool ReliablePmuClient::notificationAck(CommandCallback callback)
 {
-    return queueCommand(Command::ClearToSend, nullptr, 0, callback);
+    return queueCommand(Command::NotificationAck, nullptr, 0, callback);
 }
 
 bool ReliablePmuClient::systemReset(CommandCallback callback)

@@ -150,14 +150,14 @@ public:
     bool getDateTime(DateTimeCallback callback);
 
     /**
-     * @brief Signal clear to send - RP2040 is ready to receive wake info
+     * @brief Acknowledge receipt of WakeNotification from PMU
      * @param callback Called when command completes (optional)
      * @return true if command queued successfully
      *
-     * This command tells the PMU that the RP2040 has initialized and is
-     * ready to receive the wake notification with persisted state.
+     * Sent after receiving a WakeNotification to confirm receipt.
+     * PMU transitions from AWAITING_ACK to WAKE_ACTIVE on receiving this.
      */
-    bool clearToSend(CommandCallback callback = nullptr);
+    bool notificationAck(CommandCallback callback = nullptr);
 
     /**
      * @brief Request full system reset via PMU
