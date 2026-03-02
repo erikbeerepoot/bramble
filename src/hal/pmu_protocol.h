@@ -16,10 +16,10 @@ enum class Command : uint8_t {
     KeepAwake = 0x15,
     SetDateTime =
         0x16,  // Set RTC date/time (7 bytes: year, month, day, weekday, hour, minute, second)
-    ReadyForSleep = 0x17,  // RP2040 signals work complete, ready for power down
-    GetDateTime = 0x18,    // Get RTC date/time from PMU (returns DateTimeResponse)
+    ReadyForSleep = 0x17,    // RP2040 signals work complete, ready for power down
+    GetDateTime = 0x18,      // Get RTC date/time from PMU (returns DateTimeResponse)
     NotificationAck = 0x19,  // RP2040 acknowledges receipt of WakeNotification
-    SystemReset = 0x1A     // Request full system reset (PMU resets itself + RP2040)
+    SystemReset = 0x1A       // Request full system reset (PMU resets itself + RP2040)
 };
 
 // Response codes (STM32 → RP2040)
