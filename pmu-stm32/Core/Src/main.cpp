@@ -224,7 +224,6 @@ int main(void)
                 // Boot animation handled before loop
                 break;
 
-            case PmuState::POST_BOOT:
             case PmuState::AWAITING_CTS:
             case PmuState::WAKE_ACTIVE:
                 dcdc.enable();
@@ -595,8 +594,8 @@ static void wakeupFromStopMode(void)
 
 /**
  * @brief Determine wake type from RTC time and schedule
- * Called by onStateChange callback when entering AWAITING_CTS state.
- * Sets wake type in state machine and applies appropriate boot delay.
+ * Called by onStateChange callback when wake type is not yet set.
+ * Checks RTC time against schedule and configures the state machine accordingly.
  */
 static void determineWakeType(void)
 {
@@ -629,9 +628,6 @@ static void determineWakeType(void)
         // Normal periodic wake
         pmuState.setWakeType(WakeType::PERIODIC, nullptr);
     }
-
-    // Small delay for RP2040 boot (scheduled needs more time)
-    HAL_Delay(pmuState.wakeType() == WakeType::SCHEDULED ? 100 : 50);
 }
 
 /**
@@ -742,21 +738,6 @@ static void updateLedForState(PmuState state, WakeType wakeType)
     LED::Color wakeColor = (wakeType == WakeType::SCHEDULED) ? LED::RED : LED::ORANGE;
 
     switch (state) {
-        case PmuState::POST_BOOT: {
-            // Very fast blink (200ms cycle) with green while waiting for RP2040 to boot
-            uint32_t now = HAL_GetTick();
-            if (now - lastBlinkTime >= 100) {
-                lastBlinkTime = now;
-                ledOn = !ledOn;
-                if (ledOn) {
-                    led.setColor(LED::GREEN);
-                } else {
-                    led.off();
-                }
-            }
-            break;
-        }
-
         case PmuState::AWAITING_CTS: {
             // Fast blink (250ms cycle) while waiting for CTS
             uint32_t now = HAL_GetTick();
@@ -805,20 +786,16 @@ static void updateLedForState(PmuState state, WakeType wakeType)
  */
 static void onStateChange(PmuState newState)
 {
-    // Determine wake type when entering AWAITING_CTS
-    // This checks RTC time and schedule to set the correct wake type
-    if (newState == PmuState::AWAITING_CTS) {
-        determineWakeType();
-    }
-
-    // Send wake notification when entering WAKE_ACTIVE
-    // This centralizes the notification logic - no need to call it explicitly
-    if (newState == PmuState::WAKE_ACTIVE) {
-        // Only determine wake type if not already set (i.e., fast path from
-        // POST_BOOT/BOOTING -> WAKE_ACTIVE that skipped AWAITING_CTS)
+    // Determine wake type if not already set (boot entry sets PERIODIC in onEnterState,
+    // so this only runs for RTC wakeup entries that need schedule checking)
+    if (newState == PmuState::AWAITING_CTS || newState == PmuState::WAKE_ACTIVE) {
         if (pmuState.wakeType() == WakeType::NONE) {
             determineWakeType();
         }
+    }
+
+    // Send wake notification when entering WAKE_ACTIVE
+    if (newState == PmuState::WAKE_ACTIVE) {
         sendWakeNotification();
     }
 }
