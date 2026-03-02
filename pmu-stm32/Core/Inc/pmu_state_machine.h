@@ -26,7 +26,7 @@ enum class PmuEvent : uint8_t {
  * [Power On]
  *     |
  *     v
- *  BOOTING ---> BOOT_COMPLETE ---> POST_BOOT (10s grace period)
+ *  BOOTING ---> BOOT_COMPLETE ---> AWAITING_CTS (10s boot grace period)
  *     |                               |
  *     | CTS_RECEIVED                  | CTS_RECEIVED --> WAKE_ACTIVE
  *     v                               | TIMEOUT --> SLEEPING
@@ -36,7 +36,7 @@ enum class PmuEvent : uint8_t {
  *     |                               |
  *     |                    RTC_WAKEUP |
  *     |                               v
- *     +-------CTS_RECEIVED---- AWAITING_CTS
+ *     +-------CTS_RECEIVED---- AWAITING_CTS (variable timeout)
  *     |                               |
  *     |                    WAKE_TIMEOUT --> SLEEPING
  *     |
@@ -46,7 +46,6 @@ enum class PmuEvent : uint8_t {
  */
 enum class PmuState : uint8_t {
     BOOTING,       ///< Boot animation in progress
-    POST_BOOT,     ///< Grace period after boot, waiting for RP2040 to initialize
     SLEEPING,      ///< Low power STOP mode (or about to enter)
     AWAITING_CTS,  ///< DC/DC on, waiting for RP2040 CTS signal
     WAKE_ACTIVE,   ///< Wake notification sent, RP2040 working
@@ -195,12 +194,11 @@ public:
     const WakeContext &wakeContext() const { return context_; }
 
     /**
-     * @brief Check if in an active wake state (POST_BOOT, AWAITING_CTS, or WAKE_ACTIVE)
+     * @brief Check if in an active wake state (AWAITING_CTS or WAKE_ACTIVE)
      */
     bool isAwake() const
     {
-        return state_ == PmuState::POST_BOOT || state_ == PmuState::AWAITING_CTS ||
-               state_ == PmuState::WAKE_ACTIVE;
+        return state_ == PmuState::AWAITING_CTS || state_ == PmuState::WAKE_ACTIVE;
     }
 
     /**
@@ -211,7 +209,7 @@ public:
     /**
      * @brief Extend the wake timeout by the specified number of seconds
      *
-     * Resets the wake timer and sets a new timeout. Only effective in
+     * Resets the wake timer and sets a new timeout. Only effective in the
      * AWAITING_CTS or WAKE_ACTIVE states.
      *
      * @param seconds Additional seconds to stay awake (0 = use default periodic timeout)
