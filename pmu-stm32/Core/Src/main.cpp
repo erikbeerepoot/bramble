@@ -102,6 +102,10 @@ static PMU::Protocol protocol(uartSendCallback, setWakeIntervalCallback, keepAwa
 
 // PMU state machine instance
 static PmuStateMachine pmuState(getTickCallback);
+
+// WakeNotification retry timing for AWAITING_CTS state
+static uint32_t lastNotificationSendTime = 0;
+constexpr uint32_t NOTIFICATION_RETRY_INTERVAL_MS = 500;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -253,7 +257,17 @@ int main(void)
                 // Boot animation handled before loop
                 break;
 
-            case PmuState::AWAITING_CTS:
+            case PmuState::AWAITING_CTS: {
+                dcdc.enable();
+                // Proactively send WakeNotification while waiting for CTS confirmation
+                uint32_t now = HAL_GetTick();
+                if (now - lastNotificationSendTime >= NOTIFICATION_RETRY_INTERVAL_MS) {
+                    sendWakeNotification();
+                    lastNotificationSendTime = now;
+                }
+                break;
+            }
+
             case PmuState::WAKE_ACTIVE:
 #ifdef PMU_BRINGUP_MODE
                 // Bringup mode: DC/DC stays off for PMU-only board testing
@@ -899,9 +913,17 @@ static void onStateChange(PmuState newState)
         }
     }
 
-    // Send wake notification when entering WAKE_ACTIVE
+    if (newState == PmuState::AWAITING_CTS) {
+        // Reset retry timer — first notification after 500ms (RP2040 UART boot time)
+        lastNotificationSendTime = HAL_GetTick();
+    }
+
     if (newState == PmuState::WAKE_ACTIVE) {
-        sendWakeNotification();
+        // Only send here for direct paths (BOOTING/SLEEPING → WAKE_ACTIVE via early CTS)
+        // that skip AWAITING_CTS. From AWAITING_CTS, notifications already sent by retry loop.
+        if (pmuState.wakeType() == WakeType::NONE) {
+            sendWakeNotification();
+        }
     }
 }
 
