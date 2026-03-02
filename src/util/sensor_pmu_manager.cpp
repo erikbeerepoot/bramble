@@ -58,14 +58,14 @@ bool SensorPmuManager::initialize(InitCallback init_callback)
                const uint8_t *state) { this->handlePmuWake(reason, entry, state_valid, state); });
 
     // Wait for PMU to send WakeNotification (PMU now initiates by sending periodically)
-    // Start timeout — if notification doesn't arrive, send CTS as fallback to prompt PMU
+    // Start timeout — if notification doesn't arrive, send ack as fallback to prompt PMU
     pmu_logger.debug("Waiting for WakeNotification from PMU...");
     uint32_t now = to_ms_since_boot(get_absolute_time());
     wake_timeout_id_ = task_queue_.postDelayed(
         [this](uint32_t) -> bool {
-            pmu_logger.warn("WakeNotification timeout - sending CTS as fallback");
+            pmu_logger.warn("WakeNotification timeout - sending NotificationAck as fallback");
             wake_timeout_id_ = 0;
-            reliable_pmu_->clearToSend(nullptr);
+            reliable_pmu_->notificationAck(nullptr);
             if (init_callback_) {
                 init_callback_(false, PMU::WakeReason::Periodic);
                 init_callback_ = nullptr;
@@ -187,8 +187,8 @@ void SensorPmuManager::handlePmuWake(PMU::WakeReason reason, const PMU::Schedule
     task_queue_.cancel(wake_timeout_id_);
     wake_timeout_id_ = 0;
 
-    // Send CTS to confirm receipt — PMU transitions AWAITING_CTS → WAKE_ACTIVE
-    reliable_pmu_->clearToSend(nullptr);
+    // Acknowledge receipt — PMU transitions AWAITING_ACK → WAKE_ACTIVE
+    reliable_pmu_->notificationAck(nullptr);
 
     // Restore state from PMU RAM if valid
     bool restored = false;

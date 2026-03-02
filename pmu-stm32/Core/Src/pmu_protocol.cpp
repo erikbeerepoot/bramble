@@ -455,7 +455,7 @@ Protocol::Protocol(UartSendCallback uartSend, SetWakeCallback setWake, KeepAwake
                    ReadyForSleepCallback readyForSleep, GetTickCallback getTick)
     : wakeInterval_(60), nextSeqNum_(SEQ_STM32_MIN), currentSeqNum_(0), uartSend_(uartSend),
       setWake_(setWake), keepAwake_(keepAwake), readyForSleep_(readyForSleep), getTick_(getTick),
-      seenIndex_(0), nodeStateValid_(false), clearToSendReceived_(false)
+      seenIndex_(0), nodeStateValid_(false), notificationAckReceived_(false)
 {
     // Initialize deduplication buffer
     for (auto &entry : seenBuffer_) {
@@ -572,9 +572,9 @@ void Protocol::processReceivedByte(uint8_t byte)
                     sendAck();
                 }
                 break;
-            case Command::ClearToSend:
-                // RP2040 is ready to receive wake info
-                clearToSendReceived_ = true;
+            case Command::NotificationAck:
+                // RP2040 acknowledges receipt of WakeNotification
+                notificationAckReceived_ = true;
                 sendAck();
                 break;
             case Command::SystemReset:

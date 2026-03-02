@@ -18,7 +18,7 @@ enum class Command : uint8_t {
         0x16,  // Set RTC date/time (7 bytes: year, month, day, weekday, hour, minute, second)
     ReadyForSleep = 0x17,  // RP2040 signals work complete, ready for power down
     GetDateTime = 0x18,    // Get RTC date/time from PMU (returns DateTimeResponse)
-    ClearToSend = 0x19,    // RP2040 signals ready to receive wake info
+    NotificationAck = 0x19,  // RP2040 acknowledges receipt of WakeNotification
     SystemReset = 0x1A     // Request full system reset (PMU resets itself + RP2040)
 };
 
@@ -282,9 +282,9 @@ public:
 
     uint32_t getWakeInterval() const { return wakeInterval_; }
 
-    // Clear-to-send state management
-    bool isCtsReceived() const { return clearToSendReceived_; }
-    void clearCtsReceived() { clearToSendReceived_ = false; }
+    // Notification acknowledgement state management
+    bool isNotificationAckReceived() const { return notificationAckReceived_; }
+    void clearNotificationAck() { notificationAckReceived_ = false; }
 
     // Clear deduplication buffer - call when starting a new RP2040 boot cycle
     // This is needed because HAL tick is suspended during STOP mode, so old
@@ -325,7 +325,7 @@ private:
     bool nodeStateValid_;
 
     // Clear-to-send flag - set when RP2040 signals ready to receive wake info
-    bool clearToSendReceived_;
+    bool notificationAckReceived_;
 
     // Deduplication helpers
     bool wasRecentlySeen(uint8_t seqNum);

@@ -10,12 +10,12 @@
  * @brief Events that can be dispatched to the PMU state machine
  */
 enum class PmuEvent : uint8_t {
-    BOOT_COMPLETE,    ///< Boot animation finished
-    RTC_WAKEUP,       ///< RTC woke us (any type - scheduled or periodic)
-    CTS_RECEIVED,     ///< RP2040 sent ClearToSend
-    READY_FOR_SLEEP,  ///< RP2040 signaled work complete
-    WAKE_TIMEOUT,     ///< Overall wake timeout expired
-    ERROR_OCCURRED    ///< Unrecoverable error
+    BOOT_COMPLETE,       ///< Boot animation finished
+    RTC_WAKEUP,          ///< RTC woke us (any type - scheduled or periodic)
+    NOTIFICATION_ACK,    ///< RP2040 acknowledged WakeNotification
+    READY_FOR_SLEEP,     ///< RP2040 signaled work complete
+    WAKE_TIMEOUT,        ///< Overall wake timeout expired
+    ERROR_OCCURRED       ///< Unrecoverable error
 };
 
 /**
@@ -26,9 +26,9 @@ enum class PmuEvent : uint8_t {
  * [Power On]
  *     |
  *     v
- *  BOOTING ---> BOOT_COMPLETE ---> AWAITING_CTS (10s boot grace period)
+ *  BOOTING ---> BOOT_COMPLETE ---> AWAITING_ACK (10s boot grace period)
  *     |                               |
- *     | CTS_RECEIVED                  | CTS_RECEIVED --> WAKE_ACTIVE
+ *     | NOTIFICATION_ACK              | NOTIFICATION_ACK --> WAKE_ACTIVE
  *     v                               | TIMEOUT --> SLEEPING
  *  WAKE_ACTIVE                        |
  *     ^                               v
@@ -36,7 +36,7 @@ enum class PmuEvent : uint8_t {
  *     |                               |
  *     |                    RTC_WAKEUP |
  *     |                               v
- *     +-------CTS_RECEIVED---- AWAITING_CTS (variable timeout)
+ *     +-----NOTIFICATION_ACK--- AWAITING_ACK (variable timeout)
  *     |                               |
  *     |                    WAKE_TIMEOUT --> SLEEPING
  *     |
@@ -47,8 +47,8 @@ enum class PmuEvent : uint8_t {
 enum class PmuState : uint8_t {
     BOOTING,       ///< Boot animation in progress
     SLEEPING,      ///< Low power STOP mode (or about to enter)
-    AWAITING_CTS,  ///< DC/DC on, waiting for RP2040 CTS signal
-    WAKE_ACTIVE,   ///< Wake notification sent, RP2040 working
+    AWAITING_ACK,  ///< DC/DC on, sending WakeNotification, waiting for RP2040 ack
+    WAKE_ACTIVE,   ///< RP2040 acknowledged, actively working
     ERROR          ///< Unrecoverable error
 };
 
@@ -104,8 +104,8 @@ struct WakeContext {
  *   // On RTC wakeup (callback determines wake type):
  *   pmu.dispatch(PmuEvent::RTC_WAKEUP);
  *
- *   // When CTS received:
- *   pmu.dispatch(PmuEvent::CTS_RECEIVED);
+ *   // When RP2040 acknowledges WakeNotification:
+ *   pmu.dispatch(PmuEvent::NOTIFICATION_ACK);
  *
  *   // In main loop (checks timeouts):
  *   pmu.tick();
@@ -152,7 +152,7 @@ public:
     /**
      * @brief Set the wake type and optional schedule entry
      *
-     * Called by the state change callback when entering AWAITING_CTS
+     * Called by the state change callback when entering AWAITING_ACK
      * to configure the wake context based on RTC/schedule analysis.
      *
      * @param type The type of wake (SCHEDULED or PERIODIC)
@@ -177,7 +177,7 @@ public:
     /**
      * @brief Check if RP2040 power (DC/DC) should be enabled
      *
-     * True during BOOTING, AWAITING_CTS, and WAKE_ACTIVE states.
+     * True during BOOTING, AWAITING_ACK, and WAKE_ACTIVE states.
      */
     bool shouldPowerRp2040() const;
 
@@ -194,11 +194,11 @@ public:
     const WakeContext &wakeContext() const { return context_; }
 
     /**
-     * @brief Check if in an active wake state (AWAITING_CTS or WAKE_ACTIVE)
+     * @brief Check if in an active wake state (AWAITING_ACK or WAKE_ACTIVE)
      */
     bool isAwake() const
     {
-        return state_ == PmuState::AWAITING_CTS || state_ == PmuState::WAKE_ACTIVE;
+        return state_ == PmuState::AWAITING_ACK || state_ == PmuState::WAKE_ACTIVE;
     }
 
     /**
@@ -210,7 +210,7 @@ public:
      * @brief Extend the wake timeout by the specified number of seconds
      *
      * Resets the wake timer and sets a new timeout. Only effective in the
-     * AWAITING_CTS or WAKE_ACTIVE states.
+     * AWAITING_ACK or WAKE_ACTIVE states.
      *
      * @param seconds Additional seconds to stay awake (0 = use default periodic timeout)
      */

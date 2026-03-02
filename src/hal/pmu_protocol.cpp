@@ -385,10 +385,10 @@ void Protocol::getDateTime(DateTimeCallback callback)
     sendMessage();
 }
 
-void Protocol::clearToSend(CommandResultCallback callback)
+void Protocol::notificationAck(CommandResultCallback callback)
 {
     pendingCommandCallback_ = callback;
-    builder_.startMessage(getNextSequenceNumber(), Command::ClearToSend);
+    builder_.startMessage(getNextSequenceNumber(), Command::NotificationAck);
     sendMessage();
 }
 
