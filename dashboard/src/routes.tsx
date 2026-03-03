@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate } from 'react-router-dom';
 import App from './App';
 import NodeList from './components/NodeList';
 import NodeDetailPage from './components/NodeDetailPage';
+import VisualizePage from './components/VisualizePage';
 import Settings from './components/Settings';
 
 export const router = createBrowserRouter([
@@ -20,6 +21,10 @@ export const router = createBrowserRouter([
       {
         path: 'nodes/:deviceId',
         element: <NodeDetailPage />,
+      },
+      {
+        path: 'visualize',
+        element: <VisualizePage />,
       },
       {
         path: 'settings',

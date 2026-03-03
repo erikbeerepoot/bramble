@@ -62,15 +62,15 @@ function App() {
   }, []);
 
   const updateNode = useCallback((updatedNode: Node) => {
-    setNodes(prev => prev.map(n => n.device_id === updatedNode.device_id ? updatedNode : n));
+    setNodes((prev) => prev.map((n) => (n.device_id === updatedNode.device_id ? updatedNode : n)));
   }, []);
 
   const removeNode = useCallback((deviceId: string) => {
-    setNodes(prev => prev.filter(n => n.device_id !== deviceId));
+    setNodes((prev) => prev.filter((n) => n.device_id !== deviceId));
   }, []);
 
   const addZone = useCallback((zone: Zone) => {
-    setZones(prev => [...prev, zone].sort((a, b) => a.name.localeCompare(b.name)));
+    setZones((prev) => [...prev, zone].sort((a, b) => a.name.localeCompare(b.name)));
   }, []);
 
   const checkConnection = useCallback(async () => {
@@ -95,6 +95,7 @@ function App() {
   }, [fetchNodes, fetchZones, checkConnection]);
 
   const isNodesActive = location.pathname === '/nodes' || location.pathname.startsWith('/nodes/');
+  const isVisualizeActive = location.pathname === '/visualize';
   const isSettingsActive = location.pathname === '/settings';
 
   const contextValue: AppContextType = {
@@ -119,9 +120,15 @@ function App() {
             <div className="flex items-center justify-between gap-4">
               <div className="flex items-center gap-3 min-w-0">
                 <h1 className="text-xl sm:text-2xl font-bold truncate">Bramble</h1>
-                <div className={`flex items-center space-x-2 text-sm shrink-0 ${connected ? 'text-green-300' : 'text-red-300'}`}>
-                  <span className={`w-2 h-2 rounded-full ${connected ? 'bg-green-400' : 'bg-red-400'}`}></span>
-                  <span className="hidden sm:inline">{connected ? 'Connected' : 'Disconnected'}</span>
+                <div
+                  className={`flex items-center space-x-2 text-sm shrink-0 ${connected ? 'text-green-300' : 'text-red-300'}`}
+                >
+                  <span
+                    className={`w-2 h-2 rounded-full ${connected ? 'bg-green-400' : 'bg-red-400'}`}
+                  ></span>
+                  <span className="hidden sm:inline">
+                    {connected ? 'Connected' : 'Disconnected'}
+                  </span>
                 </div>
               </div>
               <nav className="flex space-x-2 sm:space-x-4 shrink-0">
@@ -132,6 +139,14 @@ function App() {
                   }`}
                 >
                   Nodes
+                </Link>
+                <Link
+                  to="/visualize"
+                  className={`px-3 py-2 rounded-md text-sm font-medium ${
+                    isVisualizeActive ? 'bg-bramble-800' : 'hover:bg-bramble-600'
+                  }`}
+                >
+                  Visualize
                 </Link>
                 <Link
                   to="/settings"
