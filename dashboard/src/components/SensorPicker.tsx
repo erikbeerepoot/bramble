@@ -65,11 +65,6 @@ function SensorPicker({ nodes, selectedIds, onChange, colors }: SensorPickerProp
                   style={{ backgroundColor: color }}
                 />
               )}
-              <span
-                className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                  node.online ? 'bg-green-400' : 'bg-gray-300'
-                }`}
-              />
               {displayName}
             </button>
           );
