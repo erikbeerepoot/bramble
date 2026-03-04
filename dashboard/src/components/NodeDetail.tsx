@@ -31,7 +31,7 @@ interface NodeDetailProps {
   zones: Zone[];
   onBack: () => void;
   onUpdate: (node: Node) => void;
-  onDelete: (deviceId: number) => void;
+  onDelete: (deviceId: string) => void;
   onZoneCreated: (zone: Zone) => void;
 }
 
