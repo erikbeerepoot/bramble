@@ -166,17 +166,16 @@ void RTC_IRQHandler(void)
 }
 
 #ifdef USE_WS2812
-#include "led.h"
-
-extern LED led;
-
 /**
  * @brief This function handles DMA1 channel 2 and 3 interrupts.
  * Used by WS2812 LED driver for TIM2_UP DMA transfers.
+ * Implemented in ws2812_led.cpp (C++ linkage), declared here.
  */
+extern void WS2812_DMA_IRQHandler(void);
+
 void DMA1_Channel2_3_IRQHandler(void)
 {
-    HAL_DMA_IRQHandler(led.getDmaHandle());
+    WS2812_DMA_IRQHandler();
 }
 #endif  // USE_WS2812
 
