@@ -196,4 +196,45 @@ void HAL_RTC_MspDeInit(RTC_HandleTypeDef* hrtc)
 
 /* USER CODE BEGIN 1 */
 
+/**
+  * @brief I2C MSP Initialization
+  * Configures PA9 (SCL) and PA10 (SDA) for I2C1 (FRAM)
+  * @param hi2c: I2C handle pointer
+  * @retval None
+  */
+void HAL_I2C_MspInit(I2C_HandleTypeDef* hi2c)
+{
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
+  if(hi2c->Instance==I2C1)
+  {
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+    __HAL_RCC_I2C1_CLK_ENABLE();
+
+    /**I2C1 GPIO Configuration
+    PA9     ------> I2C1_SCL
+    PA10    ------> I2C1_SDA
+    */
+    GPIO_InitStruct.Pin = FRAM_SCL_PIN | FRAM_SDA_PIN;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_OD;
+    GPIO_InitStruct.Pull = GPIO_PULLUP;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+    GPIO_InitStruct.Alternate = GPIO_AF1_I2C1;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+  }
+}
+
+/**
+  * @brief I2C MSP De-Initialization
+  * @param hi2c: I2C handle pointer
+  * @retval None
+  */
+void HAL_I2C_MspDeInit(I2C_HandleTypeDef* hi2c)
+{
+  if(hi2c->Instance==I2C1)
+  {
+    __HAL_RCC_I2C1_CLK_DISABLE();
+    HAL_GPIO_DeInit(GPIOA, FRAM_SCL_PIN | FRAM_SDA_PIN);
+  }
+}
+
 /* USER CODE END 1 */
