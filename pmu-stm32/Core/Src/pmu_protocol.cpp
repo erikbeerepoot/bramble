@@ -3,6 +3,7 @@
 #include <cstring>
 
 #include "main.h"  // For RTC_HandleTypeDef and HAL functions
+#include "persistent_storage.h"
 
 // External reference to RTC handle from main.cpp
 extern RTC_HandleTypeDef hrtc;
@@ -117,24 +118,21 @@ bool ScheduleEntry::timeRangesOverlap(uint8_t h1, uint8_t m1, uint16_t d1, uint8
 }
 
 // ============================================================================
-// WateringSchedule Implementation
+// WateringSchedule Implementation (FRAM-backed)
 // ============================================================================
 
-WateringSchedule::WateringSchedule() : count_(0)
-{
-    // Initialize all entries as disabled
-    for (auto &entry : entries_) {
-        entry.enabled = false;
-    }
-}
+WateringSchedule::WateringSchedule() : storage_(nullptr) {}
 
 ErrorCode WateringSchedule::addEntry(const ScheduleEntry &entry)
 {
+    if (!storage_) return ErrorCode::InvalidParam;
+
     if (!entry.isValid()) {
         return ErrorCode::InvalidParam;
     }
 
-    if (count_ >= MAX_SCHEDULE_ENTRIES) {
+    uint8_t count = getCount();
+    if (count >= MAX_SCHEDULE_ENTRIES) {
         return ErrorCode::ScheduleFull;
     }
 
@@ -142,92 +140,97 @@ ErrorCode WateringSchedule::addEntry(const ScheduleEntry &entry)
         return ErrorCode::Overlap;
     }
 
-    // Append to end of list
-    entries_[count_] = entry;
-    count_++;
-
-    return ErrorCode::NoError;
-}
-
-ErrorCode WateringSchedule::updateEntry(uint8_t index, const ScheduleEntry &entry)
-{
-    if (index >= count_) {
-        return ErrorCode::InvalidIndex;
-    }
-
-    if (!entry.isValid()) {
+    // Write the new entry and update count
+    if (!storage_->saveScheduleEntry(count, entry)) {
         return ErrorCode::InvalidParam;
     }
+    storage_->setScheduleCount(count + 1);
 
-    if (hasOverlap(entry, index)) {
-        return ErrorCode::Overlap;
-    }
-
-    entries_[index] = entry;
     return ErrorCode::NoError;
 }
 
 ErrorCode WateringSchedule::removeEntry(uint8_t index)
 {
-    if (index >= count_) {
+    if (!storage_) return ErrorCode::InvalidParam;
+
+    uint8_t count = getCount();
+    if (index >= count) {
         return ErrorCode::InvalidIndex;
     }
 
-    // Shift all entries after this one down
-    for (uint8_t i = index; i < count_ - 1; i++) {
-        entries_[i] = entries_[i + 1];
+    // Shift entries down in FRAM
+    for (uint8_t i = index; i < count - 1; i++) {
+        ScheduleEntry entry;
+        if (!storage_->loadScheduleEntry(i + 1, entry)) {
+            return ErrorCode::InvalidParam;
+        }
+        storage_->saveScheduleEntry(i, entry);
     }
 
-    count_--;
+    storage_->setScheduleCount(count - 1);
     return ErrorCode::NoError;
 }
 
 void WateringSchedule::clear()
 {
-    count_ = 0;
-}
-
-const ScheduleEntry *WateringSchedule::getEntry(uint8_t index) const
-{
-    if (index >= count_) {
-        return nullptr;
+    if (storage_) {
+        storage_->setScheduleCount(0);
     }
-    return &entries_[index];
 }
 
-const ScheduleEntry *WateringSchedule::findNextEntry(uint8_t currentDay, uint8_t currentHour,
-                                                     uint8_t currentMinute) const
+bool WateringSchedule::getEntry(uint8_t index, ScheduleEntry &out) const
 {
-    const ScheduleEntry *nextEntry = nullptr;
+    if (!storage_) return false;
+
+    uint8_t count = getCount();
+    if (index >= count) return false;
+
+    return storage_->loadScheduleEntry(index, out);
+}
+
+bool WateringSchedule::findNextEntry(uint8_t currentDay, uint8_t currentHour,
+                                     uint8_t currentMinute, ScheduleEntry &out) const
+{
+    if (!storage_) return false;
+
+    uint8_t count = getCount();
+    bool found = false;
     uint32_t minMinutes = 0xFFFFFFFF;
 
-    for (uint8_t i = 0; i < count_; i++) {
-        const auto &entry = entries_[i];
-        if (!entry.enabled)
-            continue;
+    for (uint8_t i = 0; i < count; i++) {
+        ScheduleEntry entry;
+        if (!storage_->loadScheduleEntry(i, entry)) continue;
+        if (!entry.enabled) continue;
 
-        uint32_t minutesUntil = entry.minutesUntil(currentDay, currentHour, currentMinute);
-        if (minutesUntil < minMinutes) {
-            minMinutes = minutesUntil;
-            nextEntry = &entry;
+        uint32_t minutes = entry.minutesUntil(currentDay, currentHour, currentMinute);
+        if (minutes < minMinutes) {
+            minMinutes = minutes;
+            out = entry;
+            found = true;
         }
     }
 
-    return nextEntry;
+    return found;
 }
 
 uint8_t WateringSchedule::getCount() const
 {
-    return count_;
+    if (!storage_) return 0;
+    return storage_->getScheduleCount();
 }
 
 bool WateringSchedule::hasOverlap(const ScheduleEntry &entry, uint8_t excludeIndex) const
 {
-    for (uint8_t i = 0; i < count_; i++) {
-        if (i == excludeIndex)
-            continue;
+    if (!storage_) return false;
 
-        if (entry.overlapsWith(entries_[i])) {
+    uint8_t count = getCount();
+    for (uint8_t i = 0; i < count; i++) {
+        if (i == excludeIndex) continue;
+
+        ScheduleEntry existing;
+        if (!storage_->loadScheduleEntry(i, existing)) continue;
+
+        if (entry.overlapsWith(existing)) {
             return true;
         }
     }
@@ -455,7 +458,7 @@ Protocol::Protocol(UartSendCallback uartSend, SetWakeCallback setWake, KeepAwake
                    ReadyForSleepCallback readyForSleep, GetTickCallback getTick)
     : wakeInterval_(60), nextSeqNum_(SEQ_STM32_MIN), currentSeqNum_(0), uartSend_(uartSend),
       setWake_(setWake), keepAwake_(keepAwake), readyForSleep_(readyForSleep), getTick_(getTick),
-      seenIndex_(0), nodeStateValid_(false), clearToSendReceived_(false)
+      seenIndex_(0), nodeStateValid_(false), clearToSendReceived_(false), storage_(nullptr)
 {
     // Initialize deduplication buffer
     for (auto &entry : seenBuffer_) {
@@ -644,10 +647,36 @@ void Protocol::sendScheduleComplete()
     sendMessage();
 }
 
-const ScheduleEntry *Protocol::getNextScheduledEntry(uint8_t currentDay, uint8_t currentHour,
-                                                     uint8_t currentMinute) const
+bool Protocol::getNextScheduledEntry(uint8_t currentDay, uint8_t currentHour,
+                                     uint8_t currentMinute, ScheduleEntry &out) const
 {
-    return schedule_.findNextEntry(currentDay, currentHour, currentMinute);
+    return schedule_.findNextEntry(currentDay, currentHour, currentMinute, out);
+}
+
+void Protocol::setStorage(PersistentStorage *storage)
+{
+    storage_ = storage;
+    schedule_.setStorage(storage);
+}
+
+void Protocol::loadFromStorage()
+{
+    if (!storage_ || !storage_->isAvailable()) return;
+
+    // Load wake interval
+    uint32_t interval = 0;
+    if (storage_->loadWakeInterval(interval) && interval > 0 && interval <= 86400) {
+        wakeInterval_ = interval;
+    }
+
+    // Schedules are now read on demand from FRAM — nothing to load.
+
+    // Load node state
+    if (storage_->isNodeStateValid()) {
+        if (storage_->loadNodeState(nodeState_, NODE_STATE_SIZE)) {
+            nodeStateValid_ = true;
+        }
+    }
 }
 
 // Command handlers
@@ -668,6 +697,11 @@ void Protocol::handleSetWakeInterval(const uint8_t *data, uint8_t length)
     }
 
     wakeInterval_ = seconds;
+
+    // Persist to FRAM
+    if (storage_) {
+        storage_->saveWakeInterval(seconds);
+    }
 
     // Send ACK before reconfiguring RTC to avoid timing issues
     sendAck();
@@ -815,6 +849,11 @@ void Protocol::handleReadyForSleep()
             nodeState_[i] = data[i];
         }
         nodeStateValid_ = true;
+
+        // Persist node state to FRAM
+        if (storage_) {
+            storage_->saveNodeState(nodeState_, NODE_STATE_SIZE);
+        }
     }
     // If no state blob, keep previous state (backward compatibility)
 
@@ -879,16 +918,15 @@ void Protocol::sendWakeInterval()
 
 void Protocol::sendScheduleEntry(uint8_t index)
 {
-    const ScheduleEntry *entry = schedule_.getEntry(index);
-
-    if (entry == nullptr) {
+    ScheduleEntry entry;
+    if (!schedule_.getEntry(index, entry)) {
         sendNack(ErrorCode::InvalidIndex);
         return;
     }
 
     // Echo the sequence number from the received command
     builder_.startMessage(currentSeqNum_, static_cast<uint8_t>(Response::ScheduleEntry));
-    builder_.addScheduleEntry(*entry);
+    builder_.addScheduleEntry(entry);
     sendMessage();
 }
 
