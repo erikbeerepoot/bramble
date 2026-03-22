@@ -37,6 +37,13 @@ private:
     static constexpr uint16_t PAGE_SIZE = 256;
     static constexpr uint32_t TIMEOUT_MS = 100;
 
+    // HAL I2C memory operation function pointer type.
+    using I2COperation = HAL_StatusTypeDef (*)(I2C_HandleTypeDef*, uint16_t, uint16_t, uint16_t,
+                                               uint8_t*, uint16_t, uint32_t);
+
+    // Shared page-crossing transfer loop used by read() and write().
+    bool transfer(uint16_t address, uint8_t* data, uint16_t length, I2COperation operation);
+
     // Compute the 7-bit I2C slave address for a given memory address.
     // Upper 3 bits of the 11-bit address become bits [3:1] of the slave address.
     uint8_t slaveAddress(uint16_t memoryAddress) const;

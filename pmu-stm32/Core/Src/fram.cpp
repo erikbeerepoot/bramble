@@ -15,38 +15,15 @@ bool FRAM::init()
 
 bool FRAM::read(uint16_t address, uint8_t* data, uint16_t length)
 {
-    if (!present_ || address + length > CAPACITY) {
-        return false;
-    }
-
-    uint16_t remaining = length;
-    uint16_t offset = 0;
-
-    while (remaining > 0) {
-        uint16_t currentAddress = address + offset;
-        uint8_t slave = slaveAddress(currentAddress);
-        uint8_t word = wordAddress(currentAddress);
-
-        // Bytes left in the current 256-byte page
-        uint16_t bytesInPage = PAGE_SIZE - word;
-        uint16_t chunk = std::min(remaining, bytesInPage);
-
-        HAL_StatusTypeDef status = HAL_I2C_Mem_Read(
-            &i2c_, static_cast<uint16_t>(slave) << 1, word, I2C_MEMADD_SIZE_8BIT,
-            data + offset, chunk, TIMEOUT_MS);
-
-        if (status != HAL_OK) {
-            return false;
-        }
-
-        offset += chunk;
-        remaining -= chunk;
-    }
-
-    return true;
+    return transfer(address, data, length, HAL_I2C_Mem_Read);
 }
 
 bool FRAM::write(uint16_t address, const uint8_t* data, uint16_t length)
+{
+    return transfer(address, const_cast<uint8_t*>(data), length, HAL_I2C_Mem_Write);
+}
+
+bool FRAM::transfer(uint16_t address, uint8_t* data, uint16_t length, I2COperation operation)
 {
     if (!present_ || address + length > CAPACITY) {
         return false;
@@ -64,9 +41,9 @@ bool FRAM::write(uint16_t address, const uint8_t* data, uint16_t length)
         uint16_t bytesInPage = PAGE_SIZE - word;
         uint16_t chunk = std::min(remaining, bytesInPage);
 
-        HAL_StatusTypeDef status = HAL_I2C_Mem_Write(
+        HAL_StatusTypeDef status = operation(
             &i2c_, static_cast<uint16_t>(slave) << 1, word, I2C_MEMADD_SIZE_8BIT,
-            const_cast<uint8_t*>(data + offset), chunk, TIMEOUT_MS);
+            data + offset, chunk, TIMEOUT_MS);
 
         if (status != HAL_OK) {
             return false;
