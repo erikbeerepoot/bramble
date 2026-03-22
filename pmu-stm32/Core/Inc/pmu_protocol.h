@@ -1,8 +1,9 @@
 #ifndef PMU_PROTOCOL_H
 #define PMU_PROTOCOL_H
 
-#include <array>
 #include <cstdint>
+
+class PersistentStorage;
 
 namespace PMU {
 
@@ -82,7 +83,7 @@ inline bool operator!(DayOfWeek a)
 // Protocol constants
 constexpr uint8_t START_BYTE = 0xAA;
 constexpr uint8_t END_BYTE = 0x55;
-constexpr uint8_t MAX_SCHEDULE_ENTRIES = 2;  // Reduced to 2 to fit in 2KB RAM
+constexpr uint8_t MAX_SCHEDULE_ENTRIES = 8;
 constexpr uint8_t MAX_MESSAGE_SIZE = 48;     // Increased to accommodate state blob (was 32)
 constexpr uint8_t SCHEDULE_ENTRY_SIZE = 7;
 constexpr uint8_t NODE_STATE_SIZE = 32;  // Opaque state blob stored in PMU RAM
@@ -137,36 +138,38 @@ private:
                            uint16_t d2) const;
 };
 
-// Watering schedule manager
+// Watering schedule manager.
+// When backed by PersistentStorage, entries live in FRAM and are read on demand.
+// When no storage is set, falls back to a small RAM-only mode (no entries).
 class WateringSchedule {
 public:
     WateringSchedule();
 
-    // Add or update a schedule entry at the first available slot
+    // Set the persistent storage backend. Must be called before use if FRAM is available.
+    void setStorage(PersistentStorage *storage) { storage_ = storage; }
+
+    // Add a schedule entry at the next available slot
     ErrorCode addEntry(const ScheduleEntry &entry);
 
-    // Update entry at specific index
-    ErrorCode updateEntry(uint8_t index, const ScheduleEntry &entry);
-
-    // Remove entry at index
+    // Remove entry at index (shifts subsequent entries down)
     ErrorCode removeEntry(uint8_t index);
 
     // Clear all entries
     void clear();
 
-    // Get entry at index (returns nullptr if invalid)
-    const ScheduleEntry *getEntry(uint8_t index) const;
+    // Load entry at index into `out`. Returns true if valid.
+    bool getEntry(uint8_t index, ScheduleEntry &out) const;
 
-    // Find the next schedule entry that should trigger
-    const ScheduleEntry *findNextEntry(uint8_t currentDay, uint8_t currentHour,
-                                       uint8_t currentMinute) const;
+    // Find the schedule entry closest to triggering.
+    // Returns true and populates `out` if found.
+    bool findNextEntry(uint8_t currentDay, uint8_t currentHour,
+                       uint8_t currentMinute, ScheduleEntry &out) const;
 
     // Get count of active entries
     uint8_t getCount() const;
 
 private:
-    std::array<ScheduleEntry, MAX_SCHEDULE_ENTRIES> entries_;
-    uint8_t count_;
+    PersistentStorage *storage_;
 
     // Check if entry would overlap with existing entries
     bool hasOverlap(const ScheduleEntry &entry, uint8_t excludeIndex = 0xFF) const;
@@ -297,9 +300,13 @@ public:
         }
     }
 
-    // Get the next scheduled entry (for RTC wakeup checking)
-    const ScheduleEntry *getNextScheduledEntry(uint8_t currentDay, uint8_t currentHour,
-                                               uint8_t currentMinute) const;
+    // Find the next scheduled entry. Returns true and populates `out` if found.
+    bool getNextScheduledEntry(uint8_t currentDay, uint8_t currentHour,
+                               uint8_t currentMinute, ScheduleEntry &out) const;
+
+    // Persistent storage integration
+    void setStorage(PersistentStorage *storage);
+    void loadFromStorage();
 
 private:
     MessageParser parser_;
@@ -326,6 +333,9 @@ private:
 
     // Clear-to-send flag - set when RP2040 signals ready to receive wake info
     bool clearToSendReceived_;
+
+    // Optional persistent storage (nullptr if FRAM not present)
+    PersistentStorage *storage_;
 
     // Deduplication helpers
     bool wasRecentlySeen(uint8_t seqNum);
