@@ -64,8 +64,12 @@ static PersistentStorage storage(fram);
 // UART receive buffer
 static uint8_t uartRxByte;
 
-// RTC wakeup flag - set by interrupt, handled in main loop
+// ISR-to-main-loop flags
+// All state machine events are dispatched from the main loop, never from ISR
+// context, to avoid stack overflow on this 2KB RAM MCU.
 static volatile bool rtcWakeupFlag = false;
+static volatile bool readyForSleepFlag = false;
+static volatile bool bootCompleteFlag = false;
 
 // Clock source fallback flag - set if LSE crystal fails to start
 static bool usingLSIFallback = false;
@@ -173,16 +177,6 @@ int main(void)
     led.init();
     led.off();
 
-    // Log LSE crystal failure with red LED blinks
-    if (usingLSIFallback) {
-        for (int i = 0; i < 3; i++) {
-            led.setColor(LED::RED);
-            HAL_Delay(200);
-            led.off();
-            HAL_Delay(200);
-        }
-    }
-
     // Initialize FRAM and persistent storage
     // Return values intentionally ignored — system operates in degraded mode without FRAM
     fram.init();
@@ -194,9 +188,13 @@ int main(void)
     // Load persisted state from FRAM (wake interval, schedules, node state)
     protocol.loadFromStorage();
 
-    // Initialize DC/DC converter (start enabled, then we can program the rp2040)
+    // Initialize DC/DC converter
     dcdc.init();
+#ifdef PMU_BRINGUP_MODE
+    dcdc.disable();
+#else
     dcdc.enable();
+#endif
 
     // Set up state machine callback for LED updates
     pmuState.setStateCallback(onStateChange);
@@ -222,6 +220,11 @@ int main(void)
         // =====================================================================
         // Event Processing
         // =====================================================================
+        if (bootCompleteFlag) {
+            bootCompleteFlag = false;
+            pmuState.dispatch(PmuEvent::BOOT_COMPLETE);
+        }
+
         if (rtcWakeupFlag) {
             rtcWakeupFlag = false;
             pmuState.dispatch(PmuEvent::RTC_WAKEUP);
@@ -230,6 +233,11 @@ int main(void)
         if (protocol.isCtsReceived()) {
             pmuState.dispatch(PmuEvent::CTS_RECEIVED);
             protocol.clearCtsReceived();
+        }
+
+        if (readyForSleepFlag) {
+            readyForSleepFlag = false;
+            pmuState.dispatch(PmuEvent::READY_FOR_SLEEP);
         }
 
         pmuState.tick();
@@ -248,13 +256,22 @@ int main(void)
             case PmuState::POST_BOOT:
             case PmuState::AWAITING_CTS:
             case PmuState::WAKE_ACTIVE:
+#ifdef PMU_BRINGUP_MODE
+                dcdc.disable();
+#else
                 dcdc.enable();
+#endif
                 break;
 
             case PmuState::SLEEPING:
+#ifdef PMU_BRINGUP_MODE
+                // Bringup mode: DC/DC off, don't enter stop mode
+                dcdc.disable();
+#else
                 dcdc.disable();
                 enterStopMode();
                 wakeupFromStopMode();
+#endif
                 break;
 
             case PmuState::ERROR:
@@ -568,7 +585,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
         if (bootAnimation.flickerCount >= BootAnimationConfig::TOTAL_FLICKERS) {
             bootAnimation.complete = true;
             HAL_TIM_Base_Stop_IT(&htim21);
-            pmuState.dispatch(PmuEvent::BOOT_COMPLETE);
+            bootCompleteFlag = true;
         }
     } else {
         // LED was off, turn it on
@@ -791,9 +808,8 @@ static uint32_t getTickCallback()
  */
 static void readyForSleepCallback()
 {
-    // RP2040 is done with its work - dispatch READY_FOR_SLEEP event
-    // State machine will transition to SLEEPING and handle DC/DC disable
-    pmuState.dispatch(PmuEvent::READY_FOR_SLEEP);
+    // Set flag for main loop — don't dispatch from ISR context
+    readyForSleepFlag = true;
 }
 
 /**
