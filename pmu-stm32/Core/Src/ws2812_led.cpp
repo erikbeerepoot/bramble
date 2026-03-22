@@ -135,7 +135,10 @@ void LED::sendData()
     __enable_irq();
 
     // Reset: hold low for >50us to latch data
-    HAL_Delay(1);
+    // Use cycle-counting delay instead of HAL_Delay so this is safe
+    // from ISR context (HAL_Delay depends on SysTick which may not fire)
+    // At 16 MHz, 1000 iterations ≈ ~250us (well above 50us minimum)
+    for (volatile uint32_t i = 0; i < 1000; i++) {}
 }
 
 // DMA IRQ handler stub — kept for ISR vector compatibility
