@@ -23,7 +23,9 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "dcdc.h"
+#include "fram.h"
 #include "led.h"
+#include "persistent_storage.h"
 #include "pmu_protocol.h"
 #include "pmu_state_machine.h"
 /* USER CODE END Includes */
@@ -49,9 +51,15 @@ RTC_HandleTypeDef hrtc;
 
 TIM_HandleTypeDef htim21;
 
+I2C_HandleTypeDef hi2c1;
+
 /* USER CODE BEGIN PV */
 LED led;
 DCDC dcdc;
+
+// FRAM and persistent storage
+static FRAM fram(hi2c1);
+static PersistentStorage storage(fram);
 
 // UART receive buffer
 static uint8_t uartRxByte;
@@ -98,6 +106,7 @@ static void MX_GPIO_Init(void);
 static void MX_LPUART1_UART_Init(void);
 static void MX_RTC_Init(void);
 static void MX_TIM21_Init(void);
+static void MX_I2C1_Init(void);
 /* USER CODE BEGIN PFP */
 static void configureRTCWakeup(uint32_t seconds);
 static void enterStopMode(void);
@@ -154,6 +163,7 @@ int main(void)
     MX_LPUART1_UART_Init();
     MX_RTC_Init();
     MX_TIM21_Init();
+    MX_I2C1_Init();
 
     /* USER CODE BEGIN 2 */
     // Start UART receive interrupt IMMEDIATELY after UART init
@@ -173,6 +183,16 @@ int main(void)
         }
     }
 
+    // Initialize FRAM and persistent storage
+    fram.init();
+    storage.init();
+
+    // Give the protocol layer access to persistent storage
+    protocol.setStorage(&storage);
+
+    // Load persisted state from FRAM (wake interval, schedules, node state)
+    protocol.loadFromStorage();
+
     // Initialize DC/DC converter (start enabled, then we can program the rp2040)
     dcdc.init();
     dcdc.enable();
@@ -180,7 +200,7 @@ int main(void)
     // Set up state machine callback for LED updates
     pmuState.setStateCallback(onStateChange);
 
-    // Configure RTC wakeup timer with default wake interval (300 seconds)
+    // Configure RTC wakeup timer with wake interval (loaded from FRAM or default)
     configureRTCWakeup(protocol.getWakeInterval());
 
     // Start non-blocking boot animation (timer-based)
@@ -447,6 +467,26 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 
 /**
+ * @brief I2C1 Initialization Function (for FRAM)
+ * 100 kHz standard mode on PA9 (SCL) / PA10 (SDA)
+ */
+static void MX_I2C1_Init(void)
+{
+    hi2c1.Instance = I2C1;
+    hi2c1.Init.Timing = 0x00000909;  // ~105 kHz at 2.097 MHz PCLK1 (MSI range 5)
+    hi2c1.Init.OwnAddress1 = 0;
+    hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+    hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+    hi2c1.Init.OwnAddress2 = 0;
+    hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+    hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+
+    if (HAL_I2C_Init(&hi2c1) != HAL_OK) {
+        Error_Handler();
+    }
+}
+
+/**
  * @brief Initialize TIM21 for boot animation
  * Timer fires every 100ms for LED toggle
  */
@@ -607,6 +647,9 @@ static void enterStopMode(void)
     // This allows LPUART to request HSI clock when START bit is detected
     SET_BIT(hlpuart1.Instance->CR3, USART_CR3_UCESM);
 
+    // De-init I2C before sleep to avoid current draw on PA9/PA10
+    HAL_I2C_DeInit(&hi2c1);
+
     // Suspend SysTick to prevent wakeup
     HAL_SuspendTick();
 
@@ -632,6 +675,9 @@ static void wakeupFromStopMode(void)
 
     // Re-enable UART RX interrupt if it was stopped
     HAL_UART_Receive_IT(&hlpuart1, &uartRxByte, 1);
+
+    // Re-init I2C after wakeup
+    MX_I2C1_Init();
 }
 
 /**
@@ -654,18 +700,18 @@ static void determineWakeType(void)
     HAL_RTC_GetTime(&hrtc, &time, RTC_FORMAT_BIN);
     HAL_RTC_GetDate(&hrtc, &date, RTC_FORMAT_BIN);
 
-    // Check if this is a scheduled event
-    const PMU::ScheduleEntry *entry =
-        protocol.getNextScheduledEntry(date.WeekDay, time.Hours, time.Minutes);
+    // Check if this is a scheduled event by scanning FRAM entries
+    PMU::ScheduleEntry entry;
+    bool hasSchedule = protocol.getNextScheduledEntry(date.WeekDay, time.Hours, time.Minutes, entry);
 
     // Check if we're within the wake interval window of a scheduled event
     // This handles the case where RTC doesn't wake exactly at the scheduled time
     uint32_t wakeIntervalMinutes = protocol.getWakeInterval() / 60;
 
-    if (entry &&
-        entry->isWithinWindow(date.WeekDay, time.Hours, time.Minutes, wakeIntervalMinutes)) {
+    if (hasSchedule &&
+        entry.isWithinWindow(date.WeekDay, time.Hours, time.Minutes, wakeIntervalMinutes)) {
         // This is a scheduled watering event
-        pmuState.setWakeType(WakeType::SCHEDULED, entry);
+        pmuState.setWakeType(WakeType::SCHEDULED, &entry);
     } else {
         // Normal periodic wake
         pmuState.setWakeType(WakeType::PERIODIC, nullptr);
