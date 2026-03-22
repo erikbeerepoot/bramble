@@ -67,6 +67,8 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/dcdc.cpp
     Core/Src/pmu_protocol.cpp
     Core/Src/pmu_state_machine.cpp
+    Core/Src/fram.cpp
+    Core/Src/persistent_storage.cpp
 )
 
 if(USE_WS2812)
