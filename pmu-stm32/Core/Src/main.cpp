@@ -414,14 +414,30 @@ static void MX_GPIO_Init(void)
     __HAL_RCC_GPIOA_CLK_ENABLE();
 
     /*Configure GPIO pin Output Level */
+#ifdef USE_WS2812
+    // PA4 is bodged to PA5 — configure PA4 as input (high-Z) so it doesn't
+    // fight PA5's TIM2_CH1 output on the shared line
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1 | GPIO_PIN_5, GPIO_PIN_RESET);
+
+    GPIO_InitStruct.Pin = GPIO_PIN_1 | GPIO_PIN_5;
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+    GPIO_InitStruct.Pin = GPIO_PIN_4;
+    GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+#else
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1 | GPIO_PIN_4 | GPIO_PIN_5, GPIO_PIN_RESET);
 
-    /*Configure GPIO pins : PA1 PA4 PA5 */
     GPIO_InitStruct.Pin = GPIO_PIN_1 | GPIO_PIN_4 | GPIO_PIN_5;
     GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
     HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+#endif
 
     /* USER CODE BEGIN MX_GPIO_Init_2 */
 
@@ -591,12 +607,6 @@ static void enterStopMode(void)
     // This allows LPUART to request HSI clock when START bit is detected
     SET_BIT(hlpuart1.Instance->CR3, USART_CR3_UCESM);
 
-#ifdef USE_WS2812
-    // Disable TIM2 and DMA1 clocks for minimum power in STOP mode
-    __HAL_RCC_TIM2_CLK_DISABLE();
-    __HAL_RCC_DMA1_CLK_DISABLE();
-#endif
-
     // Suspend SysTick to prevent wakeup
     HAL_SuspendTick();
 
@@ -616,12 +626,6 @@ static void wakeupFromStopMode(void)
     // After waking from STOP, system clock is MSI at reset speed
     // Need to reconfigure to our desired clock
     SystemClock_Config();
-
-#ifdef USE_WS2812
-    // Re-enable TIM2 and DMA1 clocks after STOP mode
-    __HAL_RCC_DMA1_CLK_ENABLE();
-    __HAL_RCC_TIM2_CLK_ENABLE();
-#endif
 
     // Resume SysTick
     HAL_ResumeTick();

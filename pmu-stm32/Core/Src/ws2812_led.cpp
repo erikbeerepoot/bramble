@@ -1,11 +1,15 @@
 /**
  ******************************************************************************
  * @file           : ws2812_led.cpp
- * @brief          : WS2812 addressable RGB LED driver using TIM2 PWM + DMA
+ * @brief          : WS2812 addressable RGB LED driver using GPIO bit-banging
  *
- * Drives a single WS2812 LED on PA5 (TIM2_CH1).
- * DMA writes duty-cycle values to TIM2->CCR1 on each timer update event,
- * producing the variable-width pulses that encode GRB data.
+ * Drives a single WS2812 LED on PA5 using direct GPIO register writes.
+ * Interrupts are disabled for ~30us during each 24-bit transmission.
+ *
+ * Timing at 16 MHz (62.5 ns/cycle):
+ *   Bit "1": ~687ns high, ~562ns low  (within WS2812 spec)
+ *   Bit "0": ~250ns high, ~1000ns low (within WS2812 spec)
+ *   Both paths: same total cycle count for consistent bit period
  ******************************************************************************
  */
 
@@ -13,69 +17,23 @@
 
 #include "led.h"
 
-// File-scope pointer for DMA callback access
-static LED *ledInstance = nullptr;
-
-// DMA callbacks (registered on DMA handle, called from HAL_DMA_IRQHandler)
-static void dmaTransferComplete(DMA_HandleTypeDef *hdma);
-static void dmaTransferError(DMA_HandleTypeDef *hdma);
-
-LED::LED() : transferComplete(true)
+LED::LED()
 {
-    ledInstance = this;
 }
 
 void LED::init()
 {
-    // --- DMA1 Channel 2 for TIM2_UP (request 8) ---
-    __HAL_RCC_DMA1_CLK_ENABLE();
-
-    hdma.Instance = DMA1_Channel2;
-    hdma.Init.Request = DMA_REQUEST_8;
-    hdma.Init.Direction = DMA_MEMORY_TO_PERIPH;
-    hdma.Init.PeriphInc = DMA_PINC_DISABLE;
-    hdma.Init.MemInc = DMA_MINC_ENABLE;
-    hdma.Init.PeriphDataAlignment = DMA_PDATAALIGN_WORD;
-    hdma.Init.MemDataAlignment = DMA_MDATAALIGN_HALFWORD;
-    hdma.Init.Mode = DMA_NORMAL;
-    hdma.Init.Priority = DMA_PRIORITY_HIGH;
-    HAL_DMA_Init(&hdma);
-
-    // Register DMA callbacks
-    hdma.XferCpltCallback = dmaTransferComplete;
-    hdma.XferErrorCallback = dmaTransferError;
-
-    HAL_NVIC_SetPriority(DMA1_Channel2_3_IRQn, 2, 0);
-    HAL_NVIC_EnableIRQ(DMA1_Channel2_3_IRQn);
-
-    // --- Reconfigure PA5 as TIM2_CH1 (AF5) ---
+    // Configure PA5 as fast GPIO output for bit-banging
     GPIO_InitTypeDef gpioInit = {0};
     gpioInit.Pin = GPIO_PIN_5;
-    gpioInit.Mode = GPIO_MODE_AF_PP;
+    gpioInit.Mode = GPIO_MODE_OUTPUT_PP;
     gpioInit.Pull = GPIO_NOPULL;
-    gpioInit.Speed = GPIO_SPEED_FREQ_HIGH;
-    gpioInit.Alternate = GPIO_AF5_TIM2;
+    gpioInit.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
     HAL_GPIO_Init(GPIOA, &gpioInit);
 
-    // --- TIM2 in PWM Mode 1 on Channel 1 ---
-    __HAL_RCC_TIM2_CLK_ENABLE();
+    GPIOA->BRR = GPIO_PIN_5;
+    HAL_Delay(1);  // >50us reset
 
-    htim2.Instance = TIM2;
-    htim2.Init.Prescaler = 0;
-    htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-    htim2.Init.Period = BIT_PERIOD;  // ARR = 19 -> 20 counts = 1.25 us at 16 MHz
-    htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-    htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
-    HAL_TIM_PWM_Init(&htim2);
-
-    TIM_OC_InitTypeDef ocConfig = {0};
-    ocConfig.OCMode = TIM_OCMODE_PWM1;
-    ocConfig.Pulse = 0;
-    ocConfig.OCPolarity = TIM_OCPOLARITY_HIGH;
-    ocConfig.OCFastMode = TIM_OCFAST_ENABLE;
-    HAL_TIM_OC_ConfigChannel(&htim2, &ocConfig, TIM_CHANNEL_1);
-
-    // Ensure output starts low
     off();
 }
 
@@ -116,72 +74,73 @@ void LED::off()
     setRGB(0, 0, 0);
 }
 
-void LED::handleDmaComplete()
-{
-    __HAL_TIM_DISABLE_DMA(&htim2, TIM_DMA_UPDATE);
-    HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_1);
-    transferComplete = true;
-}
-
 void LED::fillBuffer(uint8_t green, uint8_t red, uint8_t blue)
 {
     uint32_t grb = ((uint32_t)green << 16) | ((uint32_t)red << 8) | blue;
 
     for (int i = 0; i < DATA_BITS; i++) {
-        dmaBuffer[i] = (grb & (1 << (DATA_BITS - 1 - i))) ? BIT_HIGH : BIT_LOW;
+        dmaBuffer[i] = (grb & (1 << (DATA_BITS - 1 - i))) ? 1 : 0;
     }
+}
 
-    // Reset slot: zero duty cycle holds line low
-    dmaBuffer[DATA_BITS] = 0;
+/**
+ * @brief Send one byte MSB-first using inline bit-banging
+ *
+ * Both bit paths have the same total NOP count (9) so the bit period
+ * is consistent regardless of data content. The only difference is
+ * where the BRR (set-low) write falls within the cycle.
+ *
+ * At 16 MHz (62.5 ns/cycle):
+ *   Bit "1": BSRR + 9 NOPs + BRR = ~687ns high, then loop overhead ~562ns low
+ *   Bit "0": BSRR + 2 NOPs + BRR + 7 NOPs = ~250ns high, then loop overhead ~562ns low
+ */
+__attribute__((noinline, optimize("O1")))
+static void sendByte(uint8_t byte)
+{
+    for (int bit = 7; bit >= 0; bit--) {
+        if (byte & (1 << bit)) {
+            // "1" bit: long high, short low
+            GPIOA->BSRR = GPIO_PIN_5;
+            __NOP(); __NOP(); __NOP(); __NOP(); __NOP();
+            __NOP(); __NOP(); __NOP(); __NOP();
+            GPIOA->BRR = GPIO_PIN_5;
+            // 0 extra NOPs — loop overhead provides the low time
+        } else {
+            // "0" bit: short high, long low
+            GPIOA->BSRR = GPIO_PIN_5;
+            __NOP(); __NOP();
+            GPIOA->BRR = GPIO_PIN_5;
+            __NOP(); __NOP(); __NOP(); __NOP(); __NOP();
+            __NOP(); __NOP();
+        }
+    }
 }
 
 void LED::sendData()
 {
-    // Wait for any previous transfer to complete (with timeout)
-    uint32_t start = HAL_GetTick();
-    while (!transferComplete) {
-        if (HAL_GetTick() - start > 10) {
-            // Timeout — force stop and proceed
-            HAL_DMA_Abort(&hdma);
-            handleDmaComplete();
-            break;
-        }
+    // Extract GRB bytes from buffer
+    uint8_t green = 0, red = 0, blue = 0;
+    for (int i = 0; i < 8; i++) {
+        green |= (dmaBuffer[i] << (7 - i));
+        red   |= (dmaBuffer[8 + i] << (7 - i));
+        blue  |= (dmaBuffer[16 + i] << (7 - i));
     }
 
-    transferComplete = false;
+    __disable_irq();
 
-    // Reset DMA state for a new transfer
-    HAL_DMA_Init(&hdma);
-    hdma.XferCpltCallback = dmaTransferComplete;
-    hdma.XferErrorCallback = dmaTransferError;
+    sendByte(green);
+    sendByte(red);
+    sendByte(blue);
 
-    // Start PWM output (pin driven by timer)
-    HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
+    __enable_irq();
 
-    // Start DMA: writes dmaBuffer values to TIM2->CCR1 on each update event
-    HAL_DMA_Start_IT(&hdma, (uint32_t)dmaBuffer, (uint32_t)&htim2.Instance->CCR1,
-                     DATA_BITS + RESET_SLOTS);
-
-    // Enable TIM2 update DMA request
-    __HAL_TIM_ENABLE_DMA(&htim2, TIM_DMA_UPDATE);
+    // Reset: hold low for >50us to latch data
+    HAL_Delay(1);
 }
 
-// DMA transfer complete callback (called from HAL_DMA_IRQHandler in ISR context)
-static void dmaTransferComplete(DMA_HandleTypeDef *hdma)
+// DMA IRQ handler stub — kept for ISR vector compatibility
+extern "C" void WS2812_DMA_IRQHandler(void)
 {
-    (void)hdma;
-    if (ledInstance != nullptr) {
-        ledInstance->handleDmaComplete();
-    }
-}
-
-// DMA error callback (called from HAL_DMA_IRQHandler in ISR context)
-static void dmaTransferError(DMA_HandleTypeDef *hdma)
-{
-    (void)hdma;
-    if (ledInstance != nullptr) {
-        ledInstance->handleDmaComplete();
-    }
 }
 
 #endif  // USE_WS2812
