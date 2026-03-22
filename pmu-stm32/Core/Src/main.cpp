@@ -263,20 +263,26 @@ void SystemClock_Config(void)
      * in the RCC_OscInitTypeDef structure.
      * Try LSE (external 32.768 kHz crystal) first, fall back to LSI if it fails.
      */
-    // Use LSI directly — LSE crystal is not populated on current hardware
-    usingLSIFallback = true;
     RCC_OscInitStruct.OscillatorType =
-        RCC_OSCILLATORTYPE_HSI | RCC_OSCILLATORTYPE_LSI | RCC_OSCILLATORTYPE_MSI;
+        RCC_OSCILLATORTYPE_HSI | RCC_OSCILLATORTYPE_LSE | RCC_OSCILLATORTYPE_MSI;
     RCC_OscInitStruct.HSIState = RCC_HSI_ON;  // Enable HSI for LPUART in STOP mode
     RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
-    RCC_OscInitStruct.LSEState = RCC_LSE_OFF;
-    RCC_OscInitStruct.LSIState = RCC_LSI_ON;
+    RCC_OscInitStruct.LSEState = RCC_LSE_ON;
     RCC_OscInitStruct.MSIState = RCC_MSI_ON;
     RCC_OscInitStruct.MSICalibrationValue = 0;
     RCC_OscInitStruct.MSIClockRange = RCC_MSIRANGE_5;
     RCC_OscInitStruct.PLL.PLLState = RCC_PLL_NONE;
+
     if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK) {
-        Error_Handler();
+        // LSE failed to start — fall back to LSI
+        usingLSIFallback = true;
+        RCC_OscInitStruct.OscillatorType =
+            RCC_OSCILLATORTYPE_HSI | RCC_OSCILLATORTYPE_LSI | RCC_OSCILLATORTYPE_MSI;
+        RCC_OscInitStruct.LSEState = RCC_LSE_OFF;
+        RCC_OscInitStruct.LSIState = RCC_LSI_ON;
+        if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK) {
+            Error_Handler();
+        }
     }
 
     // Explicitly disable HSI divider to ensure 16 MHz clock for LPUART
