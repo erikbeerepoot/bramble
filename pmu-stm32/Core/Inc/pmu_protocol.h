@@ -331,8 +331,8 @@ private:
     uint8_t nodeState_[NODE_STATE_SIZE];
     bool nodeStateValid_;
 
-    // Clear-to-send flag - set when RP2040 signals ready to receive wake info
-    bool clearToSendReceived_;
+    // Clear-to-send flag - set from UART ISR, read from main loop
+    volatile bool clearToSendReceived_;
 
     // Optional persistent storage (nullptr if FRAM not present)
     PersistentStorage *storage_;

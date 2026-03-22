@@ -60,6 +60,7 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 
 # WS2812 addressable RGB LED support (new boards use PA5 with TIM2 PWM + DMA)
 option(USE_WS2812 "Use WS2812 RGB LED instead of dual-color GPIO LED" OFF)
+option(PMU_BRINGUP_MODE "Keep DC/DC on and skip sleep for development" OFF)
 
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
@@ -76,6 +77,10 @@ if(USE_WS2812)
     target_sources(${CMAKE_PROJECT_NAME} PRIVATE Core/Src/ws2812_led.cpp)
 else()
     target_sources(${CMAKE_PROJECT_NAME} PRIVATE Core/Src/led.cpp)
+endif()
+
+if(PMU_BRINGUP_MODE)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE PMU_BRINGUP_MODE)
 endif()
 
 # Add include paths
