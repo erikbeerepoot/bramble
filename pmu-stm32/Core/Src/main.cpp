@@ -287,12 +287,22 @@ void SystemClock_Config(void)
      */
     RCC_ClkInitStruct.ClockType =
         RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
+#ifdef USE_WS2812
+    // Use HSI (16 MHz) as system clock for WS2812 PWM timing resolution
+    RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_HSI;
+#else
     RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_MSI;
+#endif
     RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
     RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
     RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
 
+#ifdef USE_WS2812
+    // 16 MHz requires 1 wait state for flash access at Vcore range 1
+    if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_1) != HAL_OK) {
+#else
     if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_0) != HAL_OK) {
+#endif
         Error_Handler();
     }
     PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_LPUART1 | RCC_PERIPHCLK_RTC;
@@ -422,12 +432,21 @@ static void MX_TIM21_Init(void)
 {
     __HAL_RCC_TIM21_CLK_ENABLE();
 
+#ifdef USE_WS2812
+    // HSI clock is 16 MHz
+    // For 100ms period: 16000000 / (1600 * 1000) = 10 Hz
+    // Prescaler of 1599 (divide by 1600) -> 10000 Hz
+    // Period of 999 (1000 counts) -> 100ms
+    htim21.Instance = TIM21;
+    htim21.Init.Prescaler = 1599;
+#else
     // MSI clock is 2.097 MHz (range 5)
     // For 100ms period: 2097000 / 100 = 20970 counts per 100ms
     // Use prescaler of 209 (divide by 210) -> 9985.7 Hz
     // Period of 999 (1000 counts) -> 100.1ms (close enough)
     htim21.Instance = TIM21;
     htim21.Init.Prescaler = 209;
+#endif
     htim21.Init.CounterMode = TIM_COUNTERMODE_UP;
     htim21.Init.Period = 999;
     htim21.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
@@ -566,6 +585,12 @@ static void enterStopMode(void)
     // This allows LPUART to request HSI clock when START bit is detected
     SET_BIT(hlpuart1.Instance->CR3, USART_CR3_UCESM);
 
+#ifdef USE_WS2812
+    // Disable TIM2 and DMA1 clocks for minimum power in STOP mode
+    __HAL_RCC_TIM2_CLK_DISABLE();
+    __HAL_RCC_DMA1_CLK_DISABLE();
+#endif
+
     // Suspend SysTick to prevent wakeup
     HAL_SuspendTick();
 
@@ -585,6 +610,12 @@ static void wakeupFromStopMode(void)
     // After waking from STOP, system clock is MSI at reset speed
     // Need to reconfigure to our desired clock
     SystemClock_Config();
+
+#ifdef USE_WS2812
+    // Re-enable TIM2 and DMA1 clocks after STOP mode
+    __HAL_RCC_DMA1_CLK_ENABLE();
+    __HAL_RCC_TIM2_CLK_ENABLE();
+#endif
 
     // Resume SysTick
     HAL_ResumeTick();
