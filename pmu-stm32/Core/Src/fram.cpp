@@ -25,7 +25,7 @@ bool FRAM::write(uint16_t address, const uint8_t* data, uint16_t length)
 
 bool FRAM::transfer(uint16_t address, uint8_t* data, uint16_t length, I2COperation operation)
 {
-    if (!present_ || address + length > CAPACITY) {
+    if (!present_ || length > CAPACITY || address > CAPACITY - length) {
         return false;
     }
 

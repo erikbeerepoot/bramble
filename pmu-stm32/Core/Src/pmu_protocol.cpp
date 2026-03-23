@@ -28,7 +28,7 @@ bool ScheduleEntry::isValid() const
         return false;
     if (minute > 59)
         return false;
-    if (duration == 0 || duration > 65535)
+    if (duration == 0)
         return false;
     if (static_cast<uint8_t>(daysMask) == 0)
         return false;
@@ -107,10 +107,10 @@ bool ScheduleEntry::timeRangesOverlap(uint8_t h1, uint8_t m1, uint16_t d1, uint8
 {
     // Convert to minutes since midnight
     uint32_t start1 = h1 * 60 + m1;
-    uint32_t end1 = start1 + (d1 / 60);  // duration in seconds -> minutes
+    uint32_t end1 = start1 + (d1 + 59) / 60;  // duration in seconds -> minutes (ceiling)
 
     uint32_t start2 = h2 * 60 + m2;
-    uint32_t end2 = start2 + (d2 / 60);
+    uint32_t end2 = start2 + (d2 + 59) / 60;
 
     // Check if ranges overlap
     // They overlap if: start1 < end2 AND start2 < end1
