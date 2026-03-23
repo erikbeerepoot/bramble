@@ -122,6 +122,7 @@ Each variant produces a uniquely-named executable (e.g., `bramble_sensor`, `bram
 * Clearly seperate concerns (especially "hardware hiding" -- the HAL should be separate from the domain logic)
 * Use full words not abbreviations (e.g address vs addr)
 * Ensure you keep README.md updated.
+* **Do not use `auto`** — always use explicit types so that the type is clear at the point of declaration (e.g. `uint8_t count = getCount();` not `auto count = getCount();`).
 
 ## STM32 PMU Build System
 
