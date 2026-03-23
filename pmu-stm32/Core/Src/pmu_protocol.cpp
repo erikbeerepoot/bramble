@@ -391,6 +391,9 @@ void MessageBuilder::startMessage(uint8_t sequenceNumber, uint8_t response)
 
 void MessageBuilder::addByte(uint8_t data)
 {
+    if (totalLength_ >= MAX_MESSAGE_SIZE - 2) {
+        return;  // Reserve space for checksum + END_BYTE
+    }
     buffer_[totalLength_++] = data;
     dataLength_++;
 }
