@@ -181,10 +181,10 @@ bool PersistentStorage::isNodeStateValid()
     return flag == 1;
 }
 
-void PersistentStorage::invalidateNodeState()
+bool PersistentStorage::invalidateNodeState()
 {
-    if (!available_) return;
+    if (!available_) return false;
 
     uint32_t flag = 0;
-    fram_.write(OFFSET_NODE_STATE_FLAG, reinterpret_cast<uint8_t*>(&flag), sizeof(flag));
+    return fram_.write(OFFSET_NODE_STATE_FLAG, reinterpret_cast<uint8_t*>(&flag), sizeof(flag));
 }
