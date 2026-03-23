@@ -144,7 +144,9 @@ ErrorCode WateringSchedule::addEntry(const ScheduleEntry &entry)
     if (!storage_->saveScheduleEntry(count, entry)) {
         return ErrorCode::InvalidParam;
     }
-    storage_->setScheduleCount(count + 1);
+    if (!storage_->setScheduleCount(count + 1)) {
+        return ErrorCode::InvalidParam;
+    }
 
     return ErrorCode::NoError;
 }
@@ -164,10 +166,14 @@ ErrorCode WateringSchedule::removeEntry(uint8_t index)
         if (!storage_->loadScheduleEntry(i + 1, entry)) {
             return ErrorCode::InvalidParam;
         }
-        storage_->saveScheduleEntry(i, entry);
+        if (!storage_->saveScheduleEntry(i, entry)) {
+            return ErrorCode::InvalidParam;
+        }
     }
 
-    storage_->setScheduleCount(count - 1);
+    if (!storage_->setScheduleCount(count - 1)) {
+        return ErrorCode::InvalidParam;
+    }
     return ErrorCode::NoError;
 }
 
