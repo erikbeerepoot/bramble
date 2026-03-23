@@ -36,7 +36,7 @@ public:
     bool loadNodeState(uint8_t* state, uint8_t length);
     bool saveNodeState(const uint8_t* state, uint8_t length);
     bool isNodeStateValid();
-    void invalidateNodeState();
+    bool invalidateNodeState();
 
 private:
     FRAM& fram_;
