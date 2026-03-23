@@ -58,9 +58,8 @@ bool ExternalFlash::init()
         // Hardware reset the flash
         hardwareReset();
 
-        // Wake up in case it's in power-down mode
+        // Wake up in case it's in power-down mode (wakeUp() includes tRES1 delay)
         wakeUp();
-        sleep_us(50);  // tRES1 = 3us typical
 
         // Read and verify JEDEC ID
         uint8_t manufacturer, memory_type, capacity;
@@ -120,11 +119,12 @@ void ExternalFlash::csSelect()
 
 void ExternalFlash::csDeselect()
 {
-    // Small delay for CS hold time
+    // Small delay for CS hold time (tCHSH)
     __asm volatile("nop\nnop\nnop\nnop");
     gpio_put(pins_.cs, 1);
-    // CS high time before next select
-    __asm volatile("nop\nnop\nnop\nnop");
+    // CS high time (tSHSL) - MT25QL requires >= 30-50ns.
+    // Use sleep_us(1) to guarantee sufficient margin on shared SPI bus.
+    sleep_us(1);
 }
 
 void ExternalFlash::spiWriteByte(uint8_t byte)
@@ -208,7 +208,9 @@ ExternalFlashResult ExternalFlash::writeEnable()
         spiWriteByte(MT25QLCommands::WRITE_ENABLE);
         csDeselect();
 
-        sleep_us(1);  // Allow SPI bus to settle (shared bus with SX1262)
+        // Allow flash to process WREN and update status register.
+        // 1us was insufficient on shared SPI bus — increased to 10us.
+        sleep_us(10);
 
         uint8_t status = readStatus();
         if (status & MT25QLStatus::WRITE_ENABLED) {
@@ -298,6 +300,11 @@ ExternalFlashResult ExternalFlash::writePage(uint32_t address, const uint8_t *da
 
     csDeselect();
 
+    // Allow flash to begin internal program operation before polling status.
+    // Without this delay, the first status read can race with the flash's
+    // internal state transition, returning stale (not-busy) status.
+    sleep_us(50);
+
     // Wait for program to complete (typical 0.7ms, max 5ms per page)
     return waitReady(10);
 }
@@ -371,6 +378,9 @@ ExternalFlashResult ExternalFlash::eraseSector(uint32_t address)
 
     csDeselect();
 
+    // Allow flash to begin internal erase operation before polling status
+    sleep_us(50);
+
     // Wait for erase to complete (typical 50ms, max 400ms)
     return waitReady(500);
 }
@@ -407,6 +417,9 @@ ExternalFlashResult ExternalFlash::eraseBlock(uint32_t address)
 
     csDeselect();
 
+    // Allow flash to begin internal erase operation before polling status
+    sleep_us(50);
+
     // Wait for erase to complete (typical 150ms, max 2000ms)
     return waitReady(3000);
 }
@@ -435,6 +448,9 @@ ExternalFlashResult ExternalFlash::eraseChip()
     spiWriteByte(MT25QLCommands::CHIP_ERASE);
     csDeselect();
 
+    // Allow flash to begin internal erase operation before polling status
+    sleep_us(50);
+
     // Wait for chip erase (can take 4+ minutes for 1Gbit!)
     return waitReady(300000);  // 5 minute timeout
 }
@@ -444,6 +460,8 @@ void ExternalFlash::powerDown()
     csSelect();
     spiWriteByte(MT25QLCommands::POWER_DOWN);
     csDeselect();
+    // tDP: time to enter deep power-down (~3us typical)
+    sleep_us(10);
 }
 
 void ExternalFlash::wakeUp()
@@ -451,6 +469,8 @@ void ExternalFlash::wakeUp()
     csSelect();
     spiWriteByte(MT25QLCommands::RELEASE_POWER_DOWN);
     csDeselect();
+    // tRES1: time to exit deep power-down (~3-30us typical depending on variant)
+    sleep_us(50);
 }
 
 void ExternalFlash::reset()
