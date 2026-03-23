@@ -128,6 +128,11 @@ bool PersistentStorage::loadScheduleEntry(uint8_t index, PMU::ScheduleEntry& ent
     entry.daysMask = static_cast<PMU::DayOfWeek>(raw[4]);
     entry.valveId = raw[5];
     entry.enabled = (raw[6] != 0);
+
+    if (!entry.isValid()) {
+        entry = PMU::ScheduleEntry();
+        return false;
+    }
     return true;
 }
 
