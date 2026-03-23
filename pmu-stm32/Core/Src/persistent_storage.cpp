@@ -41,7 +41,7 @@ bool PersistentStorage::init()
 bool PersistentStorage::formatStorage()
 {
     // Zero out the used area
-    uint16_t usedSize = OFFSET_NODE_STATE_FLAG + 4;
+    uint16_t usedSize = OFFSET_NODE_STATE_FLAG + sizeof(uint32_t);
     // Write in chunks to avoid large stack allocation
     uint8_t zeros[64] = {};
     for (uint16_t offset = 0; offset < usedSize; offset += sizeof(zeros)) {

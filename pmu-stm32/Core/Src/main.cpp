@@ -184,6 +184,7 @@ int main(void)
     }
 
     // Initialize FRAM and persistent storage
+    // Return values intentionally ignored — system operates in degraded mode without FRAM
     fram.init();
     storage.init();
 
