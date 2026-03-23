@@ -25,7 +25,10 @@ bool PersistentStorage::init()
         }
     } else {
         uint32_t version = 0;
-        fram_.read(OFFSET_VERSION, reinterpret_cast<uint8_t*>(&version), sizeof(version));
+        if (!fram_.read(OFFSET_VERSION, reinterpret_cast<uint8_t*>(&version), sizeof(version))) {
+            available_ = false;
+            return false;
+        }
         if (version != FORMAT_VERSION) {
             if (!formatStorage()) {
                 available_ = false;
