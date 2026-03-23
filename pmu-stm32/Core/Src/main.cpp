@@ -190,11 +190,7 @@ int main(void)
 
     // Initialize DC/DC converter
     dcdc.init();
-#ifdef PMU_BRINGUP_MODE
-    dcdc.disable();
-#else
     dcdc.enable();
-#endif
 
     // Set up state machine callback for LED updates
     pmuState.setStateCallback(onStateChange);
@@ -256,19 +252,13 @@ int main(void)
             case PmuState::POST_BOOT:
             case PmuState::AWAITING_CTS:
             case PmuState::WAKE_ACTIVE:
-#ifdef PMU_BRINGUP_MODE
-                // Bringup mode: DC/DC stays off for PMU-only board testing
-                // (no RP2350 connected)
-                dcdc.disable();
-#else
                 dcdc.enable();
-#endif
                 break;
 
             case PmuState::SLEEPING:
 #ifdef PMU_BRINGUP_MODE
-                // Bringup mode: DC/DC off, don't enter stop mode
-                dcdc.disable();
+                // Bringup mode: keep DC/DC on, skip sleep for development
+                dcdc.enable();
 #else
                 dcdc.disable();
                 enterStopMode();
