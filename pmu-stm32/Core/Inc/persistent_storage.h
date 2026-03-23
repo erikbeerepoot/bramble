@@ -56,6 +56,7 @@ private:
     //   [0x0010] Schedule entries (SCHEDULE_ENTRY_SIZE × MAX_SCHEDULE_ENTRIES)
     //   [...]    Node state (NODE_STATE_SIZE)
     //   [...]    Node state valid flag (4)
+    //   [...]    Node state CRC (1)
     static constexpr uint16_t OFFSET_MAGIC           = 0x0000;
     static constexpr uint16_t OFFSET_VERSION          = 0x0004;
     static constexpr uint16_t OFFSET_WAKE_INTERVAL    = 0x0008;
@@ -64,11 +65,15 @@ private:
     static constexpr uint16_t OFFSET_NODE_STATE       = OFFSET_SCHEDULES
         + PMU::SCHEDULE_ENTRY_SIZE * PMU::MAX_SCHEDULE_ENTRIES;
     static constexpr uint16_t OFFSET_NODE_STATE_FLAG  = OFFSET_NODE_STATE + PMU::NODE_STATE_SIZE;
-    static constexpr uint16_t TOTAL_USED              = OFFSET_NODE_STATE_FLAG + sizeof(uint32_t);
+    static constexpr uint16_t OFFSET_NODE_STATE_CRC   = OFFSET_NODE_STATE_FLAG + sizeof(uint32_t);
+    static constexpr uint16_t TOTAL_USED              = OFFSET_NODE_STATE_CRC + 1;
     static_assert(TOTAL_USED <= FRAM::CAPACITY, "Persistent storage layout exceeds FRAM capacity");
 
     static constexpr uint32_t MAGIC = 0x4652414D;   // "FRAM" in ASCII
-    static constexpr uint32_t FORMAT_VERSION = 2;    // Bumped: dynamic schedule layout
+    static constexpr uint32_t FORMAT_VERSION = 3;    // Bumped: added node state CRC
+
+    // XOR checksum over node state blob
+    static uint8_t computeNodeStateCrc(const uint8_t* data, uint8_t length);
 
     uint16_t scheduleEntryOffset(uint8_t index) const {
         return OFFSET_SCHEDULES + index * PMU::SCHEDULE_ENTRY_SIZE;

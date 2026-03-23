@@ -158,7 +158,21 @@ bool PersistentStorage::loadNodeState(uint8_t* state, uint8_t length)
 {
     if (!available_) return false;
     if (length > PMU::NODE_STATE_SIZE) return false;
-    return fram_.read(OFFSET_NODE_STATE, state, length);
+
+    if (!fram_.read(OFFSET_NODE_STATE, state, length)) {
+        return false;
+    }
+
+    // Verify CRC
+    uint8_t storedCrc = 0;
+    if (!fram_.read(OFFSET_NODE_STATE_CRC, &storedCrc, 1)) {
+        return false;
+    }
+    uint8_t computedCrc = computeNodeStateCrc(state, length);
+    if (storedCrc != computedCrc) {
+        return false;
+    }
+    return true;
 }
 
 bool PersistentStorage::saveNodeState(const uint8_t* state, uint8_t length)
@@ -171,8 +185,22 @@ bool PersistentStorage::saveNodeState(const uint8_t* state, uint8_t length)
     }
 
     uint32_t validFlag = 1;
-    return fram_.write(OFFSET_NODE_STATE_FLAG, reinterpret_cast<uint8_t*>(&validFlag),
-                       sizeof(validFlag));
+    if (!fram_.write(OFFSET_NODE_STATE_FLAG, reinterpret_cast<uint8_t*>(&validFlag),
+                     sizeof(validFlag))) {
+        return false;
+    }
+
+    uint8_t crc = computeNodeStateCrc(state, length);
+    return fram_.write(OFFSET_NODE_STATE_CRC, &crc, 1);
+}
+
+uint8_t PersistentStorage::computeNodeStateCrc(const uint8_t* data, uint8_t length)
+{
+    uint8_t crc = 0;
+    for (uint8_t i = 0; i < length; i++) {
+        crc ^= data[i];
+    }
+    return crc;
 }
 
 bool PersistentStorage::isNodeStateValid()
