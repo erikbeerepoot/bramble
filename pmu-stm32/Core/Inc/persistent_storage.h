@@ -38,11 +38,12 @@ public:
     bool isNodeStateValid();
     bool invalidateNodeState();
 
+    // Wipe all stored data and re-initialize with defaults.
+    bool formatStorage();
+
 private:
     FRAM& fram_;
     bool available_;
-
-    bool formatStorage();
 
     // Memory map — offsets derived from MAX_SCHEDULE_ENTRIES so they
     // adjust automatically if the schedule capacity changes.

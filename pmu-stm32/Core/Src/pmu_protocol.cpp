@@ -599,6 +599,13 @@ void Protocol::processReceivedByte(uint8_t byte)
                     NVIC_SystemReset();
                 }
                 break;
+            case Command::FactoryReset:
+                if (!isDuplicate) {
+                    handleFactoryReset();
+                } else {
+                    sendAck();
+                }
+                break;
             default:
                 sendNack(ErrorCode::InvalidParam);
                 break;
@@ -898,6 +905,21 @@ void Protocol::handleGetDateTime()
     // Send response with valid flag and datetime
     sendDateTimeResponse(valid, date.Year, date.Month, date.Date, date.WeekDay, time.Hours,
                          time.Minutes, time.Seconds);
+}
+
+void Protocol::handleFactoryReset()
+{
+    if (storage_) {
+        storage_->formatStorage();
+        loadFromStorage();
+    }
+    schedule_.clear();
+    wakeInterval_ = 60;
+    nodeStateValid_ = false;
+    for (uint8_t i = 0; i < NODE_STATE_SIZE; i++) {
+        nodeState_[i] = 0;
+    }
+    sendAck();
 }
 
 // Response senders (echo the command's sequence number)
