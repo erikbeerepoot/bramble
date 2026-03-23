@@ -64,6 +64,8 @@ private:
     static constexpr uint16_t OFFSET_NODE_STATE       = OFFSET_SCHEDULES
         + PMU::SCHEDULE_ENTRY_SIZE * PMU::MAX_SCHEDULE_ENTRIES;
     static constexpr uint16_t OFFSET_NODE_STATE_FLAG  = OFFSET_NODE_STATE + PMU::NODE_STATE_SIZE;
+    static constexpr uint16_t TOTAL_USED              = OFFSET_NODE_STATE_FLAG + sizeof(uint32_t);
+    static_assert(TOTAL_USED <= FRAM::CAPACITY, "Persistent storage layout exceeds FRAM capacity");
 
     static constexpr uint32_t MAGIC = 0x4652414D;   // "FRAM" in ASCII
     static constexpr uint32_t FORMAT_VERSION = 2;    // Bumped: dynamic schedule layout
