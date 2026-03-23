@@ -32,7 +32,7 @@ void LED::init()
     HAL_GPIO_Init(GPIOA, &gpioInit);
 
     GPIOA->BRR = GPIO_PIN_5;
-    HAL_Delay(1);  // >50us reset
+    for (volatile uint32_t i = 0; i < 1000; i++) {}  // >50us reset
 
     off();
 }

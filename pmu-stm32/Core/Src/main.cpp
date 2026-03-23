@@ -257,6 +257,8 @@ int main(void)
             case PmuState::AWAITING_CTS:
             case PmuState::WAKE_ACTIVE:
 #ifdef PMU_BRINGUP_MODE
+                // Bringup mode: DC/DC stays off for PMU-only board testing
+                // (no RP2350 connected)
                 dcdc.disable();
 #else
                 dcdc.enable();
@@ -605,18 +607,17 @@ static void configureRTCWakeup(uint32_t seconds)
 
     // Wait for WUTWF flag to be set (wakeup timer configuration allowed)
     // This is critical - without it, the SetWakeUpTimer call will hang
+    // Use cycle-counting delay (~1ms per iteration at 16 MHz) instead of
+    // HAL_Delay, since this function may be called from UART ISR context
+    // (via setWakeIntervalCallback) where SysTick cannot fire
     uint32_t timeout = 1000;
     while (!__HAL_RTC_WAKEUPTIMER_GET_FLAG(&hrtc, RTC_FLAG_WUTWF) && timeout > 0) {
         timeout--;
-        HAL_Delay(1);
+        for (volatile uint32_t i = 0; i < 4000; i++) {}  // ~1ms at 16 MHz
     }
 
     if (timeout == 0) {
         // WUTWF flag never set - RTC is not ready for configuration
-        // Flash LED to indicate error but don't halt
-        led.setColor(LED::RED);
-        HAL_Delay(2000);
-        led.off();
         return;
     }
 
