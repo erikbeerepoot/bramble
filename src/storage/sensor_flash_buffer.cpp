@@ -218,12 +218,17 @@ bool SensorFlashBuffer::writeRecord(const SensorDataRecord &record)
     SensorDataRecord verify_record;
     result =
         flash_.read(address, reinterpret_cast<uint8_t *>(&verify_record), sizeof(verify_record));
-    if (result == ExternalFlashResult::Success) {
-        uint16_t verify_crc = CRC16::calculateRecordCRC(verify_record);
-        if (verify_crc != verify_record.crc16) {
-            logger_.error("Write verify FAILED at index %lu: expected CRC 0x%04X, got 0x%04X",
-                          metadata_.write_index, verify_record.crc16, verify_crc);
-        }
+    if (result != ExternalFlashResult::Success) {
+        logger_.error("Write verify read FAILED at index %lu", metadata_.write_index);
+        healthy_ = false;
+        return false;
+    }
+    uint16_t verify_crc = CRC16::calculateRecordCRC(verify_record);
+    if (verify_crc != verify_record.crc16) {
+        logger_.error("Write verify CRC FAILED at index %lu: expected 0x%04X, got 0x%04X",
+                      metadata_.write_index, verify_record.crc16, verify_crc);
+        healthy_ = false;
+        return false;
     }
 
     // Check if we're about to overwrite an untransmitted record
