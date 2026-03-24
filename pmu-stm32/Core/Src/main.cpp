@@ -103,9 +103,6 @@ static PMU::Protocol protocol(uartSendCallback, setWakeIntervalCallback, keepAwa
 // PMU state machine instance
 static PmuStateMachine pmuState(getTickCallback);
 
-// WakeNotification retry timing for AWAITING_ACK state
-static uint32_t lastNotificationSendTime = 0;
-constexpr uint32_t NOTIFICATION_RETRY_INTERVAL_MS = 500;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -257,16 +254,12 @@ int main(void)
                 // Boot animation handled before loop
                 break;
 
-            case PmuState::AWAITING_ACK: {
+            case PmuState::AWAITING_ACK:
                 dcdc.enable();
-                // Proactively send WakeNotification while waiting for RP2040 acknowledgement
-                uint32_t now = HAL_GetTick();
-                if (now - lastNotificationSendTime >= NOTIFICATION_RETRY_INTERVAL_MS) {
+                if (pmuState.shouldSendNotification()) {
                     sendWakeNotification();
-                    lastNotificationSendTime = now;
                 }
                 break;
-            }
 
             case PmuState::WAKE_ACTIVE:
 #ifdef PMU_BRINGUP_MODE
@@ -911,11 +904,6 @@ static void onStateChange(PmuState newState)
         if (pmuState.wakeType() == WakeType::NONE) {
             determineWakeType();
         }
-    }
-
-    if (newState == PmuState::AWAITING_ACK) {
-        // Reset retry timer — first notification after 500ms (RP2040 UART boot time)
-        lastNotificationSendTime = HAL_GetTick();
     }
 
     if (newState == PmuState::WAKE_ACTIVE) {

@@ -153,6 +153,7 @@ void PmuStateMachine::onEnterState(PmuState newState, PmuEvent event)
 
         case PmuState::AWAITING_ACK:
             context_.startTime = now;
+            lastNotificationSendTime_ = now;  // First notification after retry interval
             if (event == PmuEvent::BOOT_COMPLETE) {
                 // After boot animation: short grace period, periodic wake
                 context_.type = WakeType::PERIODIC;
@@ -183,6 +184,20 @@ void PmuStateMachine::onEnterState(PmuState newState, PmuEvent event)
 // =============================================================================
 // Query Methods
 // =============================================================================
+
+bool PmuStateMachine::shouldSendNotification()
+{
+    if (state_ != PmuState::AWAITING_ACK) {
+        return false;
+    }
+
+    uint32_t now = getTick_();
+    if (now - lastNotificationSendTime_ >= NOTIFICATION_RETRY_INTERVAL_MS) {
+        lastNotificationSendTime_ = now;
+        return true;
+    }
+    return false;
+}
 
 bool PmuStateMachine::shouldPowerRp2040() const
 {

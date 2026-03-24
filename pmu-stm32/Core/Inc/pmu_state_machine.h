@@ -121,6 +121,8 @@ public:
     static constexpr uint32_t PERIODIC_WAKE_TIMEOUT_MS = 120000;  // 2 minutes
     // Boot grace period - stay awake after boot to allow RP2040 to initialize
     static constexpr uint32_t BOOT_GRACE_PERIOD_MS = 10000;  // 10 seconds
+    // Interval between WakeNotification retries in AWAITING_ACK state
+    static constexpr uint32_t NOTIFICATION_RETRY_INTERVAL_MS = 500;
 
     /**
      * @brief Constructor
@@ -148,6 +150,17 @@ public:
      * events when appropriate.
      */
     void tick();
+
+    /**
+     * @brief Check if it's time to (re)send a WakeNotification
+     *
+     * Returns true when the retry interval has elapsed since the last
+     * call that returned true. Only returns true in AWAITING_ACK state.
+     * The timer resets automatically on state entry and on each true return.
+     *
+     * @return true if caller should send a WakeNotification now
+     */
+    bool shouldSendNotification();
 
     /**
      * @brief Set the wake type and optional schedule entry
@@ -267,6 +280,7 @@ private:
     WakeContext context_;
     GetTickCallback getTick_;
     StateCallback stateCallback_;
+    uint32_t lastNotificationSendTime_ = 0;
 };
 
 #endif  // PMU_STATE_MACHINE_H
