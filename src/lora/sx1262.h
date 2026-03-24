@@ -6,7 +6,7 @@
 #include "hardware/spi.h"
 
 #include "../hal/logger.h"
-#include "../hal/spi_device.h"
+#include "../hal/spi_interface.h"
 #include "radio_interface.h"
 
 // SX1262 Command Opcodes
@@ -126,13 +126,12 @@ class SX1262 : public RadioInterface {
 public:
     /**
      * @brief Construct SX1262 driver
-     * @param spi_port SPI port (spi0 or spi1)
-     * @param cs_pin Chip select GPIO pin
+     * @param spi SPI interface (hardware or bit-bang) — caller owns lifetime
      * @param rst_pin Reset GPIO pin
      * @param dio1_pin DIO1 interrupt pin
      * @param busy_pin BUSY status pin
      */
-    SX1262(spi_inst_t *spi_port, uint cs_pin, int rst_pin, int dio1_pin, int busy_pin);
+    SX1262(SPIInterface &spi, int rst_pin, int dio1_pin, int busy_pin);
 
     // --- RadioInterface implementation ---
 
@@ -176,7 +175,7 @@ public:
     void setInterruptPending() { interrupt_pending_ = true; }
 
 private:
-    SPIDevice spi_;
+    SPIInterface &spi_;
     int rst_pin_;
     int dio1_pin_;
     int busy_pin_;
