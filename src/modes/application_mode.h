@@ -3,7 +3,7 @@
 #include <functional>
 #include <memory>
 
-#include "hardware/rtc.h"
+#include "hal/rtc_compat.h"
 
 #include "hal/neopixel.h"
 #include "led_patterns.h"
@@ -121,6 +121,15 @@ protected:
      * for a full system reset (STM32 + RP2040).
      */
     virtual void onRebootRequested();
+
+    /**
+     * @brief Handle factory reset request from hub via PENDING_FLAG_FACTORY_RESET
+     *
+     * Default implementation performs RP2040-only watchdog reboot (no FRAM wipe).
+     * Modes with PMU access should override to send FactoryReset to PMU
+     * for a full FRAM wipe + system reset.
+     */
+    virtual void onFactoryResetRequested();
 
     /**
      * @brief Check if we should use interrupt-based sleep
