@@ -60,11 +60,19 @@ The build outputs are in the `build/` directory. The main executable will be `br
 
 ## Hardware Configuration
 
-- **SPI Configuration**: 
-  - Port: SPI0 at 1MHz
-  - MISO: GPIO 16, CS: GPIO 17, SCK: GPIO 18, MOSI: GPIO 19
-- **Communication**: USB stdio enabled, UART stdio disabled
-- **Libraries used**: hardware_spi, hardware_timer, hardware_clocks
+Two board revisions exist. Pin maps are in `src/board/bramble_v3_pins.h` and `src/board/bramble_v4_pins.h`.
+
+### Bramble v3 (Adafruit Feather RP2040 RFM9x)
+- **LoRa (SX1276)**: SPI1 — MISO=8, SCK=14, MOSI=15, CS=16, RST=17, DIO0=21
+- **External flash**: Shares SPI1 with LoRa — CS=6, RST=7
+- **PMU UART**: UART0 — TX=0, RX=1
+- **Stdio UART**: UART1 TX-only — GPIO 24 (non-hub nodes); hub uses USB CDC
+
+### Bramble v4 (custom RP2350B)
+- **LoRa (SX1262)**: SPI1 (bit-bang, MOSI/SCK swapped) — MISO=12, MOSI=14, SCK=15, CS=10, RST=16, DIO1=19, BUSY=17
+- **External flash**: Dedicated SPI0 — MISO=0, CS=1, SCK=2, MOSI=3, RST=5
+- **PMU UART**: UART1 — TX=8, RX=9
+- **Stdio UART**: UART0 — TX=28, RX=29 (non-hub nodes); hub uses USB CDC
 
 ## Code Architecture
 
