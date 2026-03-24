@@ -2,7 +2,7 @@
 #include <map>
 #include <set>
 
-#include "hardware/rtc.h"
+#include "hal/rtc_compat.h"
 
 #include "application_mode.h"
 
@@ -22,6 +22,9 @@ private:
     // Track nodes that need a full system reboot
     std::set<uint16_t> pending_reboots_;
 
+    // Track nodes that need a factory reset (wipe FRAM + reboot)
+    std::set<uint16_t> pending_factory_resets_;
+
     void processSerialInput();
     void handleSerialCommand(const char *cmd);
     void handleListNodes();
@@ -34,6 +37,7 @@ private:
     void handleGetDateTime();  // Request datetime from RasPi
     void handleDeleteNode(const char *args);
     void handleRebootNode(const char *args);
+    void handleFactoryResetNode(const char *args);
     bool parseScheduleArgs(const char *args, uint16_t &node_addr, uint8_t &index, uint8_t &hour,
                            uint8_t &minute, uint16_t &duration, uint8_t &days, uint8_t &valve);
 

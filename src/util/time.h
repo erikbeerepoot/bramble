@@ -5,7 +5,7 @@
 
 #include "pico/stdlib.h"
 
-#include "hardware/rtc.h"
+#include "../hal/rtc_compat.h"
 
 #include "../hal/pmu_protocol.h"
 

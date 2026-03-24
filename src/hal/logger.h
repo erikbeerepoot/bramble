@@ -4,7 +4,7 @@
 
 #include "pico/stdlib.h"
 
-#include "hardware/rtc.h"
+#include "rtc_compat.h"
 
 /**
  * @brief Logging levels for debug output control

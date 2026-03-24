@@ -4,7 +4,7 @@
 
 #include "pico/unique_id.h"
 
-#include "hardware/rtc.h"
+#include "../hal/rtc_compat.h"
 #include "hardware/watchdog.h"
 
 #include "../hal/logger.h"
@@ -17,10 +17,8 @@
 constexpr uint16_t HUB_ADDRESS = ADDRESS_HUB;
 constexpr uint32_t HEARTBEAT_INTERVAL_MS = 60000;  // 60 seconds
 
-// PMU UART configuration - adjust pins based on your hardware
-#define PMU_UART_ID uart0
-#define PMU_UART_TX_PIN 0
-#define PMU_UART_RX_PIN 1
+// PMU UART configuration - selected by board version via board_pins.h
+#include "../board/board_pins.h"
 
 static Logger logger("IRRIG");
 static Logger pmu_logger("PMU");
@@ -54,7 +52,7 @@ void IrrigationMode::onStart()
     }
 
     // Initialize PMU client at 9600 baud to match STM32 LPUART configuration
-    pmu_client_ = new PmuClient(PMU_UART_ID, PMU_UART_TX_PIN, PMU_UART_RX_PIN, 9600);
+    pmu_client_ = new PmuClient(Board::PMU_UART_PORT, Board::PMU_UART_TX_PIN, Board::PMU_UART_RX_PIN, 9600);
     pmu_available_ = pmu_client_->init();
 
     if (pmu_available_) {
@@ -582,6 +580,21 @@ void IrrigationMode::onRebootRequested()
         auto &protocol = pmu_client_->getProtocol();
         uint8_t seq = protocol.getNextSequenceNumber();
         protocol.sendCommand(seq, PMU::Command::SystemReset, nullptr, 0);
+        // Brief delay to allow UART to flush before watchdog reboot
+        sleep_ms(100);
+    } else {
+        logger.warn("PMU not available - performing RP2040-only watchdog reboot");
+    }
+    watchdog_reboot(0, 0, 0);
+}
+
+void IrrigationMode::onFactoryResetRequested()
+{
+    if (pmu_available_ && pmu_client_) {
+        logger.warn("Requesting factory reset via PMU (wipes FRAM)");
+        PMU::Protocol &protocol = pmu_client_->getProtocol();
+        uint8_t seq = protocol.getNextSequenceNumber();
+        protocol.sendCommand(seq, PMU::Command::FactoryReset, nullptr, 0);
         // Brief delay to allow UART to flush before watchdog reboot
         sleep_ms(100);
     } else {
