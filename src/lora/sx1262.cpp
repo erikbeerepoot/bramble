@@ -7,8 +7,8 @@
 #include "../hal/gpio_interrupt_manager.h"
 #include "../util/retry.h"
 
-SX1262::SX1262(spi_inst_t *spi_port, uint cs_pin, int rst_pin, int dio1_pin, int busy_pin)
-    : spi_(spi_port, cs_pin), rst_pin_(rst_pin), dio1_pin_(dio1_pin), busy_pin_(busy_pin),
+SX1262::SX1262(SPIInterface &spi, int rst_pin, int dio1_pin, int busy_pin)
+    : spi_(spi), rst_pin_(rst_pin), dio1_pin_(dio1_pin), busy_pin_(busy_pin),
       frequency_(SX1262_DEFAULT_FREQUENCY), tx_power_(SX1262_DEFAULT_TX_POWER),
       spreading_factor_(SX1262_DEFAULT_SPREADING_FACTOR), bandwidth_(SX1262_DEFAULT_BANDWIDTH),
       coding_rate_(SX1262_DEFAULT_CODING_RATE), preamble_length_(SX1262_DEFAULT_PREAMBLE_LENGTH),

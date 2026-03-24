@@ -6,17 +6,10 @@
 #include "hardware/spi.h"
 
 #include "logger.h"
-
-// SPI Error codes
-enum SPIError {
-    SPI_SUCCESS = 0,
-    SPI_ERROR_TRANSFER = -1,
-    SPI_ERROR_INVALID_PARAM = -2,
-    SPI_ERROR_VERIFY_FAILED = -3
-};
+#include "spi_interface.h"
 
 /**
- * @brief Simple SPI device wrapper
+ * @brief Hardware SPI device wrapper
  *
  * Provides a clean SPI interface with:
  * - CS pin management
@@ -24,7 +17,7 @@ enum SPIError {
  * - Transfer verification
  * - Future DMA compatibility
  */
-class SPIDevice {
+class SPIDevice : public SPIInterface {
 public:
     /**
      * @brief Construct a new SPI device wrapper
@@ -79,7 +72,7 @@ public:
      * @param length Transfer length
      * @return SPIError code
      */
-    SPIError transfer(const uint8_t *tx_buf, uint8_t *rx_buf, size_t length);
+    SPIError transfer(const uint8_t *tx_buf, uint8_t *rx_buf, size_t length) override;
 
     /**
      * @brief Set custom read/write bit masks
