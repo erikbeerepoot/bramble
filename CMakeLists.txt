@@ -23,13 +23,24 @@ if (EXISTS ${picoVscode})
     include(${picoVscode})
 endif()
 # ====================================================================================
-set(PICO_BOARD adafruit_feather_rp2040 CACHE STRING "Board type")
+# Board revision: V3 (RP2040, Adafruit Feather) or V4 (RP2350B, custom PCB)
+set(BOARD_VERSION "V3" CACHE STRING "Board revision: V3 (RP2040) or V4 (RP2350B)")
+set_property(CACHE BOARD_VERSION PROPERTY STRINGS V3 V4)
+
+if(BOARD_VERSION STREQUAL "V4")
+    set(PICO_BOARD bramble_v4 CACHE STRING "Board type" FORCE)
+    set(PICO_BOARD_HEADER_DIRS ${CMAKE_CURRENT_LIST_DIR}/boards CACHE STRING "" FORCE)
+    set(PICO_PLATFORM rp2350-arm-s CACHE STRING "Platform" FORCE)
+    message(STATUS "Board version: V4 (RP2350B)")
+else()
+    set(PICO_BOARD adafruit_feather_rp2040 CACHE STRING "Board type")
+    # Use W25Q boot2 - matches W25Q16JV flash chip
+    set(PICO_DEFAULT_BOOT_STAGE2_FILE ${PICO_SDK_PATH}/src/rp2040/boot_stage2/boot2_w25q080.S)
+    message(STATUS "Board version: V3 (RP2040)")
+endif()
 
 # Pull in Raspberry Pi Pico SDK (must be before project)
 include(pico_sdk_import.cmake)
-
-# Use W25Q boot2 - matches W25Q16JV flash chip
-set(PICO_DEFAULT_BOOT_STAGE2_FILE ${PICO_SDK_PATH}/src/rp2040/boot_stage2/boot2_w25q080.S)
 
 # Pull in Pico extras (if available)
 set(PICO_EXTRAS_PATH ${CMAKE_CURRENT_LIST_DIR}/pico-extras)
@@ -146,6 +157,13 @@ else()
     endif()
     message(STATUS "Radio chip: ${RADIO_CHIP} (${RADIO_SOURCE})")
 
+    # Board suffix for executable names (e.g. bramble_sensor_v4_sx1262)
+    if(BOARD_VERSION STREQUAL "V4")
+        set(BOARD_SUFFIX "_v4")
+    else()
+        set(BOARD_SUFFIX "")
+    endif()
+
     # Common source files for all variants
     set(COMMON_SOURCES
         ${RADIO_SOURCE}
@@ -161,10 +179,12 @@ else()
         src/hal/external_flash.cpp
         src/hal/logger.cpp
         src/hal/spi_device.cpp
+        src/hal/bitbang_spi_device.cpp
         src/hal/gpio_interrupt_manager.cpp
         src/hal/pmu_protocol.cpp
         src/hal/pmu_client.cpp
         src/hal/pmu_reliability.cpp
+        src/hal/rtc_compat.cpp
         src/config/config_base.cpp
         src/config/node_config.cpp
         src/config/hub_config.cpp
@@ -183,7 +203,7 @@ else()
 
     # Build specialized executables (ALL builds every variant)
     if(HARDWARE_VARIANT STREQUAL "ALL" OR HARDWARE_VARIANT STREQUAL "IRRIGATION")
-        add_executable(bramble_irrigation${RADIO_SUFFIX}
+        add_executable(bramble_irrigation${BOARD_SUFFIX}${RADIO_SUFFIX}
             main.cpp
             src/modes/irrigation_mode.cpp
             src/hal/valve_controller.cpp
@@ -191,70 +211,70 @@ else()
             src/hal/valve_indexer.cpp
             ${COMMON_SOURCES}
         )
-        target_compile_definitions(bramble_irrigation${RADIO_SUFFIX} PRIVATE
+        target_compile_definitions(bramble_irrigation${BOARD_SUFFIX}${RADIO_SUFFIX} PRIVATE
             HARDWARE_IRRIGATION=1
             DEFAULT_IS_HUB=0
         )
-        list(APPEND BUILD_TARGETS bramble_irrigation${RADIO_SUFFIX})
+        list(APPEND BUILD_TARGETS bramble_irrigation${BOARD_SUFFIX}${RADIO_SUFFIX})
         message(STATUS "Building IRRIGATION variant")
     endif()
 
     if(HARDWARE_VARIANT STREQUAL "ALL" OR HARDWARE_VARIANT STREQUAL "CONTROLLER")
-        add_executable(bramble_controller${RADIO_SUFFIX}
+        add_executable(bramble_controller${BOARD_SUFFIX}${RADIO_SUFFIX}
             main.cpp
             src/modes/controller_mode.cpp
             src/hal/controller_inputs.cpp
             ${COMMON_SOURCES}
         )
-        target_compile_definitions(bramble_controller${RADIO_SUFFIX} PRIVATE
+        target_compile_definitions(bramble_controller${BOARD_SUFFIX}${RADIO_SUFFIX} PRIVATE
             HARDWARE_CONTROLLER=1
             DEFAULT_IS_HUB=1
         )
-        list(APPEND BUILD_TARGETS bramble_controller${RADIO_SUFFIX})
+        list(APPEND BUILD_TARGETS bramble_controller${BOARD_SUFFIX}${RADIO_SUFFIX})
         message(STATUS "Building CONTROLLER variant")
     endif()
 
     if(HARDWARE_VARIANT STREQUAL "ALL" OR HARDWARE_VARIANT STREQUAL "HUB")
-        add_executable(bramble_hub${RADIO_SUFFIX}
+        add_executable(bramble_hub${BOARD_SUFFIX}${RADIO_SUFFIX}
             main.cpp
             src/modes/hub_mode.cpp
             ${COMMON_SOURCES}
         )
-        target_compile_definitions(bramble_hub${RADIO_SUFFIX} PRIVATE
+        target_compile_definitions(bramble_hub${BOARD_SUFFIX}${RADIO_SUFFIX} PRIVATE
             HARDWARE_GENERIC=1
             DEFAULT_IS_HUB=1
         )
-        list(APPEND BUILD_TARGETS bramble_hub${RADIO_SUFFIX})
+        list(APPEND BUILD_TARGETS bramble_hub${BOARD_SUFFIX}${RADIO_SUFFIX})
         message(STATUS "Building HUB variant (pure hub mode)")
     endif()
 
     if(HARDWARE_VARIANT STREQUAL "ALL" OR HARDWARE_VARIANT STREQUAL "SENSOR")
-        add_executable(bramble_sensor${RADIO_SUFFIX}
+        add_executable(bramble_sensor${BOARD_SUFFIX}${RADIO_SUFFIX}
             main.cpp
             src/modes/sensor_mode.cpp
             src/hal/cht832x.cpp
             src/util/sensor_pmu_manager.cpp
             ${COMMON_SOURCES}
         )
-        target_compile_definitions(bramble_sensor${RADIO_SUFFIX} PRIVATE
+        target_compile_definitions(bramble_sensor${BOARD_SUFFIX}${RADIO_SUFFIX} PRIVATE
             HARDWARE_SENSOR=1
             DEFAULT_IS_HUB=0
         )
-        list(APPEND BUILD_TARGETS bramble_sensor${RADIO_SUFFIX})
+        list(APPEND BUILD_TARGETS bramble_sensor${BOARD_SUFFIX}${RADIO_SUFFIX})
         message(STATUS "Building SENSOR variant")
     endif()
 
     if(HARDWARE_VARIANT STREQUAL "ALL" OR HARDWARE_VARIANT STREQUAL "GENERIC")
-        add_executable(bramble_generic${RADIO_SUFFIX}
+        add_executable(bramble_generic${BOARD_SUFFIX}${RADIO_SUFFIX}
             main.cpp
             src/modes/application_mode.cpp
             ${COMMON_SOURCES}
         )
-        target_compile_definitions(bramble_generic${RADIO_SUFFIX} PRIVATE
+        target_compile_definitions(bramble_generic${BOARD_SUFFIX}${RADIO_SUFFIX} PRIVATE
             HARDWARE_GENERIC=1
             DEFAULT_IS_HUB=0
         )
-        list(APPEND BUILD_TARGETS bramble_generic${RADIO_SUFFIX})
+        list(APPEND BUILD_TARGETS bramble_generic${BOARD_SUFFIX}${RADIO_SUFFIX})
         message(STATUS "Building GENERIC variant")
     endif()
 
@@ -293,17 +313,30 @@ if(NOT BUILD_TESTS)
             pico_enable_stdio_uart(${TARGET_NAME} 1)
         endif()
 
-        # UART1 pin configuration for custom board (all targets use same pins)
-        target_compile_definitions(${TARGET_NAME} PRIVATE
-            PICO_DEFAULT_UART=1
-            PICO_DEFAULT_UART_TX_PIN=24
-            PICO_DEFAULT_UART_RX_PIN=-1
-            PICO_XOSC_STARTUP_DELAY_MULTIPLIER=128
-            PICO_STACK_SIZE=0x1000
-            BRAMBLE_VERSION_MAJOR=${BRAMBLE_VERSION_MAJOR}
-            BRAMBLE_VERSION_MINOR=${BRAMBLE_VERSION_MINOR}
-            BRAMBLE_VERSION_BUILD=${BRAMBLE_VERSION_BUILD}
-        )
+        # Board-specific configuration
+        if(BOARD_VERSION STREQUAL "V4")
+            # V4: SDK board header (bramble_v4.h) sets UART0/GPIO28/29 defaults
+            target_compile_definitions(${TARGET_NAME} PRIVATE
+                BOARD_V4=1
+                PICO_XOSC_STARTUP_DELAY_MULTIPLIER=64
+                PICO_STACK_SIZE=0x1000
+                BRAMBLE_VERSION_MAJOR=${BRAMBLE_VERSION_MAJOR}
+                BRAMBLE_VERSION_MINOR=${BRAMBLE_VERSION_MINOR}
+                BRAMBLE_VERSION_BUILD=${BRAMBLE_VERSION_BUILD}
+            )
+        else()
+            # V3: Override to UART1/GPIO24 (TX-only)
+            target_compile_definitions(${TARGET_NAME} PRIVATE
+                PICO_DEFAULT_UART=1
+                PICO_DEFAULT_UART_TX_PIN=24
+                PICO_DEFAULT_UART_RX_PIN=-1
+                PICO_XOSC_STARTUP_DELAY_MULTIPLIER=128
+                PICO_STACK_SIZE=0x1000
+                BRAMBLE_VERSION_MAJOR=${BRAMBLE_VERSION_MAJOR}
+                BRAMBLE_VERSION_MINOR=${BRAMBLE_VERSION_MINOR}
+                BRAMBLE_VERSION_BUILD=${BRAMBLE_VERSION_BUILD}
+            )
+        endif()
 
         # Suppress GCC ARM ABI notes (safe for standalone firmware)
         target_compile_options(${TARGET_NAME} PRIVATE -Wno-psabi)
@@ -324,12 +357,18 @@ if(NOT BUILD_TESTS)
             hardware_pio
             hardware_flash
             hardware_sync
-            hardware_rtc
             hardware_watchdog
             pico_multicore
             pico_util
             pico_unique_id
         )
+
+        # RTC: RP2040 uses hardware_rtc, RP2350 uses pico_aon_timer
+        if(BOARD_VERSION STREQUAL "V4")
+            target_link_libraries(${TARGET_NAME} pico_aon_timer)
+        else()
+            target_link_libraries(${TARGET_NAME} hardware_rtc)
+        endif()
 
         # Add pico-extras libraries if available
         if(EXISTS ${PICO_EXTRAS_PATH})
