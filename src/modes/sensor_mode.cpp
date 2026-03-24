@@ -8,6 +8,10 @@
 #include "hardware/i2c.h"
 #include "hardware/watchdog.h"
 
+#ifdef BOARD_V4
+#include "../board/board_pins.h"
+#endif
+
 #include "../../main.h"
 #include "../hal/cht832x.h"
 #include "../hal/logger.h"
@@ -40,7 +44,12 @@ void SensorMode::onStart()
     logger.debug("LED: orange=init, yellow=sync, green=ok, orange=degraded, red=error");
 
     // Initialize external flash for sensor data storage
+#ifdef BOARD_V4
+    ExternalFlashPins v4_flash_pins = {.cs = Board::FLASH_PIN_CS, .reset = Board::FLASH_PIN_RST};
+    external_flash_ = std::make_unique<ExternalFlash>(Board::FLASH_SPI_PORT, v4_flash_pins);
+#else
     external_flash_ = std::make_unique<ExternalFlash>();
+#endif
     if (external_flash_->init()) {
         flash_buffer_ = std::make_unique<SensorFlashBuffer>(*external_flash_);
         if (flash_buffer_->init()) {
@@ -663,6 +672,16 @@ void SensorMode::onRebootRequested()
 {
     if (pmu_manager_) {
         pmu_manager_->requestSystemReset();
+    } else {
+        logger.warn("PMU manager not available - performing RP2040-only watchdog reboot");
+        watchdog_reboot(0, 0, 0);
+    }
+}
+
+void SensorMode::onFactoryResetRequested()
+{
+    if (pmu_manager_) {
+        pmu_manager_->requestFactoryReset();
     } else {
         logger.warn("PMU manager not available - performing RP2040-only watchdog reboot");
         watchdog_reboot(0, 0, 0);

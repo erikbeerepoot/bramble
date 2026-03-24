@@ -62,6 +62,25 @@
 #include "modes/application_mode.h"
 #endif
 
+#ifdef BOARD_V4
+#include "board/board_pins.h"
+#include "hal/bitbang_spi_device.h"
+
+// V4: LoRa on bit-bang SPI (MOSI/SCK swapped on PCB vs RP2350 pin mux)
+constexpr uint PIN_MISO = Board::LORA_PIN_MISO;
+constexpr uint PIN_MOSI = Board::LORA_PIN_MOSI;
+constexpr uint PIN_SCK = Board::LORA_PIN_SCK;
+constexpr uint PIN_CS = Board::LORA_PIN_CS;
+constexpr uint PIN_RST = Board::LORA_PIN_RST;
+constexpr uint PIN_DIO1 = Board::LORA_PIN_DIO1;
+constexpr uint PIN_BUSY = Board::LORA_PIN_BUSY;
+constexpr uint PIN_NEOPIXEL = Board::PIN_NEOPIXEL;
+constexpr uint PIN_A0 = Board::PIN_A0;
+constexpr uint PIN_A1 = Board::PIN_A1;
+
+#else  // V3
+#include "hal/spi_device.h"
+
 // Hardware configuration - Bramble board v3
 static auto SPI_PORT = spi1;   // SPI1 for LoRa module
 constexpr uint PIN_MISO = 8;   // SPI1 RX
@@ -80,6 +99,7 @@ constexpr uint PIN_NEOPIXEL = 4;
 // Controller input pins (Adafruit Feather RP2040)
 constexpr uint PIN_A0 = 26;  // A0 analog/digital input
 constexpr uint PIN_A1 = 27;  // A1 analog/digital input
+#endif  // BOARD_V4
 
 // Demo mode configuration is set by CMake
 // Debug UART: printf goes to GPIO12 (VALVE_3) via CMakeLists.txt config
@@ -175,7 +195,14 @@ int main()
 
     // Initialize LoRa radio
 #ifdef RADIO_SX1262
-    SX1262 lora(SPI_PORT, PIN_CS, PIN_RST, PIN_DIO1, PIN_BUSY);
+#ifdef BOARD_V4
+    // V4: bit-bang SPI (MOSI/SCK swapped on PCB)
+    BitBangSPIDevice lora_spi(PIN_MOSI, PIN_MISO, PIN_SCK, PIN_CS);
+#else
+    // V3: hardware SPI
+    SPIDevice lora_spi(SPI_PORT, PIN_CS);
+#endif
+    SX1262 lora(lora_spi, PIN_RST, PIN_DIO1, PIN_BUSY);
 #else
     SX1276 lora(SPI_PORT, PIN_CS, PIN_RST, PIN_DIO0);
 #endif
@@ -356,7 +383,15 @@ bool initializeHardware(RadioInterface &lora, NeoPixel &led)
 {
     Logger log("Hardware");
 
-    // SPI initialization - 1MHz for reliable communication
+#ifdef BOARD_V4
+    // V4: LoRa uses bit-bang SPI (pins configured by BitBangSPIDevice constructor)
+    // Initialize SPI0 for external flash (correct pin mux — no swap issue)
+    spi_init(spi0, 1000 * 1000);
+    gpio_set_function(Board::FLASH_PIN_MISO, GPIO_FUNC_SPI);
+    gpio_set_function(Board::FLASH_PIN_SCK, GPIO_FUNC_SPI);
+    gpio_set_function(Board::FLASH_PIN_MOSI, GPIO_FUNC_SPI);
+#else
+    // V3: SPI1 shared by LoRa + flash
     spi_init(SPI_PORT, 1000 * 1000);
     gpio_set_function(PIN_MISO, GPIO_FUNC_SPI);
     gpio_set_function(PIN_CS, GPIO_FUNC_SIO);
@@ -374,6 +409,7 @@ bool initializeHardware(RadioInterface &lora, NeoPixel &led)
     gpio_init(PIN_FLASH_CS);
     gpio_set_dir(PIN_FLASH_CS, GPIO_OUT);
     gpio_put(PIN_FLASH_CS, 1);  // Deselect flash
+#endif
 
     log.debug("System Clock: %d Hz, USB Clock: %d Hz", clock_get_hz(clk_sys),
               clock_get_hz(clk_usb));
