@@ -57,22 +57,33 @@ bool SensorPmuManager::initialize(InitCallback init_callback)
         [this](PMU::WakeReason reason, const PMU::ScheduleEntry *entry, bool state_valid,
                const uint8_t *state) { this->handlePmuWake(reason, entry, state_valid, state); });
 
-    // Wait for PMU to send WakeNotification (PMU now initiates by sending periodically)
-    // Start timeout — if notification doesn't arrive, send ack as fallback to prompt PMU
-    pmu_logger.debug("Waiting for WakeNotification from PMU...");
-    uint32_t now = to_ms_since_boot(get_absolute_time());
-    wake_timeout_id_ = task_queue_.postDelayed(
-        [this](uint32_t) -> bool {
-            pmu_logger.warn("WakeNotification timeout - sending NotificationAck as fallback");
-            wake_timeout_id_ = 0;
-            reliable_pmu_->notificationAck(nullptr);
+    // Signal ready to receive wake info - PMU will respond with wake notification
+    // containing persisted state (write_index, read_index, etc.)
+    pmu_logger.debug("Sending ClearToSend to PMU...");
+    reliable_pmu_->clearToSend([this](bool success, PMU::ErrorCode error) {
+        if (!success) {
+            pmu_logger.error("ClearToSend failed: %d", static_cast<int>(error));
+            // Fall back to proceeding without waiting for PMU state
             if (init_callback_) {
                 init_callback_(false, PMU::WakeReason::Periodic);
-                init_callback_ = nullptr;
             }
-            return true;
-        },
-        now, WAKE_NOTIFICATION_TIMEOUT_MS, TaskPriority::High);
+        } else {
+            pmu_logger.info("ClearToSend ACK received - waiting for WakeNotification");
+            // Start timeout — if WakeNotification doesn't arrive, proceed without PMU state
+            uint32_t now = to_ms_since_boot(get_absolute_time());
+            wake_timeout_id_ = task_queue_.postDelayed(
+                [this](uint32_t) -> bool {
+                    pmu_logger.warn("WakeNotification timeout - proceeding without PMU state");
+                    wake_timeout_id_ = 0;
+                    if (init_callback_) {
+                        init_callback_(false, PMU::WakeReason::Periodic);
+                        init_callback_ = nullptr;
+                    }
+                    return true;
+                },
+                now, WAKE_NOTIFICATION_TIMEOUT_MS, TaskPriority::High);
+        }
+    });
 
     return true;
 }
@@ -186,9 +197,6 @@ void SensorPmuManager::handlePmuWake(PMU::WakeReason reason, const PMU::Schedule
     // Cancel the wake notification timeout — PMU responded
     task_queue_.cancel(wake_timeout_id_);
     wake_timeout_id_ = 0;
-
-    // Acknowledge receipt — PMU transitions AWAITING_ACK → WAKE_ACTIVE
-    reliable_pmu_->notificationAck(nullptr);
 
     // Restore state from PMU RAM if valid
     bool restored = false;

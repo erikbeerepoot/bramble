@@ -38,7 +38,7 @@ constexpr uint8_t STATE_VERSION = 2;
  * @brief Manages PMU hardware and protocol for SensorMode
  *
  * Owns PmuClient and ReliablePmuClient, encapsulates:
- * - WakeNotification reception and acknowledgement
+ * - ClearToSend handshake and wake notification handling
  * - State persistence across sleep/wake (pack/unpack SensorPersistedState)
  * - RTC sync to/from PMU battery-backed clock
  * - ReadyForSleep signaling with state blob
@@ -80,10 +80,9 @@ public:
     ~SensorPmuManager();
 
     /**
-     * @brief Initialize PMU hardware and wait for WakeNotification
+     * @brief Initialize PMU hardware and start ClearToSend handshake
      *
-     * Creates PmuClient, ReliablePmuClient, waits for PMU to send
-     * WakeNotification, then sends NotificationAck as confirmation.
+     * Creates PmuClient, ReliablePmuClient, performs ClearToSend handshake.
      * Calls init_callback once (either on wake notification or timeout).
      *
      * @param init_callback Called when initialization completes
@@ -144,9 +143,8 @@ private:
     static constexpr uint PMU_UART_RX_PIN = 1;
     static constexpr uint PMU_UART_BAUDRATE = 9600;
 
-    // Timeout for receiving WakeNotification from PMU
-    // PMU boot animation is ~1s, first notification retry at 500ms after
-    static constexpr uint32_t WAKE_NOTIFICATION_TIMEOUT_MS = 2000;
+    // Timeout for wake notification after ClearToSend
+    static constexpr uint32_t WAKE_NOTIFICATION_TIMEOUT_MS = 1000;
 
     ReliableMessenger &messenger_;
     SensorFlashBuffer *flash_buffer_;

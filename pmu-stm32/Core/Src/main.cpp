@@ -205,7 +205,7 @@ int main(void)
 
     // Start non-blocking boot animation (timer-based)
     // BOOT_COMPLETE is dispatched by timer callback when animation finishes
-    // Main loop runs immediately, so notification ack can be handled without waiting
+    // Main loop runs immediately, so CTS can be handled without waiting
     startBootAnimation();
 
     /* USER CODE END 2 */
@@ -231,9 +231,9 @@ int main(void)
             pmuState.dispatch(PmuEvent::RTC_WAKEUP);
         }
 
-        if (protocol.isNotificationAckReceived()) {
-            pmuState.dispatch(PmuEvent::NOTIFICATION_ACK);
-            protocol.clearNotificationAck();
+        if (protocol.isCtsReceived()) {
+            pmuState.dispatch(PmuEvent::CTS_RECEIVED);
+            protocol.clearCtsReceived();
         }
 
         if (readyForSleepFlag) {
@@ -254,11 +254,8 @@ int main(void)
                 // Boot animation handled before loop
                 break;
 
-            case PmuState::AWAITING_ACK:
+            case PmuState::AWAITING_CTS:
                 dcdc.enable();
-                if (pmuState.shouldSendNotification()) {
-                    sendWakeNotification();
-                }
                 break;
 
             case PmuState::WAKE_ACTIVE:
@@ -707,8 +704,8 @@ static void wakeupFromStopMode(void)
 
 /**
  * @brief Determine wake type from RTC time and schedule
- * Called by onStateChange callback when wake type is not yet set.
- * Checks RTC time against schedule and configures the state machine accordingly.
+ * Called by onStateChange callback when entering AWAITING_CTS state.
+ * Sets wake type in state machine based on RTC/schedule analysis.
  */
 static void determineWakeType(void)
 {
@@ -716,8 +713,8 @@ static void determineWakeType(void)
     // so old sequence numbers may still appear "recent"
     protocol.clearDedupBuffer();
 
-    // Reset notification ack flag for this wake cycle
-    protocol.clearNotificationAck();
+    // Reset CTS flag for this wake cycle
+    protocol.clearCtsReceived();
 
     // Get current RTC time and date
     RTC_TimeTypeDef time;
@@ -818,7 +815,7 @@ static void readyForSleepCallback()
 
 /**
  * @brief Send wake notification to RP2040 based on current wake type
- * Called while in AWAITING_ACK state (retry loop) and for direct paths to WAKE_ACTIVE
+ * Called after CTS is received, when transitioning to WAKE_ACTIVE
  */
 static void sendWakeNotification()
 {
@@ -850,8 +847,8 @@ static void updateLedForState(PmuState state, WakeType wakeType)
     LED::Color wakeColor = (wakeType == WakeType::SCHEDULED) ? LED::RED : LED::ORANGE;
 
     switch (state) {
-        case PmuState::AWAITING_ACK: {
-            // Fast blink (250ms cycle) while sending WakeNotification
+        case PmuState::AWAITING_CTS: {
+            // Fast blink (250ms cycle) while waiting for CTS
             uint32_t now = HAL_GetTick();
             if (now - lastBlinkTime >= 125) {
                 lastBlinkTime = now;
@@ -898,20 +895,20 @@ static void updateLedForState(PmuState state, WakeType wakeType)
  */
 static void onStateChange(PmuState newState)
 {
-    // Determine wake type if not already set (boot entry sets PERIODIC in onEnterState,
-    // so this only runs for RTC wakeup entries that need schedule checking)
-    if (newState == PmuState::AWAITING_ACK || newState == PmuState::WAKE_ACTIVE) {
+    // Determine wake type when entering AWAITING_CTS
+    // This checks RTC time and schedule to set the correct wake type
+    if (newState == PmuState::AWAITING_CTS) {
+        determineWakeType();
+    }
+
+    // Send wake notification when entering WAKE_ACTIVE
+    if (newState == PmuState::WAKE_ACTIVE) {
+        // Determine wake type if not already set (fast path from
+        // BOOTING/SLEEPING -> WAKE_ACTIVE that skipped AWAITING_CTS)
         if (pmuState.wakeType() == WakeType::NONE) {
             determineWakeType();
         }
-    }
-
-    if (newState == PmuState::WAKE_ACTIVE) {
-        // Only send here for direct paths (BOOTING/SLEEPING → WAKE_ACTIVE via early ack)
-        // that skip AWAITING_ACK. From AWAITING_ACK, notifications already sent by retry loop.
-        if (pmuState.wakeType() == WakeType::NONE) {
-            sendWakeNotification();
-        }
+        sendWakeNotification();
     }
 }
 
