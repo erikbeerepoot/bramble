@@ -157,6 +157,12 @@ void ApplicationMode::onHeartbeatResponse(const HeartbeatResponsePayload *payloa
         logger.warn("Hub requests reboot (PENDING_FLAG_REBOOT)");
         onRebootRequested();
     }
+
+    // Handle factory reset flag (wipes FRAM persistent storage + reboot)
+    if (payload->pending_update_flags & PENDING_FLAG_FACTORY_RESET) {
+        logger.warn("Hub requests factory reset (PENDING_FLAG_FACTORY_RESET)");
+        onFactoryResetRequested();
+    }
 }
 
 uint32_t ApplicationMode::getUnixTimestamp() const
@@ -208,5 +214,12 @@ void ApplicationMode::updateStateMachine()
 void ApplicationMode::onRebootRequested()
 {
     logger.warn("Performing RP2040-only watchdog reboot (no PMU)");
+    watchdog_reboot(0, 0, 0);
+}
+
+void ApplicationMode::onFactoryResetRequested()
+{
+    // Default: no PMU access, so just reboot (no FRAM wipe possible)
+    logger.warn("Factory reset requested but no PMU - performing RP2040-only watchdog reboot");
     watchdog_reboot(0, 0, 0);
 }

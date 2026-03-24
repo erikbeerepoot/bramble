@@ -11,8 +11,8 @@
 #include "../lora/reliable_messenger.h"
 #include "../storage/sensor_flash_buffer.h"
 
-// PMU UART instance - must match hardware wiring
-#define PMU_UART_ID uart0
+// PMU UART configuration - selected by board version via board_pins.h
+#include "../board/board_pins.h"
 
 static Logger pmu_logger("PMU");
 
@@ -33,7 +33,7 @@ bool SensorPmuManager::initialize(InitCallback init_callback)
     init_callback_ = std::move(init_callback);
 
     // Initialize PMU client at 9600 baud to match STM32 LPUART configuration
-    pmu_client_ = new PmuClient(PMU_UART_ID, PMU_UART_TX_PIN, PMU_UART_RX_PIN, PMU_UART_BAUDRATE);
+    pmu_client_ = new PmuClient(Board::PMU_UART_PORT, Board::PMU_UART_TX_PIN, Board::PMU_UART_RX_PIN, PMU_UART_BAUDRATE);
     pmu_available_ = pmu_client_->init();
 
     // Create reliable PMU client wrapper for automatic retry
@@ -181,6 +181,23 @@ void SensorPmuManager::requestSystemReset()
             // PMU will reset itself (killing RP2040 power), but if the ACK
             // arrives before power is cut, do a watchdog reboot as fallback.
             // Also reboot if PMU command failed - we always honor reboot requests.
+            watchdog_reboot(0, 0, 0);
+        });
+    } else {
+        pmu_logger.warn("PMU not available - performing RP2040-only watchdog reboot");
+        watchdog_reboot(0, 0, 0);
+    }
+}
+
+void SensorPmuManager::requestFactoryReset()
+{
+    if (pmu_available_ && reliable_pmu_) {
+        pmu_logger.warn("Requesting factory reset via PMU (wipes FRAM)");
+        reliable_pmu_->factoryReset([](bool success, PMU::ErrorCode error) {
+            (void)error;
+            (void)success;
+            // PMU will wipe FRAM and reset itself (killing RP2040 power), but if the ACK
+            // arrives before power is cut, do a watchdog reboot as fallback.
             watchdog_reboot(0, 0, 0);
         });
     } else {

@@ -125,6 +125,15 @@ public:
     void requestSystemReset();
 
     /**
+     * @brief Request factory reset via PMU (wipes FRAM, then resets)
+     *
+     * Sends FactoryReset command. The PMU will ACK, wipe all FRAM persistent
+     * state (wake interval, schedules, node state), then NVIC_SystemReset().
+     * On ACK (or failure), performs watchdog reboot as fallback.
+     */
+    void requestFactoryReset();
+
+    /**
      * @brief Check if PMU hardware is available
      */
     bool isAvailable() const { return pmu_available_; }
@@ -138,9 +147,7 @@ public:
     bool isSleepPending() const { return sleep_pending_; }
 
 private:
-    // PMU UART configuration
-    static constexpr uint PMU_UART_TX_PIN = 0;
-    static constexpr uint PMU_UART_RX_PIN = 1;
+    // PMU UART baud rate (pins come from Board:: namespace via board_pins.h)
     static constexpr uint PMU_UART_BAUDRATE = 9600;
 
     // Timeout for wake notification after ClearToSend

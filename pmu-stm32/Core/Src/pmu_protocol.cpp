@@ -599,6 +599,19 @@ void Protocol::processReceivedByte(uint8_t byte)
                     NVIC_SystemReset();
                 }
                 break;
+            case Command::FactoryReset:
+                // Wipe FRAM persistent storage, then reset
+                // Always send ACK first so RP2040 knows the command was received
+                sendAck();
+                if (!isDuplicate) {
+                    // Brief delay to allow UART to flush the ACK
+                    for (volatile uint32_t i = 0; i < 10000; i++) {}
+                    if (storage_) {
+                        storage_->factoryReset();
+                    }
+                    NVIC_SystemReset();
+                }
+                break;
             default:
                 sendNack(ErrorCode::InvalidParam);
                 break;

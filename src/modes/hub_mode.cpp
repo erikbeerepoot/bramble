@@ -324,6 +324,8 @@ void HubMode::handleSerialCommand(const char *cmd)
         handleDeleteNode(cmd + 12);
     } else if (strncmp(cmd, "REBOOT_NODE ", 12) == 0) {
         handleRebootNode(cmd + 12);
+    } else if (strncmp(cmd, "FACTORY_RESET_NODE ", 19) == 0) {
+        handleFactoryResetNode(cmd + 19);
     } else {
         uartSend("ERROR Unknown command\n");
     }
@@ -657,6 +659,28 @@ void HubMode::handleRebootNode(const char *args)
     logger.info("Queued reboot for node 0x%04X", node_addr);
 }
 
+void HubMode::handleFactoryResetNode(const char *args)
+{
+    uint16_t node_addr;
+    if (sscanf(args, "%hu", &node_addr) != 1) {
+        uartSend("ERROR Invalid FACTORY_RESET_NODE syntax\n");
+        return;
+    }
+
+    if (node_addr < ADDRESS_MIN_NODE || node_addr > ADDRESS_MAX_NODE) {
+        uartSend("ERROR Invalid node address\n");
+        return;
+    }
+
+    pending_factory_resets_.insert(node_addr);
+
+    char response[64];
+    snprintf(response, sizeof(response), "QUEUED FACTORY_RESET_NODE %u\n", node_addr);
+    uartSend(response);
+
+    logger.info("Queued factory reset for node 0x%04X", node_addr);
+}
+
 void HubMode::handleHeartbeat(uint16_t source_addr, const HeartbeatPayload *payload, int16_t rssi)
 {
     // Get current datetime from RTC
@@ -691,6 +715,13 @@ void HubMode::handleHeartbeat(uint16_t source_addr, const HeartbeatPayload *payl
         pending_flags |= PENDING_FLAG_REBOOT;
         pending_reboots_.erase(source_addr);
         logger.info("Setting PENDING_FLAG_REBOOT for node 0x%04X", source_addr);
+    }
+
+    // Set FACTORY_RESET flag if this node has a pending factory reset
+    if (pending_factory_resets_.count(source_addr)) {
+        pending_flags |= PENDING_FLAG_FACTORY_RESET;
+        pending_factory_resets_.erase(source_addr);
+        logger.info("Setting PENDING_FLAG_FACTORY_RESET for node 0x%04X", source_addr);
     }
 
     // Send heartbeat response with current time and pending flags

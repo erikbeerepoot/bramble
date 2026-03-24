@@ -65,4 +65,5 @@ protected:
     void onActuatorCommand(const ActuatorPayload *payload) override;
     void onHeartbeatResponse(const HeartbeatResponsePayload *payload) override;
     void onRebootRequested() override;
+    void onFactoryResetRequested() override;
 };

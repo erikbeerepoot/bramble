@@ -38,6 +38,10 @@ public:
     bool isNodeStateValid();
     bool invalidateNodeState();
 
+    // Wipe all persistent state (schedules, wake interval, node state) and re-initialise
+    // with fresh magic/version. Returns true on success.
+    bool factoryReset();
+
 private:
     FRAM& fram_;
     bool available_;
