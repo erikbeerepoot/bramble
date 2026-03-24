@@ -327,6 +327,11 @@ bool ReliablePmuClient::systemReset(CommandCallback callback)
     return queueCommand(Command::SystemReset, nullptr, 0, callback);
 }
 
+bool ReliablePmuClient::factoryReset(CommandCallback callback)
+{
+    return queueCommand(Command::FactoryReset, nullptr, 0, callback);
+}
+
 // ============================================================================
 // Event callbacks
 // ============================================================================

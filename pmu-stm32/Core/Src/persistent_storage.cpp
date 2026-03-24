@@ -181,6 +181,12 @@ bool PersistentStorage::isNodeStateValid()
     return flag == 1;
 }
 
+bool PersistentStorage::factoryReset()
+{
+    if (!available_) return false;
+    return formatStorage();
+}
+
 bool PersistentStorage::invalidateNodeState()
 {
     if (!available_) return false;

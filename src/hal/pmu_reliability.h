@@ -172,6 +172,17 @@ public:
     bool systemReset(CommandCallback callback = nullptr);
 
     /**
+     * @brief Request factory reset via PMU (wipes FRAM, then resets)
+     * @param callback Called when command is ACK'd (optional)
+     * @return true if command queued successfully
+     *
+     * The PMU will ACK this command, format FRAM storage to defaults,
+     * then perform NVIC_SystemReset(). This clears all persistent state
+     * including wake interval, schedules, and node state blob.
+     */
+    bool factoryReset(CommandCallback callback = nullptr);
+
+    /**
      * @brief Get access to the underlying PmuClient
      * Useful for accessing the protocol directly for operations
      * not covered by the reliable client.

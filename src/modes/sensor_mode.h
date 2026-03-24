@@ -99,6 +99,7 @@ private:
      */
     void onHeartbeatResponse(const HeartbeatResponsePayload *payload) override;
     void onRebootRequested() override;
+    void onFactoryResetRequested() override;
 
     /**
      * @brief Check if enough time has elapsed since last transmission

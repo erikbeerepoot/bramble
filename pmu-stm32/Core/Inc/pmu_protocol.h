@@ -20,7 +20,8 @@ enum class Command : uint8_t {
     ReadyForSleep = 0x17,  // RP2040 signals work complete, ready for power down
     GetDateTime = 0x18,    // Get RTC date/time from PMU (returns DateTimeResponse)
     ClearToSend = 0x19,    // RP2040 signals ready to receive wake info
-    SystemReset = 0x1A     // Request full system reset (PMU resets itself + RP2040)
+    SystemReset = 0x1A,    // Request full system reset (PMU resets itself + RP2040)
+    FactoryReset = 0x1B    // Wipe FRAM persistent storage, then reset
 };
 
 // Response codes (STM32 → RP2040)
