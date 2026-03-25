@@ -255,6 +255,7 @@ void SensorPmuManager::packState(SensorPersistedState &out) const
 {
     memset(&out, 0, sizeof(out));
     out.version = STATE_VERSION;
+    out.board_version = PERSISTED_BOARD_VERSION;
     out.next_seq_num = messenger_.getNextSeqNum();
     out.assigned_address = messenger_.getNodeAddress();
     if (flash_buffer_) {
@@ -276,6 +277,13 @@ bool SensorPmuManager::unpackState(const SensorPersistedState *persisted)
         return false;
     }
 
+    // Check board version — reject state from a different hardware revision
+    if (persisted->board_version != PERSISTED_BOARD_VERSION) {
+        pmu_logger.warn("Board version mismatch (got %u, expected %u) - cold start",
+                        persisted->board_version, PERSISTED_BOARD_VERSION);
+        return false;
+    }
+
     // Restore LoRa sequence number (no flash dependency)
     messenger_.setNextSeqNum(persisted->next_seq_num);
 
@@ -286,6 +294,30 @@ bool SensorPmuManager::unpackState(const SensorPersistedState *persisted)
 
     // Restore flash buffer indices only if flash is available
     if (flash_buffer_) {
+        // Bounds check: indices must be within flash buffer capacity
+        uint32_t max_records = SensorFlashBuffer::MAX_RECORDS;
+        if (persisted->read_index >= max_records || persisted->write_index >= max_records) {
+            pmu_logger.warn("PMU indices out of range (read=%lu, write=%lu, max=%lu) - cold start",
+                            persisted->read_index, persisted->write_index, max_records);
+            return false;
+        }
+
+        // Cross-check: PMU write_index should be close to flash metadata's write_index.
+        // The flash metadata was loaded during init() and reflects the last persisted state.
+        // PMU state may be slightly ahead (records written after last metadata save), but
+        // a large discrepancy means PMU state is stale (e.g. different board, flash erased).
+        uint32_t flash_write = flash_buffer_->getWriteIndex();
+        uint32_t pmu_write = persisted->write_index;
+        uint32_t delta = (pmu_write >= flash_write)
+                             ? (pmu_write - flash_write)
+                             : (max_records - flash_write + pmu_write);
+        constexpr uint32_t MAX_INDEX_DRIFT = 100;
+        if (delta > MAX_INDEX_DRIFT) {
+            pmu_logger.warn("PMU write_index=%lu too far from flash write_index=%lu (delta=%lu) - cold start",
+                            pmu_write, flash_write, delta);
+            return false;
+        }
+
         flash_buffer_->setReadIndex(persisted->read_index);
         flash_buffer_->setWriteIndex(persisted->write_index);
         pmu_logger.info("Restored state: read=%lu, write=%lu, seq=%u, addr=0x%04X",
