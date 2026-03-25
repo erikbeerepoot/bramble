@@ -26,16 +26,19 @@ endif()
 # Board revision: V3 (RP2040, Adafruit Feather) or V4 (RP2350B, custom PCB)
 set(BOARD_VERSION "V3" CACHE STRING "Board revision: V3 (RP2040) or V4 (RP2350B)")
 set_property(CACHE BOARD_VERSION PROPERTY STRINGS V3 V4)
+string(TOUPPER "${BOARD_VERSION}" BOARD_VERSION)
 
 if(BOARD_VERSION STREQUAL "V4")
     set(PICO_BOARD bramble_v4 CACHE STRING "Board type" FORCE)
     set(PICO_BOARD_HEADER_DIRS ${CMAKE_CURRENT_LIST_DIR}/boards CACHE STRING "" FORCE)
     set(PICO_PLATFORM rp2350-arm-s CACHE STRING "Platform" FORCE)
+    # Clear any cached V3 boot stage 2 file so the SDK uses the RP2350 default
+    unset(PICO_DEFAULT_BOOT_STAGE2_FILE CACHE)
     message(STATUS "Board version: V4 (RP2350B)")
 else()
-    set(PICO_BOARD adafruit_feather_rp2040 CACHE STRING "Board type")
+    set(PICO_BOARD adafruit_feather_rp2040 CACHE STRING "Board type" FORCE)
     # Use W25Q boot2 - matches W25Q16JV flash chip
-    set(PICO_DEFAULT_BOOT_STAGE2_FILE ${PICO_SDK_PATH}/src/rp2040/boot_stage2/boot2_w25q080.S)
+    set(PICO_DEFAULT_BOOT_STAGE2_FILE ${PICO_SDK_PATH}/src/rp2040/boot_stage2/boot2_w25q080.S CACHE STRING "" FORCE)
     message(STATUS "Board version: V3 (RP2040)")
 endif()
 
