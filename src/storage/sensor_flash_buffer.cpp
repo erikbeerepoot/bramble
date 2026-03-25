@@ -75,7 +75,7 @@ static uint32_t binarySearch(uint32_t low, uint32_t high, Predicate pred)
 // SensorFlashBuffer implementation
 
 SensorFlashBuffer::SensorFlashBuffer(ExternalFlash &flash)
-    : flash_(flash), initialized_(false), logger_("SensorFlashBuffer")
+    : flash_(flash), initialized_(false), active_sector_(METADATA_SECTOR_A), logger_("SensorFlashBuffer")
 {
     memset(&metadata_, 0, sizeof(metadata_));
 }
@@ -476,10 +476,15 @@ bool SensorFlashBuffer::reset()
 {
     logger_.warn("Resetting sensor flash buffer - all data will be lost!");
 
-    // Erase metadata sector
-    ExternalFlashResult result = flash_.eraseSector(METADATA_SECTOR);
+    // Erase both metadata sectors
+    ExternalFlashResult result = flash_.eraseSector(METADATA_SECTOR_A);
     if (result != ExternalFlashResult::Success) {
-        logger_.error("Failed to erase metadata sector");
+        logger_.error("Failed to erase metadata sector A");
+        return false;
+    }
+    result = flash_.eraseSector(METADATA_SECTOR_B);
+    if (result != ExternalFlashResult::Success) {
+        logger_.error("Failed to erase metadata sector B");
         return false;
     }
 
@@ -500,14 +505,38 @@ bool SensorFlashBuffer::reset()
 
 bool SensorFlashBuffer::loadMetadata()
 {
-    ExternalFlashResult result =
-        flash_.read(METADATA_SECTOR, reinterpret_cast<uint8_t *>(&metadata_), sizeof(metadata_));
-    if (result != ExternalFlashResult::Success) {
-        logger_.error("Failed to read metadata");
-        return false;
-    }
+    SensorFlashMetadata meta_a;
+    SensorFlashMetadata meta_b;
 
-    if (!validateMetadata()) {
+    ExternalFlashResult result_a =
+        flash_.read(METADATA_SECTOR_A, reinterpret_cast<uint8_t *>(&meta_a), sizeof(meta_a));
+    ExternalFlashResult result_b =
+        flash_.read(METADATA_SECTOR_B, reinterpret_cast<uint8_t *>(&meta_b), sizeof(meta_b));
+
+    bool valid_a = (result_a == ExternalFlashResult::Success) && validateMetadataStruct(meta_a);
+    bool valid_b = (result_b == ExternalFlashResult::Success) && validateMetadataStruct(meta_b);
+
+    if (valid_a && valid_b) {
+        // Both valid — pick the one with the higher sequence number
+        if (meta_b.sequence > meta_a.sequence) {
+            metadata_ = meta_b;
+            active_sector_ = METADATA_SECTOR_B;
+            logger_.info("Loaded metadata from sector B (seq=%lu)", meta_b.sequence);
+        } else {
+            metadata_ = meta_a;
+            active_sector_ = METADATA_SECTOR_A;
+            logger_.info("Loaded metadata from sector A (seq=%lu)", meta_a.sequence);
+        }
+    } else if (valid_a) {
+        metadata_ = meta_a;
+        active_sector_ = METADATA_SECTOR_A;
+        logger_.info("Loaded metadata from sector A (sector B invalid)");
+    } else if (valid_b) {
+        metadata_ = meta_b;
+        active_sector_ = METADATA_SECTOR_B;
+        logger_.info("Loaded metadata from sector B (sector A invalid)");
+    } else {
+        logger_.error("Both metadata sectors invalid");
         return false;
     }
 
@@ -516,27 +545,37 @@ bool SensorFlashBuffer::loadMetadata()
 
 bool SensorFlashBuffer::saveMetadata()
 {
+    // Write to the inactive sector so the active one remains valid if power is lost
+    uint32_t target_sector = (active_sector_ == METADATA_SECTOR_A) ? METADATA_SECTOR_B : METADATA_SECTOR_A;
+
+    // Increment sequence counter
+    metadata_.sequence++;
+
     // Calculate CRC
     metadata_.crc32 = ConfigurationBase::calculateCRC32(
         reinterpret_cast<const uint8_t *>(&metadata_), sizeof(metadata_) - sizeof(metadata_.crc32));
 
-    // Erase metadata sector
-    ExternalFlashResult result = flash_.eraseSector(METADATA_SECTOR);
+    // Erase target sector
+    ExternalFlashResult result = flash_.eraseSector(target_sector);
     if (result != ExternalFlashResult::Success) {
-        logger_.error("Failed to erase metadata sector");
+        logger_.error("Failed to erase metadata sector at 0x%08lX", target_sector);
+        metadata_.sequence--;  // Roll back sequence on failure
         healthy_ = false;
         return false;
     }
 
-    // Write metadata
-    result = flash_.write(METADATA_SECTOR, reinterpret_cast<const uint8_t *>(&metadata_),
+    // Write metadata to target sector
+    result = flash_.write(target_sector, reinterpret_cast<const uint8_t *>(&metadata_),
                           sizeof(metadata_));
     if (result != ExternalFlashResult::Success) {
-        logger_.error("Failed to write metadata");
+        logger_.error("Failed to write metadata to 0x%08lX", target_sector);
+        metadata_.sequence--;  // Roll back sequence on failure
         healthy_ = false;
         return false;
     }
 
+    // Only switch active sector after successful write
+    active_sector_ = target_sector;
     return true;
 }
 
@@ -552,7 +591,9 @@ void SensorFlashBuffer::initializeMetadata()
     metadata_.records_lost = 0;
     metadata_.last_sync_timestamp = 0;
     metadata_.initial_boot_timestamp = 0;
+    metadata_.sequence = 0;
     metadata_._reserved_seq_num = 0;
+    active_sector_ = METADATA_SECTOR_A;
 }
 
 uint32_t SensorFlashBuffer::getRecordAddress(uint32_t index) const
@@ -560,37 +601,42 @@ uint32_t SensorFlashBuffer::getRecordAddress(uint32_t index) const
     return DATA_START_OFFSET + (index * sizeof(SensorDataRecord));
 }
 
-bool SensorFlashBuffer::validateMetadata() const
+bool SensorFlashBuffer::validateMetadataStruct(const SensorFlashMetadata &metadata) const
 {
     // Check magic number
-    if (metadata_.magic != SENSOR_FLASH_MAGIC) {
-        logger_.warn("Invalid magic number: 0x%08X", metadata_.magic);
+    if (metadata.magic != SENSOR_FLASH_MAGIC) {
+        logger_.warn("Invalid magic number: 0x%08X", metadata.magic);
         return false;
     }
 
     // Check version
-    if (metadata_.version != SENSOR_FLASH_VERSION) {
-        logger_.warn("Unsupported version: %lu", metadata_.version);
+    if (metadata.version != SENSOR_FLASH_VERSION) {
+        logger_.warn("Unsupported version: %lu", metadata.version);
         return false;
     }
 
     // Verify CRC
     uint32_t calculated_crc = ConfigurationBase::calculateCRC32(
-        reinterpret_cast<const uint8_t *>(&metadata_), sizeof(metadata_) - sizeof(metadata_.crc32));
+        reinterpret_cast<const uint8_t *>(&metadata), sizeof(metadata) - sizeof(metadata.crc32));
 
-    if (calculated_crc != metadata_.crc32) {
-        logger_.warn("CRC mismatch: expected 0x%08X, got 0x%08X", metadata_.crc32, calculated_crc);
+    if (calculated_crc != metadata.crc32) {
+        logger_.warn("CRC mismatch: expected 0x%08X, got 0x%08X", metadata.crc32, calculated_crc);
         return false;
     }
 
     // Validate indices
-    if (metadata_.write_index >= MAX_RECORDS || metadata_.read_index >= MAX_RECORDS) {
-        logger_.warn("Invalid indices: write=%lu, read=%lu", metadata_.write_index,
-                     metadata_.read_index);
+    if (metadata.write_index >= MAX_RECORDS || metadata.read_index >= MAX_RECORDS) {
+        logger_.warn("Invalid indices: write=%lu, read=%lu", metadata.write_index,
+                     metadata.read_index);
         return false;
     }
 
     return true;
+}
+
+bool SensorFlashBuffer::validateMetadata() const
+{
+    return validateMetadataStruct(metadata_);
 }
 
 bool SensorFlashBuffer::scanForWriteIndex()
