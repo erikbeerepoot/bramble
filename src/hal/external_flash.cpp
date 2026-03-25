@@ -37,7 +37,7 @@ bool ExternalFlash::initGpio()
 bool ExternalFlash::init()
 {
     logger_.debug("Initializing external flash (hardware SPI)...");
-    logger_.debug("  Pins: CS=%d, RST=%d (SPI shared with LoRa)", pins_.cs, pins_.reset);
+    logger_.debug("  Pins: CS=%d, RST=%d ", pins_.cs, pins_.reset);
 
     if (!initGpio()) {
         logger_.error("Failed to initialize GPIO");
@@ -123,7 +123,6 @@ void ExternalFlash::csDeselect()
     __asm volatile("nop\nnop\nnop\nnop");
     gpio_put(pins_.cs, 1);
     // CS high time (tSHSL) - MT25QL requires >= 30-50ns.
-    // Use sleep_us(1) to guarantee sufficient margin on shared SPI bus.
     sleep_us(1);
 }
 
@@ -209,7 +208,6 @@ ExternalFlashResult ExternalFlash::writeEnable()
         csDeselect();
 
         // Allow flash to process WREN and update status register.
-        // 1us was insufficient on shared SPI bus — increased to 10us.
         sleep_us(10);
 
         uint8_t status = readStatus();
@@ -230,7 +228,7 @@ ExternalFlashResult ExternalFlash::writeEnable()
                 logger_.error("  -> Block protection enabled (BP=0x%02X), regions may be locked",
                               (status >> 2) & 0x0F);
             } else {
-                logger_.error("  -> WREN command not received (possible SPI bus contention)");
+                logger_.error("  -> WREN command not received");
             }
         }
     }
