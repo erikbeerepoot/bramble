@@ -21,13 +21,13 @@
 #else
 // Minimal datetime_t definition matching the RP2040 SDK struct
 typedef struct {
-    int16_t year;   ///< 0..4095
-    int8_t  month;  ///< 1..12
-    int8_t  day;    ///< 1..28,29,30,31
-    int8_t  dotw;   ///< 0..6, 0 is Sunday
-    int8_t  hour;   ///< 0..23
-    int8_t  min;    ///< 0..59
-    int8_t  sec;    ///< 0..59
+    int16_t year;  ///< 0..4095
+    int8_t month;  ///< 1..12
+    int8_t day;    ///< 1..28,29,30,31
+    int8_t dotw;   ///< 0..6, 0 is Sunday
+    int8_t hour;   ///< 0..23
+    int8_t min;    ///< 0..59
+    int8_t sec;    ///< 0..59
 } datetime_t;
 #endif
 
@@ -60,8 +60,20 @@ bool bramble_rtc_running();
 // rtc_init(), rtc_set_datetime(), rtc_get_datetime(), rtc_running() compiles
 // without changes. On RP2040 these are already provided by hardware/rtc.h.
 #if !PICO_RP2040
-inline void rtc_init() { bramble_rtc_init(); }
-inline bool rtc_set_datetime(datetime_t *dt) { return bramble_rtc_set_datetime(dt); }
-inline bool rtc_get_datetime(datetime_t *dt) { return bramble_rtc_get_datetime(dt); }
-inline bool rtc_running() { return bramble_rtc_running(); }
+inline void rtc_init()
+{
+    bramble_rtc_init();
+}
+inline bool rtc_set_datetime(datetime_t *dt)
+{
+    return bramble_rtc_set_datetime(dt);
+}
+inline bool rtc_get_datetime(datetime_t *dt)
+{
+    return bramble_rtc_get_datetime(dt);
+}
+inline bool rtc_running()
+{
+    return bramble_rtc_running();
+}
 #endif

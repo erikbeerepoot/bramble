@@ -5,9 +5,8 @@
 
 #include "pico/stdlib.h"
 
-#include "../hal/rtc_compat.h"
-
 #include "../hal/pmu_protocol.h"
+#include "../hal/rtc_compat.h"
 
 namespace bramble::util::time {
 

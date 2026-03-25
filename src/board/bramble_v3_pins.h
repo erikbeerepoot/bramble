@@ -7,8 +7,8 @@
  * LoRa and external flash share SPI1.
  */
 
-#include "hardware/spi.h"
 #include "hardware/i2c.h"
+#include "hardware/spi.h"
 #include "hardware/uart.h"
 
 namespace Board {
@@ -16,20 +16,20 @@ namespace Board {
 // --- LoRa (SX1276 on SPI1, shared with external flash) ---
 inline auto LORA_SPI_PORT = spi1;
 constexpr uint LORA_PIN_MISO = 8;
-constexpr uint LORA_PIN_SCK  = 14;
+constexpr uint LORA_PIN_SCK = 14;
 constexpr uint LORA_PIN_MOSI = 15;
-constexpr uint LORA_PIN_CS   = 16;
-constexpr uint LORA_PIN_RST  = 17;
+constexpr uint LORA_PIN_CS = 16;
+constexpr uint LORA_PIN_RST = 17;
 constexpr uint LORA_PIN_DIO0 = 21;
 
 // --- External flash (shares SPI1 with LoRa) ---
 constexpr bool FLASH_HAS_DEDICATED_SPI = false;
-inline auto FLASH_SPI_PORT = spi1;  // Same as LoRa
+inline auto FLASH_SPI_PORT = spi1;   // Same as LoRa
 constexpr uint FLASH_PIN_MISO = 8;   // Shared
-constexpr uint FLASH_PIN_SCK  = 14;  // Shared
+constexpr uint FLASH_PIN_SCK = 14;   // Shared
 constexpr uint FLASH_PIN_MOSI = 15;  // Shared
-constexpr uint FLASH_PIN_CS   = 6;
-constexpr uint FLASH_PIN_RST  = 7;
+constexpr uint FLASH_PIN_CS = 6;
+constexpr uint FLASH_PIN_RST = 7;
 
 // --- QSPI flash size (on-board) ---
 constexpr uint32_t QSPI_FLASH_SIZE = 8 * 1024 * 1024;  // 8MB

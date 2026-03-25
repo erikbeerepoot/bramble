@@ -4,10 +4,10 @@
 
 #include "pico/unique_id.h"
 
-#include "../hal/rtc_compat.h"
 #include "hardware/watchdog.h"
 
 #include "../hal/logger.h"
+#include "../hal/rtc_compat.h"
 #include "../led_patterns.h"
 #include "../lora/message.h"
 #include "../lora/reliable_messenger.h"
@@ -52,7 +52,8 @@ void IrrigationMode::onStart()
     }
 
     // Initialize PMU client at 9600 baud to match STM32 LPUART configuration
-    pmu_client_ = new PmuClient(Board::PMU_UART_PORT, Board::PMU_UART_TX_PIN, Board::PMU_UART_RX_PIN, 9600);
+    pmu_client_ =
+        new PmuClient(Board::PMU_UART_PORT, Board::PMU_UART_TX_PIN, Board::PMU_UART_RX_PIN, 9600);
     pmu_available_ = pmu_client_->init();
 
     if (pmu_available_) {

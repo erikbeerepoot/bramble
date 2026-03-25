@@ -3,9 +3,8 @@
 #include <functional>
 #include <memory>
 
-#include "hal/rtc_compat.h"
-
 #include "hal/neopixel.h"
+#include "hal/rtc_compat.h"
 #include "led_patterns.h"
 #include "lora/message.h"
 #include "periodic_task_manager.h"
