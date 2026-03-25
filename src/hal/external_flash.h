@@ -10,16 +10,14 @@
 /**
  * @brief Pin configuration for MT25QL external flash
  *
- * Flash shares SPI1 bus with LoRa module (MISO=GPIO8, SCK=GPIO14, MOSI=GPIO15).
- * Only CS and RESET pins are flash-specific.
+ * SPI data pins are configured by the caller; only CS and RESET are flash-specific.
  */
 struct ExternalFlashPins {
-    uint8_t cs;     // Chip select (GPIO6)
-    uint8_t reset;  // Reset pin (GPIO7)
+    uint8_t cs;     // Chip select
+    uint8_t reset;  // Reset pin
 };
 
-// Default pin configuration for Bramble board v3
-// Flash shares SPI1 with LoRa, so only CS and RST are specified here
+// Default pin configuration (v3 defaults)
 constexpr ExternalFlashPins BRAMBLE_FLASH_PINS = {.cs = 6, .reset = 7};
 
 /**
@@ -67,7 +65,6 @@ enum class ExternalFlashResult : uint8_t {
 /**
  * @brief MT25QL01GBBB external flash driver using hardware SPI
  *
- * This driver uses hardware SPI1 (shared with LoRa module).
  * SPI must be initialized before using this driver (done in main.cpp).
  *
  * Flash specs:
@@ -203,7 +200,7 @@ private:
     // Write a single page (max 256 bytes)
     ExternalFlashResult writePage(uint32_t address, const uint8_t *data, size_t length);
 
-    // Drain any stale data from SPI RX FIFO (shared bus contention mitigation)
+    // Drain any stale data from SPI RX FIFO
     void drainSpiFifo();
 
     // Initialize GPIO pins (CS and RESET only)

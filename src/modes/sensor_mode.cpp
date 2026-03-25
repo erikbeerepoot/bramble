@@ -794,7 +794,7 @@ void SensorMode::requestTimeSync()
                         sensor_state_.reportHeartbeatSent();  // AWAITING_TIME → SYNCING_TIME
                         // Response callback will call reportTimeSyncComplete() → TIME_SYNCED
                     } else {
-                        // No heartbeat needed — no contention risk, proceed immediately
+                        // No heartbeat needed — proceed immediately
                         pmu_logger.info("Skip hub sync: not time to transmit yet.");
                         sensor_state_.reportTimeSyncComplete();
                     }
