@@ -47,8 +47,9 @@ private:
  */
 class SensorFlashBuffer {
 public:
-    // Flash layout constants
-    static constexpr uint32_t METADATA_SECTOR = 0;
+    // Flash layout constants (double-buffered metadata for power-safe writes)
+    static constexpr uint32_t METADATA_SECTOR_A = 0;
+    static constexpr uint32_t METADATA_SECTOR_B = 0x00001000;
     static constexpr uint32_t METADATA_SIZE = 4096;
     static constexpr uint32_t DATA_START_OFFSET = 0x00002000;  // After both metadata sectors
     static constexpr uint32_t DATA_END_OFFSET = 0x06000000;    // Log region starts here
@@ -285,7 +286,8 @@ private:
     ExternalFlash &flash_;
     SensorFlashMetadata metadata_;
     bool initialized_;
-    bool healthy_ = true;  // Track flash write health for fallback decisions
+    bool healthy_ = true;           // Track flash write health for fallback decisions
+    uint32_t active_sector_;        // Which metadata sector was last written (A or B)
     Logger logger_;
 
     /**
@@ -313,7 +315,14 @@ private:
     uint32_t getRecordAddress(uint32_t index) const;
 
     /**
-     * @brief Validate metadata structure
+     * @brief Validate a metadata structure
+     * @param metadata Metadata struct to validate
+     * @return true if metadata is valid
+     */
+    bool validateMetadataStruct(const SensorFlashMetadata &metadata) const;
+
+    /**
+     * @brief Validate the current in-memory metadata
      * @return true if metadata is valid
      */
     bool validateMetadata() const;

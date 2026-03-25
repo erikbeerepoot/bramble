@@ -10,7 +10,7 @@ constexpr uint32_t SENSOR_FLASH_MAGIC = 0x53454E53;  // "SENS" in ASCII
 /**
  * @brief Current metadata format version
  */
-constexpr uint32_t SENSOR_FLASH_VERSION = 2;
+constexpr uint32_t SENSOR_FLASH_VERSION = 3;
 
 /**
  * @brief Metadata structure stored in sector 0 of external flash
@@ -30,8 +30,9 @@ struct __attribute__((packed)) SensorFlashMetadata {
     uint32_t records_lost;            // Records overwritten before transmission
     uint32_t last_sync_timestamp;     // Unix timestamp of last hub sync
     uint32_t initial_boot_timestamp;  // Unix timestamp of first boot after power loss
+    uint32_t sequence;                // Monotonic counter for double-buffered writes
     uint8_t _reserved_seq_num;        // Reserved (formerly LoRa sequence number)
-    uint8_t reserved[4055];           // Pad to 4KB sector size
+    uint8_t reserved[4051];           // Pad to 4KB sector size
     uint32_t crc32;                   // CRC32 of all fields above
 };
 
