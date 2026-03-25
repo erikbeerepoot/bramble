@@ -23,16 +23,26 @@ class SensorFlashBuffer;
  */
 struct __attribute__((packed)) SensorPersistedState {
     uint8_t version;            // Format version (for future compatibility)
+    uint8_t board_version;      // Board hardware version (3=V3, 4=V4) to reject cross-board state
     uint8_t next_seq_num;       // LoRa sequence number
+    uint8_t padding0;           // Alignment padding
     uint16_t assigned_address;  // Node address (survives warm reboot, lost on cold start)
+    uint16_t padding1;          // Alignment padding
     uint32_t read_index;        // Flash buffer read position
     uint32_t write_index;       // Flash buffer write position
-    uint8_t padding[20];        // Reserved for future use
+    uint8_t padding[16];        // Reserved for future use
 };
 static_assert(sizeof(SensorPersistedState) == 32, "SensorPersistedState must be 32 bytes");
 
-// Current state format version - bumped for assigned_address field
-constexpr uint8_t STATE_VERSION = 2;
+// Current state format version - bumped for board_version field
+constexpr uint8_t STATE_VERSION = 3;
+
+// Board version identifier stored in persisted state
+#ifdef BOARD_V4
+constexpr uint8_t PERSISTED_BOARD_VERSION = 4;
+#else
+constexpr uint8_t PERSISTED_BOARD_VERSION = 3;
+#endif
 
 /**
  * @brief Manages PMU hardware and protocol for SensorMode
