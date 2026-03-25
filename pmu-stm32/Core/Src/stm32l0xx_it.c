@@ -157,6 +157,19 @@ void LPUART1_IRQHandler(void)
 
 /* USER CODE BEGIN 1 */
 
+extern volatile int buttonWakeFlag;
+
+/**
+ * @brief This function handles EXTI line 0 and 1 interrupts (wake button on PA0).
+ */
+void EXTI0_1_IRQHandler(void)
+{
+    if (__HAL_GPIO_EXTI_GET_IT(GPIO_PIN_0) != RESET) {
+        __HAL_GPIO_EXTI_CLEAR_IT(GPIO_PIN_0);
+        buttonWakeFlag = 1;
+    }
+}
+
 /**
  * @brief This function handles RTC wakeup interrupt through EXTI line 20.
  */

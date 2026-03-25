@@ -70,6 +70,7 @@ static uint8_t uartRxByte;
 static volatile bool rtcWakeupFlag = false;
 static volatile bool readyForSleepFlag = false;
 static volatile bool bootCompleteFlag = false;
+volatile int buttonWakeFlag = 0;
 
 // Clock source fallback flag - set if LSE crystal fails to start
 static bool usingLSIFallback = false;
@@ -219,6 +220,11 @@ int main(void)
         if (bootCompleteFlag) {
             bootCompleteFlag = false;
             pmuState.dispatch(PmuEvent::BOOT_COMPLETE);
+        }
+
+        if (buttonWakeFlag) {
+            buttonWakeFlag = 0;
+            pmuState.dispatch(PmuEvent::BUTTON_WAKE);
         }
 
         if (rtcWakeupFlag) {
@@ -470,6 +476,15 @@ static void MX_GPIO_Init(void)
 #endif
 
     /* USER CODE BEGIN MX_GPIO_Init_2 */
+
+    // Wake button on PA0 — input, external 10k pull-down, rising edge EXTI
+    GPIO_InitStruct.Pin = WAKE_BUTTON_PIN;
+    GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+    HAL_NVIC_SetPriority(EXTI0_1_IRQn, 2, 0);
+    HAL_NVIC_EnableIRQ(EXTI0_1_IRQn);
 
     /* USER CODE END MX_GPIO_Init_2 */
 }
@@ -901,8 +916,8 @@ static void updateLedForState(PmuState state, WakeType wakeType)
 static void onStateChange(PmuState newState)
 {
     // Determine wake type when entering AWAITING_CTS
-    // This checks RTC time and schedule to set the correct wake type
-    if (newState == PmuState::AWAITING_CTS) {
+    // Button wake sets wake type in onEnterState — only run schedule check for RTC wakes
+    if (newState == PmuState::AWAITING_CTS && pmuState.wakeType() == WakeType::NONE) {
         determineWakeType();
     }
 

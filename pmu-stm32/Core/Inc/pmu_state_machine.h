@@ -14,6 +14,7 @@ enum class PmuEvent : uint8_t {
     RTC_WAKEUP,       ///< RTC woke us (any type - scheduled or periodic)
     CTS_RECEIVED,     ///< RP2040 sent ClearToSend
     READY_FOR_SLEEP,  ///< RP2040 signaled work complete
+    BUTTON_WAKE,      ///< Wake button pressed
     WAKE_TIMEOUT,     ///< Overall wake timeout expired
     ERROR_OCCURRED    ///< Unrecoverable error
 };
@@ -34,7 +35,7 @@ enum class PmuEvent : uint8_t {
  *     ^                               v
  *     |                           SLEEPING
  *     |                               |
- *     |                    RTC_WAKEUP |
+ *     |            RTC_WAKEUP/BUTTON_WAKE
  *     |                               v
  *     +-------CTS_RECEIVED---- AWAITING_CTS
  *     |                               |
@@ -59,7 +60,8 @@ enum class PmuState : uint8_t {
 enum class WakeType : uint8_t {
     NONE,       ///< Not in a wake cycle
     SCHEDULED,  ///< Woke due to schedule entry
-    PERIODIC    ///< Woke on periodic interval
+    PERIODIC,   ///< Woke on periodic interval
+    BUTTON      ///< Woke by button press
 };
 
 /**
@@ -122,6 +124,8 @@ public:
     static constexpr uint32_t PERIODIC_WAKE_TIMEOUT_MS = 120000;  // 2 minutes
     // Boot grace period - stay awake after boot to allow RP2040 to initialize
     static constexpr uint32_t BOOT_GRACE_PERIOD_MS = 10000;  // 10 seconds
+    // Button wake timeout - stay powered for programming/debug
+    static constexpr uint32_t BUTTON_WAKE_TIMEOUT_MS = 60000;  // 60 seconds
 
     /**
      * @brief Constructor

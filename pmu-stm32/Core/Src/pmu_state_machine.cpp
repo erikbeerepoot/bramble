@@ -42,6 +42,7 @@ PmuState PmuStateMachine::reduce(PmuState state, PmuEvent event)
         case PmuState::SLEEPING:
             switch (event) {
                 case PmuEvent::RTC_WAKEUP:
+                case PmuEvent::BUTTON_WAKE:
                     return PmuState::AWAITING_CTS;
                 case PmuEvent::CTS_RECEIVED:
                     // CTS can wake us from sleep (UART interrupt) - go directly to WAKE_ACTIVE
@@ -90,6 +91,11 @@ PmuState PmuStateMachine::reduce(PmuState state, PmuEvent event)
 
 void PmuStateMachine::dispatch(PmuEvent event)
 {
+    // Button wake keeps DCDC on for the full timeout — ignore early sleep signals
+    if (context_.type == WakeType::BUTTON && event == PmuEvent::READY_FOR_SLEEP) {
+        return;
+    }
+
     PmuState newState = reduce(state_, event);
 
     if (newState != state_) {
@@ -195,8 +201,13 @@ void PmuStateMachine::onEnterState(PmuState newState, PmuEvent event)
 
         case PmuState::AWAITING_CTS:
             // Set up timing for wake context
-            // Wake type and timeout are set by callback via setWakeType()
             context_.startTime = now;
+            if (event == PmuEvent::BUTTON_WAKE) {
+                // Button wake: fixed 60s timeout, no schedule check needed
+                context_.type = WakeType::BUTTON;
+                context_.timeoutMs = BUTTON_WAKE_TIMEOUT_MS;
+            }
+            // For RTC_WAKEUP: wake type and timeout set by callback via setWakeType()
             break;
 
         case PmuState::WAKE_ACTIVE:
@@ -273,6 +284,8 @@ const char *PmuStateMachine::eventName(PmuEvent event)
             return "RTC_WAKEUP";
         case PmuEvent::CTS_RECEIVED:
             return "CTS_RECEIVED";
+        case PmuEvent::BUTTON_WAKE:
+            return "BUTTON_WAKE";
         case PmuEvent::READY_FOR_SLEEP:
             return "READY_FOR_SLEEP";
         case PmuEvent::WAKE_TIMEOUT:

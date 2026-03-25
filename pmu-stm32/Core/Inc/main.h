@@ -62,6 +62,7 @@ void Error_Handler(void);
 /* USER CODE BEGIN Private defines */
 
 // Pin definitions for Bramble PMU
+#define WAKE_BUTTON_PIN     GPIO_PIN_0  // PA0, pin 6 - Wake button (active high, ext. pull-down)
 #define DCDC_EN_PIN         GPIO_PIN_1  // PA1, pin 7 - DC/DC converter enable
 #define LED_RED_PIN         GPIO_PIN_4  // PA4, pin 10 - Red LED
 #define LED_GREEN_PIN       GPIO_PIN_5  // PA5, pin 11 - Green LED
