@@ -99,7 +99,7 @@ void ExternalFlash::hardwareReset()
     gpio_put(pins_.reset, 0);
     sleep_ms(1);  // Conservative pulse width (MT25QL spec: ~10us)
     gpio_put(pins_.reset, 1);
-    sleep_ms(10);  // Device recovery time (tPUW)
+    sleep_ms(30);  // Device recovery time (tPUW max 10ms for MT25QL; use 30ms for margin)
 }
 
 void ExternalFlash::drainSpiFifo()
