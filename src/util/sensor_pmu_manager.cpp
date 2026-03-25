@@ -33,7 +33,8 @@ bool SensorPmuManager::initialize(InitCallback init_callback)
     init_callback_ = std::move(init_callback);
 
     // Initialize PMU client at 9600 baud to match STM32 LPUART configuration
-    pmu_client_ = new PmuClient(Board::PMU_UART_PORT, Board::PMU_UART_TX_PIN, Board::PMU_UART_RX_PIN, PMU_UART_BAUDRATE);
+    pmu_client_ = new PmuClient(Board::PMU_UART_PORT, Board::PMU_UART_TX_PIN,
+                                Board::PMU_UART_RX_PIN, PMU_UART_BAUDRATE);
     pmu_available_ = pmu_client_->init();
 
     // Create reliable PMU client wrapper for automatic retry

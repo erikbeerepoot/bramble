@@ -9,8 +9,8 @@
  * Supports up to 4 valves.
  */
 
-#include "hardware/spi.h"
 #include "hardware/i2c.h"
+#include "hardware/spi.h"
 #include "hardware/uart.h"
 
 namespace Board {
@@ -21,9 +21,9 @@ namespace Board {
 inline auto LORA_SPI_PORT = spi1;
 constexpr uint LORA_PIN_MISO = 12;
 constexpr uint LORA_PIN_MOSI = 14;  // PCB trace to SX1262 MOSI (RP2350 pin mux = SPI1 SCK)
-constexpr uint LORA_PIN_SCK  = 15;  // PCB trace to SX1262 SCK  (RP2350 pin mux = SPI1 TX)
-constexpr uint LORA_PIN_CS   = 10;
-constexpr uint LORA_PIN_RST  = 16;
+constexpr uint LORA_PIN_SCK = 15;   // PCB trace to SX1262 SCK  (RP2350 pin mux = SPI1 TX)
+constexpr uint LORA_PIN_CS = 10;
+constexpr uint LORA_PIN_RST = 16;
 constexpr uint LORA_PIN_DIO1 = 19;  // DIO1 bodge wire → GPIO19
 constexpr uint LORA_PIN_BUSY = 17;  // BUSY bodge wire → GPIO17
 
@@ -31,10 +31,10 @@ constexpr uint LORA_PIN_BUSY = 17;  // BUSY bodge wire → GPIO17
 constexpr bool FLASH_HAS_DEDICATED_SPI = true;
 inline auto FLASH_SPI_PORT = spi0;
 constexpr uint FLASH_PIN_MISO = 0;
-constexpr uint FLASH_PIN_SCK  = 2;
+constexpr uint FLASH_PIN_SCK = 2;
 constexpr uint FLASH_PIN_MOSI = 3;
-constexpr uint FLASH_PIN_CS   = 1;
-constexpr uint FLASH_PIN_RST  = 5;
+constexpr uint FLASH_PIN_CS = 1;
+constexpr uint FLASH_PIN_RST = 5;
 
 // --- QSPI flash size (on-board) ---
 constexpr uint32_t QSPI_FLASH_SIZE = 16 * 1024 * 1024;  // 16MB

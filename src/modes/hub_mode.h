@@ -2,9 +2,8 @@
 #include <map>
 #include <set>
 
-#include "hal/rtc_compat.h"
-
 #include "application_mode.h"
+#include "hal/rtc_compat.h"
 
 /**
  * @brief Hub mode for network management and routing

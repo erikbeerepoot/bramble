@@ -39,24 +39,24 @@ static struct tm datetime_to_tm(const datetime_t *dt)
 {
     struct tm tm = {};
     tm.tm_year = dt->year - 1900;
-    tm.tm_mon  = dt->month - 1;
+    tm.tm_mon = dt->month - 1;
     tm.tm_mday = dt->day;
     tm.tm_wday = dt->dotw;
     tm.tm_hour = dt->hour;
-    tm.tm_min  = dt->min;
-    tm.tm_sec  = dt->sec;
+    tm.tm_min = dt->min;
+    tm.tm_sec = dt->sec;
     return tm;
 }
 
 static void tm_to_datetime(const struct tm *tm, datetime_t *dt)
 {
-    dt->year  = static_cast<int16_t>(tm->tm_year + 1900);
+    dt->year = static_cast<int16_t>(tm->tm_year + 1900);
     dt->month = static_cast<int8_t>(tm->tm_mon + 1);
-    dt->day   = static_cast<int8_t>(tm->tm_mday);
-    dt->dotw  = static_cast<int8_t>(tm->tm_wday);
-    dt->hour  = static_cast<int8_t>(tm->tm_hour);
-    dt->min   = static_cast<int8_t>(tm->tm_min);
-    dt->sec   = static_cast<int8_t>(tm->tm_sec);
+    dt->day = static_cast<int8_t>(tm->tm_mday);
+    dt->dotw = static_cast<int8_t>(tm->tm_wday);
+    dt->hour = static_cast<int8_t>(tm->tm_hour);
+    dt->min = static_cast<int8_t>(tm->tm_min);
+    dt->sec = static_cast<int8_t>(tm->tm_sec);
 }
 
 void bramble_rtc_init()
