@@ -75,7 +75,8 @@ static uint32_t binarySearch(uint32_t low, uint32_t high, Predicate pred)
 // SensorFlashBuffer implementation
 
 SensorFlashBuffer::SensorFlashBuffer(ExternalFlash &flash)
-    : flash_(flash), initialized_(false), active_sector_(METADATA_SECTOR_A), logger_("SensorFlashBuffer")
+    : flash_(flash), initialized_(false), active_sector_(METADATA_SECTOR_A),
+      logger_("SensorFlashBuffer")
 {
     memset(&metadata_, 0, sizeof(metadata_));
 }
@@ -546,7 +547,8 @@ bool SensorFlashBuffer::loadMetadata()
 bool SensorFlashBuffer::saveMetadata()
 {
     // Write to the inactive sector so the active one remains valid if power is lost
-    uint32_t target_sector = (active_sector_ == METADATA_SECTOR_A) ? METADATA_SECTOR_B : METADATA_SECTOR_A;
+    uint32_t target_sector =
+        (active_sector_ == METADATA_SECTOR_A) ? METADATA_SECTOR_B : METADATA_SECTOR_A;
 
     // Increment sequence counter
     metadata_.sequence++;

@@ -308,13 +308,13 @@ bool SensorPmuManager::unpackState(const SensorPersistedState *persisted)
         // a large discrepancy means PMU state is stale (e.g. different board, flash erased).
         uint32_t flash_write = flash_buffer_->getWriteIndex();
         uint32_t pmu_write = persisted->write_index;
-        uint32_t delta = (pmu_write >= flash_write)
-                             ? (pmu_write - flash_write)
-                             : (max_records - flash_write + pmu_write);
+        uint32_t delta = (pmu_write >= flash_write) ? (pmu_write - flash_write)
+                                                    : (max_records - flash_write + pmu_write);
         constexpr uint32_t MAX_INDEX_DRIFT = 100;
         if (delta > MAX_INDEX_DRIFT) {
-            pmu_logger.warn("PMU write_index=%lu too far from flash write_index=%lu (delta=%lu) - cold start",
-                            pmu_write, flash_write, delta);
+            pmu_logger.warn(
+                "PMU write_index=%lu too far from flash write_index=%lu (delta=%lu) - cold start",
+                pmu_write, flash_write, delta);
             return false;
         }
 
