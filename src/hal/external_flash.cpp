@@ -44,10 +44,14 @@ bool ExternalFlash::init()
         return false;
     }
 
+    // Wait for flash power-on reset to complete before any SPI commands.
+    // MT25QL tVSL (VCC min to first command) can be up to 100ms with slow
+    // supply ramp from DCDC. Without this, the first 1-2 attempts always fail.
+    sleep_ms(100);
+
     constexpr int MAX_ATTEMPTS = 3;
 
     for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-        // Escalating delay between retries: 0ms, 40ms, 80ms
         if (attempt > 0) {
             uint32_t delay_ms = 40 * attempt;
             logger_.debug("Waiting %lu ms before retry", delay_ms);
