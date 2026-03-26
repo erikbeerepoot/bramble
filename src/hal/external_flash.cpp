@@ -48,18 +48,28 @@ bool ExternalFlash::init()
 
     for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
         // Escalating delay between retries: 0ms, 40ms, 80ms
-        // Gives flash more time to stabilize after power-on
         if (attempt > 0) {
             uint32_t delay_ms = 40 * attempt;
             logger_.debug("Waiting %lu ms before retry", delay_ms);
             sleep_ms(delay_ms);
         }
 
-        // Hardware reset the flash
-        hardwareReset();
+        // Abort any stuck SPI command from a prior interrupted transaction.
+        // The flash may be mid-command (waiting for more clocks), so toggling
+        // CS high forces it to deselect and abandon the current operation.
+        csDeselect();
+        sleep_us(10);
 
-        // Wake up in case it's in power-down mode (wakeUp() includes tRES1 delay)
+        // Software reset clears internal state machines even if the flash is
+        // stuck in a write or erase operation that survived the power cycle.
+        reset();
+
+        // Hardware reset for a clean slate, then wake from deep power-down
+        hardwareReset();
         wakeUp();
+
+        // Wait for any in-progress operation (e.g. interrupted erase) to complete
+        waitReady(100);
 
         // Read and verify JEDEC ID
         uint8_t manufacturer, memory_type, capacity;
@@ -71,10 +81,9 @@ bool ExternalFlash::init()
         logger_.debug("Flash ID: Manufacturer=0x%02X, Type=0x%02X, Capacity=0x%02X", manufacturer,
                       memory_type, capacity);
 
-        // If manufacturer ID is 0x00, flash is unresponsive - retry with hardware reset
+        // If manufacturer ID is 0x00, flash is unresponsive - retry
         if (manufacturer == 0x00) {
-            logger_.warn("Flash unresponsive (manufacturer=0x00), retrying with hardware reset "
-                         "(%d/%d)",
+            logger_.warn("Flash unresponsive (manufacturer=0x00), retrying (%d/%d)",
                          attempt + 1, MAX_ATTEMPTS);
             continue;
         }
@@ -99,7 +108,7 @@ void ExternalFlash::hardwareReset()
     gpio_put(pins_.reset, 0);
     sleep_ms(1);  // Conservative pulse width (MT25QL spec: ~10us)
     gpio_put(pins_.reset, 1);
-    sleep_ms(30);  // Device recovery time (tPUW max 10ms for MT25QL; use 30ms for margin)
+    sleep_ms(50);  // Device recovery time (tPUW max 10ms for MT25QL; use 50ms for margin)
 }
 
 void ExternalFlash::drainSpiFifo()
