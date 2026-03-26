@@ -286,8 +286,8 @@ private:
     ExternalFlash &flash_;
     SensorFlashMetadata metadata_;
     bool initialized_;
-    bool healthy_ = true;           // Track flash write health for fallback decisions
-    uint32_t active_sector_;        // Which metadata sector was last written (A or B)
+    bool healthy_ = true;     // Track flash write health for fallback decisions
+    uint32_t active_sector_;  // Which metadata sector was last written (A or B)
     Logger logger_;
 
     /**
