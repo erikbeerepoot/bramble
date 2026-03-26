@@ -68,9 +68,11 @@ bool ExternalFlash::init()
         // stuck in a write or erase operation that survived the power cycle.
         reset();
 
-        // Hardware reset for a clean slate, then wake from deep power-down
+        // Hardware reset brings flash to normal operating mode (also exits
+        // deep power-down). Do NOT send wakeUp() (0xAB) here — after reset
+        // the flash isn't in power-down, and 0xAB triggers "Read Electronic
+        // Signature" mode which can desync the SPI protocol.
         hardwareReset();
-        wakeUp();
 
         // Wait for any in-progress operation (e.g. interrupted erase) to complete
         waitReady(100);
