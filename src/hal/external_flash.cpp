@@ -83,8 +83,8 @@ bool ExternalFlash::init()
 
         // If manufacturer ID is 0x00, flash is unresponsive - retry
         if (manufacturer == 0x00) {
-            logger_.warn("Flash unresponsive (manufacturer=0x00), retrying (%d/%d)",
-                         attempt + 1, MAX_ATTEMPTS);
+            logger_.warn("Flash unresponsive (manufacturer=0x00), retrying (%d/%d)", attempt + 1,
+                         MAX_ATTEMPTS);
             continue;
         }
 
