@@ -98,7 +98,11 @@ void PmuStateMachine::dispatch(PmuEvent event)
 
     PmuState newState = reduce(state_, event);
 
-    if (newState != state_) {
+    // Handle RP2040 reboot during WAKE_ACTIVE: CTS means it rebooted and
+    // needs a fresh WakeNotification. Re-enter WAKE_ACTIVE to trigger callback.
+    bool reentry = (state_ == PmuState::WAKE_ACTIVE && event == PmuEvent::CTS_RECEIVED);
+
+    if (newState != state_ || reentry) {
         onEnterState(newState, event);
         transitionTo(newState);
     }
@@ -211,13 +215,12 @@ void PmuStateMachine::onEnterState(PmuState newState, PmuEvent event)
             break;
 
         case PmuState::WAKE_ACTIVE:
-            // Coming from BOOTING with early CTS - set up context
-            if (event == PmuEvent::CTS_RECEIVED && context_.startTime == 0) {
-                context_.startTime = now;
+            // Reset timing on entry (including re-entry when RP2040 reboots mid-cycle)
+            context_.startTime = now;
+            if (context_.type == WakeType::NONE) {
                 context_.type = WakeType::PERIODIC;
                 context_.timeoutMs = PERIODIC_WAKE_TIMEOUT_MS;
             }
-            // For transitions from POST_BOOT or AWAITING_CTS, context is already set
             break;
 
         case PmuState::BOOTING:
@@ -303,10 +306,6 @@ const char *PmuStateMachine::eventName(PmuEvent event)
 
 void PmuStateMachine::transitionTo(PmuState newState)
 {
-    if (state_ == newState) {
-        return;  // No change
-    }
-
     state_ = newState;
 
     if (stateCallback_) {
