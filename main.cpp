@@ -389,12 +389,14 @@ bool initializeHardware(RadioInterface &lora, NeoPixel &led)
     // Deselect external flash CS and deassert RST BEFORE SPI init.
     // CS can float low on power-up, causing the flash to respond to
     // SPI initialization traffic and enter an unknown state.
+    // Set output value before enabling driver to avoid a LOW glitch —
+    // gpio_init() clears the output register to 0.
     gpio_init(Board::FLASH_PIN_CS);
-    gpio_set_dir(Board::FLASH_PIN_CS, GPIO_OUT);
     gpio_put(Board::FLASH_PIN_CS, 1);
+    gpio_set_dir(Board::FLASH_PIN_CS, GPIO_OUT);
     gpio_init(Board::FLASH_PIN_RST);
-    gpio_set_dir(Board::FLASH_PIN_RST, GPIO_OUT);
     gpio_put(Board::FLASH_PIN_RST, 1);
+    gpio_set_dir(Board::FLASH_PIN_RST, GPIO_OUT);
 
     spi_init(Board::FLASH_SPI_PORT, 1000 * 1000);
     gpio_set_function(Board::FLASH_PIN_MISO, GPIO_FUNC_SPI);

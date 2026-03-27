@@ -22,14 +22,16 @@ ExternalFlash::~ExternalFlash()
 bool ExternalFlash::initGpio()
 {
     // Configure CS as output, active low (directly controlled, not SPI function)
+    // Set output value before enabling driver — gpio_init() clears the output
+    // register to 0, so enabling the driver first causes a brief LOW glitch.
     gpio_init(pins_.cs);
+    gpio_put(pins_.cs, 1);              // Deselect (before enabling driver)
     gpio_set_dir(pins_.cs, GPIO_OUT);
-    gpio_put(pins_.cs, 1);  // Deselect
 
     // Configure reset as output, active low
     gpio_init(pins_.reset);
+    gpio_put(pins_.reset, 1);           // Not in reset (before enabling driver)
     gpio_set_dir(pins_.reset, GPIO_OUT);
-    gpio_put(pins_.reset, 1);  // Not in reset
 
     return true;
 }
@@ -46,8 +48,8 @@ bool ExternalFlash::init()
 
     // Wait for flash power-on reset to complete before any SPI commands.
     // MT25QL tVSL (VCC min to first command) can be up to 100ms with slow
-    // supply ramp from DCDC. Without this, the first 1-2 attempts always fail.
-    sleep_ms(100);
+    // supply ramp from DCDC. Empirically needs ~155ms on V4 board.
+    sleep_ms(150);
 
     constexpr int MAX_ATTEMPTS = 3;
 
