@@ -145,7 +145,7 @@ else()
     # Hardware variant selection (ALL builds every variant in parallel)
     set(HARDWARE_VARIANT "IRRIGATION" CACHE STRING "Hardware variant type")
     set_property(CACHE HARDWARE_VARIANT PROPERTY STRINGS
-        ALL GENERIC HUB CONTROLLER IRRIGATION SENSOR)
+        ALL GENERIC HUB CONTROLLER IRRIGATION SENSOR GREENHOUSE)
 
     # Radio chip selection (determines which driver is compiled)
     set(RADIO_CHIP "SX1262" CACHE STRING "Radio chip: SX1276 or SX1262")
@@ -265,6 +265,22 @@ else()
         )
         list(APPEND BUILD_TARGETS bramble_sensor${BOARD_SUFFIX}${RADIO_SUFFIX})
         message(STATUS "Building SENSOR variant")
+    endif()
+
+    if(HARDWARE_VARIANT STREQUAL "ALL" OR HARDWARE_VARIANT STREQUAL "GREENHOUSE")
+        add_executable(bramble_greenhouse${BOARD_SUFFIX}${RADIO_SUFFIX}
+            main.cpp
+            src/modes/greenhouse_mode.cpp
+            src/hal/curtain_controller.cpp
+            src/util/greenhouse_state_machine.cpp
+            ${COMMON_SOURCES}
+        )
+        target_compile_definitions(bramble_greenhouse${BOARD_SUFFIX}${RADIO_SUFFIX} PRIVATE
+            HARDWARE_GREENHOUSE=1
+            DEFAULT_IS_HUB=0
+        )
+        list(APPEND BUILD_TARGETS bramble_greenhouse${BOARD_SUFFIX}${RADIO_SUFFIX})
+        message(STATUS "Building GREENHOUSE variant")
     endif()
 
     if(HARDWARE_VARIANT STREQUAL "ALL" OR HARDWARE_VARIANT STREQUAL "GENERIC")
