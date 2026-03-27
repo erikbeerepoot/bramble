@@ -53,6 +53,8 @@ TIM_HandleTypeDef htim21;
 
 I2C_HandleTypeDef hi2c1;
 
+ADC_HandleTypeDef hadc;
+
 /* USER CODE BEGIN PV */
 LED led;
 DCDC dcdc;
@@ -111,6 +113,7 @@ static void MX_LPUART1_UART_Init(void);
 static void MX_RTC_Init(void);
 static void MX_TIM21_Init(void);
 static void MX_I2C1_Init(void);
+static void MX_ADC_Init(void);
 /* USER CODE BEGIN PFP */
 static void configureRTCWakeup(uint32_t seconds);
 static void enterStopMode(void);
@@ -168,6 +171,7 @@ int main(void)
     MX_RTC_Init();
     MX_TIM21_Init();
     MX_I2C1_Init();
+    MX_ADC_Init();
 
     /* USER CODE BEGIN 2 */
     // Start UART receive interrupt IMMEDIATELY after UART init
@@ -494,6 +498,48 @@ static void MX_I2C1_Init(void)
     if (HAL_I2C_Init(&hi2c1) != HAL_OK) {
         Error_Handler();
     }
+}
+
+/**
+ * @brief ADC Initialization Function
+ * Configures ADC for single-conversion polling on PA6/PA7
+ * PA6 = voltage sense (via divider), PA7 = current sense (via op-amp)
+ */
+static void MX_ADC_Init(void)
+{
+    __HAL_RCC_ADC1_CLK_ENABLE();
+
+    // Configure PA6 and PA7 as analog inputs
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+    GPIO_InitStruct.Pin = GPIO_PIN_6 | GPIO_PIN_7;
+    GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+    hadc.Instance = ADC1;
+    hadc.Init.OversamplingMode = DISABLE;
+    hadc.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV2;
+    hadc.Init.Resolution = ADC_RESOLUTION_12B;
+    hadc.Init.SamplingTime = ADC_SAMPLETIME_160CYCLES_5;
+    hadc.Init.ScanConvMode = ADC_SCAN_DIRECTION_FORWARD;
+    hadc.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+    hadc.Init.ContinuousConvMode = DISABLE;
+    hadc.Init.DiscontinuousConvMode = DISABLE;
+    hadc.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
+    hadc.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+    hadc.Init.DMAContinuousRequests = DISABLE;
+    hadc.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+    hadc.Init.Overrun = ADC_OVR_DATA_PRESERVED;
+    hadc.Init.LowPowerAutoWait = DISABLE;
+    hadc.Init.LowPowerFrequencyMode = DISABLE;
+    hadc.Init.LowPowerAutoPowerOff = DISABLE;
+
+    if (HAL_ADC_Init(&hadc) != HAL_OK) {
+        Error_Handler();
+    }
+
+    // Calibrate ADC for accurate readings
+    HAL_ADCEx_Calibration_Start(&hadc, ADC_SINGLE_ENDED);
 }
 
 /**

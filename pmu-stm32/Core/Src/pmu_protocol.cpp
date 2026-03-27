@@ -599,6 +599,13 @@ void Protocol::processReceivedByte(uint8_t byte)
                     NVIC_SystemReset();
                 }
                 break;
+            case Command::GetPowerMeasurement:
+                if (!isDuplicate) {
+                    handleGetPowerMeasurement();
+                } else {
+                    sendAck();
+                }
+                break;
             case Command::FactoryReset:
                 // Wipe FRAM persistent storage, then reset
                 // Always send ACK first so RP2040 knows the command was received
@@ -911,6 +918,50 @@ void Protocol::handleGetDateTime()
     // Send response with valid flag and datetime
     sendDateTimeResponse(valid, date.Year, date.Month, date.Date, date.WeekDay, time.Hours,
                          time.Minutes, time.Seconds);
+}
+
+// External ADC handle from main.cpp
+extern ADC_HandleTypeDef hadc;
+
+void Protocol::handleGetPowerMeasurement()
+{
+    sendAck();
+
+    // Read voltage channel (PA6 = ADC_CHANNEL_6)
+    ADC_ChannelConfTypeDef sConfig = {0};
+    sConfig.Channel = ADC_CHANNEL_6;
+    sConfig.Rank = ADC_RANK_CHANNEL_CH;
+    HAL_ADC_ConfigChannel(&::hadc, &sConfig);
+
+    HAL_ADC_Start(&::hadc);
+    uint16_t voltage_raw = 0;
+    if (HAL_ADC_PollForConversion(&::hadc, 10) == HAL_OK) {
+        voltage_raw = HAL_ADC_GetValue(&::hadc);
+    }
+    HAL_ADC_Stop(&::hadc);
+
+    // Read current channel (PA7 = ADC_CHANNEL_7)
+    sConfig.Channel = ADC_CHANNEL_7;
+    HAL_ADC_ConfigChannel(&::hadc, &sConfig);
+
+    HAL_ADC_Start(&::hadc);
+    uint16_t current_raw = 0;
+    if (HAL_ADC_PollForConversion(&::hadc, 10) == HAL_OK) {
+        current_raw = HAL_ADC_GetValue(&::hadc);
+    }
+    HAL_ADC_Stop(&::hadc);
+
+    // Convert raw ADC (12-bit, 0-4095) to millivolts
+    // Vref = 3300mV, so mV = raw * 3300 / 4095
+    uint16_t voltage_mv = static_cast<uint16_t>(static_cast<uint32_t>(voltage_raw) * 3300 / 4095);
+    uint16_t current_mv = static_cast<uint16_t>(static_cast<uint32_t>(current_raw) * 3300 / 4095);
+
+    // Send response: voltage_mv (2 bytes LE) + current_mv (2 bytes LE)
+    builder_.startMessage(currentSeqNum_,
+                          static_cast<uint8_t>(Response::PowerMeasurementResponse));
+    builder_.addUint16(voltage_mv);
+    builder_.addUint16(current_mv);
+    sendMessage();
 }
 
 // Response senders (echo the command's sequence number)
