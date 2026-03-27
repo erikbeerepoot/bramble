@@ -20,8 +20,9 @@ enum class Command : uint8_t {
     ReadyForSleep = 0x17,  // RP2040 signals work complete, ready for power down
     GetDateTime = 0x18,    // Get RTC date/time from PMU (returns DateTimeResponse)
     ClearToSend = 0x19,    // RP2040 signals ready to receive wake info
-    SystemReset = 0x1A,    // Request full system reset (PMU resets itself + RP2040)
-    FactoryReset = 0x1B    // Wipe FRAM persistent storage, then reset
+    SystemReset = 0x1A,     // Request full system reset (PMU resets itself + RP2040)
+    FactoryReset = 0x1B,    // Wipe FRAM persistent storage, then reset
+    GetPowerMeasurement = 0x1C  // Read voltage and current from ADC
 };
 
 // Response codes (STM32 → RP2040)
@@ -32,8 +33,9 @@ enum class Response : uint8_t {
     ScheduleEntry = 0x83,
     WakeReason = 0x84,
     Status = 0x85,
-    ScheduleComplete = 0x86,  // Scheduled watering complete, power down imminent
-    DateTimeResponse = 0x87   // Response to GetDateTime: valid flag + 7 datetime bytes
+    ScheduleComplete = 0x86,       // Scheduled watering complete, power down imminent
+    DateTimeResponse = 0x87,       // Response to GetDateTime: valid flag + 7 datetime bytes
+    PowerMeasurementResponse = 0x88  // ADC millivolts: voltage_mv (2B) + current_mv (2B)
 };
 
 // Error codes
@@ -352,6 +354,7 @@ private:
     void handleSetDateTime(const uint8_t *data, uint8_t length);
     void handleReadyForSleep();
     void handleGetDateTime();
+    void handleGetPowerMeasurement();
 
     // Response senders (with sequence number echo)
     void sendAck();

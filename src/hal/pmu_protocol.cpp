@@ -275,6 +275,9 @@ void Protocol::processReceivedByte(uint8_t byte)
             case Response::DateTimeResponse:
                 handleDateTimeResponse(data, dataLen);
                 break;
+            case Response::PowerMeasurementResponse:
+                handlePowerMeasurementResponse(data, dataLen);
+                break;
             default:
                 // Unknown response, ignore
                 break;
@@ -382,6 +385,13 @@ void Protocol::getDateTime(DateTimeCallback callback)
 {
     pendingDateTimeCallback_ = callback;
     builder_.startMessage(getNextSequenceNumber(), Command::GetDateTime);
+    sendMessage();
+}
+
+void Protocol::getPowerMeasurement(PowerMeasurementCallback callback)
+{
+    pendingPowerCallback_ = callback;
+    builder_.startMessage(getNextSequenceNumber(), Command::GetPowerMeasurement);
     sendMessage();
 }
 
@@ -566,6 +576,31 @@ void Protocol::handleDateTimeResponse(const uint8_t *data, uint8_t length)
         auto callback = pendingDateTimeCallback_;
         pendingDateTimeCallback_ = nullptr;
         callback(valid, datetime);
+    }
+}
+
+void Protocol::handlePowerMeasurementResponse(const uint8_t *data, uint8_t length)
+{
+    // Expected format: [voltage_mv_lo] [voltage_mv_hi] [current_mv_lo] [current_mv_hi]
+    if (length < 4) {
+        log.error("PowerMeasurementResponse too short: %d bytes", length);
+        if (pendingPowerCallback_) {
+            auto callback = pendingPowerCallback_;
+            pendingPowerCallback_ = nullptr;
+            callback(0, 0);
+        }
+        return;
+    }
+
+    uint16_t voltage_mv = data[0] | (data[1] << 8);
+    uint16_t current_mv = data[2] | (data[3] << 8);
+
+    log.debug("PowerMeasurement: voltage=%umV, current=%umV", voltage_mv, current_mv);
+
+    if (pendingPowerCallback_) {
+        auto callback = pendingPowerCallback_;
+        pendingPowerCallback_ = nullptr;
+        callback(voltage_mv, current_mv);
     }
 }
 
