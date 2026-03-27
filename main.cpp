@@ -58,6 +58,8 @@
 #include "modes/irrigation_mode.h"
 #elif HARDWARE_SENSOR
 #include "modes/sensor_mode.h"
+#elif HARDWARE_GREENHOUSE
+#include "modes/greenhouse_mode.h"
 #else
 #include "modes/application_mode.h"
 #endif
@@ -125,6 +127,8 @@ inline VariantInfo getVariantInfo()
     return {NODE_TYPE_SENSOR, CAP_TEMPERATURE | CAP_HUMIDITY, "Sensor Node"};
 #elif HARDWARE_CONTROLLER
     return {NODE_TYPE_CONTROLLER, CAP_CONTROLLER | CAP_SCHEDULING, "Controller"};
+#elif HARDWARE_GREENHOUSE
+    return {NODE_TYPE_ACTUATOR, CAP_VALVE_CONTROL, "Greenhouse Node"};
 #else
     return {NODE_TYPE_SENSOR, 0, "Generic Node"};
 #endif
@@ -175,6 +179,8 @@ int main()
     log.info("Hardware variant: IRRIGATION");
 #elif HARDWARE_SENSOR
     log.info("Hardware variant: SENSOR");
+#elif HARDWARE_GREENHOUSE
+    log.info("Hardware variant: GREENHOUSE");
 #else
     log.info("Hardware variant: GENERIC");
 #endif
@@ -357,6 +363,11 @@ int main()
 #ifdef HARDWARE_IRRIGATION
         log.info("Starting IRRIGATION mode");
         IrrigationMode mode(messenger, lora, led, nullptr, nullptr, &network_stats, false);
+        mode.setReregistrationCallback(reregistration_callback);
+        mode.run();
+#elif HARDWARE_GREENHOUSE
+        log.info("Starting GREENHOUSE mode");
+        GreenhouseMode mode(messenger, lora, led, nullptr, nullptr, &network_stats, false);
         mode.setReregistrationCallback(reregistration_callback);
         mode.run();
 #elif HARDWARE_CONTROLLER

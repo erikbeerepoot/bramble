@@ -69,4 +69,9 @@ constexpr uint8_t PIN_MOTOR_HI_1 = 28;
 constexpr uint8_t PIN_MOTOR_HI_2 = 29;
 constexpr uint8_t VALVE_PINS[NUM_VALVES] = {24, 25};
 
+// --- Curtain motor pins (greenhouse variant) ---
+// Relay-based motor reversing: one GPIO per direction
+constexpr uint8_t PIN_CURTAIN_OPEN = 28;
+constexpr uint8_t PIN_CURTAIN_CLOSE = 29;
+
 }  // namespace Board

@@ -55,7 +55,8 @@ enum SensorType {
 enum ActuatorType {
     ACTUATOR_VALVE = 0x01,
     ACTUATOR_PUMP = 0x02,
-    ACTUATOR_FAN = 0x03
+    ACTUATOR_FAN = 0x03,
+    ACTUATOR_CURTAIN = 0x04
 };
 
 // Actuator commands
@@ -63,7 +64,9 @@ enum ActuatorCommand {
     CMD_TURN_OFF = 0x00,
     CMD_TURN_ON = 0x01,
     CMD_TOGGLE = 0x02,
-    CMD_SET_LEVEL = 0x03  // For variable speed/position actuators
+    CMD_SET_LEVEL = 0x03,  // For variable speed/position actuators
+    CMD_STOP = 0x04,       // Immediate stop (e.g. curtain mid-travel)
+    CMD_CALIBRATE = 0x05   // Start calibration procedure
 };
 
 // Node types for registration
