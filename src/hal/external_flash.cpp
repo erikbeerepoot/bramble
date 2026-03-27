@@ -25,12 +25,12 @@ bool ExternalFlash::initGpio()
     // Set output value before enabling driver — gpio_init() clears the output
     // register to 0, so enabling the driver first causes a brief LOW glitch.
     gpio_init(pins_.cs);
-    gpio_put(pins_.cs, 1);              // Deselect (before enabling driver)
+    gpio_put(pins_.cs, 1);  // Deselect (before enabling driver)
     gpio_set_dir(pins_.cs, GPIO_OUT);
 
     // Configure reset as output, active low
     gpio_init(pins_.reset);
-    gpio_put(pins_.reset, 1);           // Not in reset (before enabling driver)
+    gpio_put(pins_.reset, 1);  // Not in reset (before enabling driver)
     gpio_set_dir(pins_.reset, GPIO_OUT);
 
     return true;
