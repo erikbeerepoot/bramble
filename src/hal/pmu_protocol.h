@@ -16,9 +16,9 @@ enum class Command : uint8_t {
     KeepAwake = 0x15,
     SetDateTime =
         0x16,  // Set RTC date/time (7 bytes: year, month, day, weekday, hour, minute, second)
-    ReadyForSleep = 0x17,  // RP2040 signals work complete, ready for power down
-    GetDateTime = 0x18,    // Get RTC date/time from PMU (returns DateTimeResponse)
-    ClearToSend = 0x19,    // RP2040 signals ready to receive wake info
+    ReadyForSleep = 0x17,       // RP2040 signals work complete, ready for power down
+    GetDateTime = 0x18,         // Get RTC date/time from PMU (returns DateTimeResponse)
+    ClearToSend = 0x19,         // RP2040 signals ready to receive wake info
     SystemReset = 0x1A,         // Request full system reset (PMU resets itself + RP2040)
     FactoryReset = 0x1B,        // Wipe FRAM persistent storage, then reset
     GetPowerMeasurement = 0x1C  // Read voltage and current from ADC
@@ -33,7 +33,7 @@ enum class Response : uint8_t {
     WakeReason = 0x84,
     Status = 0x85,
     ScheduleComplete = 0x86,
-    DateTimeResponse = 0x87,        // Response to GetDateTime: valid flag + 7 datetime bytes
+    DateTimeResponse = 0x87,         // Response to GetDateTime: valid flag + 7 datetime bytes
     PowerMeasurementResponse = 0x88  // ADC millivolts: voltage_mv (2B) + current_mv (2B)
 };
 
