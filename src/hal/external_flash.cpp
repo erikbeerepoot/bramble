@@ -46,9 +46,9 @@ bool ExternalFlash::init()
         return false;
     }
 
-    // Wait for flash power-on reset to complete before any SPI commands.
-    // MT25QL tVSL (VCC min to first command) can be up to 100ms with slow
-    // supply ramp from DCDC. Empirically needs ~155ms on V4 board.
+    // The flash needs ~150ms after GPIO init before it responds reliably
+    // to SPI commands. This cannot be measured from boot time — the flash
+    // settling depends on when initGpio() configures CS/RST, not DCDC power-on.
     sleep_ms(150);
 
     constexpr int MAX_ATTEMPTS = 3;
@@ -64,7 +64,6 @@ bool ExternalFlash::init()
         // The flash may be mid-command (waiting for more clocks), so toggling
         // CS high forces it to deselect and abandon the current operation.
         csDeselect();
-        sleep_us(10);
 
         // Software reset clears internal state machines even if the flash is
         // stuck in a write or erase operation that survived the power cycle.
@@ -114,9 +113,9 @@ bool ExternalFlash::init()
 void ExternalFlash::hardwareReset()
 {
     gpio_put(pins_.reset, 0);
-    sleep_ms(1);  // Conservative pulse width (MT25QL spec: ~10us)
+    sleep_us(100);  // Reset pulse width (MT25QL spec: ~10us, 100us for margin)
     gpio_put(pins_.reset, 1);
-    sleep_ms(50);  // Device recovery time (tPUW max 10ms for MT25QL; use 50ms for margin)
+    sleep_ms(30);  // Device recovery time (tPUW max 10ms for MT25QL; 30ms for margin)
 }
 
 void ExternalFlash::drainSpiFifo()
