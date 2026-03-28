@@ -901,13 +901,14 @@ def control_curtain(address: int):
 
     action = data['action']
     action_map = {
-        'open': 1,   # CMD_TURN_ON
-        'close': 0,  # CMD_TURN_OFF
-        'stop': 4,   # CMD_STOP
+        'open': 1,       # CMD_TURN_ON
+        'close': 0,      # CMD_TURN_OFF
+        'stop': 4,       # CMD_STOP
+        'calibrate': 5,  # CMD_CALIBRATE
     }
 
     if action not in action_map:
-        return jsonify({'error': f'Invalid action: {action}. Must be open, close, or stop'}), 400
+        return jsonify({'error': f'Invalid action: {action}. Must be open, close, stop, or calibrate'}), 400
 
     try:
         from command_queue import queue_send_actuator

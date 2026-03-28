@@ -250,6 +250,7 @@ export const EVENT_CODE_NAMES: Record<number, string> = {
   0x0101: 'Curtain Closed',
   0x0102: 'Curtain Stopped',
   0x0103: 'Motor Error',
+  0x0104: 'Calibration Complete',
 };
 
 export function getEventName(code: number): string {

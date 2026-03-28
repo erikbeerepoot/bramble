@@ -14,6 +14,7 @@ function CurtainControl({ address, deviceId }: CurtainControlProps) {
   const [error, setError] = useState<string | null>(null);
   const [events, setEvents] = useState<NodeEvent[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(true);
+  const [calibrating, setCalibrating] = useState(false);
 
   const fetchEvents = useCallback(async () => {
     try {
@@ -30,12 +31,17 @@ function CurtainControl({ address, deviceId }: CurtainControlProps) {
     fetchEvents();
   }, [fetchEvents]);
 
-  const handleAction = async (action: 'open' | 'close' | 'stop') => {
+  const handleAction = async (action: 'open' | 'close' | 'stop' | 'calibrate') => {
     setSending(action);
     setError(null);
     try {
       await controlCurtain(address, action);
       setLastAction(action);
+      if (action === 'calibrate') {
+        setCalibrating(true);
+      } else if (action === 'stop' && calibrating) {
+        setCalibrating(false);
+      }
       // Refresh events after a short delay to allow the event to propagate
       setTimeout(fetchEvents, 3000);
     } catch (err) {
@@ -93,8 +99,30 @@ function CurtainControl({ address, deviceId }: CurtainControlProps) {
         <p className="mt-3 text-sm text-red-600">{error}</p>
       )}
 
+      {/* Calibration */}
+      <div className="mt-4 border-t border-gray-200 pt-4">
+        {calibrating ? (
+          <div className="space-y-2">
+            <p className="text-sm text-amber-600 font-medium">
+              Calibrating... curtain will close fully, pause, then open.
+            </p>
+            <p className="text-sm text-gray-500">
+              Click <strong>Stop</strong> when the curtain is fully open to record the travel time.
+            </p>
+          </div>
+        ) : (
+          <button
+            onClick={() => handleAction('calibrate')}
+            disabled={sending !== null}
+            className="btn w-full bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50"
+          >
+            {sending === 'calibrate' ? 'Starting...' : 'Calibrate Travel Time'}
+          </button>
+        )}
+      </div>
+
       {/* Event History */}
-      <div className="mt-6 border-t border-gray-200 pt-4">
+      <div className="mt-4 border-t border-gray-200 pt-4">
         <h4 className="text-sm font-medium text-gray-700 mb-2">Recent Events</h4>
         {loadingEvents ? (
           <div className="animate-pulse space-y-2">
