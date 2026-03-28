@@ -933,6 +933,49 @@ def control_curtain(address: int):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/nodes/<int:device_id>/events', methods=['GET'])
+def get_node_events(device_id: int):
+    """Query events for a node.
+
+    Query parameters:
+        start_time: Start timestamp (optional)
+        end_time: End timestamp (optional)
+        limit: Maximum records (default 100, max 1000)
+
+    Args:
+        device_id: Device ID
+
+    Returns:
+        JSON list of events
+    """
+    try:
+        db = get_database()
+
+        start_time = request.args.get('start_time', type=int)
+        end_time = request.args.get('end_time', type=int)
+        limit = request.args.get('limit', default=100, type=int)
+
+        if limit < 1 or limit > 1000:
+            return jsonify({'error': 'limit must be 1-1000'}), 400
+
+        events = db.query_events(
+            device_id=device_id,
+            start_time=start_time,
+            end_time=end_time,
+            limit=limit,
+        )
+
+        return jsonify({
+            'device_id': str(device_id),
+            'count': len(events),
+            'events': events,
+        })
+
+    except Exception as e:
+        logger.error(f"Error querying events for device {device_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 # ===== Sensor Data Endpoints =====
 
 @app.route('/api/sensor-data', methods=['GET'])

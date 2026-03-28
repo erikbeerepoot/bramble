@@ -494,7 +494,7 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
 
         <div className="lg:col-span-2 space-y-4">
           {node.type === NodeType.GREENHOUSE && (
-            <CurtainControl address={node.address} />
+            <CurtainControl address={node.address} deviceId={node.device_id} />
           )}
 
           <div className="card">

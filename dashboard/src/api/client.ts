@@ -7,6 +7,7 @@ import type {
   NodeStatistics,
   Zone,
   ZonesResponse,
+  NodeEventsResponse,
 } from '../types';
 
 const API_URL_KEY = 'bramble_api_url';
@@ -180,6 +181,23 @@ export async function rebootNode(
   return fetchApi(`/api/nodes/${address}/reboot`, {
     method: 'POST',
   });
+}
+
+export async function getNodeEvents(
+  deviceId: string,
+  options?: {
+    startTime?: number;
+    endTime?: number;
+    limit?: number;
+  }
+): Promise<NodeEventsResponse> {
+  const params = new URLSearchParams();
+  if (options?.startTime) params.set('start_time', options.startTime.toString());
+  if (options?.endTime) params.set('end_time', options.endTime.toString());
+  if (options?.limit) params.set('limit', options.limit.toString());
+
+  const query = params.toString();
+  return fetchApi<NodeEventsResponse>(`/api/nodes/${deviceId}/events${query ? `?${query}` : ''}`);
 }
 
 export async function controlCurtain(

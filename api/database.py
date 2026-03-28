@@ -196,6 +196,19 @@ class SensorDatabase:
 
     CREATE INDEX IF NOT EXISTS idx_nsh_device_time
         ON node_status_history(device_id, timestamp);
+
+    CREATE TABLE IF NOT EXISTS node_events (
+        id INTEGER PRIMARY KEY,
+        device_id UBIGINT NOT NULL,
+        timestamp INTEGER NOT NULL,
+        event_code INTEGER NOT NULL,
+        data_hex VARCHAR,
+        received_at INTEGER NOT NULL,
+        UNIQUE(device_id, timestamp, event_code)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_events_device_time
+        ON node_events(device_id, timestamp);
     """
 
     def __init__(self, db_path: str = Config.SENSOR_DB_PATH):
@@ -1284,3 +1297,87 @@ class SensorDatabase:
                 'last_seen_at': row[4],
                 'total_readings': row[5]
             }
+
+    def insert_event(self, device_id: int, timestamp: int, event_code: int,
+                     data_hex: str = "") -> bool:
+        """Insert a node event.
+
+        Args:
+            device_id: Device identifier
+            timestamp: Event timestamp (unix seconds)
+            event_code: Event type code
+            data_hex: Hex-encoded event detail data
+
+        Returns:
+            True if inserted, False if duplicate
+        """
+        received_at = int(time.time())
+        new_id = self._next_id()
+
+        try:
+            with self._get_connection() as conn:
+                conn.execute("""
+                    INSERT INTO node_events
+                    (id, device_id, timestamp, event_code, data_hex, received_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT (device_id, timestamp, event_code) DO NOTHING
+                """, (new_id, device_id, timestamp, event_code, data_hex, received_at))
+
+                count = conn.execute(
+                    "SELECT COUNT(*) FROM node_events WHERE id = ?",
+                    (new_id,)
+                ).fetchone()[0]
+                return count > 0
+
+        except duckdb.Error as e:
+            logger.error(f"Failed to insert event: {e}")
+            return False
+
+    def query_events(self, device_id: int, start_time: int = None,
+                     end_time: int = None, limit: int = 100) -> list[dict]:
+        """Query events for a device.
+
+        Args:
+            device_id: Device identifier
+            start_time: Start timestamp filter (optional)
+            end_time: End timestamp filter (optional)
+            limit: Maximum results (default 100)
+
+        Returns:
+            List of event dicts
+        """
+        try:
+            with self._get_connection() as conn:
+                conditions = ["device_id = ?"]
+                params = [device_id]
+
+                if start_time is not None:
+                    conditions.append("timestamp >= ?")
+                    params.append(start_time)
+                if end_time is not None:
+                    conditions.append("timestamp <= ?")
+                    params.append(end_time)
+
+                where_clause = " AND ".join(conditions)
+                params.append(min(limit, 1000))
+
+                result = conn.execute(f"""
+                    SELECT device_id, timestamp, event_code, data_hex, received_at
+                    FROM node_events
+                    WHERE {where_clause}
+                    ORDER BY timestamp DESC
+                    LIMIT ?
+                """, params)
+
+                rows = result.fetchall()
+                return [{
+                    'device_id': str(row[0]),
+                    'timestamp': row[1],
+                    'event_code': row[2],
+                    'data_hex': row[3] or "",
+                    'received_at': row[4],
+                } for row in rows]
+
+        except duckdb.Error as e:
+            logger.error(f"Failed to query events: {e}")
+            return []
