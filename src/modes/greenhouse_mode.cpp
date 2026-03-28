@@ -126,20 +126,25 @@ void GreenhouseMode::onActuatorCommand(const ActuatorPayload *payload)
         return;
     }
 
+    uint16_t event_code = 0;
+
     switch (payload->command) {
         case CMD_TURN_ON:
             logger.info("Command: OPEN curtain");
             curtain_controller_.open();
+            event_code = EVENT_CURTAIN_OPENED;
             break;
 
         case CMD_TURN_OFF:
             logger.info("Command: CLOSE curtain");
             curtain_controller_.close();
+            event_code = EVENT_CURTAIN_CLOSED;
             break;
 
         case CMD_STOP:
             logger.info("Command: STOP curtain");
             curtain_controller_.stop();
+            event_code = EVENT_CURTAIN_STOPPED;
             break;
 
         case CMD_CALIBRATE:
@@ -149,6 +154,11 @@ void GreenhouseMode::onActuatorCommand(const ActuatorPayload *payload)
         default:
             logger.error("Unknown curtain command %d", payload->command);
             break;
+    }
+
+    // Send event notification to hub (best effort)
+    if (event_code != 0) {
+        messenger_.sendEvent(HUB_ADDRESS, event_code, nullptr, 0);
     }
 
     updateGreenhouseState();
