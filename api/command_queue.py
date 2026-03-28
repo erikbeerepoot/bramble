@@ -141,3 +141,21 @@ def queue_reboot_node(node_address: int):
     command = f"REBOOT_NODE {node_address}"
     command_id = f"reboot-{node_address}"
     return send_hub_command(command, command_id)
+
+
+def queue_send_actuator(node_address: int, actuator_type: int, command: int,
+                        param: int = 0):
+    """Queue a SEND_ACTUATOR command.
+
+    Args:
+        node_address: Target node LoRa address
+        actuator_type: Actuator type (e.g. 4 = curtain)
+        command: Command code (0=off, 1=on, 4=stop)
+        param: Optional parameter byte
+
+    Returns:
+        huey TaskResultWrapper for tracking status
+    """
+    cmd = f"SEND_ACTUATOR {node_address} {actuator_type} {command} {param}"
+    command_id = f"actuator-{node_address}-{actuator_type}-{command}"
+    return send_hub_command(cmd, command_id)
