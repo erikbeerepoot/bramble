@@ -78,11 +78,54 @@ void CurtainController::stop()
         return;
     }
 
+    // During calibration OPENING phase, record the elapsed time as travel time
+    if (state_ == CurtainState::CALIBRATING &&
+        calibration_phase_ == CalibrationPhase::OPENING) {
+        uint32_t measured = elapsed();
+        travel_time_ms_ = measured;
+        estimated_position_ = 1.0f;
+        calibration_phase_ = CalibrationPhase::NONE;
+        calibration_completed_ = true;
+        stopMotor();
+        state_ = CurtainState::OPEN;
+        logger.info("Calibration complete: travel time = %lu ms", travel_time_ms_);
+        return;
+    }
+
     updateEstimatedPosition();
     stopMotor();
+    calibration_phase_ = CalibrationPhase::NONE;
     state_ = CurtainState::STOPPED;
 
     logger.info("Stopped at estimated position %.0f%%", estimated_position_ * 100.0f);
+}
+
+void CurtainController::startCalibration()
+{
+    if (!initialized_) {
+        logger.error("Not initialized");
+        return;
+    }
+
+    logger.info("Starting calibration — closing curtain fully");
+
+    // Drive curtain closed first
+    gpio_put(open_pin_, 0);
+    gpio_put(close_pin_, 1);
+
+    motor_start_time_ = to_ms_since_boot(get_absolute_time());
+    state_ = CurtainState::CALIBRATING;
+    calibration_phase_ = CalibrationPhase::CLOSING;
+    calibration_completed_ = false;
+}
+
+bool CurtainController::calibrationJustCompleted()
+{
+    if (calibration_completed_) {
+        calibration_completed_ = false;
+        return true;
+    }
+    return false;
 }
 
 void CurtainController::update()
@@ -92,6 +135,47 @@ void CurtainController::update()
     }
 
     uint32_t elapsed_ms = elapsed();
+
+    // Calibration state machine
+    if (state_ == CurtainState::CALIBRATING) {
+        switch (calibration_phase_) {
+            case CalibrationPhase::CLOSING:
+                // Run close for max_motor_run_ms to ensure fully closed
+                if (elapsed_ms >= max_motor_run_ms_) {
+                    stopMotor();
+                    calibration_phase_ = CalibrationPhase::PAUSE;
+                    calibration_pause_start_ = to_ms_since_boot(get_absolute_time());
+                    logger.info("Calibration: fully closed, pausing");
+                }
+                return;
+
+            case CalibrationPhase::PAUSE:
+                // Brief pause before opening
+                if (to_ms_since_boot(get_absolute_time()) - calibration_pause_start_ >= 1000) {
+                    // Start opening — user will click Stop when fully open
+                    gpio_put(close_pin_, 0);
+                    gpio_put(open_pin_, 1);
+                    motor_start_time_ = to_ms_since_boot(get_absolute_time());
+                    calibration_phase_ = CalibrationPhase::OPENING;
+                    logger.info("Calibration: opening — stop when fully open");
+                }
+                return;
+
+            case CalibrationPhase::OPENING:
+                // Safety timeout during calibration opening
+                if (elapsed_ms >= max_motor_run_ms_) {
+                    logger.error("Calibration safety timeout — stopping");
+                    stopMotor();
+                    calibration_phase_ = CalibrationPhase::NONE;
+                    state_ = CurtainState::ERROR;
+                }
+                return;
+
+            case CalibrationPhase::NONE:
+                return;
+        }
+        return;
+    }
 
     // Safety timeout — always enforced
     if (elapsed_ms >= max_motor_run_ms_) {
