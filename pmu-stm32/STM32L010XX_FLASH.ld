@@ -6,8 +6,8 @@
 **
 **  Author		: STM32CubeMX
 **
-**  Abstract    : Linker script for STM32L010F4Px series
-**                16Kbytes FLASH and 2Kbytes RAM
+**  Abstract    : Linker script for STM32L031F6P6
+**                32Kbytes FLASH and 8Kbytes RAM
 **
 **                Set heap size, stack size and stack location according
 **                to application requirements.
@@ -55,8 +55,8 @@ ENTRY(Reset_Handler)
 /* Specify the memory areas */
 MEMORY
 {
-RAM (xrw)      : ORIGIN = 0x20000000, LENGTH = 2K
-FLASH (rx)      : ORIGIN = 0x8000000, LENGTH = 16K
+RAM (xrw)      : ORIGIN = 0x20000000, LENGTH = 8K
+FLASH (rx)      : ORIGIN = 0x8000000, LENGTH = 32K
 }
 
 /* Highest address of the user mode stack */
