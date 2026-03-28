@@ -20,6 +20,16 @@ enum class CurtainState : uint8_t {
 };
 
 /**
+ * @brief Internal phases of the calibration procedure
+ */
+enum class CalibrationPhase : uint8_t {
+    NONE,     // Not calibrating
+    CLOSING,  // Driving curtain fully closed
+    PAUSE,    // Brief pause before opening
+    OPENING   // Opening — user clicks Stop when fully open
+};
+
+/**
  * @brief Non-blocking motor controller for greenhouse roll-up curtains
  *
  * Drives a motor via two GPIO signals (relay-based motor reversing):
@@ -91,6 +101,21 @@ public:
     }
 
     /**
+     * @brief Start interactive calibration procedure
+     *
+     * Drives curtain fully closed, pauses, then opens.
+     * User must call stop() when curtain is fully open to record travel time.
+     */
+    void startCalibration();
+
+    /**
+     * @brief Check if calibration just completed (travel time was recorded)
+     *
+     * Returns true once after a calibration stop, then resets.
+     */
+    bool calibrationJustCompleted();
+
+    /**
      * @brief Get human-readable state name
      */
     static const char *stateName(CurtainState state);
@@ -110,4 +135,9 @@ private:
     uint32_t travel_time_ms_ = 0;       // 0 = not calibrated
     uint32_t motor_start_time_ = 0;     // to_ms_since_boot timestamp
     uint32_t max_motor_run_ms_ = 180000;  // 3 minute safety timeout
+
+    // Calibration state
+    CalibrationPhase calibration_phase_ = CalibrationPhase::NONE;
+    uint32_t calibration_pause_start_ = 0;
+    bool calibration_completed_ = false;
 };
