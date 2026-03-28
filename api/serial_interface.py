@@ -127,6 +127,7 @@ class SerialInterface:
         "BATCH_COMPLETE ", "SENSOR_DATA ", "HUB_READY",
         "NODE_LIST ", "NODE ", "GET_DATETIME", "QUEUE ",
         "QUEUED ", "ERROR ", "DELETED_NODE ", "BATCH_ACK_SENT ",
+        "EVENT ",
     ]
 
     def _handle_line(self, line: str):
@@ -165,6 +166,11 @@ class SerialInterface:
         # Handle heartbeat messages
         if line.startswith("HEARTBEAT "):
             self._handle_heartbeat(line)
+            return
+
+        # Handle event messages
+        if line.startswith("EVENT "):
+            self._handle_event(line)
             return
 
         # Handle sensor data messages
@@ -428,6 +434,38 @@ class SerialInterface:
 
         except (ValueError, IndexError) as e:
             logger.error(f"Failed to parse SENSOR_DATA: {e}")
+
+    def _handle_event(self, line: str):
+        """Handle event notification from hub.
+
+        Format: EVENT <node_addr> <device_id> <event_code> <data_hex>
+        """
+        if not self.database:
+            logger.warning("Received event but no database configured")
+            return
+
+        try:
+            parts = line.split()
+            if len(parts) < 4:
+                logger.error(f"Invalid EVENT format: {line}")
+                return
+
+            device_id = int(parts[2])
+            event_code = int(parts[3])
+            data_hex = parts[4] if len(parts) >= 5 else ""
+            timestamp = int(time.time())
+
+            if device_id == 0:
+                logger.warning(f"Event from node {parts[1]} has no device_id, skipping")
+                return
+
+            if self.database.insert_event(device_id, timestamp, event_code, data_hex):
+                logger.info(f"Stored event: device_id={device_id}, code=0x{event_code:04X}, data={data_hex}")
+            else:
+                logger.debug(f"Duplicate event: device_id={device_id}, code=0x{event_code:04X}")
+
+        except (ValueError, IndexError) as e:
+            logger.error(f"Failed to parse EVENT: {e}")
 
     def _handle_sensor_batch_start(self, line: str):
         """Handle start of sensor batch from hub.
