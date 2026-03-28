@@ -30,8 +30,9 @@ struct __attribute__((packed)) SensorPersistedState {
     uint16_t padding1;          // Alignment padding
     uint32_t read_index;        // Flash buffer read position
     uint32_t write_index;       // Flash buffer write position
-    uint8_t consecutive_tx_failures;  // Cross-cycle TX failure counter for self-healing re-registration
-    uint8_t padding[15];              // Reserved for future use
+    uint8_t
+        consecutive_tx_failures;  // Cross-cycle TX failure counter for self-healing re-registration
+    uint8_t padding[15];          // Reserved for future use
 };
 static_assert(sizeof(SensorPersistedState) == 32, "SensorPersistedState must be 32 bytes");
 
