@@ -419,8 +419,8 @@ bool initializeHardware(RadioInterface &lora, NeoPixel &led)
     // the flash drives MISO and corrupts SX1262 register reads.
     constexpr uint PIN_FLASH_CS = 6;
     gpio_init(PIN_FLASH_CS);
+    gpio_put(PIN_FLASH_CS, 1);  // Deselect flash (before enabling driver)
     gpio_set_dir(PIN_FLASH_CS, GPIO_OUT);
-    gpio_put(PIN_FLASH_CS, 1);  // Deselect flash
 #endif
 
     log.debug("System Clock: %d Hz, USB Clock: %d Hz", clock_get_hz(clk_sys),
