@@ -26,7 +26,7 @@ public:
     {
         if (!header || header->magic != MESSAGE_MAGIC)
             return false;
-        if (header->type < MSG_TYPE_SENSOR_DATA || header->type > MSG_TYPE_BATCH_ACK)
+        if (header->type < MSG_TYPE_SENSOR_DATA || header->type > MSG_TYPE_EVENT)
             return false;
         return isValidAddress(header->src_addr) && isValidAddress(header->dst_addr);
     }
