@@ -6,13 +6,13 @@
  * @brief Greenhouse-specific operational states
  */
 enum class GreenhouseState : uint8_t {
-    INITIALIZING,      // Hardware setup in progress
-    AWAITING_TIME,     // Waiting for RTC sync
-    IDLE,              // Curtain stationary, ready for commands
-    CURTAIN_OPENING,   // Motor running in open direction
-    CURTAIN_CLOSING,   // Motor running in close direction
-    CALIBRATING,       // Calibration in progress
-    ERROR,             // Unrecoverable error
+    INITIALIZING,     // Hardware setup in progress
+    AWAITING_TIME,    // Waiting for RTC sync
+    IDLE,             // Curtain stationary, ready for commands
+    CURTAIN_OPENING,  // Motor running in open direction
+    CURTAIN_CLOSING,  // Motor running in close direction
+    CALIBRATING,      // Calibration in progress
+    ERROR,            // Unrecoverable error
 };
 
 /**

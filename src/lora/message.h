@@ -173,19 +173,19 @@ struct __attribute__((packed)) SensorPayload {
  * @brief Generic event payload (usable by any node type)
  */
 struct __attribute__((packed)) EventPayload {
-    uint16_t event_code;   // Event type (2 bytes for future expansion)
-    uint8_t data_length;   // Length of event-specific data
-    uint8_t data[32];      // Event-specific detail (variable length)
+    uint16_t event_code;  // Event type (2 bytes for future expansion)
+    uint8_t data_length;  // Length of event-specific data
+    uint8_t data[32];     // Event-specific detail (variable length)
 };
 
 // Event code ranges (by category)
 // 0x0100-0x01FF: Curtain/greenhouse events
 enum EventCode {
-    EVENT_CURTAIN_OPENED  = 0x0100,
-    EVENT_CURTAIN_CLOSED  = 0x0101,
+    EVENT_CURTAIN_OPENED = 0x0100,
+    EVENT_CURTAIN_CLOSED = 0x0101,
     EVENT_CURTAIN_STOPPED = 0x0102,
-    EVENT_MOTOR_ERROR           = 0x0103,
-    EVENT_CALIBRATION_COMPLETE  = 0x0104,
+    EVENT_MOTOR_ERROR = 0x0103,
+    EVENT_CALIBRATION_COMPLETE = 0x0104,
 };
 
 /**

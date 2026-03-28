@@ -79,8 +79,7 @@ void CurtainController::stop()
     }
 
     // During calibration OPENING phase, record the elapsed time as travel time
-    if (state_ == CurtainState::CALIBRATING &&
-        calibration_phase_ == CalibrationPhase::OPENING) {
+    if (state_ == CurtainState::CALIBRATING && calibration_phase_ == CalibrationPhase::OPENING) {
         uint32_t measured = elapsed();
         travel_time_ms_ = measured;
         estimated_position_ = 1.0f;
