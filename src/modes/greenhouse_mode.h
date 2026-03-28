@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../config/curtain_config.h"
 #include "../hal/curtain_controller.h"
 #include "../hal/pmu_client.h"
 #include "../util/greenhouse_state_machine.h"
@@ -14,6 +15,7 @@
 class GreenhouseMode : public ApplicationMode {
 private:
     CurtainController curtain_controller_;
+    CurtainConfigManager *curtain_config_;
     PmuClient *pmu_client_;
     bool pmu_available_;
     GreenhouseStateMachine greenhouse_state_;

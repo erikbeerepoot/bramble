@@ -6,6 +6,7 @@
 #include "../hal/logger.h"
 #include "../hal/rtc_compat.h"
 #include "../led_patterns.h"
+#include "../hal/flash.h"
 #include "../lora/message.h"
 #include "../lora/reliable_messenger.h"
 #include "../util/time.h"
@@ -26,6 +27,17 @@ void GreenhouseMode::onStart()
 
     // Initialize curtain controller with motor GPIOs
     curtain_controller_.initialize(Board::PIN_CURTAIN_OPEN, Board::PIN_CURTAIN_CLOSE);
+
+    // Load saved travel time from flash
+    Flash *flash = new Flash();
+    curtain_config_ = new CurtainConfigManager(*flash);
+    uint32_t saved_travel_time = 0;
+    if (curtain_config_->loadTravelTime(saved_travel_time) && saved_travel_time > 0) {
+        curtain_controller_.setTravelTime(saved_travel_time);
+        logger.info("Restored travel time: %lu ms", saved_travel_time);
+    } else {
+        logger.info("No saved travel time — calibration needed");
+    }
 
     // Initialize PMU client for RTC timekeeping
     pmu_client_ =
@@ -105,6 +117,24 @@ void GreenhouseMode::onLoop()
     // Non-blocking motor control check
     curtain_controller_.update();
 
+    // Check if calibration just completed — persist and send event
+    if (curtain_controller_.calibrationJustCompleted()) {
+        uint32_t travel_time = curtain_controller_.getTravelTime();
+        logger.info("Calibration result: %lu ms — saving to flash", travel_time);
+
+        if (curtain_config_) {
+            curtain_config_->saveTravelTime(travel_time);
+        }
+
+        // Send calibration complete event with travel time as detail
+        uint8_t detail[4];
+        detail[0] = static_cast<uint8_t>(travel_time & 0xFF);
+        detail[1] = static_cast<uint8_t>((travel_time >> 8) & 0xFF);
+        detail[2] = static_cast<uint8_t>((travel_time >> 16) & 0xFF);
+        detail[3] = static_cast<uint8_t>((travel_time >> 24) & 0xFF);
+        messenger_.sendEvent(HUB_ADDRESS, EVENT_CALIBRATION_COMPLETE, detail, 4);
+    }
+
     // Process PMU messages
     if (pmu_available_ && pmu_client_) {
         pmu_client_->process();
@@ -148,7 +178,8 @@ void GreenhouseMode::onActuatorCommand(const ActuatorPayload *payload)
             break;
 
         case CMD_CALIBRATE:
-            logger.info("Command: CALIBRATE (not yet implemented)");
+            logger.info("Command: CALIBRATE");
+            curtain_controller_.startCalibration();
             break;
 
         default:
