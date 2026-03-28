@@ -326,6 +326,8 @@ void HubMode::handleSerialCommand(const char *cmd)
         handleRebootNode(cmd + 12);
     } else if (strncmp(cmd, "FACTORY_RESET_NODE ", 19) == 0) {
         handleFactoryResetNode(cmd + 19);
+    } else if (strncmp(cmd, "SEND_ACTUATOR ", 14) == 0) {
+        handleSendActuator(cmd + 14);
     } else {
         uartSend("ERROR Unknown command\n");
     }
@@ -352,7 +354,9 @@ void HubMode::handleListNodes()
 
         // Determine node type
         const char *type = "UNKNOWN";
-        if (node->capabilities & CAP_VALVE_CONTROL) {
+        if (node->node_type == NODE_TYPE_ACTUATOR) {
+            type = "GREENHOUSE";
+        } else if (node->capabilities & CAP_VALVE_CONTROL) {
             type = "IRRIGATION";
         } else if (node->capabilities & CAP_TEMPERATURE) {
             type = "SENSOR";
@@ -679,6 +683,47 @@ void HubMode::handleFactoryResetNode(const char *args)
     uartSend(response);
 
     logger.info("Queued factory reset for node 0x%04X", node_addr);
+}
+
+void HubMode::handleSendActuator(const char *args)
+{
+    // Parse: SEND_ACTUATOR <node_addr> <actuator_type> <command> [param]
+    uint16_t node_addr;
+    unsigned int actuator_type;
+    unsigned int command;
+    unsigned int param = 0;
+
+    int parsed = sscanf(args, "%hu %u %u %u", &node_addr, &actuator_type, &command, &param);
+    if (parsed < 3) {
+        uartSend("ERROR Invalid SEND_ACTUATOR syntax: <addr> <type> <cmd> [param]\n");
+        return;
+    }
+
+    if (node_addr < ADDRESS_MIN_NODE || node_addr > ADDRESS_MAX_NODE) {
+        uartSend("ERROR Invalid node address\n");
+        return;
+    }
+
+    // Build optional parameter byte
+    uint8_t param_byte = static_cast<uint8_t>(param);
+    const uint8_t *params = (parsed >= 4) ? &param_byte : nullptr;
+    uint8_t param_length = (parsed >= 4) ? 1 : 0;
+
+    bool sent = messenger_.sendActuatorCommand(node_addr, static_cast<uint8_t>(actuator_type),
+                                               static_cast<uint8_t>(command), params, param_length,
+                                               RELIABLE);
+
+    if (sent) {
+        char response[64];
+        snprintf(response, sizeof(response), "SENT ACTUATOR %u %u %u\n", node_addr, actuator_type,
+                 command);
+        uartSend(response);
+        logger.info("Sent actuator command to 0x%04X: type=%u cmd=%u", node_addr, actuator_type,
+                    command);
+    } else {
+        uartSend("ERROR Failed to send actuator command\n");
+        logger.error("Failed to send actuator command to 0x%04X", node_addr);
+    }
 }
 
 void HubMode::handleHeartbeat(uint16_t source_addr, const HeartbeatPayload *payload, int16_t rssi)
