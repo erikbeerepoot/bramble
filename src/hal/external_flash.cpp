@@ -21,16 +21,15 @@ ExternalFlash::~ExternalFlash()
 
 bool ExternalFlash::initGpio()
 {
-    // Configure CS as output, active low (directly controlled, not SPI function)
-    // Set output value before enabling driver — gpio_init() clears the output
-    // register to 0, so enabling the driver first causes a brief LOW glitch.
-    gpio_init(pins_.cs);
-    gpio_put(pins_.cs, 1);  // Deselect (before enabling driver)
+    // CS and RST are pre-configured as output-HIGH in main.cpp before SPI init,
+    // so the flash never sees spurious traffic. Do NOT call gpio_init() here —
+    // it resets direction to input and clears the output register, causing CS/RST
+    // to float momentarily and putting the flash into an unknown state.
+    // Just assert the desired output values.
+    gpio_put(pins_.cs, 1);
     gpio_set_dir(pins_.cs, GPIO_OUT);
 
-    // Configure reset as output, active low
-    gpio_init(pins_.reset);
-    gpio_put(pins_.reset, 1);  // Not in reset (before enabling driver)
+    gpio_put(pins_.reset, 1);
     gpio_set_dir(pins_.reset, GPIO_OUT);
 
     return true;
@@ -46,10 +45,16 @@ bool ExternalFlash::init()
         return false;
     }
 
-    // The flash needs ~150ms after GPIO init before it responds reliably
-    // to SPI commands. This cannot be measured from boot time — the flash
-    // settling depends on when initGpio() configures CS/RST, not DCDC power-on.
-    sleep_ms(150);
+    // Empirically, the flash needs ~300ms from power-on before it responds
+    // reliably to SPI commands. Wait based on absolute boot time so the delay
+    // is only as long as needed regardless of when init() runs.
+    constexpr uint32_t FLASH_POWER_ON_MS = 350;
+    uint32_t elapsed = to_ms_since_boot(get_absolute_time());
+    if (elapsed < FLASH_POWER_ON_MS) {
+        uint32_t wait = FLASH_POWER_ON_MS - elapsed;
+        logger_.debug("Waiting %lu ms for flash power-on settling", wait);
+        sleep_ms(wait);
+    }
 
     constexpr int MAX_ATTEMPTS = 3;
 
