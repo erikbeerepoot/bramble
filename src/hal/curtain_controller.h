@@ -2,8 +2,9 @@
 
 #include <cstdint>
 
-#include "hardware/gpio.h"
 #include "pico/time.h"
+
+#include "hardware/gpio.h"
 
 /**
  * @brief Curtain motor states
@@ -132,8 +133,8 @@ private:
     CurtainState state_ = CurtainState::UNKNOWN;
     float estimated_position_ = 0.5f;  // Unknown → assume midpoint
 
-    uint32_t travel_time_ms_ = 0;       // 0 = not calibrated
-    uint32_t motor_start_time_ = 0;     // to_ms_since_boot timestamp
+    uint32_t travel_time_ms_ = 0;         // 0 = not calibrated
+    uint32_t motor_start_time_ = 0;       // to_ms_since_boot timestamp
     uint32_t max_motor_run_ms_ = 180000;  // 3 minute safety timeout
 
     // Calibration state

@@ -109,8 +109,8 @@ public:
      * @param criticality Delivery criticality (default BEST_EFFORT)
      * @return true if message sent/queued successfully
      */
-    bool sendEvent(uint16_t dst_addr, uint16_t event_code, const uint8_t *data,
-                   uint8_t data_length, DeliveryCriticality criticality = BEST_EFFORT);
+    bool sendEvent(uint16_t dst_addr, uint16_t event_code, const uint8_t *data, uint8_t data_length,
+                   DeliveryCriticality criticality = BEST_EFFORT);
 
     /**
      * @brief Send sensor data with specified criticality

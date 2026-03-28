@@ -3,10 +3,10 @@
 #include "hardware/watchdog.h"
 
 #include "../board/board_pins.h"
+#include "../hal/flash.h"
 #include "../hal/logger.h"
 #include "../hal/rtc_compat.h"
 #include "../led_patterns.h"
-#include "../hal/flash.h"
 #include "../lora/message.h"
 #include "../lora/reliable_messenger.h"
 #include "../util/time.h"
@@ -51,9 +51,9 @@ void GreenhouseMode::onStart()
         pmu_logger.info("Requesting datetime from PMU...");
         pmu_client_->getProtocol().getDateTime([this](bool valid, const PMU::DateTime &datetime) {
             if (valid) {
-                pmu_logger.info("PMU has valid time: 20%02d-%02d-%02d %02d:%02d:%02d", datetime.year,
-                                datetime.month, datetime.day, datetime.hour, datetime.minute,
-                                datetime.second);
+                pmu_logger.info("PMU has valid time: 20%02d-%02d-%02d %02d:%02d:%02d",
+                                datetime.year, datetime.month, datetime.day, datetime.hour,
+                                datetime.minute, datetime.second);
 
                 datetime_t dt = bramble::util::time::toDatetimeT(datetime);
                 if (rtc_set_datetime(&dt)) {
@@ -209,14 +209,13 @@ void GreenhouseMode::onHeartbeatResponse(const HeartbeatResponsePayload *payload
                         datetime.month, datetime.day, datetime.hour, datetime.minute,
                         datetime.second);
 
-        pmu_client_->getProtocol().setDateTime(
-            datetime, [](bool success, PMU::ErrorCode error) {
-                if (success) {
-                    pmu_logger.info("PMU time sync successful");
-                } else {
-                    pmu_logger.error("PMU time sync failed: error %d", static_cast<int>(error));
-                }
-            });
+        pmu_client_->getProtocol().setDateTime(datetime, [](bool success, PMU::ErrorCode error) {
+            if (success) {
+                pmu_logger.info("PMU time sync successful");
+            } else {
+                pmu_logger.error("PMU time sync failed: error %d", static_cast<int>(error));
+            }
+        });
     }
 
     updateGreenhouseState();
