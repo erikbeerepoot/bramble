@@ -74,3 +74,8 @@ uint8_t BatchTransmitter::consecutiveFailures() const
 {
     return consecutive_failures_;
 }
+
+uint8_t BatchTransmitter::batchesThisCycle() const
+{
+    return batches_this_cycle_;
+}

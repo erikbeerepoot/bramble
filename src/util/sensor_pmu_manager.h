@@ -30,12 +30,16 @@ struct __attribute__((packed)) SensorPersistedState {
     uint16_t padding1;          // Alignment padding
     uint32_t read_index;        // Flash buffer read position
     uint32_t write_index;       // Flash buffer write position
-    uint8_t padding[16];        // Reserved for future use
+    uint8_t consecutive_tx_failures;  // Cross-cycle TX failure counter for self-healing re-registration
+    uint8_t padding[15];              // Reserved for future use
 };
 static_assert(sizeof(SensorPersistedState) == 32, "SensorPersistedState must be 32 bytes");
 
-// Current state format version - bumped for board_version field
-constexpr uint8_t STATE_VERSION = 3;
+// Current state format version - bumped for consecutive_tx_failures field
+constexpr uint8_t STATE_VERSION = 4;
+
+// Number of consecutive failed TX cycles before forcing re-registration
+constexpr uint8_t CYCLE_FAILURE_THRESHOLD = 3;
 
 // Board version identifier stored in persisted state
 #ifdef BOARD_V4
@@ -144,6 +148,16 @@ public:
     void requestFactoryReset();
 
     /**
+     * @brief Get consecutive TX failure count (persisted across sleep cycles)
+     */
+    uint8_t getConsecutiveTxFailures() const { return consecutive_tx_failures_; }
+
+    /**
+     * @brief Set consecutive TX failure count
+     */
+    void setConsecutiveTxFailures(uint8_t count) { consecutive_tx_failures_ = count; }
+
+    /**
      * @brief Check if PMU hardware is available
      */
     bool isAvailable() const { return pmu_available_; }
@@ -171,6 +185,7 @@ private:
     PMU::ReliablePmuClient *reliable_pmu_ = nullptr;
     bool pmu_available_ = false;
     bool sleep_pending_ = false;
+    uint8_t consecutive_tx_failures_ = 0;
     uint16_t wake_timeout_id_ = 0;
 
     InitCallback init_callback_;
