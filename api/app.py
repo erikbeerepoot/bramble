@@ -882,6 +882,57 @@ def reboot_node(address: int):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/nodes/<int:address>/curtain', methods=['POST'])
+def control_curtain(address: int):
+    """Control a greenhouse curtain motor.
+
+    Body JSON:
+        action: "open" | "close" | "stop"
+
+    Args:
+        address: Node LoRa address
+
+    Returns:
+        JSON response with task_id for tracking (202 Accepted)
+    """
+    data = request.get_json()
+    if not data or 'action' not in data:
+        return jsonify({'error': 'Missing action field'}), 400
+
+    action = data['action']
+    action_map = {
+        'open': 1,   # CMD_TURN_ON
+        'close': 0,  # CMD_TURN_OFF
+        'stop': 4,   # CMD_STOP
+    }
+
+    if action not in action_map:
+        return jsonify({'error': f'Invalid action: {action}. Must be open, close, or stop'}), 400
+
+    try:
+        from command_queue import queue_send_actuator
+
+        actuator_type = 4  # ACTUATOR_CURTAIN
+        command = action_map[action]
+        result = queue_send_actuator(
+            node_address=address,
+            actuator_type=actuator_type,
+            command=command,
+        )
+
+        return jsonify({
+            'status': 'queued',
+            'task_id': result.id,
+            'node_address': address,
+            'action': action,
+            'message': f'Curtain {action} command queued for delivery'
+        }), 202
+
+    except Exception as e:
+        logger.error(f"Error queueing curtain command for node {address}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 # ===== Sensor Data Endpoints =====
 
 @app.route('/api/sensor-data', methods=['GET'])

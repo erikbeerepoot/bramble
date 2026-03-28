@@ -181,3 +181,13 @@ export async function rebootNode(
     method: 'POST',
   });
 }
+
+export async function controlCurtain(
+  address: number,
+  action: 'open' | 'close' | 'stop'
+): Promise<{ status: string; task_id: string; action: string; message: string }> {
+  return fetchApi(`/api/nodes/${address}/curtain`, {
+    method: 'POST',
+    body: JSON.stringify({ action }),
+  });
+}

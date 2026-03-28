@@ -33,6 +33,7 @@ export interface NodeStatus {
 export const NodeType = {
   SENSOR: 'SENSOR',
   IRRIGATION: 'IRRIGATION',
+  GREENHOUSE: 'GREENHOUSE',
   CONTROLLER: 'CONTROLLER',
   HUB: 'HUB',
   GENERIC: 'GENERIC',
