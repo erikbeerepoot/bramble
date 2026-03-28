@@ -222,6 +222,12 @@ void HubMode::processIncomingMessage(uint8_t *rx_buffer, int rx_len, uint32_t cu
                 reinterpret_cast<const SensorPayload *>(rx_buffer + sizeof(MessageHeader));
             handleSensorData(header->src_addr, sensor);
             // Fall through to base class for ACK handling if needed
+        } else if (header->type == MSG_TYPE_EVENT) {
+            // Forward event notifications to Raspberry Pi
+            const EventPayload *event =
+                reinterpret_cast<const EventPayload *>(rx_buffer + sizeof(MessageHeader));
+            handleEvent(header->src_addr, event);
+            // Fall through to base class (BEST_EFFORT, no ACK needed)
         } else if (header->type == MSG_TYPE_SENSOR_DATA_BATCH) {
             // Forward batch sensor data to Raspberry Pi
             const SensorDataBatchPayload *batch =
@@ -724,6 +730,41 @@ void HubMode::handleSendActuator(const char *args)
         uartSend("ERROR Failed to send actuator command\n");
         logger.error("Failed to send actuator command to 0x%04X", node_addr);
     }
+}
+
+void HubMode::handleEvent(uint16_t source_addr, const EventPayload *payload)
+{
+    if (!payload) {
+        return;
+    }
+
+    // Look up device_id from address manager
+    uint64_t device_id = 0;
+    const NodeInfo *node = address_manager_->getNodeInfo(source_addr);
+    if (node) {
+        device_id = node->device_id;
+    }
+
+    char device_id_str[21];
+    uint64_to_str(device_id, device_id_str, sizeof(device_id_str));
+
+    // Forward event to Raspberry Pi via UART
+    // Format: EVENT <node_addr> <device_id> <event_code> <data_hex>
+    char response[128];
+    snprintf(response, sizeof(response), "EVENT %u %s %u ", source_addr, device_id_str,
+             payload->event_code);
+    uartSend(response);
+
+    // Send event data as hex
+    for (uint8_t i = 0; i < payload->data_length && i < sizeof(payload->data); i++) {
+        char hex[4];
+        snprintf(hex, sizeof(hex), "%02X", payload->data[i]);
+        uartSend(hex);
+    }
+    uartSend("\n");
+
+    logger.debug("Forwarded event: node=%u, code=0x%04X, data_len=%u", source_addr,
+                 payload->event_code, payload->data_length);
 }
 
 void HubMode::handleHeartbeat(uint16_t source_addr, const HeartbeatPayload *payload, int16_t rssi)

@@ -69,6 +69,23 @@ bool ReliableMessenger::sendActuatorCommand(uint16_t dst_addr, uint8_t actuator_
         criticality, "actuator");
 }
 
+bool ReliableMessenger::sendEvent(uint16_t dst_addr, uint16_t event_code, const uint8_t *data,
+                                  uint8_t data_length, DeliveryCriticality criticality)
+{
+    uint8_t flags = MessageBuilder::criticalityToFlags(criticality);
+    uint8_t seq_num = getNextSequenceNumber();
+
+    logger_.info("sendEvent: src=0x%04X, dst=0x%04X, code=0x%04X, data_len=%d", node_addr_,
+                 dst_addr, event_code, data_length);
+
+    return sendWithBuilder(
+        [=](uint8_t *buffer) {
+            return MessageBuilder::createEventMessage(node_addr_, dst_addr, seq_num, event_code,
+                                                      data, data_length, flags, buffer);
+        },
+        criticality, "event");
+}
+
 bool ReliableMessenger::sendSensorData(uint16_t dst_addr, uint8_t sensor_type, const uint8_t *data,
                                        uint8_t data_length, DeliveryCriticality criticality)
 {

@@ -110,6 +110,22 @@ public:
     }
 
     /**
+     * @brief Simplified event message creation
+     */
+    static size_t createEventMessage(uint16_t src_addr, uint16_t dst_addr, uint8_t seq_num,
+                                     uint16_t event_code, const uint8_t *data, uint8_t data_length,
+                                     uint8_t flags, uint8_t *buffer)
+    {
+        struct EventHeader {
+            uint16_t event_code;
+            uint8_t data_length;
+        } header = {event_code, data_length};
+
+        return createVariableMessage(MSG_TYPE_EVENT, flags, src_addr, dst_addr, seq_num, &header,
+                                     sizeof(header), data, data_length, buffer);
+    }
+
+    /**
      * @brief Simplified actuator message creation
      */
     static size_t createActuatorMessage(uint16_t src_addr, uint16_t dst_addr, uint8_t seq_num,
