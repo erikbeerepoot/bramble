@@ -251,6 +251,21 @@ void SensorMode::onStateChange(SensorState state)
         }
 
         case SensorState::READY_FOR_SLEEP:
+            // Track cross-cycle TX failures for self-healing re-registration
+            if (pmu_manager_ && transmitter_) {
+                if (transmitter_->batchesThisCycle() > 0) {
+                    if (transmitter_->consecutiveFailures() > 0) {
+                        uint8_t count = pmu_manager_->getConsecutiveTxFailures();
+                        if (count < 255) {
+                            pmu_manager_->setConsecutiveTxFailures(count + 1);
+                        }
+                        logger.info("TX cycle failed (consecutive: %u)",
+                                    pmu_manager_->getConsecutiveTxFailures());
+                    } else {
+                        pmu_manager_->setConsecutiveTxFailures(0);
+                    }
+                }
+            }
             if (pmu_manager_) {
                 pmu_manager_->signalReadyForSleep();
             }
@@ -271,6 +286,15 @@ void SensorMode::onStateChange(SensorState state)
 
         case SensorState::REGISTERING:
             led_pattern_ = std::make_unique<ShortBlinkPattern>(led_, 255, 255, 0, 50, 250);
+            // Self-healing: force re-registration after persistent TX failures
+            if (pmu_manager_ &&
+                pmu_manager_->getConsecutiveTxFailures() >= CYCLE_FAILURE_THRESHOLD &&
+                messenger_.getNodeAddress() != ADDRESS_UNREGISTERED) {
+                logger.warn("Forcing re-registration after %u consecutive TX cycle failures",
+                            pmu_manager_->getConsecutiveTxFailures());
+                messenger_.setNodeAddress(ADDRESS_UNREGISTERED);
+                pmu_manager_->setConsecutiveTxFailures(0);
+            }
             if (messenger_.getNodeAddress() != ADDRESS_UNREGISTERED) {
                 logger.info("Already registered (addr=0x%04X) - skipping registration",
                             messenger_.getNodeAddress());

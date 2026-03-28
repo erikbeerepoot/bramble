@@ -48,6 +48,7 @@ public:
     void resetCycleCounter();
     bool canSendMore() const;
     uint8_t consecutiveFailures() const;
+    uint8_t batchesThisCycle() const;
 
 private:
     ReliableMessenger &messenger_;

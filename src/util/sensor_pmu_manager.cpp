@@ -262,6 +262,7 @@ void SensorPmuManager::packState(SensorPersistedState &out) const
         out.read_index = flash_buffer_->getReadIndex();
         out.write_index = flash_buffer_->getWriteIndex();
     }
+    out.consecutive_tx_failures = consecutive_tx_failures_;
 }
 
 bool SensorPmuManager::unpackState(const SensorPersistedState *persisted)
@@ -286,6 +287,9 @@ bool SensorPmuManager::unpackState(const SensorPersistedState *persisted)
 
     // Restore LoRa sequence number (no flash dependency)
     messenger_.setNextSeqNum(persisted->next_seq_num);
+
+    // Restore TX failure counter for self-healing re-registration
+    consecutive_tx_failures_ = persisted->consecutive_tx_failures;
 
     // Restore assigned address from PMU RAM (no flash dependency)
     if (persisted->assigned_address != ADDRESS_UNREGISTERED) {
