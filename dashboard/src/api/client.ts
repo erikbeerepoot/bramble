@@ -202,7 +202,7 @@ export async function getNodeEvents(
 
 export async function controlCurtain(
   address: number,
-  action: 'open' | 'close' | 'stop'
+  action: 'open' | 'close' | 'stop' | 'calibrate'
 ): Promise<{ status: string; task_id: string; action: string; message: string }> {
   return fetchApi(`/api/nodes/${address}/curtain`, {
     method: 'POST',
