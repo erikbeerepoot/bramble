@@ -882,20 +882,10 @@ static void updateLedForState(PmuState state, WakeType wakeType)
             break;
         }
 
-        case PmuState::WAKE_ACTIVE: {
-            // Slow blink (1s cycle) while RP2040 is working
-            uint32_t now = HAL_GetTick();
-            if (now - lastBlinkTime >= 500) {
-                lastBlinkTime = now;
-                ledOn = !ledOn;
-                if (ledOn) {
-                    led.setColor(wakeColor);
-                } else {
-                    led.off();
-                }
-            }
+        case PmuState::WAKE_ACTIVE:
+            // Solid green — RP2040 is awake and working normally
+            led.setColor(LED::GREEN);
             break;
-        }
 
         case PmuState::ERROR:
             led.setColor(LED::RED);
