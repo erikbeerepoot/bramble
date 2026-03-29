@@ -116,7 +116,7 @@ public:
                                      uint16_t event_code, const uint8_t *data, uint8_t data_length,
                                      uint8_t flags, uint8_t *buffer)
     {
-        struct EventHeader {
+        struct __attribute__((packed)) EventHeader {
             uint16_t event_code;
             uint8_t data_length;
         } header = {event_code, data_length};
