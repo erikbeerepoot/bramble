@@ -47,8 +47,24 @@ void GreenhouseMode::onStart()
     if (pmu_available_) {
         pmu_logger.info("PMU client initialized successfully");
 
+        // Register wake notification callback (plumbing for future scheduled curtain operations)
+        pmu_client_->getProtocol().onWakeNotification(
+            [](PMU::WakeReason reason, const PMU::ScheduleEntry *entry, bool, const uint8_t *) {
+                if (reason == PMU::WakeReason::Scheduled && entry) {
+                    pmu_logger.info("Scheduled wake: hour=%d min=%d duration=%ds", entry->hour,
+                                    entry->minute, entry->duration);
+                    // Future: trigger curtain open/close based on schedule
+                }
+            });
+
+        // Register schedule complete callback (plumbing for future)
+        pmu_client_->getProtocol().onScheduleComplete(
+            []() { pmu_logger.info("Schedule complete notification received"); });
+
         // Try to get time from PMU's battery-backed RTC
+        // Wake preamble needed in case PMU is in STOP mode
         pmu_logger.info("Requesting datetime from PMU...");
+        pmu_client_->sendWakePreamble();
         pmu_client_->getProtocol().getDateTime([this](bool valid, const PMU::DateTime &datetime) {
             if (valid) {
                 pmu_logger.info("PMU has valid time: 20%02d-%02d-%02d %02d:%02d:%02d",
@@ -67,6 +83,18 @@ void GreenhouseMode::onStart()
                 }
             } else {
                 pmu_logger.info("PMU time not valid - waiting for hub sync");
+            }
+        });
+
+        // Send CTS to transition PMU from AWAITING_CTS to WAKE_ACTIVE
+        // Wake preamble needed in case PMU is in STOP mode (SLEEPING)
+        pmu_logger.info("Sending ClearToSend to PMU...");
+        pmu_client_->sendWakePreamble();
+        pmu_client_->getProtocol().clearToSend([](bool success, PMU::ErrorCode) {
+            if (success) {
+                pmu_logger.info("ClearToSend acknowledged - PMU in WAKE_ACTIVE");
+            } else {
+                pmu_logger.error("ClearToSend failed");
             }
         });
     } else {
@@ -107,6 +135,27 @@ void GreenhouseMode::onStart()
                                      active_sensors, error_flags);
         },
         HEARTBEAT_INTERVAL_MS, "Heartbeat");
+
+    // Periodic CTS keepalive: keeps PMU in WAKE_ACTIVE (resets 120s timeout)
+    // and recovers from PMU resets (CTS works from any PMU state -> WAKE_ACTIVE)
+    if (pmu_available_) {
+        constexpr uint32_t PMU_CTS_KEEPALIVE_INTERVAL_MS = 10000;  // Debug: 10s for testing
+        task_manager_.addTask(
+            [this](uint32_t) {
+                // Wake preamble needed in case PMU fell back to STOP mode
+                pmu_logger.info("Sending periodic CTS keepalive...");
+                pmu_client_->sendWakePreamble();
+                pmu_client_->getProtocol().clearToSend([](bool success, PMU::ErrorCode) {
+                    if (success) {
+                        pmu_logger.info("CTS keepalive acknowledged");
+                    } else {
+                        pmu_logger.error("CTS keepalive failed");
+                    }
+                });
+            },
+            PMU_CTS_KEEPALIVE_INTERVAL_MS, "PMU CTS keepalive");
+        pmu_logger.info("Registered CTS keepalive task (interval=%lums)", PMU_CTS_KEEPALIVE_INTERVAL_MS);
+    }
 
     greenhouse_state_.markInitialized();
     updateGreenhouseState();
