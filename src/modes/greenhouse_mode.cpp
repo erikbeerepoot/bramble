@@ -154,7 +154,8 @@ void GreenhouseMode::onStart()
                 });
             },
             PMU_CTS_KEEPALIVE_INTERVAL_MS, "PMU CTS keepalive");
-        pmu_logger.info("Registered CTS keepalive task (interval=%lums)", PMU_CTS_KEEPALIVE_INTERVAL_MS);
+        pmu_logger.info("Registered CTS keepalive task (interval=%lums)",
+                        PMU_CTS_KEEPALIVE_INTERVAL_MS);
     }
 
     greenhouse_state_.markInitialized();
