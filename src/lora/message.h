@@ -12,6 +12,7 @@ constexpr size_t MESSAGE_MAX_SIZE = MESSAGE_HEADER_SIZE + MESSAGE_MAX_PAYLOAD;
 // Payload data limits
 constexpr size_t MAX_SENSOR_DATA_LENGTH = 32;  // Maximum sensor data array size
 constexpr size_t MAX_ACTUATOR_PARAMS = 16;     // Maximum actuator parameters array size
+constexpr size_t MAX_EVENT_DATA_LENGTH = 32;   // Maximum event data array size
 
 // Message flags
 constexpr uint8_t MSG_FLAG_RELIABLE = 0x01;   // Requires ACK

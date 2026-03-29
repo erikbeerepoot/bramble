@@ -1,6 +1,7 @@
 #include "greenhouse_mode.h"
 
 #include "hardware/watchdog.h"
+#include "pico/unique_id.h"
 
 #include "../board/board_pins.h"
 #include "../hal/flash.h"
@@ -13,6 +14,17 @@
 #include "../version.h"
 
 constexpr uint16_t HUB_ADDRESS = ADDRESS_HUB;
+
+static uint64_t getDeviceId()
+{
+    pico_unique_board_id_t board_id;
+    pico_get_unique_board_id(&board_id);
+    uint64_t id = 0;
+    for (int i = 0; i < 8; i++) {
+        id = (id << 8) | board_id.id[i];
+    }
+    return id;
+}
 constexpr uint32_t HEARTBEAT_INTERVAL_MS = 60000;  // 60 seconds
 
 static Logger logger("GREEN");
@@ -108,17 +120,18 @@ void GreenhouseMode::onStart()
 
     // Send initial heartbeat for time sync
     logger.info("Sending initial heartbeat for time sync...");
+    uint64_t device_id = getDeviceId();
     uint32_t uptime = 0;
     uint8_t battery_level = 255;  // 255 = external/mains power
     uint8_t signal_strength = 0;
     uint8_t active_sensors = CAP_VALVE_CONTROL;
     uint8_t error_flags = 0;
     messenger_.sendHeartbeat(HUB_ADDRESS, uptime, battery_level, signal_strength, active_sensors,
-                             error_flags);
+                             error_flags, 0, device_id);
 
     // Periodic heartbeat
     task_manager_.addTask(
-        [this](uint32_t time) {
+        [this, device_id](uint32_t time) {
             uint32_t uptime = time / 1000;
             uint8_t battery_level = 255;  // Mains powered
             uint8_t signal_strength = 0;
@@ -132,7 +145,7 @@ void GreenhouseMode::onStart()
             }
 
             messenger_.sendHeartbeat(HUB_ADDRESS, uptime, battery_level, signal_strength,
-                                     active_sensors, error_flags);
+                                     active_sensors, error_flags, 0, device_id);
         },
         HEARTBEAT_INTERVAL_MS, "Heartbeat");
 
