@@ -59,7 +59,15 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
   const [rebooting, setRebooting] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
 
+  const hasSensorData = node.type === NodeType.SENSOR;
+
   const fetchData = useCallback(async () => {
+    if (!hasSensorData) {
+      setLoadingSensorData(false);
+      setLoadingStatistics(false);
+      return;
+    }
+
     // Abort any in-flight request before starting a new one
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -117,7 +125,7 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
       if (reason instanceof DOMException && reason.name === 'AbortError') return;
       setError(reason instanceof Error ? reason.message : 'Failed to fetch data');
     }
-  }, [node.device_id, timeRange, customRange]);
+  }, [node.device_id, timeRange, customRange, hasSensorData]);
 
   useEffect(() => {
     fetchData();
@@ -214,8 +222,8 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-1 space-y-4">
-          {/* 1. Statistics */}
-          {loadingStatistics ? (
+          {/* 1. Statistics (sensor nodes only) */}
+          {hasSensorData && (loadingStatistics ? (
             <div className="card animate-pulse">
               <div className="h-5 w-24 bg-gray-200 rounded mb-4" />
               <div className="space-y-3">
@@ -319,7 +327,7 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
                 </dl>
               </div>
             )
-          )}
+          ))}
 
           {/* 2. Node Info */}
           <NodeNameEditor
@@ -497,62 +505,64 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
             <CurtainControl address={node.address} deviceId={node.device_id} />
           )}
 
-          <div className="card">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-              <h3 className="text-lg font-medium text-gray-900">Sensor Data</h3>
-              <TimeRangeSelector
-                value={timeRange}
-                onChange={setTimeRange}
-                customRange={customRange}
-                onCustomRangeChange={setCustomRange}
-              />
-            </div>
+          {hasSensorData && (
+            <div className="card">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                <h3 className="text-lg font-medium text-gray-900">Sensor Data</h3>
+                <TimeRangeSelector
+                  value={timeRange}
+                  onChange={setTimeRange}
+                  customRange={customRange}
+                  onCustomRangeChange={setCustomRange}
+                />
+              </div>
 
-            {loadingSensorData ? (
-              <div className="space-y-6 animate-pulse">
-                {/* Temperature chart skeleton */}
-                <div>
-                  <div className="h-4 w-28 bg-gray-200 rounded mb-3" />
-                  <div className="h-48 bg-gray-200 rounded" />
+              {loadingSensorData ? (
+                <div className="space-y-6 animate-pulse">
+                  {/* Temperature chart skeleton */}
+                  <div>
+                    <div className="h-4 w-28 bg-gray-200 rounded mb-3" />
+                    <div className="h-48 bg-gray-200 rounded" />
+                  </div>
+                  {/* Humidity chart skeleton */}
+                  <div>
+                    <div className="h-4 w-20 bg-gray-200 rounded mb-3" />
+                    <div className="h-48 bg-gray-200 rounded" />
+                  </div>
                 </div>
-                {/* Humidity chart skeleton */}
-                <div>
-                  <div className="h-4 w-20 bg-gray-200 rounded mb-3" />
-                  <div className="h-48 bg-gray-200 rounded" />
+              ) : error && readings.length === 0 ? (
+                <div className="p-4 bg-red-50 border border-red-200 rounded-md text-red-700">
+                  {error}
                 </div>
-              </div>
-            ) : error && readings.length === 0 ? (
-              <div className="p-4 bg-red-50 border border-red-200 rounded-md text-red-700">
-                {error}
-              </div>
-            ) : readings.length === 0 ? (
-              <div className="text-center py-12 text-gray-500">
-                No sensor data available for this time range.
-              </div>
-            ) : (
-              <div className="space-y-6">
-                <SensorChart
-                  readings={readings}
-                  dataKey="temperature_celsius"
-                  title="Temperature"
-                  yAxisLabel="Celsius"
-                  color="#f97316"
-                  startTime={timeBounds?.start}
-                  endTime={timeBounds?.end}
-                />
-                <SensorChart
-                  readings={readings}
-                  dataKey="humidity_percent"
-                  title="Humidity"
-                  yAxisLabel="Percent"
-                  color="#3b82f6"
-                  startTime={timeBounds?.start}
-                  endTime={timeBounds?.end}
-                />
-                <ErrorEventsTable readings={readings} />
-              </div>
-            )}
-          </div>
+              ) : readings.length === 0 ? (
+                <div className="text-center py-12 text-gray-500">
+                  No sensor data available for this time range.
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  <SensorChart
+                    readings={readings}
+                    dataKey="temperature_celsius"
+                    title="Temperature"
+                    yAxisLabel="Celsius"
+                    color="#f97316"
+                    startTime={timeBounds?.start}
+                    endTime={timeBounds?.end}
+                  />
+                  <SensorChart
+                    readings={readings}
+                    dataKey="humidity_percent"
+                    title="Humidity"
+                    yAxisLabel="Percent"
+                    color="#3b82f6"
+                    startTime={timeBounds?.start}
+                    endTime={timeBounds?.end}
+                  />
+                  <ErrorEventsTable readings={readings} />
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
