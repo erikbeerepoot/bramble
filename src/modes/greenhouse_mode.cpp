@@ -1,7 +1,8 @@
 #include "greenhouse_mode.h"
 
-#include "hardware/watchdog.h"
 #include "pico/unique_id.h"
+
+#include "hardware/watchdog.h"
 
 #include "../board/board_pins.h"
 #include "../hal/flash.h"
