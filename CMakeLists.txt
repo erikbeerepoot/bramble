@@ -272,6 +272,7 @@ else()
             main.cpp
             src/modes/greenhouse_mode.cpp
             src/hal/curtain_controller.cpp
+            src/hal/cht832x.cpp
             src/util/greenhouse_state_machine.cpp
             ${COMMON_SOURCES}
         )

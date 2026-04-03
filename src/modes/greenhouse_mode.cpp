@@ -113,6 +113,26 @@ void GreenhouseMode::onStart()
         logger.warn("PMU client not available - running without RTC backup");
     }
 
+    // Try to detect CHT832X temperature/humidity sensor on I2C
+    sensor_ = std::make_unique<CHT832X>(Board::SENSOR_I2C_PORT, Board::PIN_I2C_SDA,
+                                        Board::PIN_I2C_SCL);
+    if (sensor_->init()) {
+        sensor_available_ = true;
+        logger.info("CHT832X sensor detected — enabling temperature/humidity sensing");
+
+        BatchTransmitter::Config tx_config = {.max_batches_per_cycle = 1,
+                                              .hub_address = HUB_ADDRESS};
+        transmitter_ = std::make_unique<BatchTransmitter>(messenger_, tx_config);
+
+        constexpr uint32_t SENSOR_READ_INTERVAL_MS = 60000;  // 60 seconds
+        task_manager_.addTask(
+            [this](uint32_t time) { readAndTransmitSensorData(time); },
+            SENSOR_READ_INTERVAL_MS, "Sensor read+transmit");
+    } else {
+        logger.info("No CHT832X sensor detected — running as actuator only");
+        sensor_.reset();
+    }
+
     // Orange blinking while waiting for RTC sync
     led_pattern_ = std::make_unique<BlinkingPattern>(led_, 255, 165, 0, 250, 250);
     // Green short blink when operational
@@ -124,7 +144,8 @@ void GreenhouseMode::onStart()
     uint32_t uptime = 0;
     uint8_t battery_level = 255;  // 255 = external/mains power
     uint8_t signal_strength = 0;
-    uint8_t active_sensors = CAP_VALVE_CONTROL;
+    uint8_t active_sensors = CAP_VALVE_CONTROL |
+                                         (sensor_available_ ? (CAP_TEMPERATURE | CAP_HUMIDITY) : 0);
     uint8_t error_flags = 0;
     messenger_.sendHeartbeat(HUB_ADDRESS, uptime, battery_level, signal_strength, active_sensors,
                              error_flags, 0, device_id);
@@ -136,7 +157,8 @@ void GreenhouseMode::onStart()
             uint8_t battery_level = 255;  // Mains powered
             uint8_t signal_strength = 0;
             uint8_t error_flags = 0;
-            uint8_t active_sensors = CAP_VALVE_CONTROL;
+            uint8_t active_sensors = CAP_VALVE_CONTROL |
+                                         (sensor_available_ ? (CAP_TEMPERATURE | CAP_HUMIDITY) : 0);
 
             if (curtain_controller_.isMotorRunning()) {
                 logger.info("Heartbeat: curtain %s, position ~%.0f%%",
@@ -322,6 +344,50 @@ void GreenhouseMode::onFactoryResetRequested()
         logger.warn("PMU not available - performing RP2040-only watchdog reboot");
     }
     watchdog_reboot(0, 0, 0);
+}
+
+void GreenhouseMode::readAndTransmitSensorData(uint32_t /* current_time */)
+{
+    if (!sensor_ || !transmitter_) {
+        return;
+    }
+
+    CHT832X::Reading reading = sensor_->read();
+    if (!reading.valid) {
+        logger.error("Sensor read failed");
+        return;
+    }
+
+    uint32_t unix_timestamp = getUnixTimestamp();
+    if (unix_timestamp == 0) {
+        logger.warn("No RTC time — skipping sensor transmit");
+        return;
+    }
+
+    int16_t temp_fixed = static_cast<int16_t>(reading.temperature * 100.0f);
+    uint16_t hum_fixed = static_cast<uint16_t>(reading.humidity * 100.0f);
+
+    logger.info("Sensor: %.2fC, %.1f%%RH (ts=%lu)", reading.temperature, reading.humidity,
+                unix_timestamp);
+
+    current_reading_ = {.timestamp = unix_timestamp,
+                        .temperature = temp_fixed,
+                        .humidity = hum_fixed,
+                        .flags = 0,
+                        .transmission_status = RECORD_NOT_TRANSMITTED,
+                        .crc16 = 0};
+
+    transmitter_->resetCycleCounter();
+    if (!transmitter_->transmit(&current_reading_, 1, [](bool success) {
+            Logger log("GREEN");
+            if (success) {
+                log.info("Sensor data transmitted successfully");
+            } else {
+                log.warn("Sensor data transmit failed");
+            }
+        })) {
+        logger.error("Failed to initiate sensor transmit");
+    }
 }
 
 void GreenhouseMode::updateGreenhouseState()
