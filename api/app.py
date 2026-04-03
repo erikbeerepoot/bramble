@@ -23,8 +23,8 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.config.from_object(Config)
 
-# Enable CORS for all /api/* routes
-CORS(app, resources={r"/api/*": {"origins": "*"}})
+# Enable CORS for dashboard origin with credentials (needed for Cloudflare Access cookie)
+CORS(app, resources={r"/api/*": {"origins": "https://dashboard.bramble.ag"}}, supports_credentials=True)
 
 # Enable gzip compression for responses
 Compress(app)
