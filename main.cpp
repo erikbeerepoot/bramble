@@ -279,8 +279,10 @@ int main()
         });
 
         // Re-registration callback: hub doesn't recognize us, re-send registration
+        // Reset to unregistered address so we don't send from a stale address
         auto reregistration_callback = [&messenger, device_id, variant]() {
             printf("Re-registering with hub...\n");
+            messenger.setNodeAddress(ADDRESS_UNREGISTERED);
             messenger.sendRegistrationRequest(ADDRESS_HUB, device_id, variant.node_type,
                                               variant.capabilities, BRAMBLE_FIRMWARE_VERSION,
                                               variant.variant_name);
@@ -332,28 +334,26 @@ int main()
                 }
             });
 
-        // Always register on boot - hub returns correct address for our device_id
-        // This ensures address conflicts are detected and resolved
-        log.info("Registering node with hub...");
-        if (attemptRegistration(messenger, lora, config_manager, device_id)) {
-            uint16_t assigned = messenger.getNodeAddress();
-            if (assigned != current_address && current_address != ADDRESS_UNREGISTERED) {
-                log.info("Address changed: 0x%04X -> 0x%04X", current_address, assigned);
-            }
-            current_address = assigned;
-            log.info("Registration successful - using address 0x%04X", current_address);
-        } else {
-            if (current_address != ADDRESS_UNREGISTERED) {
-                log.warn("Registration failed - using saved address 0x%04X", current_address);
-                messenger.setNodeAddress(current_address);
+        // Only register if we don't have a saved address.
+        // If we have one, the hub will request re-registration via PENDING_FLAG_REREGISTER
+        // in the heartbeat response if there's an address conflict.
+        if (current_address == ADDRESS_UNREGISTERED) {
+            log.info("No saved address - registering with hub...");
+            if (attemptRegistration(messenger, lora, config_manager, device_id)) {
+                current_address = messenger.getNodeAddress();
+                log.info("Registration successful - using address 0x%04X", current_address);
             } else {
                 log.error("Registration failed and no saved address!");
             }
+        } else {
+            log.info("Using saved address 0x%04X", current_address);
         }
 
         // Re-registration callback: hub doesn't recognize us, re-send registration
+        // Reset to unregistered address so we don't send from a stale address
         auto reregistration_callback = [&messenger, device_id, variant]() {
             printf("Re-registering with hub...\n");
+            messenger.setNodeAddress(ADDRESS_UNREGISTERED);
             messenger.sendRegistrationRequest(ADDRESS_HUB, device_id, variant.node_type,
                                               variant.capabilities, BRAMBLE_FIRMWARE_VERSION,
                                               variant.variant_name);
