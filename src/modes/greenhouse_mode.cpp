@@ -1,7 +1,8 @@
 #include "greenhouse_mode.h"
 
-#include "hardware/watchdog.h"
 #include "pico/unique_id.h"
+
+#include "hardware/watchdog.h"
 
 #include "../board/board_pins.h"
 #include "../hal/flash.h"
@@ -114,8 +115,8 @@ void GreenhouseMode::onStart()
     }
 
     // Try to detect CHT832X temperature/humidity sensor on I2C
-    sensor_ = std::make_unique<CHT832X>(Board::SENSOR_I2C_PORT, Board::PIN_I2C_SDA,
-                                        Board::PIN_I2C_SCL);
+    sensor_ =
+        std::make_unique<CHT832X>(Board::SENSOR_I2C_PORT, Board::PIN_I2C_SDA, Board::PIN_I2C_SCL);
     if (sensor_->init()) {
         sensor_available_ = true;
         logger.info("CHT832X sensor detected — enabling temperature/humidity sensing");
@@ -125,9 +126,8 @@ void GreenhouseMode::onStart()
         transmitter_ = std::make_unique<BatchTransmitter>(messenger_, tx_config);
 
         constexpr uint32_t SENSOR_READ_INTERVAL_MS = 60000;  // 60 seconds
-        task_manager_.addTask(
-            [this](uint32_t time) { readAndTransmitSensorData(time); },
-            SENSOR_READ_INTERVAL_MS, "Sensor read+transmit");
+        task_manager_.addTask([this](uint32_t time) { readAndTransmitSensorData(time); },
+                              SENSOR_READ_INTERVAL_MS, "Sensor read+transmit");
     } else {
         logger.info("No CHT832X sensor detected — running as actuator only");
         sensor_.reset();
@@ -144,8 +144,8 @@ void GreenhouseMode::onStart()
     uint32_t uptime = 0;
     uint8_t battery_level = 255;  // 255 = external/mains power
     uint8_t signal_strength = 0;
-    uint8_t active_sensors = CAP_VALVE_CONTROL |
-                                         (sensor_available_ ? (CAP_TEMPERATURE | CAP_HUMIDITY) : 0);
+    uint8_t active_sensors =
+        CAP_VALVE_CONTROL | (sensor_available_ ? (CAP_TEMPERATURE | CAP_HUMIDITY) : 0);
     uint8_t error_flags = 0;
     messenger_.sendHeartbeat(HUB_ADDRESS, uptime, battery_level, signal_strength, active_sensors,
                              error_flags, 0, device_id);
@@ -157,8 +157,8 @@ void GreenhouseMode::onStart()
             uint8_t battery_level = 255;  // Mains powered
             uint8_t signal_strength = 0;
             uint8_t error_flags = 0;
-            uint8_t active_sensors = CAP_VALVE_CONTROL |
-                                         (sensor_available_ ? (CAP_TEMPERATURE | CAP_HUMIDITY) : 0);
+            uint8_t active_sensors =
+                CAP_VALVE_CONTROL | (sensor_available_ ? (CAP_TEMPERATURE | CAP_HUMIDITY) : 0);
 
             if (curtain_controller_.isMotorRunning()) {
                 logger.info("Heartbeat: curtain %s, position ~%.0f%%",
