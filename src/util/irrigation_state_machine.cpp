@@ -103,8 +103,7 @@ void IrrigationStateMachine::reportUpdateApplied()
 
 void IrrigationStateMachine::reportUpdateFailed()
 {
-    if (state_ != IrrigationState::CHECKING_UPDATES &&
-        state_ != IrrigationState::APPLYING_UPDATE) {
+    if (state_ != IrrigationState::CHECKING_UPDATES && state_ != IrrigationState::APPLYING_UPDATE) {
         logger.warn("reportUpdateFailed() called in unexpected state: %s", stateName(state_));
         return;
     }

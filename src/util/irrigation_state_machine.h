@@ -243,8 +243,7 @@ public:
      */
     bool isTimeSynced() const
     {
-        return state_ != IrrigationState::INITIALIZING &&
-               state_ != IrrigationState::REGISTERING &&
+        return state_ != IrrigationState::INITIALIZING && state_ != IrrigationState::REGISTERING &&
                state_ != IrrigationState::AWAITING_TIME &&
                state_ != IrrigationState::SYNCING_TIME && state_ != IrrigationState::ERROR;
     }

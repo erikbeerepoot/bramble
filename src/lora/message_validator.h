@@ -124,7 +124,8 @@ public:
             case MSG_TYPE_EVENT:
                 // For event: event_code (2 bytes), data_length (1 byte), data[]
                 // data_length is at offset 2
-                return validateVariablePayload(payload, payload_length, 3, MAX_EVENT_DATA_LENGTH, 2);
+                return validateVariablePayload(payload, payload_length, 3, MAX_EVENT_DATA_LENGTH,
+                                               2);
 
             default:
                 return false;
