@@ -192,7 +192,7 @@ else()
         src/config/node_config.cpp
         src/config/hub_config.cpp
         src/storage/sensor_flash_buffer.cpp
-        src/util/work_tracker.cpp
+
         src/util/task_queue.cpp
         src/util/base_state_machine.cpp
         src/util/sensor_state_machine.cpp
