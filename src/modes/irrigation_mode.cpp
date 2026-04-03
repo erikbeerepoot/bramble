@@ -41,8 +41,7 @@ void IrrigationMode::onStart()
     // valve_controller_.initialize();
 
     // Set up state machine callback - drives all side effects
-    irrigation_state_.setCallback(
-        [this](IrrigationState state) { this->onStateChange(state); });
+    irrigation_state_.setCallback([this](IrrigationState state) { this->onStateChange(state); });
 
     // Initialize PMU client at 9600 baud to match STM32 LPUART configuration
     pmu_client_ =
@@ -171,8 +170,8 @@ void IrrigationMode::requestTimeSync()
             if (rtc_set_datetime(&dt)) {
                 sleep_us(64);
                 Logger::syncSubsecondCounter();
-                logger.info("RTC synced from PMU: %04d-%02d-%02d %02d:%02d:%02d", dt.year,
-                            dt.month, dt.day, dt.hour, dt.min, dt.sec);
+                logger.info("RTC synced from PMU: %04d-%02d-%02d %02d:%02d:%02d", dt.year, dt.month,
+                            dt.day, dt.hour, dt.min, dt.sec);
                 switchToOperationalPattern();
                 irrigation_state_.reportTimeSyncComplete();
             } else {
