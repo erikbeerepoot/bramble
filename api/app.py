@@ -633,6 +633,17 @@ def add_schedule(device_id: int):
         if errors:
             return jsonify({'error': 'Validation failed', 'details': errors}), 400
 
+        # Persist schedule locally so GET /schedules returns intended state
+        db.store_schedule(
+            device_id=device_id,
+            index=data['index'],
+            hour=data['hour'],
+            minute=data['minute'],
+            duration=data['duration'],
+            days=data['days'],
+            valve=data['valve']
+        )
+
         # Queue command for delivery (uses address for hub routing)
         from command_queue import queue_set_schedule
 
@@ -682,6 +693,9 @@ def remove_schedule(device_id: int, index: int):
 
         address = node_info['address']
 
+        # Remove from local schedule storage
+        db.delete_schedule(device_id=device_id, index=index)
+
         # Queue command for delivery (uses address for hub routing)
         from command_queue import queue_remove_schedule
 
@@ -698,6 +712,177 @@ def remove_schedule(device_id: int, index: int):
 
     except Exception as e:
         logger.error(f"Error removing schedule {index} for node {device_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/nodes/<int:device_id>/schedules', methods=['GET'])
+def get_schedules(device_id: int):
+    """Get all irrigation schedules for a node.
+
+    Returns the intended schedule state from local storage. Schedules are
+    queued asynchronously for delivery, so this reflects what the user has
+    configured, not necessarily what the node has received.
+
+    Args:
+        device_id: Device ID (64-bit hardware unique ID)
+
+    Returns:
+        JSON array of schedule entries
+    """
+    try:
+        db = get_database()
+        schedules = db.get_schedules(device_id)
+        return jsonify({
+            'device_id': str(device_id),
+            'count': len(schedules),
+            'schedules': schedules,
+        })
+    except Exception as e:
+        logger.error(f"Error getting schedules for node {device_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/nodes/<int:device_id>/valve', methods=['POST'])
+def run_valve(device_id: int):
+    """Run a valve for a specified duration (run-once).
+
+    Queues a one-shot PMU schedule entry that will open the valve at the
+    next wake and auto-close after the specified duration.
+
+    Args:
+        device_id: Device ID (64-bit hardware unique ID)
+
+    Request body:
+        {
+            "valve": 0,
+            "duration_seconds": 900
+        }
+
+    Returns:
+        JSON response with task_id for tracking (202 Accepted)
+    """
+    try:
+        db = get_database()
+        node_info = db.get_node_by_device_id(device_id)
+        if not node_info or not node_info.get('address'):
+            return jsonify({'error': f'Node with device_id {device_id} not found'}), 404
+
+        address = node_info['address']
+
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Request body must be JSON'}), 400
+
+        valve = data.get('valve')
+        duration_seconds = data.get('duration_seconds')
+
+        if valve is None or duration_seconds is None:
+            return jsonify({'error': 'Missing required fields: valve, duration_seconds'}), 400
+
+        if valve not in (0, 1):
+            return jsonify({'error': 'valve must be 0 or 1'}), 400
+
+        if not 1 <= duration_seconds <= 7200:
+            return jsonify({'error': 'duration_seconds must be 1-7200'}), 400
+
+        # Send actuator ON command with duration as param (firmware handles auto-off)
+        from command_queue import queue_send_actuator
+
+        actuator_type = 3  # ACTUATOR_VALVE
+        command = 1  # CMD_TURN_ON
+        result = queue_send_actuator(
+            node_address=address,
+            actuator_type=actuator_type,
+            command=command,
+            param=valve,
+        )
+
+        # Also queue the duration as a separate schedule entry (index 7, one-shot)
+        # so the PMU will auto-close the valve after the specified duration
+        from command_queue import queue_set_schedule
+        from datetime import datetime
+
+        now = datetime.now()
+        # Schedule to run immediately (current time + 1 minute buffer)
+        run_hour = now.hour
+        run_minute = now.minute
+
+        queue_set_schedule(
+            node_address=address,
+            index=7,  # Use last slot for run-once
+            hour=run_hour,
+            minute=run_minute,
+            duration=duration_seconds,
+            days=127,  # All days (one-shot will be cleared by firmware)
+            valve=valve,
+        )
+
+        return jsonify({
+            'status': 'queued',
+            'task_id': result.id,
+            'device_id': str(device_id),
+            'address': address,
+            'valve': valve,
+            'duration_seconds': duration_seconds,
+            'message': f'Valve {valve} run-once command queued ({duration_seconds}s)'
+        }), 202
+
+    except Exception as e:
+        logger.error(f"Error running valve for node {device_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/nodes/<int:device_id>/valve/stop', methods=['POST'])
+def stop_valve(device_id: int):
+    """Stop a running valve immediately.
+
+    Args:
+        device_id: Device ID (64-bit hardware unique ID)
+
+    Request body:
+        { "valve": 0 }
+
+    Returns:
+        JSON response with task_id for tracking (202 Accepted)
+    """
+    try:
+        db = get_database()
+        node_info = db.get_node_by_device_id(device_id)
+        if not node_info or not node_info.get('address'):
+            return jsonify({'error': f'Node with device_id {device_id} not found'}), 404
+
+        address = node_info['address']
+
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Request body must be JSON'}), 400
+
+        valve = data.get('valve')
+        if valve is None or valve not in (0, 1):
+            return jsonify({'error': 'valve must be 0 or 1'}), 400
+
+        from command_queue import queue_send_actuator
+
+        actuator_type = 3  # ACTUATOR_VALVE
+        command = 0  # CMD_TURN_OFF
+        result = queue_send_actuator(
+            node_address=address,
+            actuator_type=actuator_type,
+            command=command,
+            param=valve,
+        )
+
+        return jsonify({
+            'status': 'queued',
+            'task_id': result.id,
+            'device_id': str(device_id),
+            'address': address,
+            'valve': valve,
+            'message': f'Valve {valve} stop command queued'
+        }), 202
+
+    except Exception as e:
+        logger.error(f"Error stopping valve for node {device_id}: {e}")
         return jsonify({'error': str(e)}), 500
 
 

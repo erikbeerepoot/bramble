@@ -209,6 +209,18 @@ class SensorDatabase:
 
     CREATE INDEX IF NOT EXISTS idx_events_device_time
         ON node_events(device_id, timestamp);
+
+    CREATE TABLE IF NOT EXISTS irrigation_schedules (
+        device_id UBIGINT NOT NULL,
+        schedule_index INTEGER NOT NULL,
+        hour INTEGER NOT NULL,
+        minute INTEGER NOT NULL,
+        duration INTEGER NOT NULL,
+        days INTEGER NOT NULL,
+        valve INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (device_id, schedule_index)
+    );
     """
 
     def __init__(self, db_path: str = Config.SENSOR_DB_PATH):
@@ -1265,6 +1277,7 @@ class SensorDatabase:
             conn.execute("DELETE FROM node_status_history WHERE device_id = ?", (device_id,))
             conn.execute("DELETE FROM node_status WHERE device_id = ?", (device_id,))
             conn.execute("DELETE FROM node_metadata WHERE device_id = ?", (device_id,))
+            conn.execute("DELETE FROM irrigation_schedules WHERE device_id = ?", (device_id,))
             conn.execute("DELETE FROM nodes WHERE device_id = ?", (device_id,))
 
             logger.info(f"Deleted node with device_id {device_id} and all associated data")
@@ -1381,3 +1394,87 @@ class SensorDatabase:
         except duckdb.Error as e:
             logger.error(f"Failed to query events: {e}")
             return []
+
+    def store_schedule(self, device_id: int, index: int, hour: int, minute: int,
+                       duration: int, days: int, valve: int) -> bool:
+        """Store an irrigation schedule entry (upsert).
+
+        Args:
+            device_id: Device identifier
+            index: Schedule index (0-7)
+            hour: Hour (0-23)
+            minute: Minute (0-59)
+            duration: Duration in seconds
+            days: Day-of-week bitmask (127 = all days)
+            valve: Valve index
+
+        Returns:
+            True if stored successfully
+        """
+        try:
+            now = int(time.time())
+            with self._get_connection() as conn:
+                conn.execute("""
+                    INSERT INTO irrigation_schedules
+                        (device_id, schedule_index, hour, minute, duration, days, valve, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT (device_id, schedule_index)
+                    DO UPDATE SET hour = ?, minute = ?, duration = ?, days = ?, valve = ?, created_at = ?
+                """, (device_id, index, hour, minute, duration, days, valve, now,
+                      hour, minute, duration, days, valve, now))
+                return True
+        except duckdb.Error as e:
+            logger.error(f"Failed to store schedule: {e}")
+            return False
+
+    def get_schedules(self, device_id: int) -> list[dict]:
+        """Get all irrigation schedules for a device.
+
+        Args:
+            device_id: Device identifier
+
+        Returns:
+            List of schedule dicts
+        """
+        try:
+            with self._get_connection() as conn:
+                result = conn.execute("""
+                    SELECT schedule_index, hour, minute, duration, days, valve, created_at
+                    FROM irrigation_schedules
+                    WHERE device_id = ?
+                    ORDER BY schedule_index
+                """, (device_id,))
+                rows = result.fetchall()
+                return [{
+                    'index': row[0],
+                    'hour': row[1],
+                    'minute': row[2],
+                    'duration': row[3],
+                    'days': row[4],
+                    'valve': row[5],
+                    'created_at': row[6],
+                } for row in rows]
+        except duckdb.Error as e:
+            logger.error(f"Failed to get schedules: {e}")
+            return []
+
+    def delete_schedule(self, device_id: int, index: int) -> bool:
+        """Delete an irrigation schedule entry.
+
+        Args:
+            device_id: Device identifier
+            index: Schedule index (0-7)
+
+        Returns:
+            True if deleted successfully
+        """
+        try:
+            with self._get_connection() as conn:
+                conn.execute("""
+                    DELETE FROM irrigation_schedules
+                    WHERE device_id = ? AND schedule_index = ?
+                """, (device_id, index))
+                return True
+        except duckdb.Error as e:
+            logger.error(f"Failed to delete schedule: {e}")
+            return False
