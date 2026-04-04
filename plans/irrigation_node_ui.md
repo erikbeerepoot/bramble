@@ -39,12 +39,13 @@ Same structure as existing NodeDetail, but the right 2-col area shows **Irrigati
 │ Node Name                          [Refresh]    │
 │ ● Online  IRRIGATION                            │
 ├──────────────┬──────────────────────────────────┤
-│ Node Info    │  ┌─ Valve Control ─────────────┐ │
-│ (name/zone)  │  │ Valve 1: [ON] [OFF]  ● Off  │ │
-│              │  │ Valve 2: [ON] [OFF]  ● Off  │ │
-│ Node Status  │  │ ⚠ Best-effort: node must    │ │
-│ (battery,    │  │   be awake to receive       │ │
-│  signal,     │  └─────────────────────────────┘ │
+│ Node Info    │  ┌─ Run Once ───────────────────┐ │
+│ (name/zone)  │  │ Valve 1  [5m][15m][30m][__] │ │
+│              │  │                       [Run] │ │
+│ Node Status  │  │ Valve 2  [5m][15m][30m][__] │ │
+│ (battery,    │  │                       [Run] │ │
+│  signal,     │  │ ⚠ Node must be awake        │ │
+│              │  └─────────────────────────────┘ │
 │  uptime)     │                                  │
 │              │  ┌─ Schedules ─────────────────┐ │
 │ Advanced     │  │ ┌──────────────────────────┐│ │
@@ -71,12 +72,14 @@ Same structure as existing NodeDetail, but the right 2-col area shows **Irrigati
 
 Three sections, each in its own card:
 
-#### 1. Valve Control (Manual)
+#### 1. Run Once (Manual Watering)
 - Two rows, one per valve
-- Each row: valve label, ON button (green), OFF button (red), status indicator
-- Status dot: green = on, gray = off (based on last command sent, not live — best-effort)
-- Info note: "Commands are best-effort — the node must be awake to receive them"
-- API: `POST /api/nodes/<device_id>/valve` with `{ valve: 0|1, action: "on"|"off" }`
+- Each row: valve label, duration picker (preset buttons: 5m, 15m, 30m, or custom minutes), [Run] button
+- When triggered, sends a "run once" command: opens the valve, auto-closes after the specified duration
+- Info note: "Best-effort — the node must be awake to receive the command"
+- No raw on/off — eliminates the risk of forgetting a valve open
+- API: `POST /api/nodes/<device_id>/valve` with `{ valve: 0|1, duration_seconds: 900 }`
+- The auto-off is handled by the PMU scheduled wake: hub queues a SET_SCHEDULE with a one-shot entry (or the firmware handles a timed valve command directly)
 
 #### 2. Schedules
 - List of active schedules, fetched from server-side storage
@@ -107,13 +110,16 @@ Add to `EVENT_CODE_NAMES` in types:
 ### API Changes Needed
 
 #### 1. `POST /api/nodes/<device_id>/valve` (new)
-Send a manual valve on/off actuator command. Reuses `queue_send_actuator` with `ACTUATOR_VALVE`.
+Send a "run once" valve command with auto-off after specified duration.
 
 ```python
 @app.route('/api/nodes/<int:device_id>/valve', methods=['POST'])
-def control_valve(device_id):
-    # body: { "valve": 0, "action": "on" | "off" }
-    # maps to ACTUATOR_VALVE + CMD_TURN_ON/CMD_TURN_OFF + valve_id param
+def run_valve_once(device_id):
+    # body: { "valve": 0, "duration_seconds": 900 }
+    # Implementation options:
+    # a) Queue a one-shot PMU schedule entry (hub sets schedule, PMU wakes node and runs it)
+    # b) Send actuator CMD_TURN_ON + queue a delayed CMD_TURN_OFF (fragile if node sleeps)
+    # Recommend (a) — PMU handles the timing reliably even through sleep cycles
 ```
 
 #### 2. `GET /api/nodes/<device_id>/schedules` (new)
@@ -157,4 +163,5 @@ Same pattern as the existing greenhouse/curtain conditional.
 ## Open Questions
 
 - Should schedules show a "pending delivery" status? (The node may not have received the schedule yet if it's sleeping.) **Recommendation**: yes, show a subtle "queued" badge if the schedule was just created and the node hasn't pulled updates yet.
-- Do we need a "close all valves" emergency button? **Recommendation**: yes, add a red emergency-stop style button at the top of valve control.
+- Do we need a "stop" button for an in-progress run-once? **Recommendation**: yes, show a "Stop" button when a run-once is active (sends CMD_TURN_OFF). Best-effort since node must be awake.
+- How does "run once" interact with the PMU sleep cycle? If the node is asleep, the command can't reach it. Options: (a) queue a one-shot schedule via PMU so the node wakes at the right time, or (b) only allow run-once when node is online. Recommend starting with (b) for simplicity, with a clear "node is offline" disabled state.
