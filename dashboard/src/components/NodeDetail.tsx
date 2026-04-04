@@ -19,6 +19,7 @@ import {
 import { getNodeSensorData, getNodeStatistics, deleteNode, rebootNode } from '../api/client';
 import { NodeType } from '../types';
 import CurtainControl from './CurtainControl';
+import IrrigationControl from './IrrigationControl';
 import NodeNameEditor from './NodeNameEditor';
 import SensorChart from './SensorChart';
 import ErrorEventsTable from './ErrorEventsTable';
@@ -503,6 +504,10 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
         <div className="lg:col-span-2 space-y-4">
           {node.type === NodeType.GREENHOUSE && (
             <CurtainControl address={node.address} deviceId={node.device_id} />
+          )}
+
+          {node.type === NodeType.IRRIGATION && (
+            <IrrigationControl deviceId={node.device_id} />
           )}
 
           {hasSensorData && (

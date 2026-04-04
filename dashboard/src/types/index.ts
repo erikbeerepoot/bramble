@@ -251,10 +251,53 @@ export const EVENT_CODE_NAMES: Record<number, string> = {
   0x0102: 'Curtain Stopped',
   0x0103: 'Motor Error',
   0x0104: 'Calibration Complete',
+  0x0200: 'Valve 1 Opened',
+  0x0201: 'Valve 1 Closed',
+  0x0202: 'Valve 2 Opened',
+  0x0203: 'Valve 2 Closed',
 };
 
 export function getEventName(code: number): string {
   return EVENT_CODE_NAMES[code] || `Event 0x${code.toString(16).padStart(4, '0')}`;
+}
+
+// Irrigation schedule types
+export interface IrrigationSchedule {
+  index: number;
+  hour: number;
+  minute: number;
+  duration: number;  // seconds
+  days: number;      // bitmask (127 = all days)
+  valve: number;
+  created_at: number;
+}
+
+export interface IrrigationSchedulesResponse {
+  device_id: string;
+  count: number;
+  schedules: IrrigationSchedule[];
+}
+
+export const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
+
+export function formatDays(daysMask: number): string {
+  if (daysMask === 127) return 'Every day';
+  if (daysMask === 62) return 'Weekdays';
+  if (daysMask === 65) return 'Weekends';
+  const days: string[] = [];
+  for (let i = 0; i < 7; i++) {
+    if (daysMask & (1 << i)) {
+      days.push(DAY_LABELS[i]);
+    }
+  }
+  return days.join(', ');
+}
+
+export function formatDuration(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (seconds % 60 === 0) return `${minutes}min`;
+  return `${minutes}m ${seconds % 60}s`;
 }
 
 export type TimeRange = '1h' | '6h' | '24h' | '7d' | '30d' | 'custom';

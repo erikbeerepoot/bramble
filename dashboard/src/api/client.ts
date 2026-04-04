@@ -8,6 +8,7 @@ import type {
   Zone,
   ZonesResponse,
   NodeEventsResponse,
+  IrrigationSchedulesResponse,
 } from '../types';
 
 const API_URL_KEY = 'bramble_api_url';
@@ -199,6 +200,61 @@ export async function getNodeEvents(
 
   const query = params.toString();
   return fetchApi<NodeEventsResponse>(`/api/nodes/${deviceId}/events${query ? `?${query}` : ''}`);
+}
+
+// Irrigation API methods
+
+export async function getIrrigationSchedules(
+  deviceId: string
+): Promise<IrrigationSchedulesResponse> {
+  return fetchApi<IrrigationSchedulesResponse>(`/api/nodes/${deviceId}/schedules`);
+}
+
+export async function addIrrigationSchedule(
+  deviceId: string,
+  schedule: {
+    index: number;
+    hour: number;
+    minute: number;
+    duration: number;
+    days: number;
+    valve: number;
+  }
+): Promise<{ status: string; task_id: string; message: string }> {
+  return fetchApi(`/api/nodes/${deviceId}/schedules`, {
+    method: 'POST',
+    body: JSON.stringify(schedule),
+  });
+}
+
+export async function deleteIrrigationSchedule(
+  deviceId: string,
+  index: number
+): Promise<{ status: string; task_id: string; message: string }> {
+  return fetchApi(`/api/nodes/${deviceId}/schedules/${index}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function runValve(
+  deviceId: string,
+  valve: number,
+  durationSeconds: number
+): Promise<{ status: string; task_id: string; message: string }> {
+  return fetchApi(`/api/nodes/${deviceId}/valve`, {
+    method: 'POST',
+    body: JSON.stringify({ valve, duration_seconds: durationSeconds }),
+  });
+}
+
+export async function stopValve(
+  deviceId: string,
+  valve: number
+): Promise<{ status: string; task_id: string; message: string }> {
+  return fetchApi(`/api/nodes/${deviceId}/valve/stop`, {
+    method: 'POST',
+    body: JSON.stringify({ valve }),
+  });
 }
 
 export async function controlCurtain(
