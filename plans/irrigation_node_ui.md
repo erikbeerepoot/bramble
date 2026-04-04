@@ -163,5 +163,5 @@ Same pattern as the existing greenhouse/curtain conditional.
 ## Open Questions
 
 - Should schedules show a "pending delivery" status? (The node may not have received the schedule yet if it's sleeping.) **Recommendation**: yes, show a subtle "queued" badge if the schedule was just created and the node hasn't pulled updates yet.
-- Do we need a "stop" button for an in-progress run-once? **Recommendation**: yes, show a "Stop" button when a run-once is active (sends CMD_TURN_OFF). Best-effort since node must be awake.
-- How does "run once" interact with the PMU sleep cycle? If the node is asleep, the command can't reach it. Options: (a) queue a one-shot schedule via PMU so the node wakes at the right time, or (b) only allow run-once when node is online. Recommend starting with (b) for simplicity, with a clear "node is offline" disabled state.
+- **Run-once delivery**: Queue a one-shot PMU schedule entry. The PMU will wake the node at the right time and run the valve for the specified duration. Works even if the node is currently asleep.
+- **Stop button**: Show a "Stop" button while a run-once is active. Since the node is necessarily awake during a valve run, the stop command (CMD_TURN_OFF) should arrive quickly.
