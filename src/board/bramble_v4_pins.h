@@ -24,39 +24,39 @@ namespace Board {
 // Pin 1 = +3V3, Pin 2 = +9V, Pin 11 = VDD, Pin 12 = GND on all headers
 // ==========================================================================
 
-namespace J6 {  // Motor/Valve connector (GPIO 28-35)
-    constexpr uint8_t PIN_3  = 35;  // VALVE_3
-    constexpr uint8_t PIN_4  = 34;  // MOTOR_LO_2
-    constexpr uint8_t PIN_5  = 33;  // VALVE_4
-    constexpr uint8_t PIN_6  = 32;  // MOTOR_LO_1
-    constexpr uint8_t PIN_7  = 31;  // VALVE_2
-    constexpr uint8_t PIN_8  = 30;  // MOTOR_HI_2
-    constexpr uint8_t PIN_9  = 29;  // VALVE_1
-    constexpr uint8_t PIN_10 = 28;  // MOTOR_HI_1
-}
+namespace J6 {                  // Motor/Valve connector (GPIO 28-35)
+constexpr uint8_t PIN_3 = 35;   // VALVE_3
+constexpr uint8_t PIN_4 = 34;   // MOTOR_LO_2
+constexpr uint8_t PIN_5 = 33;   // VALVE_4
+constexpr uint8_t PIN_6 = 32;   // MOTOR_LO_1
+constexpr uint8_t PIN_7 = 31;   // VALVE_2
+constexpr uint8_t PIN_8 = 30;   // MOTOR_HI_2
+constexpr uint8_t PIN_9 = 29;   // VALVE_1
+constexpr uint8_t PIN_10 = 28;  // MOTOR_HI_1
+}  // namespace J6
 
 namespace J7 {  // GPIO/debug header (GPIO 36-43)
-    // PCB silkscreen uses v3 numbering — real RP2350B GPIOs listed here
-    constexpr uint8_t PIN_3  = 43;  // labeled GPIO43_ADC3
-    constexpr uint8_t PIN_4  = 42;  // labeled GPIO42_ADC2
-    constexpr uint8_t PIN_5  = 41;  // labeled GPIO41_ADC1
-    constexpr uint8_t PIN_6  = 40;  // labeled GPIO40_ADC0
-    constexpr uint8_t PIN_7  = 39;  // labeled GPIO31
-    constexpr uint8_t PIN_8  = 38;  // labeled GPIO30
-    constexpr uint8_t PIN_9  = 37;  // labeled GPIO29
-    constexpr uint8_t PIN_10 = 36;  // labeled GPIO28
-}
+// PCB silkscreen uses v3 numbering — real RP2350B GPIOs listed here
+constexpr uint8_t PIN_3 = 43;   // labeled GPIO43_ADC3
+constexpr uint8_t PIN_4 = 42;   // labeled GPIO42_ADC2
+constexpr uint8_t PIN_5 = 41;   // labeled GPIO41_ADC1
+constexpr uint8_t PIN_6 = 40;   // labeled GPIO40_ADC0
+constexpr uint8_t PIN_7 = 39;   // labeled GPIO31
+constexpr uint8_t PIN_8 = 38;   // labeled GPIO30
+constexpr uint8_t PIN_9 = 37;   // labeled GPIO29
+constexpr uint8_t PIN_10 = 36;  // labeled GPIO28
+}  // namespace J7
 
 namespace J8 {  // General purpose header (GPIO 20-27)
-    constexpr uint8_t PIN_3  = 26;
-    constexpr uint8_t PIN_4  = 27;
-    constexpr uint8_t PIN_5  = 24;
-    constexpr uint8_t PIN_6  = 25;
-    constexpr uint8_t PIN_7  = 22;
-    constexpr uint8_t PIN_8  = 23;
-    constexpr uint8_t PIN_9  = 20;
-    constexpr uint8_t PIN_10 = 21;
-}
+constexpr uint8_t PIN_3 = 26;
+constexpr uint8_t PIN_4 = 27;
+constexpr uint8_t PIN_5 = 24;
+constexpr uint8_t PIN_6 = 25;
+constexpr uint8_t PIN_7 = 22;
+constexpr uint8_t PIN_8 = 23;
+constexpr uint8_t PIN_9 = 20;
+constexpr uint8_t PIN_10 = 21;
+}  // namespace J8
 
 // ==========================================================================
 // Functional pin assignments (reference header pins)
@@ -91,8 +91,8 @@ constexpr uint PIN_NEOPIXEL = 4;
 
 // --- I2C (sensors) --- (J8 pins 3/4)
 inline auto SENSOR_I2C_PORT = i2c1;
-constexpr uint PIN_I2C_SDA = J8::PIN_3;   // GPIO 26
-constexpr uint PIN_I2C_SCL = J8::PIN_4;   // GPIO 27
+constexpr uint PIN_I2C_SDA = J8::PIN_3;  // GPIO 26
+constexpr uint PIN_I2C_SCL = J8::PIN_4;  // GPIO 27
 
 // --- Analog/digital inputs ---
 constexpr uint PIN_A0 = J8::PIN_3;  // GPIO 26
@@ -116,10 +116,10 @@ constexpr uint8_t PIN_MOTOR_HI_2 = J7::PIN_8;   // GPIO 38
 constexpr uint8_t PIN_MOTOR_LO_1 = J7::PIN_6;   // GPIO 40
 constexpr uint8_t PIN_MOTOR_LO_2 = J7::PIN_4;   // GPIO 42
 constexpr uint8_t VALVE_PINS[NUM_VALVES] = {
-    J7::PIN_9,   // VALVE_1 = GPIO 37
-    J7::PIN_7,   // VALVE_2 = GPIO 39
-    J7::PIN_3,   // VALVE_3 = GPIO 43
-    J7::PIN_5,   // VALVE_4 = GPIO 41
+    J7::PIN_9,  // VALVE_1 = GPIO 37
+    J7::PIN_7,  // VALVE_2 = GPIO 39
+    J7::PIN_3,  // VALVE_3 = GPIO 43
+    J7::PIN_5,  // VALVE_4 = GPIO 41
 };
 
 // --- Curtain motor pins (greenhouse variant, J8 header) ---
