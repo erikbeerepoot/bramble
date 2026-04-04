@@ -30,8 +30,8 @@
 #endif
 
 // --- UART defaults ---
-// Default UART0 on GPIO28/29 for debug probe (stdio)
-// PMU uses UART1 on GPIO8/9 (configured in firmware)
+// Stdio on UART0 GPIO28/29 (J6 header pins 10/9)
+// PMU uses UART1 on GPIO8/9 — no peripheral conflict
 #ifndef PICO_DEFAULT_UART
 #define PICO_DEFAULT_UART 0
 #endif
