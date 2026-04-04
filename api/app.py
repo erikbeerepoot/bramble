@@ -125,6 +125,16 @@ def _build_nodes_from_database():
     now = int(time.time())
     nodes = []
 
+    # Look up node_type from nodes table (node_status doesn't store it)
+    all_nodes_info = {}
+    try:
+        with db._get_connection() as conn:
+            rows = conn.execute("SELECT device_id, node_type FROM nodes").fetchall()
+            for row in rows:
+                all_nodes_info[row[0]] = row[1]
+    except Exception:
+        pass
+
     for device_id, status in all_status.items():
         updated_at = status.get('updated_at', 0)
         last_seen_seconds = now - updated_at if updated_at else 0
@@ -133,7 +143,7 @@ def _build_nodes_from_database():
         node = Node(
             device_id=device_id,
             address=status.get('address', 0),
-            node_type='SENSOR',  # Default; node_type not stored in node_status
+            node_type=all_nodes_info.get(device_id, 'SENSOR'),
             online=online,
             last_seen_seconds=last_seen_seconds,
             firmware_version=None  # Only available from hub memory
@@ -292,10 +302,14 @@ def get_node(device_id: int):
         updated_at = status.get('updated_at', 0)
         last_seen_seconds = now - updated_at if updated_at else 0
 
+        # Look up node_type from nodes table
+        node_info = db.get_node_by_device_id(device_id)
+        node_type = node_info.get('node_type', 'SENSOR') if node_info else 'SENSOR'
+
         node = Node(
             device_id=device_id,
             address=status.get('address', 0),
-            node_type='SENSOR',
+            node_type=node_type,
             online=last_seen_seconds < 300,
             last_seen_seconds=last_seen_seconds,
             firmware_version=None
