@@ -36,9 +36,8 @@ void IrrigationMode::onStart()
         logger.info("No saved address - will register on first PMU wake");
     }
 
-    // Initialize valve controller
-    // TODO: Re-enable after UART debug testing - GPIO24 conflict
-    // valve_controller_.initialize();
+    // Initialize valve controller (closes all valves to ensure known state)
+    valve_controller_.initialize();
 
     // Set up state machine callback - drives all side effects
     irrigation_state_.setCallback([this](IrrigationState state) { this->onStateChange(state); });
