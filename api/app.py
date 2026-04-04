@@ -161,6 +161,35 @@ def _build_nodes_from_database():
     })
 
 
+def _resolve_node_address(device_id: int) -> Optional[int]:
+    """Resolve a node's network address from its device_id.
+
+    Queries the hub first (live data), falls back to the database.
+    Returns the address or None if the node cannot be found.
+    """
+    try:
+        serial = get_serial()
+        responses = serial.send_command('LIST_NODES', timeout=2.0)
+        if responses and responses[0].startswith('NODE_LIST'):
+            for line in responses[1:]:
+                if line.startswith('NODE '):
+                    parts = line.split()
+                    if len(parts) >= 6 and int(parts[2]) == device_id:
+                        return int(parts[1])
+    except Exception as e:
+        logger.warning(f"Hub lookup failed for device_id {device_id}: {e}")
+
+    try:
+        db = get_database()
+        node_info = db.get_node_by_device_id(device_id)
+        if node_info and node_info.get('address'):
+            return node_info['address']
+    except Exception as e:
+        logger.warning(f"Database lookup failed for device_id {device_id}: {e}")
+
+    return None
+
+
 @app.route('/api/nodes', methods=['GET'])
 def list_nodes():
     """List all registered nodes.
@@ -776,12 +805,9 @@ def run_valve(device_id: int):
         JSON response with task_id for tracking (202 Accepted)
     """
     try:
-        db = get_database()
-        node_info = db.get_node_by_device_id(device_id)
-        if not node_info or not node_info.get('address'):
+        address = _resolve_node_address(device_id)
+        if address is None:
             return jsonify({'error': f'Node with device_id {device_id} not found'}), 404
-
-        address = node_info['address']
 
         data = request.get_json()
         if not data:
@@ -860,12 +886,9 @@ def stop_valve(device_id: int):
         JSON response with task_id for tracking (202 Accepted)
     """
     try:
-        db = get_database()
-        node_info = db.get_node_by_device_id(device_id)
-        if not node_info or not node_info.get('address'):
+        address = _resolve_node_address(device_id)
+        if address is None:
             return jsonify({'error': f'Node with device_id {device_id} not found'}), 404
-
-        address = node_info['address']
 
         data = request.get_json()
         if not data:
