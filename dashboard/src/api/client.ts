@@ -18,7 +18,7 @@ function getBaseUrl(): string {
   if (stored) {
     return stored;
   }
-  return import.meta.env.VITE_API_URL || 'http://localhost:5000';
+  return import.meta.env.VITE_API_URL || '';
 }
 
 export function setApiUrl(url: string): void {
