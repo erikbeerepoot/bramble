@@ -14,16 +14,12 @@ interface IrrigationControlProps {
   deviceId: string;
 }
 
-const DURATION_PRESETS = [
-  { label: '5m', seconds: 300 },
-  { label: '15m', seconds: 900 },
-  { label: '30m', seconds: 1800 },
-];
+// Non-linear notches: fine-grained at short durations, coarser for long runs
+const DURATION_NOTCHES = [5, 10, 15, 20, 30, 45, 60, 90, 120]; // minutes
 
 function IrrigationControl({ deviceId }: IrrigationControlProps) {
   // Run-once state
   const [selectedDuration, setSelectedDuration] = useState<Record<number, number>>({ 0: 300, 1: 300 });
-  const [customMinutes, setCustomMinutes] = useState<Record<number, string>>({ 0: '', 1: '' });
   const [sendingValve, setSendingValve] = useState<number | null>(null);
   const [stoppingValve, setStoppingValve] = useState<number | null>(null);
   const [valveMessage, setValveMessage] = useState<string | null>(null);
@@ -106,17 +102,9 @@ function IrrigationControl({ deviceId }: IrrigationControlProps) {
     }
   };
 
-  const handleDurationSelect = (valve: number, seconds: number) => {
-    setSelectedDuration((prev) => ({ ...prev, [valve]: seconds }));
-    setCustomMinutes((prev) => ({ ...prev, [valve]: '' }));
-  };
-
-  const handleCustomMinutes = (valve: number, value: string) => {
-    setCustomMinutes((prev) => ({ ...prev, [valve]: value }));
-    const minutes = parseInt(value, 10);
-    if (!isNaN(minutes) && minutes > 0 && minutes <= 120) {
-      setSelectedDuration((prev) => ({ ...prev, [valve]: minutes * 60 }));
-    }
+  const handleSlider = (valve: number, notchIndex: number) => {
+    const minutes = DURATION_NOTCHES[notchIndex] || DURATION_NOTCHES[0];
+    setSelectedDuration((prev) => ({ ...prev, [valve]: minutes * 60 }));
   };
 
   const handleAddSchedule = async () => {
@@ -191,51 +179,52 @@ function IrrigationControl({ deviceId }: IrrigationControlProps) {
 
   const isBusy = sendingValve !== null || stoppingValve !== null;
 
-  const renderValveRow = (valve: number) => (
-    <div key={valve} className="space-y-2">
-      <div className="flex items-center justify-between">
-        <span className="text-sm font-medium text-gray-700">Valve {valve + 1}</span>
-        <button
-          onClick={() => handleStop(valve)}
-          disabled={isBusy}
-          className="text-xs px-2 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200 disabled:opacity-50"
-        >
-          {stoppingValve === valve ? 'Stopping...' : 'Stop'}
-        </button>
-      </div>
-      <div className="flex items-center gap-2">
-        {DURATION_PRESETS.map((preset) => (
-          <button
-            key={preset.seconds}
-            onClick={() => handleDurationSelect(valve, preset.seconds)}
-            className={`px-3 py-1.5 text-sm rounded border ${
-              selectedDuration[valve] === preset.seconds && !customMinutes[valve]
-                ? 'bg-blue-50 border-blue-300 text-blue-700'
-                : 'border-gray-200 text-gray-600 hover:border-gray-300'
-            }`}
-          >
-            {preset.label}
-          </button>
-        ))}
-        <input
-          type="number"
-          placeholder="min"
-          min={1}
-          max={120}
-          value={customMinutes[valve]}
-          onChange={(e) => handleCustomMinutes(valve, e.target.value)}
-          className="w-16 px-2 py-1.5 text-sm border border-gray-200 rounded text-center"
-        />
+  const renderValveRow = (valve: number) => {
+    const duration = selectedDuration[valve] || DURATION_NOTCHES[0] * 60;
+    const minutes = duration / 60;
+    const notchIndex = DURATION_NOTCHES.indexOf(minutes);
+    const sliderValue = notchIndex >= 0 ? notchIndex : 0;
+    return (
+      <div key={valve} className="flex items-center gap-4">
+        <span className="text-base font-semibold text-gray-900 w-16 shrink-0">Valve {valve + 1}</span>
+        <div className="flex-1 min-w-0 self-center">
+          <input
+            type="range"
+            min={0}
+            max={DURATION_NOTCHES.length - 1}
+            step={1}
+            value={sliderValue}
+            onChange={(e) => handleSlider(valve, parseInt(e.target.value, 10))}
+            className="w-full accent-blue-600"
+          />
+          <div className="flex justify-between px-0.5 -mt-1">
+            {DURATION_NOTCHES.map((m) => (
+              <span key={m} className={`text-[10px] ${m === minutes ? 'text-blue-600 font-medium' : 'text-gray-400'}`}>
+                {m}
+              </span>
+            ))}
+          </div>
+        </div>
+        <span className="w-12 text-center text-sm font-medium text-gray-700 shrink-0">{minutes}m</span>
         <button
           onClick={() => handleRun(valve)}
           disabled={isBusy}
-          className="px-4 py-1.5 text-sm rounded bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 shrink-0"
         >
+          <svg width="10" height="12" viewBox="0 0 10 12" fill="currentColor"><path d="M0 0l10 6-10 6z"/></svg>
           {sendingValve === valve ? 'Sending...' : 'Run'}
         </button>
+        <button
+          onClick={() => handleStop(valve)}
+          disabled={isBusy}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded bg-red-100 text-red-700 hover:bg-red-200 disabled:opacity-50 shrink-0"
+        >
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><rect width="10" height="10" rx="1"/></svg>
+          {stoppingValve === valve ? 'Stopping...' : 'Stop'}
+        </button>
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <div className="space-y-4">
@@ -246,9 +235,6 @@ function IrrigationControl({ deviceId }: IrrigationControlProps) {
           {renderValveRow(0)}
           {renderValveRow(1)}
         </div>
-        <p className="mt-3 text-xs text-gray-400">
-          Best-effort — the node must be awake to receive the command.
-        </p>
         {valveMessage && !valveError && (
           <p className="mt-2 text-sm text-green-600">{valveMessage}</p>
         )}
