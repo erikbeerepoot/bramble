@@ -222,7 +222,7 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-1 space-y-4">
+        <div className="lg:col-span-1 flex flex-col gap-4">
           {/* 1. Statistics (sensor nodes only) */}
           {hasSensorData && (loadingStatistics ? (
             <div className="card animate-pulse">
@@ -330,175 +330,6 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
             )
           ))}
 
-          {/* 2. Node Info */}
-          <NodeNameEditor
-            node={node}
-            zones={zones}
-            onUpdate={handleMetadataUpdate}
-            onZoneCreated={onZoneCreated}
-          />
-
-          {/* 3. Node Status Panel - collapsible */}
-          {node.status && (
-            <div className="card">
-              <button
-                onClick={() => setStatusExpanded(!statusExpanded)}
-                className="w-full flex items-center justify-between"
-              >
-                <div className="flex items-center space-x-2">
-                  <h3 className="text-lg font-medium text-gray-900">Node Status</h3>
-                  <HealthStatus
-                    errorFlags={node.status.error_flags}
-                    size="sm"
-                    showTooltip={false}
-                  />
-                </div>
-                <svg
-                  className={`w-5 h-5 text-gray-400 transition-transform ${statusExpanded ? 'rotate-180' : ''}`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M19 9l-7 7-7-7"
-                  />
-                </svg>
-              </button>
-
-              {statusExpanded && (
-                <div className="space-y-4 mt-4">
-                  {/* Battery */}
-                  <div>
-                    <dt className="text-sm text-gray-500 mb-1">Battery</dt>
-                    <dd className="flex items-center space-x-2">
-                      <BatteryGauge level={node.status.battery_level} size="md" />
-                      <span className="text-sm text-gray-600">
-                        {getBatteryStatus(node.status.battery_level).isExternal
-                          ? 'External Power'
-                          : node.status.battery_level !== null
-                            ? `${node.status.battery_level}%`
-                            : 'Unknown'}
-                      </span>
-                    </dd>
-                  </div>
-
-                  {/* Signal Strength */}
-                  <div>
-                    <dt className="text-sm text-gray-500 mb-1">Signal Strength</dt>
-                    <dd className="flex items-center space-x-2">
-                      <SignalStrength rssi={node.status.signal_strength} size="md" />
-                      <span className="text-sm text-gray-600">
-                        {getSignalQuality(node.status.signal_strength).label}
-                      </span>
-                    </dd>
-                  </div>
-
-                  {/* Uptime */}
-                  <div>
-                    <dt className="text-sm text-gray-500 mb-1">Uptime</dt>
-                    <dd className="text-lg font-medium text-gray-900">
-                      {formatUptime(node.status.uptime_seconds)}
-                    </dd>
-                  </div>
-
-                  {/* Pending Records */}
-                  {node.status.pending_records !== null &&
-                    node.status.pending_records !== undefined && (
-                      <div>
-                        <dt className="text-sm text-gray-500 mb-1">Unsent Records</dt>
-                        <dd className="flex items-center space-x-2">
-                          <BacklogStatus pendingRecords={node.status.pending_records} size="md" />
-                        </dd>
-                      </div>
-                    )}
-
-                  {/* Active Issues */}
-                  {node.status.error_flags !== null && node.status.error_flags !== 0 && (
-                    <div className="pt-3 border-t">
-                      <dt className="text-sm text-gray-500 mb-2">Active Issues</dt>
-                      <dd className="flex flex-wrap gap-1.5">
-                        {parseErrorFlags(node.status.error_flags).map((error) => (
-                          <span
-                            key={error.flag}
-                            className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                              error.severity === 'error'
-                                ? 'bg-red-100 text-red-800'
-                                : 'bg-yellow-100 text-yellow-800'
-                            }`}
-                          >
-                            {error.label}
-                          </span>
-                        ))}
-                      </dd>
-                    </div>
-                  )}
-
-                  {/* Last Updated */}
-                  {node.status.updated_at && (
-                    <div className="text-xs text-gray-400 pt-2">
-                      Status updated: {new Date(node.status.updated_at * 1000).toLocaleString()}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* 4. Advanced - collapsible, collapsed by default */}
-          <div className="card">
-            <button
-              onClick={() => setAdvancedExpanded(!advancedExpanded)}
-              className="w-full flex items-center justify-between"
-            >
-              <h3 className="text-lg font-medium text-gray-900">Advanced</h3>
-              <svg
-                className={`w-5 h-5 text-gray-400 transition-transform ${advancedExpanded ? 'rotate-180' : ''}`}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M19 9l-7 7-7-7"
-                />
-              </svg>
-            </button>
-
-            {advancedExpanded && (
-              <div className="mt-4 space-y-4">
-                {/* Reboot Node */}
-                <div>
-                  <p className="text-sm text-gray-500 mb-2">
-                    Request a remote reboot. The node will restart on its next heartbeat.
-                  </p>
-                  <button
-                    onClick={() => setShowRebootConfirm(true)}
-                    className="btn bg-amber-600 text-white hover:bg-amber-700 w-full"
-                  >
-                    Reboot Node
-                  </button>
-                </div>
-
-                {/* Delete Node */}
-                <div className="pt-4 border-t border-gray-200">
-                  <p className="text-sm text-gray-500 mb-2">
-                    Permanently delete this node and all its sensor data history.
-                  </p>
-                  <button
-                    onClick={() => setShowDeleteConfirm(true)}
-                    className="btn bg-red-600 text-white hover:bg-red-700 w-full"
-                  >
-                    Delete Node
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
         </div>
 
         <div className="lg:col-span-2 space-y-4">
@@ -566,6 +397,178 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
                   <ErrorEventsTable readings={readings} />
                 </div>
               )}
+            </div>
+          )}
+        </div>
+
+        {/* Node Info — appears in left column on desktop, after controls on mobile */}
+        <div className="order-last lg:order-none lg:col-start-1 lg:row-start-2">
+          <NodeNameEditor
+            node={node}
+            zones={zones}
+            onUpdate={handleMetadataUpdate}
+            onZoneCreated={onZoneCreated}
+          />
+        </div>
+
+        {/* Node Status Panel - collapsible */}
+        {node.status && (
+          <div className="card order-last lg:order-none lg:col-start-1 lg:row-start-3">
+            <button
+              onClick={() => setStatusExpanded(!statusExpanded)}
+              className="w-full flex items-center justify-between"
+            >
+              <div className="flex items-center space-x-2">
+                <h3 className="text-lg font-medium text-gray-900">Node Status</h3>
+                <HealthStatus
+                  errorFlags={node.status.error_flags}
+                  size="sm"
+                  showTooltip={false}
+                />
+              </div>
+              <svg
+                className={`w-5 h-5 text-gray-400 transition-transform ${statusExpanded ? 'rotate-180' : ''}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M19 9l-7 7-7-7"
+                />
+              </svg>
+            </button>
+
+            {statusExpanded && (
+              <div className="space-y-4 mt-4">
+                {/* Battery */}
+                <div>
+                  <dt className="text-sm text-gray-500 mb-1">Battery</dt>
+                  <dd className="flex items-center space-x-2">
+                    <BatteryGauge level={node.status.battery_level} size="md" />
+                    <span className="text-sm text-gray-600">
+                      {getBatteryStatus(node.status.battery_level).isExternal
+                        ? 'External Power'
+                        : node.status.battery_level !== null
+                          ? `${node.status.battery_level}%`
+                          : 'Unknown'}
+                    </span>
+                  </dd>
+                </div>
+
+                {/* Signal Strength */}
+                <div>
+                  <dt className="text-sm text-gray-500 mb-1">Signal Strength</dt>
+                  <dd className="flex items-center space-x-2">
+                    <SignalStrength rssi={node.status.signal_strength} size="md" />
+                    <span className="text-sm text-gray-600">
+                      {getSignalQuality(node.status.signal_strength).label}
+                    </span>
+                  </dd>
+                </div>
+
+                {/* Uptime */}
+                <div>
+                  <dt className="text-sm text-gray-500 mb-1">Uptime</dt>
+                  <dd className="text-lg font-medium text-gray-900">
+                    {formatUptime(node.status.uptime_seconds)}
+                  </dd>
+                </div>
+
+                {/* Pending Records */}
+                {node.status.pending_records !== null &&
+                  node.status.pending_records !== undefined && (
+                    <div>
+                      <dt className="text-sm text-gray-500 mb-1">Unsent Records</dt>
+                      <dd className="flex items-center space-x-2">
+                        <BacklogStatus pendingRecords={node.status.pending_records} size="md" />
+                      </dd>
+                    </div>
+                  )}
+
+                {/* Active Issues */}
+                {node.status.error_flags !== null && node.status.error_flags !== 0 && (
+                  <div className="pt-3 border-t">
+                    <dt className="text-sm text-gray-500 mb-2">Active Issues</dt>
+                    <dd className="flex flex-wrap gap-1.5">
+                      {parseErrorFlags(node.status.error_flags).map((error) => (
+                        <span
+                          key={error.flag}
+                          className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                            error.severity === 'error'
+                              ? 'bg-red-100 text-red-800'
+                              : 'bg-yellow-100 text-yellow-800'
+                          }`}
+                        >
+                          {error.label}
+                        </span>
+                      ))}
+                    </dd>
+                  </div>
+                )}
+
+                {/* Last Updated */}
+                {node.status.updated_at && (
+                  <div className="text-xs text-gray-400 pt-2">
+                    Status updated: {new Date(node.status.updated_at * 1000).toLocaleString()}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Advanced - collapsible, collapsed by default */}
+        <div className="card order-last lg:order-none lg:col-start-1 lg:row-start-4">
+          <button
+            onClick={() => setAdvancedExpanded(!advancedExpanded)}
+            className="w-full flex items-center justify-between"
+          >
+            <h3 className="text-lg font-medium text-gray-900">Advanced</h3>
+            <svg
+              className={`w-5 h-5 text-gray-400 transition-transform ${advancedExpanded ? 'rotate-180' : ''}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M19 9l-7 7-7-7"
+              />
+            </svg>
+          </button>
+
+          {advancedExpanded && (
+            <div className="mt-4 space-y-4">
+              {/* Reboot Node */}
+              <div>
+                <p className="text-sm text-gray-500 mb-2">
+                  Request a remote reboot. The node will restart on its next heartbeat.
+                </p>
+                <button
+                  onClick={() => setShowRebootConfirm(true)}
+                  className="btn bg-amber-600 text-white hover:bg-amber-700 w-full"
+                >
+                  Reboot Node
+                </button>
+              </div>
+
+              {/* Delete Node */}
+              <div className="pt-4 border-t border-gray-200">
+                <p className="text-sm text-gray-500 mb-2">
+                  Permanently delete this node and all its sensor data history.
+                </p>
+                <button
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="btn bg-red-600 text-white hover:bg-red-700 w-full"
+                >
+                  Delete Node
+                </button>
+              </div>
             </div>
           )}
         </div>
