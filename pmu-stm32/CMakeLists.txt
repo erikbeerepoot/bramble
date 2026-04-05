@@ -58,7 +58,7 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined library search paths
 )
 
-# WS2812 addressable RGB LED support (new boards use PA5 with TIM2 PWM + DMA)
+# WS2812 addressable RGB LED support (PA4, pin 10 TSSOP20, bit-banged)
 option(USE_WS2812 "Use WS2812 RGB LED instead of dual-color GPIO LED" OFF)
 option(PMU_BRINGUP_MODE "Keep DC/DC on and skip sleep for development" OFF)
 

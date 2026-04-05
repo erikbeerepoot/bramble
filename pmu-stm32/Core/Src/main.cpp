@@ -54,7 +54,7 @@ TIM_HandleTypeDef htim21;
 I2C_HandleTypeDef hi2c1;
 
 /* USER CODE BEGIN PV */
-LED led;
+LED led(GPIOA, GPIO_PIN_4);
 DCDC dcdc;
 
 // FRAM and persistent storage

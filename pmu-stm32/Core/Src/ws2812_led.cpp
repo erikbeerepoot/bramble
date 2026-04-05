@@ -3,7 +3,7 @@
  * @file           : ws2812_led.cpp
  * @brief          : WS2812 addressable RGB LED driver using GPIO bit-banging
  *
- * Drives a single WS2812 LED on PA5 using direct GPIO register writes.
+ * Drives a single WS2812 LED using direct GPIO register writes.
  * Interrupts are disabled for ~30us during each 24-bit transmission.
  *
  * Timing at 16 MHz (62.5 ns/cycle):
@@ -17,21 +17,21 @@
 
 #include "led.h"
 
-LED::LED()
+LED::LED(GPIO_TypeDef *port, uint16_t pin)
+    : port(port), pin(pin)
 {
 }
 
 void LED::init()
 {
-    // Configure PA5 as fast GPIO output for bit-banging
     GPIO_InitTypeDef gpioInit = {0};
-    gpioInit.Pin = GPIO_PIN_5;
+    gpioInit.Pin = pin;
     gpioInit.Mode = GPIO_MODE_OUTPUT_PP;
     gpioInit.Pull = GPIO_NOPULL;
     gpioInit.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-    HAL_GPIO_Init(GPIOA, &gpioInit);
+    HAL_GPIO_Init(port, &gpioInit);
 
-    GPIOA->BRR = GPIO_PIN_5;
+    port->BRR = pin;
     for (volatile uint32_t i = 0; i < 1000; i++) {}  // >50us reset
 
     off();
@@ -95,21 +95,21 @@ void LED::fillBuffer(uint8_t green, uint8_t red, uint8_t blue)
  *   Bit "0": BSRR + 2 NOPs + BRR + 7 NOPs = ~250ns high, then loop overhead ~562ns low
  */
 __attribute__((noinline, optimize("O1")))
-static void sendByte(uint8_t byte)
+static void sendByte(GPIO_TypeDef *port, uint16_t pin, uint8_t byte)
 {
     for (int bit = 7; bit >= 0; bit--) {
         if (byte & (1 << bit)) {
             // "1" bit: long high, short low
-            GPIOA->BSRR = GPIO_PIN_5;
+            port->BSRR = pin;
             __NOP(); __NOP(); __NOP(); __NOP(); __NOP();
             __NOP(); __NOP(); __NOP(); __NOP();
-            GPIOA->BRR = GPIO_PIN_5;
+            port->BRR = pin;
             // 0 extra NOPs — loop overhead provides the low time
         } else {
             // "0" bit: short high, long low
-            GPIOA->BSRR = GPIO_PIN_5;
+            port->BSRR = pin;
             __NOP(); __NOP();
-            GPIOA->BRR = GPIO_PIN_5;
+            port->BRR = pin;
             __NOP(); __NOP(); __NOP(); __NOP(); __NOP();
             __NOP(); __NOP();
         }
@@ -128,15 +128,13 @@ void LED::sendData()
 
     __disable_irq();
 
-    sendByte(green);
-    sendByte(red);
-    sendByte(blue);
+    sendByte(port, pin, green);
+    sendByte(port, pin, red);
+    sendByte(port, pin, blue);
 
     __enable_irq();
 
     // Reset: hold low for >50us to latch data
-    // Use cycle-counting delay instead of HAL_Delay so this is safe
-    // from ISR context (HAL_Delay depends on SysTick which may not fire)
     // At 16 MHz, 1000 iterations ≈ ~250us (well above 50us minimum)
     for (volatile uint32_t i = 0; i < 1000; i++) {}
 }

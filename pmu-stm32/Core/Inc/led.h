@@ -15,7 +15,7 @@
 /**
  * @brief LED controller class for WS2812 addressable RGB LED
  *
- * Drives a WS2812 LED on PA5 using GPIO bit-banging.
+ * Drives a WS2812 LED using GPIO bit-banging.
  * Interrupts are briefly disabled (~30us) during each transmission.
  */
 class LED {
@@ -27,7 +27,7 @@ public:
         ORANGE = 3
     };
 
-    LED();
+    LED(GPIO_TypeDef *port, uint16_t pin);
 
     void init();
     void setColor(Color color);
@@ -38,6 +38,8 @@ public:
 private:
     static constexpr uint8_t DATA_BITS = 24;  // 8 green + 8 red + 8 blue
 
+    GPIO_TypeDef *port;
+    uint16_t pin;
     uint8_t dmaBuffer[DATA_BITS] = {0};
 
     void fillBuffer(uint8_t green, uint8_t red, uint8_t blue);
