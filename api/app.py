@@ -828,7 +828,7 @@ def run_valve(device_id: int):
         # Send actuator ON command with duration as param (firmware handles auto-off)
         from command_queue import queue_send_actuator
 
-        actuator_type = 3  # ACTUATOR_VALVE
+        actuator_type = 1  # ACTUATOR_VALVE
         command = 1  # CMD_TURN_ON
         result = queue_send_actuator(
             node_address=address,
@@ -900,7 +900,7 @@ def stop_valve(device_id: int):
 
         from command_queue import queue_send_actuator
 
-        actuator_type = 3  # ACTUATOR_VALVE
+        actuator_type = 1  # ACTUATOR_VALVE
         command = 0  # CMD_TURN_OFF
         result = queue_send_actuator(
             node_address=address,
