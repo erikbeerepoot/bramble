@@ -102,11 +102,6 @@ function IrrigationControl({ deviceId }: IrrigationControlProps) {
     }
   };
 
-  const handleSlider = (valve: number, notchIndex: number) => {
-    const minutes = DURATION_NOTCHES[notchIndex] || DURATION_NOTCHES[0];
-    setSelectedDuration((prev) => ({ ...prev, [valve]: minutes * 60 }));
-  };
-
   const handleAddSchedule = async () => {
     setSavingSchedule(true);
     setScheduleError(null);
@@ -179,49 +174,96 @@ function IrrigationControl({ deviceId }: IrrigationControlProps) {
 
   const isBusy = sendingValve !== null || stoppingValve !== null;
 
+  const handleSlider = (valve: number, notchIndex: number) => {
+    const minutes = DURATION_NOTCHES[notchIndex] || DURATION_NOTCHES[0];
+    setSelectedDuration((prev) => ({ ...prev, [valve]: minutes * 60 }));
+  };
+
   const renderValveRow = (valve: number) => {
     const duration = selectedDuration[valve] || DURATION_NOTCHES[0] * 60;
     const minutes = duration / 60;
     const notchIndex = DURATION_NOTCHES.indexOf(minutes);
     const sliderValue = notchIndex >= 0 ? notchIndex : 0;
     return (
-      <div key={valve} className="flex items-center gap-4">
-        <span className="text-base font-semibold text-gray-900 w-16 shrink-0">Valve {valve + 1}</span>
-        <div className="flex-1 min-w-0 self-center">
-          <input
-            type="range"
-            min={0}
-            max={DURATION_NOTCHES.length - 1}
-            step={1}
-            value={sliderValue}
-            onChange={(e) => handleSlider(valve, parseInt(e.target.value, 10))}
-            className="w-full accent-blue-600"
-          />
-          <div className="flex justify-between px-0.5 -mt-1">
-            {DURATION_NOTCHES.map((m) => (
-              <span key={m} className={`text-[10px] ${m === minutes ? 'text-blue-600 font-medium' : 'text-gray-400'}`}>
-                {m}
-              </span>
-            ))}
+      <div key={valve}>
+        {/* Desktop: horizontal slider row */}
+        <div className="hidden sm:flex items-center gap-4">
+          <span className="text-base font-semibold text-gray-900 w-16 shrink-0">Valve {valve + 1}</span>
+          <div className="flex-1 min-w-0 self-center">
+            <input
+              type="range"
+              min={0}
+              max={DURATION_NOTCHES.length - 1}
+              step={1}
+              value={sliderValue}
+              onChange={(e) => handleSlider(valve, parseInt(e.target.value, 10))}
+              className="w-full accent-blue-600"
+            />
+            <div className="flex justify-between px-0.5 -mt-1">
+              {DURATION_NOTCHES.map((m) => (
+                <span key={m} className={`text-[10px] ${m === minutes ? 'text-blue-600 font-medium' : 'text-gray-400'}`}>
+                  {m}
+                </span>
+              ))}
+            </div>
+          </div>
+          <span className="w-12 text-center text-sm font-medium text-gray-700 shrink-0">{minutes}m</span>
+          <button
+            onClick={() => handleRun(valve)}
+            disabled={isBusy}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 shrink-0"
+          >
+            <svg width="10" height="12" viewBox="0 0 10 12" fill="currentColor"><path d="M0 0l10 6-10 6z"/></svg>
+            {sendingValve === valve ? 'Sending...' : 'Run'}
+          </button>
+          <button
+            onClick={() => handleStop(valve)}
+            disabled={isBusy}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded bg-red-100 text-red-700 hover:bg-red-200 disabled:opacity-50 shrink-0"
+          >
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><rect width="10" height="10" rx="1"/></svg>
+            {stoppingValve === valve ? 'Stopping...' : 'Stop'}
+          </button>
+        </div>
+
+        {/* Mobile: stacked layout with native select (renders as iOS wheel picker) */}
+        <div className="sm:hidden space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-base font-semibold text-gray-900">Valve {valve + 1}</span>
+            <select
+              value={minutes}
+              onChange={(e) => {
+                const m = parseInt(e.target.value, 10);
+                setSelectedDuration((prev) => ({ ...prev, [valve]: m * 60 }));
+              }}
+              className="px-3 py-1.5 text-sm rounded-lg border border-gray-300 bg-white text-gray-700 appearance-none pr-7 bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20width%3D%228%22%20height%3D%225%22%20viewBox%3D%220%200%208%205%22%20fill%3D%22%236b7280%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cpath%20d%3D%22M0%200l4%205%204-5z%22%2F%3E%3C%2Fsvg%3E')] bg-[position:right_0.5rem_center] bg-no-repeat"
+            >
+              {DURATION_NOTCHES.map((m) => (
+                <option key={m} value={m}>
+                  {m >= 60 ? `${Math.floor(m / 60)}h${m % 60 > 0 ? ` ${m % 60}m` : ''}` : `${m} min`}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => handleRun(valve)}
+              disabled={isBusy}
+              className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2.5 text-sm font-medium rounded-lg bg-green-600 text-white hover:bg-green-700 active:bg-green-800 disabled:opacity-50"
+            >
+              <svg width="10" height="12" viewBox="0 0 10 12" fill="currentColor"><path d="M0 0l10 6-10 6z"/></svg>
+              {sendingValve === valve ? 'Sending...' : `Run ${minutes}m`}
+            </button>
+            <button
+              onClick={() => handleStop(valve)}
+              disabled={isBusy}
+              className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2.5 text-sm font-medium rounded-lg bg-red-100 text-red-700 hover:bg-red-200 active:bg-red-300 disabled:opacity-50"
+            >
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><rect width="10" height="10" rx="1"/></svg>
+              {stoppingValve === valve ? 'Stopping...' : 'Stop'}
+            </button>
           </div>
         </div>
-        <span className="w-12 text-center text-sm font-medium text-gray-700 shrink-0">{minutes}m</span>
-        <button
-          onClick={() => handleRun(valve)}
-          disabled={isBusy}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 shrink-0"
-        >
-          <svg width="10" height="12" viewBox="0 0 10 12" fill="currentColor"><path d="M0 0l10 6-10 6z"/></svg>
-          {sendingValve === valve ? 'Sending...' : 'Run'}
-        </button>
-        <button
-          onClick={() => handleStop(valve)}
-          disabled={isBusy}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded bg-red-100 text-red-700 hover:bg-red-200 disabled:opacity-50 shrink-0"
-        >
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><rect width="10" height="10" rx="1"/></svg>
-          {stoppingValve === valve ? 'Stopping...' : 'Stop'}
-        </button>
       </div>
     );
   };
