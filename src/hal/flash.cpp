@@ -8,13 +8,14 @@
 #include "hardware/flash.h"
 #include "hardware/sync.h"
 
+#include "../board/board_pins.h"
+
 // Flash memory starts at XIP_BASE in RP2040 memory map
 extern "C" char __flash_binary_end;
 
 Flash::Flash() : logger_("FLASH")
 {
-    // Feather RP2040 LoRa has 8MB external QSPI flash
-    flash_size_ = 8 * 1024 * 1024;  // 8MB external QSPI flash
+    flash_size_ = Board::QSPI_FLASH_SIZE;
 
     // Initialize statistics
     resetStats();

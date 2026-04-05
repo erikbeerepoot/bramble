@@ -84,7 +84,7 @@ constexpr uint FLASH_PIN_CS = 1;
 constexpr uint FLASH_PIN_RST = 5;
 
 // --- QSPI flash size (on-board) ---
-constexpr uint32_t QSPI_FLASH_SIZE = 16 * 1024 * 1024;  // 16MB
+constexpr uint32_t QSPI_FLASH_SIZE = 2 * 1024 * 1024;  // 2MB (W25Q16JV)
 
 // --- NeoPixel ---
 constexpr uint PIN_NEOPIXEL = 4;
