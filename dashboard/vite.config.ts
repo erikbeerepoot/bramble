@@ -6,7 +6,13 @@ export default defineConfig({
   server: {
     port: 3000,
     host: true,
-    open: true
+    open: true,
+    proxy: {
+      '/api': {
+        target: 'http://bramble-hub.local:5000',
+        changeOrigin: true,
+      },
+    },
   },
   build: {
     outDir: 'dist',
