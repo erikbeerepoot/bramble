@@ -5,6 +5,7 @@
 
 #include "pico/critical_section.h"
 
+#include "../board/board_pins.h"
 #include "hbridge.h"
 #include "valve_indexer.h"
 
@@ -70,7 +71,7 @@ private:
  */
 class ValveController {
 public:
-    static constexpr uint8_t NUM_VALVES = 2;  // Currently only 2 valves connected
+    static constexpr uint8_t NUM_VALVES = Board::NUM_VALVES;
 
     /**
      * @brief Constructor - sets initial state
@@ -103,6 +104,18 @@ public:
      * Useful for emergency shutoff or initialization
      */
     void closeAllValves();
+
+    /**
+     * @brief Restore a valve's in-memory state without actuating hardware
+     *
+     * Used to restore known state from persisted storage (e.g. PMU RAM)
+     * after a warm wake. DC latching valves hold position during sleep,
+     * so no actuation is needed.
+     *
+     * @param valve_id Valve to restore
+     * @param state State to set
+     */
+    void restoreValveState(uint8_t valve_id, ValveState state);
 
     /**
      * @brief Get current state of a valve
@@ -153,13 +166,7 @@ private:
     // Thread safety
     mutable critical_section_t mutex_;
 
-    // GPIO pin assignments
-    static constexpr uint8_t PIN_MOTOR_LO_1 = 26;  // A0 pin
-    static constexpr uint8_t PIN_MOTOR_LO_2 = 27;  // A1 pin
-    static constexpr uint8_t PIN_MOTOR_HI_1 = 28;  // A2 pin
-    static constexpr uint8_t PIN_MOTOR_HI_2 = 29;  // A3 pin
-
-    static constexpr uint8_t VALVE_PINS[NUM_VALVES] = {24, 25};  // GPIO24 and GPIO25
+    // Pin assignments come from Board:: namespace (board-specific)
 
     /**
      * @brief Ensure controller is initialized before use

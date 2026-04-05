@@ -27,15 +27,13 @@
  *     |                                       |
  *     +--------> AWAITING_TIME <--------------+
  *                     |
- *     +---------------+--------------+
- *     | (no PMU time)                | (PMU has time)
- *     v                              v
- * sendHeartbeat()          reportTimeSyncComplete()
- *     |                              |
- *     v                              |
- * SYNCING_TIME ---(hub responds)---->|
- *                                    v
- *                           CHECKING_UPDATES
+ *                     v
+ *              SENDING_HEARTBEAT
+ *                     |
+ *            (hub heartbeat response
+ *             syncs time + pending flags)
+ *                     v
+ *              CHECKING_UPDATES
  *                                    |
  *     +-----------------------------+-----------+
  *     | (has_update=true)                       | (has_update=false)
@@ -54,11 +52,12 @@
  *                 --> reportWakeFromSleep() --> AWAITING_TIME
  */
 enum class IrrigationState : uint8_t {
-    INITIALIZING,      // Hardware setup in progress
-    REGISTERING,       // Waiting for hub registration response
-    AWAITING_TIME,     // Need RTC sync (try PMU first, then hub)
-    SYNCING_TIME,      // Heartbeat sent, awaiting hub time response
-    CHECKING_UPDATES,  // CHECK_UPDATES sent, awaiting UPDATE_AVAILABLE
+    INITIALIZING,        // Hardware setup in progress
+    REGISTERING,         // Waiting for hub registration response
+    AWAITING_TIME,           // Need RTC sync
+    SENDING_HEARTBEAT,       // Heartbeat sent to hub, awaiting response (carries time)
+    AWAITING_REGISTRATION,   // Re-registration in flight, waiting for hub to assign address
+    CHECKING_UPDATES,    // CHECK_UPDATES sent, awaiting UPDATE_AVAILABLE
     APPLYING_UPDATE,   // PMU command in flight (schedule, datetime, wake interval)
     VALVE_ACTIVE,      // Valve open from scheduled wake
     READY_FOR_SLEEP,   // All wake work done, signal PMU to sleep
@@ -126,26 +125,32 @@ public:
     // =========================================================================
 
     /**
-     * @brief Report that heartbeat was sent for time sync
+     * @brief Report that heartbeat is being sent to hub
      *
-     * Transitions AWAITING_TIME -> SYNCING_TIME.
+     * Transitions AWAITING_TIME -> SENDING_HEARTBEAT.
      */
-    void reportHeartbeatSent();
+    void reportHeartbeatSending();
 
     /**
-     * @brief Report that time sync is complete
+     * @brief Report that hub heartbeat response was received
      *
-     * Call after RTC is set (from PMU or hub heartbeat response).
-     * Transitions AWAITING_TIME/SYNCING_TIME -> CHECKING_UPDATES.
+     * Transitions SENDING_HEARTBEAT -> CHECKING_UPDATES.
      */
-    void reportTimeSyncComplete();
+    void reportHeartbeatResponseReceived();
 
     /**
-     * @brief Report that time sync timed out
+     * @brief Report that hub requested re-registration
      *
-     * Transitions SYNCING_TIME -> READY_FOR_SLEEP (retry on next wake).
+     * Transitions SENDING_HEARTBEAT -> AWAITING_REGISTRATION.
      */
-    void reportSyncTimeout();
+    void reportReregistrationRequired();
+
+    /**
+     * @brief Report that re-registration completed (address assigned)
+     *
+     * Transitions AWAITING_REGISTRATION -> SENDING_HEARTBEAT.
+     */
+    void reportReregistrationComplete();
 
     // =========================================================================
     // Update Pull Events
@@ -245,7 +250,7 @@ public:
     {
         return state_ != IrrigationState::INITIALIZING && state_ != IrrigationState::REGISTERING &&
                state_ != IrrigationState::AWAITING_TIME &&
-               state_ != IrrigationState::SYNCING_TIME && state_ != IrrigationState::ERROR;
+               state_ != IrrigationState::SENDING_HEARTBEAT && state_ != IrrigationState::ERROR;
     }
 
     /**

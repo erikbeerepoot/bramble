@@ -52,8 +52,8 @@ struct PendingUpdate {
  */
 struct NodeUpdateState {
     std::queue<PendingUpdate> pending_updates;
-    uint8_t next_sequence;     // Next sequence to assign
-    uint32_t last_check_time;  // When node last checked
+    uint8_t next_sequence = 1;  // Next sequence to assign (starts at 1; node reports 0 = no updates applied)
+    uint32_t last_check_time = 0;
 };
 
 /**
@@ -161,6 +161,18 @@ public:
      * @return true if queued successfully
      */
     bool queueWakeIntervalUpdate(uint16_t node_addr, uint16_t interval_seconds);
+
+    /**
+     * @brief Queue an actuator command for a node
+     * @param node_addr Node address
+     * @param actuator_type Actuator type (e.g. ACTUATOR_VALVE)
+     * @param command Command (e.g. CMD_TURN_ON)
+     * @param params Optional parameter bytes
+     * @param param_length Number of parameter bytes
+     * @return true if queued successfully
+     */
+    bool queueActuatorCommand(uint16_t node_addr, uint8_t actuator_type, uint8_t command,
+                              const uint8_t *params, uint8_t param_length);
 
     /**
      * @brief Handle CHECK_UPDATES message from node

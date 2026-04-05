@@ -409,6 +409,44 @@ bool HubRouter::queueWakeIntervalUpdate(uint16_t node_addr, uint16_t interval_se
     return true;
 }
 
+bool HubRouter::queueActuatorCommand(uint16_t node_addr, uint8_t actuator_type, uint8_t command,
+                                     const uint8_t *params, uint8_t param_length)
+{
+    auto &state = node_updates_[node_addr];
+
+    if (state.pending_updates.size() >= MAX_UPDATES_PER_NODE) {
+        logger.warn("Update queue full for node 0x%04X", node_addr);
+        return false;
+    }
+
+    // Validate param_length fits in data buffer (32 bytes - 3 header bytes)
+    if (param_length > 29) {
+        logger.error("Actuator param_length %d exceeds max", param_length);
+        return false;
+    }
+
+    PendingUpdate update;
+    update.type = UpdateType::ACTUATOR_COMMAND;
+    update.queued_at_ms = bramble::util::time::currentTimeMs();
+    update.sequence = state.next_sequence++;
+
+    // Pack actuator data: [type, command, param_length, params...]
+    update.data[0] = actuator_type;
+    update.data[1] = command;
+    update.data[2] = param_length;
+    if (params && param_length > 0) {
+        memcpy(&update.data[3], params, param_length);
+    }
+    update.data_length = 3 + param_length;
+
+    state.pending_updates.push(update);
+
+    logger.info("Queued actuator command for node 0x%04X (seq=%d, type=%u, cmd=%u)", node_addr,
+                update.sequence, actuator_type, command);
+
+    return true;
+}
+
 void HubRouter::handleCheckUpdates(uint16_t node_addr, uint8_t node_sequence)
 {
     auto &state = node_updates_[node_addr];
@@ -545,6 +583,9 @@ uint8_t HubRouter::getPendingUpdateFlags(uint16_t node_addr) const
                 break;
             case UpdateType::SET_DATETIME:
                 // Ignored - heartbeat response already carries current time
+                break;
+            case UpdateType::ACTUATOR_COMMAND:
+                flags |= PENDING_FLAG_ACTUATOR;
                 break;
         }
         queue_copy.pop();

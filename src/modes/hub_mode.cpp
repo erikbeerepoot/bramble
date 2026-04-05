@@ -715,20 +715,20 @@ void HubMode::handleSendActuator(const char *args)
     const uint8_t *params = (parsed >= 4) ? &param_byte : nullptr;
     uint8_t param_length = (parsed >= 4) ? 1 : 0;
 
-    bool sent = messenger_.sendActuatorCommand(node_addr, static_cast<uint8_t>(actuator_type),
-                                               static_cast<uint8_t>(command), params, param_length,
-                                               RELIABLE);
+    bool queued = hub_router_->queueActuatorCommand(
+        node_addr, static_cast<uint8_t>(actuator_type), static_cast<uint8_t>(command), params,
+        param_length);
 
-    if (sent) {
+    if (queued) {
         char response[64];
-        snprintf(response, sizeof(response), "SENT ACTUATOR %u %u %u\n", node_addr, actuator_type,
-                 command);
+        snprintf(response, sizeof(response), "QUEUED ACTUATOR %u %u %u\n", node_addr,
+                 actuator_type, command);
         uartSend(response);
-        logger.info("Sent actuator command to 0x%04X: type=%u cmd=%u", node_addr, actuator_type,
+        logger.info("Queued actuator command for 0x%04X: type=%u cmd=%u", node_addr, actuator_type,
                     command);
     } else {
-        uartSend("ERROR Failed to send actuator command\n");
-        logger.error("Failed to send actuator command to 0x%04X", node_addr);
+        uartSend("ERROR Failed to queue actuator command\n");
+        logger.error("Failed to queue actuator command for 0x%04X", node_addr);
     }
 }
 

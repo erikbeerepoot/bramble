@@ -627,6 +627,9 @@ void processIncomingMessage(uint8_t *rx_buffer, int rx_len, ReliableMessenger &m
             bramble::format::uint64_to_hex(reg_payload->device_id, reg_hex, sizeof(reg_hex));
             log.info("Successfully registered node 0x%s with address 0x%04X", reg_hex,
                      assigned_addr);
+
+            // Clear stale update queue — node will reset its sequence on re-register
+            hub_router->clearPendingUpdates(assigned_addr);
         }
     }
 

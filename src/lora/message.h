@@ -136,7 +136,8 @@ enum class UpdateType : uint8_t {
     SET_SCHEDULE = 0x01,      // Add/modify schedule entry
     REMOVE_SCHEDULE = 0x02,   // Remove schedule entry
     SET_DATETIME = 0x03,      // Sync RTC date/time
-    SET_WAKE_INTERVAL = 0x04  // Change periodic wake interval
+    SET_WAKE_INTERVAL = 0x04,    // Change periodic wake interval
+    ACTUATOR_COMMAND = 0x05      // Queued actuator command (valve on/off)
 };
 
 // Pending update flags for HeartbeatResponsePayload
@@ -147,7 +148,7 @@ constexpr uint8_t PENDING_FLAG_WAKE_INTERVAL = 0x02;  // SET_WAKE_INTERVAL queue
 constexpr uint8_t PENDING_FLAG_REREGISTER = 0x04;     // Node should re-register with the hub
 constexpr uint8_t PENDING_FLAG_REBOOT = 0x08;         // Node should perform full system reset
 constexpr uint8_t PENDING_FLAG_FACTORY_RESET = 0x10;  // Node should wipe FRAM and reset
-// Bits 5-7 reserved for future update types
+constexpr uint8_t PENDING_FLAG_ACTUATOR = 0x20;       // Queued actuator command pending
 
 /**
  * @brief Message header structure

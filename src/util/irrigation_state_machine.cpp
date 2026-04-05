@@ -46,34 +46,46 @@ void IrrigationStateMachine::reportRegistrationTimeout()
     transitionTo(IrrigationState::READY_FOR_SLEEP);
 }
 
-void IrrigationStateMachine::reportHeartbeatSent()
+void IrrigationStateMachine::reportHeartbeatSending()
 {
     if (state_ != IrrigationState::AWAITING_TIME) {
-        logger.warn("reportHeartbeatSent() called in unexpected state: %s", stateName(state_));
+        logger.warn("reportHeartbeatSending() called in unexpected state: %s", stateName(state_));
         return;
     }
-    logger.debug("Heartbeat sent, awaiting hub response");
-    transitionTo(IrrigationState::SYNCING_TIME);
+    transitionTo(IrrigationState::SENDING_HEARTBEAT);
 }
 
-void IrrigationStateMachine::reportTimeSyncComplete()
+void IrrigationStateMachine::reportHeartbeatResponseReceived()
 {
-    if (state_ != IrrigationState::AWAITING_TIME && state_ != IrrigationState::SYNCING_TIME) {
-        logger.warn("reportTimeSyncComplete() called in unexpected state: %s", stateName(state_));
+    if (state_ != IrrigationState::SENDING_HEARTBEAT) {
+        logger.warn("reportHeartbeatResponseReceived() called in unexpected state: %s",
+                    stateName(state_));
         return;
     }
-    logger.info("Time sync complete");
+    logger.info("Heartbeat response received");
     transitionTo(IrrigationState::CHECKING_UPDATES);
 }
 
-void IrrigationStateMachine::reportSyncTimeout()
+void IrrigationStateMachine::reportReregistrationRequired()
 {
-    if (state_ != IrrigationState::SYNCING_TIME) {
-        logger.warn("reportSyncTimeout() called in unexpected state: %s", stateName(state_));
+    if (state_ != IrrigationState::SENDING_HEARTBEAT) {
+        logger.warn("reportReregistrationRequired() called in unexpected state: %s",
+                    stateName(state_));
         return;
     }
-    logger.warn("Time sync timed out - sleeping for retry");
-    transitionTo(IrrigationState::READY_FOR_SLEEP);
+    logger.info("Hub requires re-registration");
+    transitionTo(IrrigationState::AWAITING_REGISTRATION);
+}
+
+void IrrigationStateMachine::reportReregistrationComplete()
+{
+    if (state_ != IrrigationState::AWAITING_REGISTRATION) {
+        logger.warn("reportReregistrationComplete() called in unexpected state: %s",
+                    stateName(state_));
+        return;
+    }
+    logger.info("Re-registration complete");
+    transitionTo(IrrigationState::SENDING_HEARTBEAT);
 }
 
 void IrrigationStateMachine::reportUpdateReceived(bool hasMore)
@@ -178,8 +190,10 @@ const char *IrrigationStateMachine::stateName(IrrigationState state)
             return "REGISTERING";
         case IrrigationState::AWAITING_TIME:
             return "AWAITING_TIME";
-        case IrrigationState::SYNCING_TIME:
-            return "SYNCING_TIME";
+        case IrrigationState::SENDING_HEARTBEAT:
+            return "SENDING_HEARTBEAT";
+        case IrrigationState::AWAITING_REGISTRATION:
+            return "AWAITING_REGISTRATION";
         case IrrigationState::CHECKING_UPDATES:
             return "CHECKING_UPDATES";
         case IrrigationState::APPLYING_UPDATE:

@@ -4,9 +4,6 @@
 
 static Logger log("ValveCtrl");
 
-// Initialize static constexpr array
-constexpr uint8_t ValveController::VALVE_PINS[NUM_VALVES];
-
 void ValveController::initialize()
 {
     if (initialized_) {
@@ -16,13 +13,14 @@ void ValveController::initialize()
 
     log.info("Initializing...");
 
-    // Initialize H-bridge with new pin mapping
+    // Initialize H-bridge with board-specific pin mapping
     // For FORWARD: HI_1 + LO_2 active (current flows 1->2)
     // For REVERSE: HI_2 + LO_1 active (current flows 2->1)
-    hbridge_.initialize(PIN_MOTOR_HI_1, PIN_MOTOR_LO_1, PIN_MOTOR_HI_2, PIN_MOTOR_LO_2);
+    hbridge_.initialize(Board::PIN_MOTOR_HI_1, Board::PIN_MOTOR_LO_1,
+                        Board::PIN_MOTOR_HI_2, Board::PIN_MOTOR_LO_2);
 
     // Initialize valve indexer
-    indexer_.initialize(VALVE_PINS, NUM_VALVES);
+    indexer_.initialize(Board::VALVE_PINS, NUM_VALVES);
 
     // Create DC latching drivers for all valves
     for (uint8_t i = 0; i < NUM_VALVES; i++) {
@@ -31,9 +29,6 @@ void ValveController::initialize()
     }
 
     initialized_ = true;
-
-    // Close all valves to ensure known state
-    closeAllValves();
 
     log.info("Initialized with %d valves", NUM_VALVES);
 }
@@ -85,6 +80,18 @@ void ValveController::closeAllValves()
             closeValve(i);
         }
     }
+}
+
+void ValveController::restoreValveState(uint8_t valve_id, ValveState state)
+{
+    ensureInitialized();
+
+    if (!isValidValveId(valve_id)) {
+        log.error("Invalid valve ID %d", valve_id);
+        return;
+    }
+
+    valve_states_[valve_id] = state;
 }
 
 ValveState ValveController::getValveState(uint8_t valve_id) const
