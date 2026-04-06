@@ -31,12 +31,6 @@ function formatDurationShort(minutes: number): string {
   return `${minutes}m`;
 }
 
-function formatDurationLong(minutes: number): string {
-  if (minutes >= 60) {
-    return minutes === 60 ? '1h' : minutes === 90 ? '1h 30m' : '2h';
-  }
-  return `${minutes} min`;
-}
 
 function IrrigationControl({ deviceId }: IrrigationControlProps) {
   // Run-once state
