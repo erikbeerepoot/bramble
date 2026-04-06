@@ -173,11 +173,18 @@ void IrrigationMode::onStateChange(IrrigationState state)
         }
 
         case IrrigationState::AWAITING_REGISTRATION:
-            // Base class callback already fired the registration request.
-            // Wait for registration response via messenger callback.
+            // Send re-registration request (reset to unregistered so hub assigns a fresh address)
+            messenger_.setNodeAddress(ADDRESS_UNREGISTERED);
+            messenger_.sendRegistrationRequest(ADDRESS_HUB, device_id_, NODE_TYPE_HYBRID,
+                                               CAP_VALVE_CONTROL | CAP_SOIL_MOISTURE,
+                                               BRAMBLE_FIRMWARE_VERSION, "Irrigation Node");
+            // Set callback to save address and advance SM when response arrives
             messenger_.setRegistrationSuccessCallback(
                 [this](uint16_t new_address) {
                     logger.info("Re-registration assigned address 0x%04X", new_address);
+                    if (address_saved_callback_) {
+                        address_saved_callback_(new_address);
+                    }
                     messenger_.setRegistrationSuccessCallback(nullptr);
                     irrigation_state_.reportReregistrationComplete();
                 });
@@ -192,10 +199,31 @@ void IrrigationMode::onStateChange(IrrigationState state)
             break;
 
         case IrrigationState::VALVE_ACTIVE:
-            // Keep PMU awake while valve is open — periodic keepAlive every 5s
-            if (pmu_available_ && reliable_pmu_) {
-                reliable_pmu_->keepAwake(10);
-                scheduleKeepAwake();
+            if (pending_valve_close_ && valve_duration_seconds_ > 0 && pmu_available_ &&
+                reliable_pmu_) {
+                // Timer-driven: set RTC Alarm A to wake us after duration, then sleep
+                logger.info("Setting valve timer: %u seconds for valve %u",
+                            valve_duration_seconds_, pending_close_valve_id_);
+                reliable_pmu_->setValveTimer(
+                    valve_duration_seconds_, pending_close_valve_id_,
+                    [this](bool success, PMU::ErrorCode error) {
+                        if (success) {
+                            logger.info("Valve timer set — sleeping with valve open");
+                            irrigation_state_.reportValveClosed();  // -> READY_FOR_SLEEP
+                        } else {
+                            logger.error("Failed to set valve timer: %d",
+                                         static_cast<int>(error));
+                            // Fall back to keepAlive behavior
+                            reliable_pmu_->keepAwake(10);
+                            scheduleKeepAwake();
+                        }
+                    });
+            } else {
+                // No duration — legacy keepAlive behavior
+                if (pmu_available_ && reliable_pmu_) {
+                    reliable_pmu_->keepAwake(10);
+                    scheduleKeepAwake();
+                }
             }
             break;
 
@@ -254,11 +282,28 @@ void IrrigationMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEn
         valve_controller_.closeAllValves();
     }
 
-    // For scheduled wakes, open the valve before reporting to state machine
+    // Handle valve timer wake — close the valve that was left open
+    if (reason == PMU::WakeReason::ValveTimer) {
+        logger.info("Valve timer wake - closing valve %d", pending_close_valve_id_);
+        if (pending_close_valve_id_ < ValveController::NUM_VALVES) {
+            valve_controller_.closeValve(pending_close_valve_id_);
+        }
+        pending_valve_close_ = false;
+        pending_close_valve_id_ = 0;
+        valve_duration_seconds_ = 0;
+    }
+
+    // For scheduled wakes, open the valve and set up timer-driven close
     if (reason == PMU::WakeReason::Scheduled && entry) {
         logger.info("Scheduled wake - valve %d for %d seconds", entry->valveId, entry->duration);
         if (entry->valveId < ValveController::NUM_VALVES) {
             valve_controller_.openValve(entry->valveId);
+            // Set up timer-driven close (same path as ad-hoc commands)
+            if (entry->duration > 0) {
+                pending_valve_close_ = true;
+                pending_close_valve_id_ = entry->valveId;
+                valve_duration_seconds_ = entry->duration;
+            }
         } else {
             logger.error("Invalid valve ID %d in schedule", entry->valveId);
         }
@@ -329,7 +374,17 @@ void IrrigationMode::onActuatorCommand(const ActuatorPayload *payload)
         }
 
         if (payload->command == CMD_TURN_ON) {
-            logger.info("Opening valve %d", valve_id);
+            // Extract duration if present: params = [valve_id, duration_lo, duration_hi]
+            if (payload->param_length >= 3) {
+                valve_duration_seconds_ = payload->params[1] | (payload->params[2] << 8);
+                pending_valve_close_ = true;
+                pending_close_valve_id_ = valve_id;
+                logger.info("Opening valve %d for %u seconds", valve_id, valve_duration_seconds_);
+            } else {
+                valve_duration_seconds_ = 0;
+                pending_valve_close_ = false;
+                logger.info("Opening valve %d (no duration)", valve_id);
+            }
             valve_controller_.openValve(valve_id);
             irrigation_state_.reportValveOpened();
         } else if (payload->command == CMD_TURN_OFF) {
@@ -349,6 +404,13 @@ void IrrigationMode::onActuatorCommand(const ActuatorPayload *payload)
     } else {
         logger.warn("Unsupported actuator type %d", payload->actuator_type);
     }
+}
+
+void IrrigationMode::onReregistrationRequested()
+{
+    // Suppress the base class callback — irrigation SM handles re-registration
+    // after PMU time sync in onHeartbeatResponse().
+    logger.info("Re-registration deferred to irrigation state machine");
 }
 
 void IrrigationMode::onHeartbeatResponse(const HeartbeatResponsePayload *payload)
@@ -655,6 +717,8 @@ void IrrigationMode::packState(IrrigationPersistedState &out) const
     for (uint8_t i = 0; i < ValveController::NUM_VALVES; i++) {
         out.valve_states[i] = static_cast<uint8_t>(valve_controller_.getValveState(i));
     }
+    out.pending_valve_close = pending_valve_close_ ? 1 : 0;
+    out.pending_close_valve_id = pending_close_valve_id_;
 }
 
 bool IrrigationMode::unpackState(const IrrigationPersistedState *persisted)
@@ -695,9 +759,13 @@ bool IrrigationMode::unpackState(const IrrigationPersistedState *persisted)
         valve_controller_.restoreValveState(i, static_cast<ValveState>(persisted->valve_states[i]));
     }
 
-    pmu_logger.info("Restored state: seq=%u, addr=0x%04X, update_seq=%u",
+    // Restore pending valve close state
+    pending_valve_close_ = (persisted->pending_valve_close != 0);
+    pending_close_valve_id_ = persisted->pending_close_valve_id;
+
+    pmu_logger.info("Restored state: seq=%u, addr=0x%04X, update_seq=%u, pending_close=%u",
                     persisted->next_seq_num, persisted->assigned_address,
-                    persisted->update_sequence);
+                    persisted->update_sequence, persisted->pending_valve_close);
 
     return true;
 }

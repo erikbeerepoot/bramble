@@ -23,11 +23,13 @@ struct __attribute__((packed)) IrrigationPersistedState {
     uint8_t update_sequence;    // Current update pull sequence number
     uint16_t assigned_address;  // Node address (survives warm reboot)
     uint8_t valve_states[4];    // ValveState per valve (CLOSED=0, OPEN=1, UNKNOWN=2)
-    uint8_t padding[22];        // Reserved (pad to 32 bytes)
+    uint8_t pending_valve_close; // 0=no pending close, 1=pending valve close timer
+    uint8_t pending_close_valve_id; // Which valve to close when timer fires
+    uint8_t padding[20];        // Reserved (pad to 32 bytes)
 };
 static_assert(sizeof(IrrigationPersistedState) == 32, "IrrigationPersistedState must be 32 bytes");
 
-constexpr uint8_t IRRIGATION_STATE_VERSION = 2;
+constexpr uint8_t IRRIGATION_STATE_VERSION = 3;
 
 /**
  * @brief Update pull state tracking
@@ -54,6 +56,14 @@ struct UpdatePullState {
  * CHECKING_UPDATES -> (APPLYING_UPDATE ->)* READY_FOR_SLEEP
  */
 class IrrigationMode : public ApplicationMode {
+public:
+    using AddressSavedCallback = std::function<void(uint16_t)>;
+
+    void setAddressSavedCallback(AddressSavedCallback callback)
+    {
+        address_saved_callback_ = callback;
+    }
+
 private:
     ValveController valve_controller_;
     PmuClient *pmu_client_ = nullptr;
@@ -67,6 +77,10 @@ private:
     uint64_t device_id_;       // Unique board ID for heartbeat identification
     uint16_t wake_timeout_id_ = 0;
     uint16_t keepawake_task_id_ = 0;
+    bool pending_valve_close_ = false;
+    uint8_t pending_close_valve_id_ = 0;
+    uint16_t valve_duration_seconds_ = 0;
+    AddressSavedCallback address_saved_callback_;
 
     /**
      * @brief Centralized state change handler - drives all side effects
@@ -105,6 +119,7 @@ protected:
     void onLoop() override;
     void onActuatorCommand(const ActuatorPayload *payload) override;
     void onHeartbeatResponse(const HeartbeatResponsePayload *payload) override;
+    void onReregistrationRequested() override;
     void onRebootRequested() override;
     void onFactoryResetRequested() override;
 };

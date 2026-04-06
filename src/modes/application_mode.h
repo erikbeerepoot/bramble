@@ -131,6 +131,15 @@ protected:
     virtual void onFactoryResetRequested();
 
     /**
+     * @brief Handle re-registration request from hub
+     *
+     * Default implementation fires the reregistration_callback_ set via
+     * setReregistrationCallback(). Modes with their own state machines
+     * (e.g. IrrigationMode) can override to handle re-registration internally.
+     */
+    virtual void onReregistrationRequested();
+
+    /**
      * @brief Check if we should use interrupt-based sleep
      * @return true to use sleep, false to continue immediately
      */

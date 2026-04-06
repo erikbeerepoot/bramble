@@ -147,9 +147,7 @@ void ApplicationMode::onHeartbeatResponse(const HeartbeatResponsePayload *payloa
     // Handle re-registration flag (applies to all node types)
     if (payload->pending_update_flags & PENDING_FLAG_REREGISTER) {
         logger.warn("Hub requests re-registration (PENDING_FLAG_REREGISTER)");
-        if (reregistration_callback_) {
-            reregistration_callback_();
-        }
+        onReregistrationRequested();
     }
 
     // Handle reboot flag (applies to all node types)
@@ -162,6 +160,13 @@ void ApplicationMode::onHeartbeatResponse(const HeartbeatResponsePayload *payloa
     if (payload->pending_update_flags & PENDING_FLAG_FACTORY_RESET) {
         logger.warn("Hub requests factory reset (PENDING_FLAG_FACTORY_RESET)");
         onFactoryResetRequested();
+    }
+}
+
+void ApplicationMode::onReregistrationRequested()
+{
+    if (reregistration_callback_) {
+        reregistration_callback_();
     }
 }
 

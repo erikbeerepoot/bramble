@@ -151,6 +151,10 @@ void IrrigationStateMachine::reportWakeFromSleep(PMU::WakeReason reason)
             logger.info("Scheduled wake - valve activation");
             transitionTo(IrrigationState::VALVE_ACTIVE);
             break;
+        case PMU::WakeReason::ValveTimer:
+            logger.info("Valve timer wake - closing valve then normal cycle");
+            transitionTo(IrrigationState::AWAITING_TIME);
+            break;
         case PMU::WakeReason::Periodic:
         case PMU::WakeReason::External:
             logger.info("Wake from sleep (%s)",

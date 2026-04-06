@@ -363,7 +363,17 @@ int main()
 #ifdef HARDWARE_IRRIGATION
         log.info("Starting IRRIGATION mode");
         IrrigationMode mode(messenger, lora, led, nullptr, nullptr, &network_stats, false);
-        mode.setReregistrationCallback(reregistration_callback);
+        mode.setAddressSavedCallback([&config_manager, device_id](uint16_t new_address) {
+            printf("Saving new address 0x%04X to flash\n", new_address);
+            NodeConfiguration config;
+            config.assigned_address = new_address;
+            config.device_id = device_id;
+            if (config_manager.saveConfiguration(config)) {
+                printf("Configuration saved successfully\n");
+            } else {
+                printf("ERROR: Failed to save configuration\n");
+            }
+        });
         mode.run();
 #elif HARDWARE_GREENHOUSE
         log.info("Starting GREENHOUSE mode");
