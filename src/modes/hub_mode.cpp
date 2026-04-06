@@ -693,15 +693,17 @@ void HubMode::handleFactoryResetNode(const char *args)
 
 void HubMode::handleSendActuator(const char *args)
 {
-    // Parse: SEND_ACTUATOR <node_addr> <actuator_type> <command> [param]
+    // Parse: SEND_ACTUATOR <node_addr> <actuator_type> <command> [param] [duration_seconds]
     uint16_t node_addr;
     unsigned int actuator_type;
     unsigned int command;
     unsigned int param = 0;
+    unsigned int duration = 0;
 
-    int parsed = sscanf(args, "%hu %u %u %u", &node_addr, &actuator_type, &command, &param);
+    int parsed = sscanf(args, "%hu %u %u %u %u", &node_addr, &actuator_type, &command, &param,
+                        &duration);
     if (parsed < 3) {
-        uartSend("ERROR Invalid SEND_ACTUATOR syntax: <addr> <type> <cmd> [param]\n");
+        uartSend("ERROR Invalid SEND_ACTUATOR syntax: <addr> <type> <cmd> [param] [duration]\n");
         return;
     }
 
@@ -710,10 +712,20 @@ void HubMode::handleSendActuator(const char *args)
         return;
     }
 
-    // Build optional parameter byte
-    uint8_t param_byte = static_cast<uint8_t>(param);
-    const uint8_t *params = (parsed >= 4) ? &param_byte : nullptr;
-    uint8_t param_length = (parsed >= 4) ? 1 : 0;
+    // Build parameter bytes: [param] or [param, duration_lo, duration_hi]
+    uint8_t params_buf[3];
+    const uint8_t *params = nullptr;
+    uint8_t param_length = 0;
+    if (parsed >= 4) {
+        params_buf[0] = static_cast<uint8_t>(param);
+        param_length = 1;
+        if (parsed >= 5 && duration > 0) {
+            params_buf[1] = static_cast<uint8_t>(duration & 0xFF);
+            params_buf[2] = static_cast<uint8_t>((duration >> 8) & 0xFF);
+            param_length = 3;
+        }
+        params = params_buf;
+    }
 
     bool queued = hub_router_->queueActuatorCommand(
         node_addr, static_cast<uint8_t>(actuator_type), static_cast<uint8_t>(command), params,

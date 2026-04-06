@@ -144,7 +144,7 @@ def queue_reboot_node(node_address: int):
 
 
 def queue_send_actuator(node_address: int, actuator_type: int, command: int,
-                        param: int = 0):
+                        param: int = 0, duration_seconds: int = 0):
     """Queue a SEND_ACTUATOR command.
 
     Args:
@@ -152,10 +152,14 @@ def queue_send_actuator(node_address: int, actuator_type: int, command: int,
         actuator_type: Actuator type (e.g. 4 = curtain)
         command: Command code (0=off, 1=on, 4=stop)
         param: Optional parameter byte
+        duration_seconds: Optional duration for timed commands (e.g. valve auto-close)
 
     Returns:
         huey TaskResultWrapper for tracking status
     """
-    cmd = f"SEND_ACTUATOR {node_address} {actuator_type} {command} {param}"
+    if duration_seconds > 0:
+        cmd = f"SEND_ACTUATOR {node_address} {actuator_type} {command} {param} {duration_seconds}"
+    else:
+        cmd = f"SEND_ACTUATOR {node_address} {actuator_type} {command} {param}"
     command_id = f"actuator-{node_address}-{actuator_type}-{command}"
     return send_hub_command(cmd, command_id)

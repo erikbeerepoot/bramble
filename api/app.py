@@ -825,7 +825,8 @@ def run_valve(device_id: int):
         if not 1 <= duration_seconds <= 7200:
             return jsonify({'error': 'duration_seconds must be 1-7200'}), 400
 
-        # Send actuator ON command with duration as param (firmware handles auto-off)
+        # Send actuator ON command with duration — firmware sets RTC Alarm A
+        # for auto-close after the specified duration (node sleeps in between)
         from command_queue import queue_send_actuator
 
         actuator_type = 1  # ACTUATOR_VALVE
@@ -835,26 +836,7 @@ def run_valve(device_id: int):
             actuator_type=actuator_type,
             command=command,
             param=valve,
-        )
-
-        # Also queue the duration as a separate schedule entry (index 7, one-shot)
-        # so the PMU will auto-close the valve after the specified duration
-        from command_queue import queue_set_schedule
-        from datetime import datetime
-
-        now = datetime.now()
-        # Schedule to run immediately (current time + 1 minute buffer)
-        run_hour = now.hour
-        run_minute = now.minute
-
-        queue_set_schedule(
-            node_address=address,
-            index=7,  # Use last slot for run-once
-            hour=run_hour,
-            minute=run_minute,
-            duration=duration_seconds,
-            days=127,  # All days (one-shot will be cleared by firmware)
-            valve=valve,
+            duration_seconds=duration_seconds,
         )
 
         return jsonify({
