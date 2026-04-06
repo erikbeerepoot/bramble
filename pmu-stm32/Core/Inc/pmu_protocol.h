@@ -21,7 +21,8 @@ enum class Command : uint8_t {
     GetDateTime = 0x18,    // Get RTC date/time from PMU (returns DateTimeResponse)
     ClearToSend = 0x19,    // RP2040 signals ready to receive wake info
     SystemReset = 0x1A,    // Request full system reset (PMU resets itself + RP2040)
-    FactoryReset = 0x1B    // Wipe FRAM persistent storage, then reset
+    FactoryReset = 0x1B,   // Wipe FRAM persistent storage, then reset
+    SetValveTimer = 0x1C   // Set RTC Alarm A for valve auto-close (3 bytes: duration_lo, duration_hi, valve_id)
 };
 
 // Response codes (STM32 → RP2040)
@@ -50,7 +51,8 @@ enum class ErrorCode : uint8_t {
 enum class WakeReason : uint8_t {
     Periodic = 0x00,
     Scheduled = 0x01,
-    External = 0x02
+    External = 0x02,
+    ValveTimer = 0x03
 };
 
 // Days of week bitmask
@@ -268,6 +270,7 @@ public:
     using KeepAwakeCallback = void (*)(uint16_t seconds);
     using ReadyForSleepCallback = void (*)();
     using GetTickCallback = uint32_t (*)();
+    using SetValveTimerCallback = void (*)(uint16_t durationSeconds, uint8_t valveId);
 
     Protocol(UartSendCallback uartSend, SetWakeCallback setWake, KeepAwakeCallback keepAwake,
              ReadyForSleepCallback readyForSleep = nullptr, GetTickCallback getTick = nullptr);
@@ -305,6 +308,9 @@ public:
     bool getNextScheduledEntry(uint8_t currentDay, uint8_t currentHour,
                                uint8_t currentMinute, ScheduleEntry &out) const;
 
+    // Set callback for valve timer alarm configuration
+    void setValveTimerCallback(SetValveTimerCallback callback) { setValveTimer_ = callback; }
+
     // Persistent storage integration
     void setStorage(PersistentStorage *storage);
     void loadFromStorage();
@@ -322,6 +328,7 @@ private:
     KeepAwakeCallback keepAwake_;
     ReadyForSleepCallback readyForSleep_;
     GetTickCallback getTick_;
+    SetValveTimerCallback setValveTimer_ = nullptr;
 
     // Deduplication buffer
     SeenMessage seenBuffer_[DEDUP_BUFFER_SIZE];
@@ -352,6 +359,7 @@ private:
     void handleSetDateTime(const uint8_t *data, uint8_t length);
     void handleReadyForSleep();
     void handleGetDateTime();
+    void handleSetValveTimer(const uint8_t *data, uint8_t length);
 
     // Response senders (with sequence number echo)
     void sendAck();

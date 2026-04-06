@@ -70,7 +70,11 @@ static uint8_t uartRxByte;
 static volatile bool rtcWakeupFlag = false;
 static volatile bool readyForSleepFlag = false;
 static volatile bool bootCompleteFlag = false;
+static volatile bool valveTimerFlag = false;
 volatile int buttonWakeFlag = 0;
+
+// Valve timer state (set when configuring Alarm A, read on alarm fire)
+static uint8_t valveTimerValveId = 0;
 
 // Clock source fallback flag - set if LSE crystal fails to start
 static bool usingLSIFallback = false;
@@ -96,6 +100,7 @@ static void setWakeIntervalCallback(uint32_t seconds);
 static void keepAwakeCallback(uint16_t seconds);
 static void readyForSleepCallback();
 static uint32_t getTickCallback();
+static void setValveTimerCallback(uint16_t durationSeconds, uint8_t valveId);
 
 // Protocol instance
 static PMU::Protocol protocol(uartSendCallback, setWakeIntervalCallback, keepAwakeCallback,
@@ -114,6 +119,7 @@ static void MX_TIM21_Init(void);
 static void MX_I2C1_Init(void);
 /* USER CODE BEGIN PFP */
 static void configureRTCWakeup(uint32_t seconds);
+static void configureValveCloseAlarm(uint16_t durationSeconds, uint8_t valveId);
 static void enterStopMode(void);
 static void wakeupFromStopMode(void);
 static void determineWakeType(void);
@@ -186,6 +192,9 @@ int main(void)
     // Give the protocol layer access to persistent storage
     protocol.setStorage(&storage);
 
+    // Register valve timer callback for RTC Alarm A
+    protocol.setValveTimerCallback(setValveTimerCallback);
+
     // Load persisted state from FRAM (wake interval, schedules, node state)
     protocol.loadFromStorage();
 
@@ -225,6 +234,14 @@ int main(void)
         if (buttonWakeFlag) {
             buttonWakeFlag = 0;
             pmuState.dispatch(PmuEvent::BUTTON_WAKE);
+        }
+
+        if (valveTimerFlag) {
+            valveTimerFlag = false;
+            // Valve close alarm fired — set wake type before dispatching
+            // so determineWakeType() won't override it
+            pmuState.setWakeType(WakeType::VALVE_TIMER);
+            pmuState.dispatch(PmuEvent::RTC_WAKEUP);
         }
 
         if (rtcWakeupFlag) {
@@ -660,6 +677,68 @@ static void configureRTCWakeup(uint32_t seconds)
 }
 
 /**
+ * @brief Configure RTC Alarm A for valve auto-close after a duration
+ * @param durationSeconds Seconds until valve should be closed
+ * @param valveId Which valve to close when alarm fires
+ *
+ * Uses RTC Alarm A (independent from the periodic Wakeup Timer).
+ * The alarm fires once, waking the system from STOP mode via EXTI line 17.
+ */
+static void configureValveCloseAlarm(uint16_t durationSeconds, uint8_t valveId)
+{
+    // Store valve ID for the callback
+    valveTimerValveId = valveId;
+
+    // Deactivate any existing alarm first
+    HAL_RTC_DeactivateAlarm(&hrtc, RTC_ALARM_A);
+
+    // Read current RTC time
+    RTC_TimeTypeDef currentTime;
+    RTC_DateTypeDef currentDate;
+    HAL_RTC_GetTime(&hrtc, &currentTime, RTC_FORMAT_BIN);
+    HAL_RTC_GetDate(&hrtc, &currentDate, RTC_FORMAT_BIN);
+
+    // Compute alarm time = now + duration
+    uint32_t totalSeconds = currentTime.Hours * 3600 + currentTime.Minutes * 60 +
+                            currentTime.Seconds + durationSeconds;
+
+    uint8_t alarmHours = (totalSeconds / 3600) % 24;
+    uint8_t alarmMinutes = (totalSeconds % 3600) / 60;
+    uint8_t alarmSeconds = totalSeconds % 60;
+
+    // Configure Alarm A to match hours, minutes, and seconds
+    RTC_AlarmTypeDef alarm = {};
+    alarm.AlarmTime.Hours = alarmHours;
+    alarm.AlarmTime.Minutes = alarmMinutes;
+    alarm.AlarmTime.Seconds = alarmSeconds;
+    alarm.AlarmTime.SubSeconds = 0;
+    alarm.AlarmTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
+    alarm.AlarmTime.StoreOperation = RTC_STOREOPERATION_RESET;
+    alarm.AlarmMask = RTC_ALARMMASK_DATEWEEKDAY;  // Match H:M:S only, ignore date
+    alarm.AlarmSubSecondMask = RTC_ALARMSUBSECONDMASK_ALL;
+    alarm.Alarm = RTC_ALARM_A;
+
+    // Enable Alarm A EXTI line 17 for STOP mode wakeup
+    __HAL_RTC_ALARM_EXTI_ENABLE_IT();
+    __HAL_RTC_ALARM_EXTI_ENABLE_RISING_EDGE();
+
+    if (HAL_RTC_SetAlarm_IT(&hrtc, &alarm, RTC_FORMAT_BIN) != HAL_OK) {
+        led.setColor(LED::RED);
+        HAL_Delay(500);
+        led.off();
+    }
+}
+
+/**
+ * @brief RTC Alarm A event callback
+ * Called when Alarm A fires (valve close timer expired).
+ */
+void HAL_RTC_AlarmAEventCallback(RTC_HandleTypeDef *hrtc)
+{
+    valveTimerFlag = true;
+}
+
+/**
  * @brief Enter STOP mode for low power sleep
  */
 static void enterStopMode(void)
@@ -717,6 +796,11 @@ static void determineWakeType(void)
 
     // Reset CTS flag for this wake cycle
     protocol.clearCtsReceived();
+
+    // Don't override wake type if already set (e.g. VALVE_TIMER set before dispatch)
+    if (pmuState.wakeType() != WakeType::NONE) {
+        return;
+    }
 
     // Get current RTC time and date
     RTC_TimeTypeDef time;
@@ -790,6 +874,14 @@ static void setWakeIntervalCallback(uint32_t seconds)
 }
 
 /**
+ * @brief Valve timer callback - configures RTC Alarm A for valve auto-close
+ */
+static void setValveTimerCallback(uint16_t durationSeconds, uint8_t valveId)
+{
+    configureValveCloseAlarm(durationSeconds, valveId);
+}
+
+/**
  * @brief Keep awake callback
  * @param seconds Number of seconds to stay awake (resets wake timeout)
  */
@@ -824,7 +916,9 @@ static void readyForSleepCallback()
  */
 static void sendWakeNotification()
 {
-    if (pmuState.wakeType() == WakeType::SCHEDULED) {
+    if (pmuState.wakeType() == WakeType::VALVE_TIMER) {
+        protocol.sendWakeNotification(PMU::WakeReason::ValveTimer);
+    } else if (pmuState.wakeType() == WakeType::SCHEDULED) {
         const PMU::ScheduleEntry *entry = pmuState.getScheduleEntry();
         if (entry) {
             protocol.sendWakeNotificationWithSchedule(PMU::WakeReason::Scheduled, entry);

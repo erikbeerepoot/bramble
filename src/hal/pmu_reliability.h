@@ -183,6 +183,19 @@ public:
     bool factoryReset(CommandCallback callback = nullptr);
 
     /**
+     * @brief Set a valve close timer using PMU's RTC Alarm A
+     * @param durationSeconds Seconds until valve should be closed
+     * @param valveId Which valve to close when timer fires
+     * @param callback Called when command is ACK'd (optional)
+     * @return true if command queued successfully
+     *
+     * Independent from the periodic wake timer. When the alarm fires,
+     * the PMU wakes the RP2040 with WakeReason::ValveTimer.
+     */
+    bool setValveTimer(uint16_t durationSeconds, uint8_t valveId,
+                       CommandCallback callback = nullptr);
+
+    /**
      * @brief Get access to the underlying PmuClient
      * Useful for accessing the protocol directly for operations
      * not covered by the reliable client.

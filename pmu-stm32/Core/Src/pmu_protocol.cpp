@@ -612,6 +612,13 @@ void Protocol::processReceivedByte(uint8_t byte)
                     NVIC_SystemReset();
                 }
                 break;
+            case Command::SetValveTimer:
+                if (!isDuplicate) {
+                    handleSetValveTimer(data, dataLen);
+                } else {
+                    sendAck();
+                }
+                break;
             default:
                 sendNack(ErrorCode::InvalidParam);
                 break;
@@ -911,6 +918,29 @@ void Protocol::handleGetDateTime()
     // Send response with valid flag and datetime
     sendDateTimeResponse(valid, date.Year, date.Month, date.Date, date.WeekDay, time.Hours,
                          time.Minutes, time.Seconds);
+}
+
+void Protocol::handleSetValveTimer(const uint8_t *data, uint8_t length)
+{
+    // Payload: [duration_lo, duration_hi, valve_id] = 3 bytes
+    if (length != 3) {
+        sendNack(ErrorCode::InvalidParam);
+        return;
+    }
+
+    uint16_t durationSeconds = data[0] | (data[1] << 8);
+    uint8_t valveId = data[2];
+
+    if (durationSeconds == 0 || durationSeconds > 7200) {
+        sendNack(ErrorCode::InvalidParam);
+        return;
+    }
+
+    sendAck();
+
+    if (setValveTimer_) {
+        setValveTimer_(durationSeconds, valveId);
+    }
 }
 
 // Response senders (echo the command's sequence number)

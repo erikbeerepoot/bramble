@@ -332,6 +332,16 @@ bool ReliablePmuClient::factoryReset(CommandCallback callback)
     return queueCommand(Command::FactoryReset, nullptr, 0, callback);
 }
 
+bool ReliablePmuClient::setValveTimer(uint16_t durationSeconds, uint8_t valveId,
+                                      CommandCallback callback)
+{
+    uint8_t data[3];
+    data[0] = durationSeconds & 0xFF;
+    data[1] = (durationSeconds >> 8) & 0xFF;
+    data[2] = valveId;
+    return queueCommand(Command::SetValveTimer, data, 3, callback);
+}
+
 // ============================================================================
 // Event callbacks
 // ============================================================================

@@ -58,10 +58,11 @@ enum class PmuState : uint8_t {
  * @brief Type of wake event (context, not encoded in state)
  */
 enum class WakeType : uint8_t {
-    NONE,       ///< Not in a wake cycle
-    SCHEDULED,  ///< Woke due to schedule entry
-    PERIODIC,   ///< Woke on periodic interval
-    BUTTON      ///< Woke by button press
+    NONE,         ///< Not in a wake cycle
+    SCHEDULED,    ///< Woke due to schedule entry
+    PERIODIC,     ///< Woke on periodic interval
+    BUTTON,       ///< Woke by button press
+    VALVE_TIMER   ///< Woke to close a valve (RTC Alarm A expired)
 };
 
 /**

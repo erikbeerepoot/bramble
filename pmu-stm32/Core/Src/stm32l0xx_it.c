@@ -171,11 +171,12 @@ void EXTI0_1_IRQHandler(void)
 }
 
 /**
- * @brief This function handles RTC wakeup interrupt through EXTI line 20.
+ * @brief This function handles RTC interrupts through EXTI lines 17 (Alarm) and 20 (Wakeup).
  */
 void RTC_IRQHandler(void)
 {
     HAL_RTCEx_WakeUpTimerIRQHandler(&hrtc);
+    HAL_RTC_AlarmIRQHandler(&hrtc);
 }
 
 #ifdef USE_WS2812

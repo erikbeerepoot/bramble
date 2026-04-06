@@ -20,7 +20,8 @@ enum class Command : uint8_t {
     GetDateTime = 0x18,    // Get RTC date/time from PMU (returns DateTimeResponse)
     ClearToSend = 0x19,    // RP2040 signals ready to receive wake info
     SystemReset = 0x1A,    // Request full system reset (PMU resets itself + RP2040)
-    FactoryReset = 0x1B    // Wipe FRAM persistent storage, then reset
+    FactoryReset = 0x1B,   // Wipe FRAM persistent storage, then reset
+    SetValveTimer = 0x1C   // Set RTC Alarm A for valve auto-close (3 bytes: duration_lo, duration_hi, valve_id)
 };
 
 // Response codes (STM32 → RP2040)
@@ -49,7 +50,8 @@ enum class ErrorCode : uint8_t {
 enum class WakeReason : uint8_t {
     Periodic = 0x00,
     Scheduled = 0x01,
-    External = 0x02
+    External = 0x02,
+    ValveTimer = 0x03
 };
 
 // Days of week bitmask
