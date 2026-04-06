@@ -26,6 +26,10 @@ body {
   @apply border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-bramble-500 focus:border-transparent;
 }
 
+/* Hide scrollbar for chip/pill horizontal scrollers */
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+
 /* Plotly hover tooltip styling - semi-opaque background */
 .hoverlayer .hovertext path {
   fill: rgba(255, 255, 255, 0.95) !important;

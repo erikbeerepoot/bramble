@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
+import { Drawer } from 'vaul';
+import { Zap, Play, Square } from 'lucide-react';
 import {
   runValve,
   stopValve,
@@ -15,7 +17,26 @@ interface IrrigationControlProps {
 }
 
 // Non-linear notches: fine-grained at short durations, coarser for long runs
-const DURATION_NOTCHES = [5, 10, 15, 20, 30, 45, 60, 90, 120]; // minutes
+const DURATION_NOTCHES = [1, 5, 10, 15, 20, 30, 45, 60, 90, 120]; // minutes
+
+const DURATION_LABELS: Record<number, string> = {
+  1: '1', 5: '5', 10: '10', 15: '15', 20: '20', 30: '30', 45: '45',
+  60: '1h', 90: '1.5h', 120: '2h',
+};
+
+function formatDurationShort(minutes: number): string {
+  if (minutes >= 60) {
+    return minutes === 60 ? '1h' : minutes === 90 ? '1.5h' : '2h';
+  }
+  return `${minutes}m`;
+}
+
+function formatDurationLong(minutes: number): string {
+  if (minutes >= 60) {
+    return minutes === 60 ? '1h' : minutes === 90 ? '1h 30m' : '2h';
+  }
+  return `${minutes} min`;
+}
 
 function IrrigationControl({ deviceId }: IrrigationControlProps) {
   // Run-once state
@@ -174,95 +195,51 @@ function IrrigationControl({ deviceId }: IrrigationControlProps) {
 
   const isBusy = sendingValve !== null || stoppingValve !== null;
 
-  const handleSlider = (valve: number, notchIndex: number) => {
-    const minutes = DURATION_NOTCHES[notchIndex] || DURATION_NOTCHES[0];
-    setSelectedDuration((prev) => ({ ...prev, [valve]: minutes * 60 }));
-  };
-
   const renderValveRow = (valve: number) => {
     const duration = selectedDuration[valve] || DURATION_NOTCHES[0] * 60;
     const minutes = duration / 60;
-    const notchIndex = DURATION_NOTCHES.indexOf(minutes);
-    const sliderValue = notchIndex >= 0 ? notchIndex : 0;
     return (
-      <div key={valve}>
-        {/* Desktop: horizontal slider row */}
-        <div className="hidden sm:flex items-center gap-4">
-          <span className="text-base font-semibold text-gray-900 w-16 shrink-0">Valve {valve + 1}</span>
-          <div className="flex-1 min-w-0 self-center">
-            <input
-              type="range"
-              min={0}
-              max={DURATION_NOTCHES.length - 1}
-              step={1}
-              value={sliderValue}
-              onChange={(e) => handleSlider(valve, parseInt(e.target.value, 10))}
-              className="w-full accent-blue-600"
-            />
-            <div className="flex justify-between px-0.5 -mt-1">
-              {DURATION_NOTCHES.map((m) => (
-                <span key={m} className={`text-[10px] ${m === minutes ? 'text-blue-600 font-medium' : 'text-gray-400'}`}>
-                  {m}
-                </span>
-              ))}
-            </div>
+      <div key={valve} className="space-y-3">
+        {/* Header */}
+        <h3 className="font-medium text-gray-900">Valve {valve + 1}</h3>
+
+        {/* Duration chips */}
+        <div className="overflow-x-auto scrollbar-hide">
+          <div className="flex gap-2 min-w-min pb-1">
+            {DURATION_NOTCHES.map((m) => (
+              <button
+                key={m}
+                onClick={() => setSelectedDuration((prev) => ({ ...prev, [valve]: m * 60 }))}
+                className={`flex-shrink-0 px-4 h-10 rounded-full text-sm font-medium transition-colors ${
+                  m === minutes
+                    ? 'bg-green-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200 active:bg-gray-300'
+                }`}
+              >
+                {DURATION_LABELS[m] || m}
+              </button>
+            ))}
           </div>
-          <span className="w-12 text-center text-sm font-medium text-gray-700 shrink-0">{minutes}m</span>
+        </div>
+
+        {/* Action buttons */}
+        <div className="flex gap-3">
           <button
             onClick={() => handleRun(valve)}
             disabled={isBusy}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 shrink-0"
+            className="flex-1 flex items-center justify-center gap-2 h-11 bg-green-600 text-white rounded-xl font-medium hover:bg-green-700 active:bg-green-800 transition-colors disabled:opacity-50"
           >
-            <svg width="10" height="12" viewBox="0 0 10 12" fill="currentColor"><path d="M0 0l10 6-10 6z"/></svg>
-            {sendingValve === valve ? 'Sending...' : 'Run'}
+            <Play className="w-4 h-4 fill-current" />
+            {sendingValve === valve ? 'Sending...' : `Run ${formatDurationShort(minutes)}`}
           </button>
           <button
             onClick={() => handleStop(valve)}
             disabled={isBusy}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded bg-red-100 text-red-700 hover:bg-red-200 disabled:opacity-50 shrink-0"
+            className="flex-1 flex items-center justify-center gap-2 h-11 bg-red-100 text-red-700 rounded-xl font-medium hover:bg-red-200 active:bg-red-300 transition-colors disabled:opacity-50"
           >
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><rect width="10" height="10" rx="1"/></svg>
+            <Square className="w-4 h-4 fill-current" />
             {stoppingValve === valve ? 'Stopping...' : 'Stop'}
           </button>
-        </div>
-
-        {/* Mobile: stacked layout with native select (renders as iOS wheel picker) */}
-        <div className="sm:hidden space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-base font-semibold text-gray-900">Valve {valve + 1}</span>
-            <select
-              value={minutes}
-              onChange={(e) => {
-                const m = parseInt(e.target.value, 10);
-                setSelectedDuration((prev) => ({ ...prev, [valve]: m * 60 }));
-              }}
-              className="px-3 py-1.5 text-sm rounded-lg border border-gray-300 bg-white text-gray-700 appearance-none pr-7 bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20width%3D%228%22%20height%3D%225%22%20viewBox%3D%220%200%208%205%22%20fill%3D%22%236b7280%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cpath%20d%3D%22M0%200l4%205%204-5z%22%2F%3E%3C%2Fsvg%3E')] bg-[position:right_0.5rem_center] bg-no-repeat"
-            >
-              {DURATION_NOTCHES.map((m) => (
-                <option key={m} value={m}>
-                  {m >= 60 ? `${Math.floor(m / 60)}h${m % 60 > 0 ? ` ${m % 60}m` : ''}` : `${m} min`}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={() => handleRun(valve)}
-              disabled={isBusy}
-              className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2.5 text-sm font-medium rounded-lg bg-green-600 text-white hover:bg-green-700 active:bg-green-800 disabled:opacity-50"
-            >
-              <svg width="10" height="12" viewBox="0 0 10 12" fill="currentColor"><path d="M0 0l10 6-10 6z"/></svg>
-              {sendingValve === valve ? 'Sending...' : `Run ${minutes}m`}
-            </button>
-            <button
-              onClick={() => handleStop(valve)}
-              disabled={isBusy}
-              className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2.5 text-sm font-medium rounded-lg bg-red-100 text-red-700 hover:bg-red-200 active:bg-red-300 disabled:opacity-50"
-            >
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><rect width="10" height="10" rx="1"/></svg>
-              {stoppingValve === valve ? 'Stopping...' : 'Stop'}
-            </button>
-          </div>
         </div>
       </div>
     );
@@ -271,10 +248,14 @@ function IrrigationControl({ deviceId }: IrrigationControlProps) {
   return (
     <div className="space-y-4">
       {/* Run Once */}
-      <div className="card">
-        <h3 className="text-lg font-medium text-gray-900 mb-4">Run Once</h3>
-        <div className="space-y-4">
+      <div className="bg-white rounded-2xl shadow-md p-5">
+        <div className="flex items-center gap-2 mb-5">
+          <Zap className="w-5 h-5 text-gray-500" />
+          <h2 className="font-semibold text-gray-900">Run Once</h2>
+        </div>
+        <div className="space-y-5">
           {renderValveRow(0)}
+          <div className="border-t border-gray-200" />
           {renderValveRow(1)}
         </div>
         {valveMessage && !valveError && (
@@ -293,7 +274,7 @@ function IrrigationControl({ deviceId }: IrrigationControlProps) {
             <div className="h-4 bg-gray-200 rounded w-3/4" />
             <div className="h-4 bg-gray-200 rounded w-1/2" />
           </div>
-        ) : schedules.length === 0 && !showAddForm ? (
+        ) : schedules.length === 0 ? (
           <p className="text-sm text-gray-400 mb-3">No schedules configured.</p>
         ) : (
           <div className="space-y-2 mb-3">
@@ -328,105 +309,125 @@ function IrrigationControl({ deviceId }: IrrigationControlProps) {
           </div>
         )}
 
-        {showAddForm && (
-          <div className="p-3 border border-gray-200 rounded-lg space-y-3 mb-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Valve</label>
-                <select
-                  value={formValve}
-                  onChange={(e) => setFormValve(parseInt(e.target.value, 10))}
-                  className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded"
-                >
-                  <option value={0}>Valve 1</option>
-                  <option value={1}>Valve 2</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Duration (min)</label>
-                <input
-                  type="number"
-                  min={1}
-                  max={120}
-                  value={formDurationMin}
-                  onChange={(e) => setFormDurationMin(parseInt(e.target.value, 10) || 1)}
-                  className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded"
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Hour</label>
-                <input
-                  type="number"
-                  min={0}
-                  max={23}
-                  value={formHour}
-                  onChange={(e) => setFormHour(parseInt(e.target.value, 10) || 0)}
-                  className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Minute</label>
-                <input
-                  type="number"
-                  min={0}
-                  max={59}
-                  value={formMinute}
-                  onChange={(e) => setFormMinute(parseInt(e.target.value, 10) || 0)}
-                  className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded"
-                />
-              </div>
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Days</label>
-              <div className="flex gap-1">
-                {DAY_LABELS.map((day, i) => (
-                  <button
-                    key={day}
-                    onClick={() => toggleDay(i)}
-                    className={`px-2 py-1 text-xs rounded ${
-                      formDays & (1 << i)
-                        ? 'bg-blue-100 text-blue-700 border border-blue-300'
-                        : 'bg-gray-100 text-gray-400 border border-gray-200'
-                    }`}
-                  >
-                    {day}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={handleAddSchedule}
-                disabled={savingSchedule || formDays === 0}
-                className="px-3 py-1.5 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
-              >
-                {savingSchedule ? 'Saving...' : 'Save'}
-              </button>
-              <button
-                onClick={() => setShowAddForm(false)}
-                className="px-3 py-1.5 text-sm rounded border border-gray-200 text-gray-600 hover:border-gray-300"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
-
         {scheduleError && (
           <p className="text-sm text-red-600 mb-2">{scheduleError}</p>
         )}
 
-        {!showAddForm && (
-          <button
-            onClick={() => setShowAddForm(true)}
-            className="text-sm text-blue-600 hover:text-blue-700"
-          >
-            + Add Schedule
-          </button>
-        )}
+        <button
+          onClick={() => setShowAddForm(true)}
+          className="text-sm text-blue-600 hover:text-blue-700"
+        >
+          + Add Schedule
+        </button>
       </div>
+
+      {/* Add Schedule Drawer */}
+      <Drawer.Root open={showAddForm} onOpenChange={setShowAddForm}>
+        <Drawer.Portal>
+          <Drawer.Overlay className="fixed inset-0 bg-black/40 z-40" />
+          <Drawer.Content className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-2xl flex flex-col max-h-[85vh] max-w-sm sm:max-w-2xl mx-auto shadow-2xl focus:outline-none">
+            <div className="flex justify-center pt-3 pb-2">
+              <div className="w-9 h-1 bg-gray-300 rounded-full" />
+            </div>
+            <div className="px-4 pb-8 pt-2 overflow-y-auto">
+              <Drawer.Title className="text-xl font-semibold text-gray-900 mb-6 text-center">
+                New Schedule
+              </Drawer.Title>
+
+              {/* Valve Selector */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Valve</label>
+                <div className="flex bg-gray-100 rounded-lg p-1">
+                  {[0, 1].map((v) => (
+                    <button
+                      key={v}
+                      onClick={() => setFormValve(v)}
+                      className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-all ${
+                        formValve === v
+                          ? 'bg-white text-gray-900 shadow-sm'
+                          : 'text-gray-600'
+                      }`}
+                    >
+                      Valve {v + 1}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Start Time — native input, renders as wheel on iOS */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Start Time</label>
+                <input
+                  type="time"
+                  value={`${String(formHour).padStart(2, '0')}:${String(formMinute).padStart(2, '0')}`}
+                  onChange={(e) => {
+                    const [h, m] = e.target.value.split(':').map(Number);
+                    setFormHour(h);
+                    setFormMinute(m);
+                  }}
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* Duration */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Duration</label>
+                <select
+                  value={formDurationMin}
+                  onChange={(e) => setFormDurationMin(parseInt(e.target.value, 10))}
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20width%3D%2212%22%20height%3D%228%22%20viewBox%3D%220%200%2012%208%22%20fill%3D%22none%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cpath%20d%3D%22M1%201.5L6%206.5L11%201.5%22%20stroke%3D%22%236B7280%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%3C%2Fsvg%3E')] bg-no-repeat bg-[position:right_1rem_center]"
+                >
+                  {DURATION_NOTCHES.map((m) => (
+                    <option key={m} value={m}>
+                      {m >= 60 ? `${Math.floor(m / 60)}h${m % 60 > 0 ? ` ${m % 60}m` : ''}` : `${m} minutes`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Days */}
+              <div className="mb-8">
+                <label className="block text-sm font-medium text-gray-700 mb-3">Days</label>
+                <div className="flex justify-between gap-2">
+                  {DAY_LABELS.map((day, i) => {
+                    const isSelected = (formDays & (1 << i)) !== 0;
+                    return (
+                      <button
+                        key={day}
+                        onClick={() => toggleDay(i)}
+                        className={`w-11 h-11 rounded-full font-medium text-sm transition-all ${
+                          isSelected
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-white border-2 border-gray-300 text-gray-700 active:bg-gray-50'
+                        }`}
+                      >
+                        {day.charAt(0)}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="space-y-3">
+                <button
+                  onClick={handleAddSchedule}
+                  disabled={savingSchedule || formDays === 0}
+                  className="w-full py-4 bg-green-600 text-white font-semibold rounded-xl active:bg-green-700 disabled:opacity-50 transition-colors"
+                >
+                  {savingSchedule ? 'Saving...' : 'Save Schedule'}
+                </button>
+                <button
+                  onClick={() => setShowAddForm(false)}
+                  className="w-full py-2 text-gray-600 font-medium active:text-gray-800 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </Drawer.Content>
+        </Drawer.Portal>
+      </Drawer.Root>
 
       {/* Recent Events */}
       <div className="card">
