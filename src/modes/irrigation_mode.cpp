@@ -82,6 +82,9 @@ void IrrigationMode::onStart()
 
         pmu_logger.info("PMU client initialized successfully");
 
+        // Register PMU with base class for generic update handling
+        setReliablePmu(reliable_pmu_);
+
         // Set up PMU callback handlers
         reliable_pmu_->onWake(
             [this](PMU::WakeReason reason, const PMU::ScheduleEntry *entry, bool state_valid,
@@ -467,70 +470,11 @@ void IrrigationMode::onHeartbeatResponse(const HeartbeatResponsePayload *payload
     }
 }
 
-void IrrigationMode::sendCheckUpdates()
+void IrrigationMode::onModeSpecificUpdate(const UpdateAvailablePayload *payload,
+                                           uint8_t hub_sequence)
 {
-    logger.info("Sending CHECK_UPDATES (seq=%d)", update_state_.current_sequence);
-
-    uint8_t seq_num = messenger_.sendCheckUpdates(HUB_ADDRESS, update_state_.current_sequence);
-
-    if (seq_num != 0) {
-        update_state_.pending_check_seq = seq_num;
-
-        // Keep PMU awake while processing updates
-        if (pmu_available_ && reliable_pmu_) {
-            reliable_pmu_->keepAwake(10);
-        }
-    } else {
-        logger.error("Failed to send CHECK_UPDATES");
-        irrigation_state_.reportUpdateFailed();
-    }
-}
-
-void IrrigationMode::onUpdateAvailable(const UpdateAvailablePayload *payload)
-{
-    if (!payload) {
-        logger.error("NULL update payload");
-        update_state_.reset();
-        irrigation_state_.reportUpdateFailed();
-        return;
-    }
-
-    // Cancel the pending CHECK_UPDATES message (UPDATE_AVAILABLE is the response)
-    if (update_state_.pending_check_seq != 0) {
-        messenger_.cancelPendingMessage(update_state_.pending_check_seq);
-        update_state_.pending_check_seq = 0;
-    }
-
-    // Keep awake while processing
-    if (pmu_available_ && reliable_pmu_) {
-        reliable_pmu_->keepAwake(10);
-    }
-
-    // No more updates?
-    if (payload->has_update == 0) {
-        update_state_.reset();
-        irrigation_state_.reportUpdateReceived(false);
-        return;
-    }
-
-    // We have an update to apply
     UpdateType update_type = static_cast<UpdateType>(payload->update_type);
-    uint8_t hub_sequence = payload->sequence;
 
-    logger.info("Received update: type=%d, seq=%d", payload->update_type, hub_sequence);
-
-    // Already processed?
-    if (hub_sequence <= update_state_.current_sequence) {
-        logger.info("  Already processed seq=%d (current=%d), re-checking", hub_sequence,
-                    update_state_.current_sequence);
-        sendCheckUpdates();
-        return;
-    }
-
-    // Signal state machine that we have an update to apply
-    irrigation_state_.reportUpdateReceived(true);
-
-    // Apply the update via PMU
     switch (update_type) {
         case UpdateType::SET_SCHEDULE: {
             const uint8_t *data = payload->payload_data;
@@ -551,13 +495,11 @@ void IrrigationMode::onUpdateAvailable(const UpdateAvailablePayload *payload)
                 entry, [this, hub_sequence](bool success, PMU::ErrorCode error) {
                     if (success) {
                         logger.info("  Schedule applied successfully");
-                        update_state_.current_sequence = hub_sequence;
-                        irrigation_state_.reportUpdateApplied();
+                        onUpdateApplied(hub_sequence);
                     } else {
                         logger.error("  Failed to apply schedule: error %d",
                                      static_cast<int>(error));
-                        update_state_.reset();
-                        irrigation_state_.reportUpdateFailed();
+                        onUpdateFailed();
                     }
                 });
             break;
@@ -571,57 +513,11 @@ void IrrigationMode::onUpdateAvailable(const UpdateAvailablePayload *payload)
                 index, [this, hub_sequence](bool success, PMU::ErrorCode error) {
                     if (success) {
                         logger.info("  Schedule removed successfully");
-                        update_state_.current_sequence = hub_sequence;
-                        irrigation_state_.reportUpdateApplied();
+                        onUpdateApplied(hub_sequence);
                     } else {
                         logger.error("  Failed to remove schedule: error %d",
                                      static_cast<int>(error));
-                        update_state_.reset();
-                        irrigation_state_.reportUpdateFailed();
-                    }
-                });
-            break;
-        }
-
-        case UpdateType::SET_DATETIME: {
-            const uint8_t *data = payload->payload_data;
-            PMU::DateTime datetime(data[0], data[1], data[2], data[3], data[4], data[5], data[6]);
-
-            logger.info("  SET_DATETIME: 20%02d-%02d-%02d %02d:%02d:%02d", datetime.year,
-                        datetime.month, datetime.day, datetime.hour, datetime.minute,
-                        datetime.second);
-
-            reliable_pmu_->setDateTime(
-                datetime, [this, hub_sequence](bool success, PMU::ErrorCode error) {
-                    if (success) {
-                        logger.info("  DateTime set successfully");
-                        update_state_.current_sequence = hub_sequence;
-                        irrigation_state_.reportUpdateApplied();
-                    } else {
-                        logger.error("  Failed to set datetime: error %d",
-                                     static_cast<int>(error));
-                        update_state_.reset();
-                        irrigation_state_.reportUpdateFailed();
-                    }
-                });
-            break;
-        }
-
-        case UpdateType::SET_WAKE_INTERVAL: {
-            uint16_t interval_seconds = payload->payload_data[0] | (payload->payload_data[1] << 8);
-            logger.info("  SET_WAKE_INTERVAL: %d seconds", interval_seconds);
-
-            reliable_pmu_->setWakeInterval(
-                interval_seconds, [this, hub_sequence](bool success, PMU::ErrorCode error) {
-                    if (success) {
-                        logger.info("  Wake interval set successfully");
-                        update_state_.current_sequence = hub_sequence;
-                        irrigation_state_.reportUpdateApplied();
-                    } else {
-                        logger.error("  Failed to set wake interval: error %d",
-                                     static_cast<int>(error));
-                        update_state_.reset();
-                        irrigation_state_.reportUpdateFailed();
+                        onUpdateFailed();
                     }
                 });
             break;
@@ -642,7 +538,7 @@ void IrrigationMode::onUpdateAvailable(const UpdateAvailablePayload *payload)
                         actuator.command, actuator.param_length);
 
             onActuatorCommand(&actuator);
-            update_state_.current_sequence = hub_sequence;
+            ApplicationMode::onUpdateApplied(hub_sequence);
             // onActuatorCommand drives the state machine (e.g. reportValveOpened -> VALVE_ACTIVE).
             // For valve ON: state is now VALVE_ACTIVE, don't pull more updates — stay awake.
             // For valve OFF or non-valve: pull remaining updates.
@@ -654,10 +550,26 @@ void IrrigationMode::onUpdateAvailable(const UpdateAvailablePayload *payload)
 
         default:
             logger.error("Unknown update type %d", payload->update_type);
-            update_state_.reset();
-            irrigation_state_.reportUpdateFailed();
+            onUpdateFailed();
             break;
     }
+}
+
+void IrrigationMode::onUpdateApplied(uint8_t hub_sequence)
+{
+    ApplicationMode::onUpdateApplied(hub_sequence);
+    irrigation_state_.reportUpdateApplied();
+}
+
+void IrrigationMode::onUpdateFailed()
+{
+    ApplicationMode::onUpdateFailed();
+    irrigation_state_.reportUpdateFailed();
+}
+
+void IrrigationMode::onUpdateReceived(bool has_updates)
+{
+    irrigation_state_.reportUpdateReceived(has_updates);
 }
 
 void IrrigationMode::attemptDeferredRegistration()

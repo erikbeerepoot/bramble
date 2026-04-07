@@ -32,20 +32,6 @@ static_assert(sizeof(IrrigationPersistedState) == 32, "IrrigationPersistedState 
 constexpr uint8_t IRRIGATION_STATE_VERSION = 5;
 
 /**
- * @brief Update pull state tracking
- *
- * Tracks sequence numbers and message state for update processing.
- */
-struct UpdatePullState {
-    uint8_t current_sequence;   // Node's current sequence number
-    uint8_t pending_check_seq;  // Sequence number of pending CHECK_UPDATES message
-
-    UpdatePullState() : current_sequence(0), pending_check_seq(0) {}
-
-    void reset() { pending_check_seq = 0; }
-};
-
-/**
  * @brief Irrigation node mode for valve control
  *
  * Irrigation node that handles valve commands from the hub and
@@ -70,7 +56,6 @@ private:
     PMU::ReliablePmuClient *reliable_pmu_ = nullptr;
     bool pmu_available_ = false;
     bool sleep_pending_ = false;
-    UpdatePullState update_state_;
     IrrigationStateMachine irrigation_state_;
     TaskQueue task_queue_;
     bool needs_registration_;  // True if we need to register with hub
@@ -99,9 +84,11 @@ private:
     // Registration handling
     void attemptDeferredRegistration();
 
-    // Update handling
-    void sendCheckUpdates();
-    void onUpdateAvailable(const UpdateAvailablePayload *payload) override;
+    // Update handling (base class handles SET_WAKE_INTERVAL, SET_DATETIME)
+    void onModeSpecificUpdate(const UpdateAvailablePayload *payload, uint8_t hub_sequence) override;
+    void onUpdateApplied(uint8_t hub_sequence) override;
+    void onUpdateFailed() override;
+    void onUpdateReceived(bool has_updates) override;
 
     // Power management
     void signalReadyForSleep();
