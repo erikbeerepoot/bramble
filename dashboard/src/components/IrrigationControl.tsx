@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Drawer } from 'vaul';
 import { Zap, Play, Square } from 'lucide-react';
 import {
   runValve,
@@ -315,18 +314,15 @@ function IrrigationControl({ deviceId }: IrrigationControlProps) {
         </button>
       </div>
 
-      {/* Add Schedule Drawer */}
-      <Drawer.Root open={showAddForm} onOpenChange={setShowAddForm}>
-        <Drawer.Portal>
-          <Drawer.Overlay className="fixed inset-0 bg-black/40 z-40" />
-          <Drawer.Content className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-2xl flex flex-col max-h-[85vh] max-w-lg sm:max-w-xl mx-auto shadow-2xl focus:outline-none">
-            <div className="flex justify-center pt-3 pb-2">
-              <div className="w-9 h-1 bg-gray-300 rounded-full" />
-            </div>
-            <div className="px-4 pb-8 pt-2 overflow-y-auto">
-              <Drawer.Title className="text-xl font-semibold text-gray-900 mb-6 text-center">
+      {/* Add Schedule Modal */}
+      {showAddForm && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/40" onClick={() => setShowAddForm(false)} />
+          <div className="relative z-50 bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[85vh] overflow-y-auto">
+            <div className="px-6 pb-8 pt-6">
+              <h2 className="text-xl font-semibold text-gray-900 mb-6 text-center">
                 New Schedule
-              </Drawer.Title>
+              </h2>
 
               {/* Valve Selector */}
               <div className="mb-6">
@@ -419,9 +415,9 @@ function IrrigationControl({ deviceId }: IrrigationControlProps) {
                 </button>
               </div>
             </div>
-          </Drawer.Content>
-        </Drawer.Portal>
-      </Drawer.Root>
+          </div>
+        </div>
+      )}
 
       {/* Recent Events */}
       <div className="card">
