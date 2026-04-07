@@ -217,14 +217,14 @@ void IrrigationMode::onStateChange(IrrigationState state)
                                                      logger.error("Failed to set valve timer: %d",
                                                                   static_cast<int>(error));
                                                      // Fall back to keepAlive behavior
-                                                     reliable_pmu_->keepAwake(10);
+                                                     reliable_pmu_->keepAwake(KEEP_AWAKE_PROCESSING_SECONDS);
                                                      scheduleKeepAwake();
                                                  }
                                              });
             } else {
                 // No duration — legacy keepAlive behavior
                 if (pmu_available_ && reliable_pmu_) {
-                    reliable_pmu_->keepAwake(10);
+                    reliable_pmu_->keepAwake(KEEP_AWAKE_PROCESSING_SECONDS);
                     scheduleKeepAwake();
                 }
             }
@@ -251,7 +251,7 @@ void IrrigationMode::scheduleKeepAwake()
     keepawake_task_id_ = task_queue_.postDelayed(
         [this](uint32_t) -> bool {
             if (valve_controller_.getActiveValveMask() != 0 && reliable_pmu_) {
-                reliable_pmu_->keepAwake(10);
+                reliable_pmu_->keepAwake(KEEP_AWAKE_PROCESSING_SECONDS);
                 scheduleKeepAwake();
             }
             return true;
