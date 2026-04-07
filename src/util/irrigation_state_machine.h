@@ -52,16 +52,16 @@
  *                 --> reportWakeFromSleep() --> AWAITING_TIME
  */
 enum class IrrigationState : uint8_t {
-    INITIALIZING,        // Hardware setup in progress
-    REGISTERING,         // Waiting for hub registration response
-    AWAITING_TIME,           // Need RTC sync
-    SENDING_HEARTBEAT,       // Heartbeat sent to hub, awaiting response (carries time)
-    AWAITING_REGISTRATION,   // Re-registration in flight, waiting for hub to assign address
-    CHECKING_UPDATES,    // CHECK_UPDATES sent, awaiting UPDATE_AVAILABLE
-    APPLYING_UPDATE,   // PMU command in flight (schedule, datetime, wake interval)
-    VALVE_ACTIVE,      // Valve open from scheduled wake
-    READY_FOR_SLEEP,   // All wake work done, signal PMU to sleep
-    ERROR,             // Unrecoverable error
+    INITIALIZING,           // Hardware setup in progress
+    REGISTERING,            // Waiting for hub registration response
+    AWAITING_TIME,          // Need RTC sync
+    SENDING_HEARTBEAT,      // Heartbeat sent to hub, awaiting response (carries time)
+    AWAITING_REGISTRATION,  // Re-registration in flight, waiting for hub to assign address
+    CHECKING_UPDATES,       // CHECK_UPDATES sent, awaiting UPDATE_AVAILABLE
+    APPLYING_UPDATE,        // PMU command in flight (schedule, datetime, wake interval)
+    VALVE_ACTIVE,           // Valve open from scheduled wake
+    READY_FOR_SLEEP,        // All wake work done, signal PMU to sleep
+    ERROR,                  // Unrecoverable error
 };
 
 /**

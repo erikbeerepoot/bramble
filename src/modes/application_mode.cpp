@@ -252,8 +252,7 @@ void ApplicationMode::onUpdateAvailable(const UpdateAvailablePayload *payload)
                         logger.info("  DateTime set successfully");
                         onUpdateApplied(hub_sequence);
                     } else {
-                        logger.error("  Failed to set datetime: error %d",
-                                     static_cast<int>(error));
+                        logger.error("  Failed to set datetime: error %d", static_cast<int>(error));
                         onUpdateFailed();
                     }
                 });

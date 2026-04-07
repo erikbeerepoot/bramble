@@ -68,8 +68,8 @@ void IrrigationMode::onStart()
     irrigation_state_.setCallback([this](IrrigationState state) { this->onStateChange(state); });
 
     // Initialize PMU client at 9600 baud to match STM32 LPUART configuration
-    pmu_client_ = new PmuClient(Board::PMU_UART_PORT, Board::PMU_UART_TX_PIN,
-                                Board::PMU_UART_RX_PIN, 9600);
+    pmu_client_ =
+        new PmuClient(Board::PMU_UART_PORT, Board::PMU_UART_TX_PIN, Board::PMU_UART_RX_PIN, 9600);
     pmu_available_ = pmu_client_->init();
 
     if (pmu_available_) {
@@ -86,11 +86,10 @@ void IrrigationMode::onStart()
         setReliablePmu(reliable_pmu_);
 
         // Set up PMU callback handlers
-        reliable_pmu_->onWake(
-            [this](PMU::WakeReason reason, const PMU::ScheduleEntry *entry, bool state_valid,
-                   const uint8_t *state) {
-                this->handlePmuWake(reason, entry, state_valid, state);
-            });
+        reliable_pmu_->onWake([this](PMU::WakeReason reason, const PMU::ScheduleEntry *entry,
+                                     bool state_valid, const uint8_t *state) {
+            this->handlePmuWake(reason, entry, state_valid, state);
+        });
 
         reliable_pmu_->onScheduleComplete([this]() { this->handleScheduleComplete(); });
 
@@ -108,8 +107,7 @@ void IrrigationMode::onStart()
                 uint32_t now = to_ms_since_boot(get_absolute_time());
                 wake_timeout_id_ = task_queue_.postDelayed(
                     [this](uint32_t) -> bool {
-                        pmu_logger.warn(
-                            "WakeNotification timeout - proceeding without PMU state");
+                        pmu_logger.warn("WakeNotification timeout - proceeding without PMU state");
                         valve_controller_.closeAllValves();
                         wake_timeout_id_ = 0;
                         irrigation_state_.markInitialized();
@@ -182,20 +180,19 @@ void IrrigationMode::onStateChange(IrrigationState state)
                                                CAP_VALVE_CONTROL | CAP_SOIL_MOISTURE,
                                                BRAMBLE_FIRMWARE_VERSION, "Irrigation Node");
             // Set callback to save address and advance SM when response arrives
-            messenger_.setRegistrationSuccessCallback(
-                [this](uint16_t new_address) {
-                    logger.info("Re-registration assigned address 0x%04X", new_address);
-                    // Reset update sequence FIRST — hub starts fresh for new address
-                    update_state_.current_sequence = 0;
-                    // Clear callback before flash write to avoid re-entrancy
-                    messenger_.setRegistrationSuccessCallback(nullptr);
-                    // Save address to flash (may disrupt XIP cache on RP2350)
-                    if (address_saved_callback_) {
-                        address_saved_callback_(new_address);
-                    }
-                    // SM transition last — if flash corrupted state, at least seq is reset
-                    irrigation_state_.reportReregistrationComplete();
-                });
+            messenger_.setRegistrationSuccessCallback([this](uint16_t new_address) {
+                logger.info("Re-registration assigned address 0x%04X", new_address);
+                // Reset update sequence FIRST — hub starts fresh for new address
+                update_state_.current_sequence = 0;
+                // Clear callback before flash write to avoid re-entrancy
+                messenger_.setRegistrationSuccessCallback(nullptr);
+                // Save address to flash (may disrupt XIP cache on RP2350)
+                if (address_saved_callback_) {
+                    address_saved_callback_(new_address);
+                }
+                // SM transition last — if flash corrupted state, at least seq is reset
+                irrigation_state_.reportReregistrationComplete();
+            });
             break;
 
         case IrrigationState::CHECKING_UPDATES:
@@ -210,21 +207,20 @@ void IrrigationMode::onStateChange(IrrigationState state)
             if (pending_valve_close_ && valve_duration_seconds_ > 0 && pmu_available_ &&
                 reliable_pmu_) {
                 // Timer-driven: set RTC Alarm A to wake us after duration, then sleep
-                logger.info("Setting valve timer: %u seconds for valve %u",
-                            valve_duration_seconds_, pending_close_valve_id_);
-                reliable_pmu_->setValveTimer(
-                    valve_duration_seconds_, pending_close_valve_id_,
-                    [this](bool success, PMU::ErrorCode error) {
-                        if (success) {
-                            irrigation_state_.reportValveTimerSet();
-                        } else {
-                            logger.error("Failed to set valve timer: %d",
-                                         static_cast<int>(error));
-                            // Fall back to keepAlive behavior
-                            reliable_pmu_->keepAwake(10);
-                            scheduleKeepAwake();
-                        }
-                    });
+                logger.info("Setting valve timer: %u seconds for valve %u", valve_duration_seconds_,
+                            pending_close_valve_id_);
+                reliable_pmu_->setValveTimer(valve_duration_seconds_, pending_close_valve_id_,
+                                             [this](bool success, PMU::ErrorCode error) {
+                                                 if (success) {
+                                                     irrigation_state_.reportValveTimerSet();
+                                                 } else {
+                                                     logger.error("Failed to set valve timer: %d",
+                                                                  static_cast<int>(error));
+                                                     // Fall back to keepAlive behavior
+                                                     reliable_pmu_->keepAwake(10);
+                                                     scheduleKeepAwake();
+                                                 }
+                                             });
             } else {
                 // No duration — legacy keepAlive behavior
                 if (pmu_available_ && reliable_pmu_) {
@@ -471,7 +467,7 @@ void IrrigationMode::onHeartbeatResponse(const HeartbeatResponsePayload *payload
 }
 
 void IrrigationMode::onModeSpecificUpdate(const UpdateAvailablePayload *payload,
-                                           uint8_t hub_sequence)
+                                          uint8_t hub_sequence)
 {
     UpdateType update_type = static_cast<UpdateType>(payload->update_type);
 
@@ -491,17 +487,16 @@ void IrrigationMode::onModeSpecificUpdate(const UpdateAvailablePayload *payload,
                         entry.hour, entry.minute, entry.valveId, entry.duration,
                         static_cast<uint8_t>(entry.daysMask));
 
-            reliable_pmu_->setSchedule(
-                entry, [this, hub_sequence](bool success, PMU::ErrorCode error) {
-                    if (success) {
-                        logger.info("  Schedule applied successfully");
-                        onUpdateApplied(hub_sequence);
-                    } else {
-                        logger.error("  Failed to apply schedule: error %d",
-                                     static_cast<int>(error));
-                        onUpdateFailed();
-                    }
-                });
+            reliable_pmu_->setSchedule(entry, [this, hub_sequence](bool success,
+                                                                   PMU::ErrorCode error) {
+                if (success) {
+                    logger.info("  Schedule applied successfully");
+                    onUpdateApplied(hub_sequence);
+                } else {
+                    logger.error("  Failed to apply schedule: error %d", static_cast<int>(error));
+                    onUpdateFailed();
+                }
+            });
             break;
         }
 
@@ -509,17 +504,16 @@ void IrrigationMode::onModeSpecificUpdate(const UpdateAvailablePayload *payload,
             uint8_t index = payload->payload_data[0];
             logger.info("  REMOVE_SCHEDULE[%d]", index);
 
-            reliable_pmu_->clearSchedule(
-                index, [this, hub_sequence](bool success, PMU::ErrorCode error) {
-                    if (success) {
-                        logger.info("  Schedule removed successfully");
-                        onUpdateApplied(hub_sequence);
-                    } else {
-                        logger.error("  Failed to remove schedule: error %d",
-                                     static_cast<int>(error));
-                        onUpdateFailed();
-                    }
-                });
+            reliable_pmu_->clearSchedule(index, [this, hub_sequence](bool success,
+                                                                     PMU::ErrorCode error) {
+                if (success) {
+                    logger.info("  Schedule removed successfully");
+                    onUpdateApplied(hub_sequence);
+                } else {
+                    logger.error("  Failed to remove schedule: error %d", static_cast<int>(error));
+                    onUpdateFailed();
+                }
+            });
             break;
         }
 
@@ -661,9 +655,11 @@ bool IrrigationMode::unpackState(const IrrigationPersistedState *persisted)
     messenger_.setNextSeqNum(persisted->next_seq_num);
 
     // Restore assigned address from PMU RAM — but don't overwrite a freshly registered address
-    // (main.cpp registration runs before onStart, so the messenger may already have a valid address)
+    // (main.cpp registration runs before onStart, so the messenger may already have a valid
+    // address)
     uint16_t current_address = messenger_.getNodeAddress();
-    if (current_address == ADDRESS_UNREGISTERED && persisted->assigned_address != ADDRESS_UNREGISTERED) {
+    if (current_address == ADDRESS_UNREGISTERED &&
+        persisted->assigned_address != ADDRESS_UNREGISTERED) {
         messenger_.setNodeAddress(persisted->assigned_address);
     }
 

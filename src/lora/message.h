@@ -133,11 +133,11 @@ enum DeliveryCriticality {
 
 // Update types for MSG_TYPE_UPDATE_AVAILABLE
 enum class UpdateType : uint8_t {
-    SET_SCHEDULE = 0x01,      // Add/modify schedule entry
-    REMOVE_SCHEDULE = 0x02,   // Remove schedule entry
-    SET_DATETIME = 0x03,      // Sync RTC date/time
-    SET_WAKE_INTERVAL = 0x04,    // Change periodic wake interval
-    ACTUATOR_COMMAND = 0x05      // Queued actuator command (valve on/off)
+    SET_SCHEDULE = 0x01,       // Add/modify schedule entry
+    REMOVE_SCHEDULE = 0x02,    // Remove schedule entry
+    SET_DATETIME = 0x03,       // Sync RTC date/time
+    SET_WAKE_INTERVAL = 0x04,  // Change periodic wake interval
+    ACTUATOR_COMMAND = 0x05    // Queued actuator command (valve on/off)
 };
 
 // Pending update flags for HeartbeatResponsePayload

@@ -52,7 +52,8 @@ struct PendingUpdate {
  */
 struct NodeUpdateState {
     std::queue<PendingUpdate> pending_updates;
-    uint8_t next_sequence = 1;  // Next sequence to assign (starts at 1; node reports 0 = no updates applied)
+    uint8_t next_sequence =
+        1;  // Next sequence to assign (starts at 1; node reports 0 = no updates applied)
     uint32_t last_check_time = 0;
 };
 

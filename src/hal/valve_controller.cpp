@@ -16,8 +16,8 @@ void ValveController::initialize()
     // Initialize H-bridge with board-specific pin mapping
     // For FORWARD: HI_1 + LO_2 active (current flows 1->2)
     // For REVERSE: HI_2 + LO_1 active (current flows 2->1)
-    hbridge_.initialize(Board::PIN_MOTOR_HI_1, Board::PIN_MOTOR_LO_1,
-                        Board::PIN_MOTOR_HI_2, Board::PIN_MOTOR_LO_2);
+    hbridge_.initialize(Board::PIN_MOTOR_HI_1, Board::PIN_MOTOR_LO_1, Board::PIN_MOTOR_HI_2,
+                        Board::PIN_MOTOR_LO_2);
 
     // Initialize valve indexer
     indexer_.initialize(Board::VALVE_PINS, NUM_VALVES);
