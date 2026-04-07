@@ -21,7 +21,8 @@ enum class Command : uint8_t {
     ClearToSend = 0x19,    // RP2040 signals ready to receive wake info
     SystemReset = 0x1A,    // Request full system reset (PMU resets itself + RP2040)
     FactoryReset = 0x1B,   // Wipe FRAM persistent storage, then reset
-    SetValveTimer = 0x1C   // Set RTC Alarm A for valve auto-close (3 bytes: duration_lo, duration_hi, valve_id)
+    SetValveTimer =
+        0x1C  // Set RTC Alarm A for valve auto-close (3 bytes: duration_lo, duration_hi, valve_id)
 };
 
 // Response codes (STM32 → RP2040)

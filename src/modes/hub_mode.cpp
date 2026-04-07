@@ -700,8 +700,8 @@ void HubMode::handleSendActuator(const char *args)
     unsigned int param = 0;
     unsigned int duration = 0;
 
-    int parsed = sscanf(args, "%hu %u %u %u %u", &node_addr, &actuator_type, &command, &param,
-                        &duration);
+    int parsed =
+        sscanf(args, "%hu %u %u %u %u", &node_addr, &actuator_type, &command, &param, &duration);
     if (parsed < 3) {
         uartSend("ERROR Invalid SEND_ACTUATOR syntax: <addr> <type> <cmd> [param] [duration]\n");
         return;
@@ -727,14 +727,14 @@ void HubMode::handleSendActuator(const char *args)
         params = params_buf;
     }
 
-    bool queued = hub_router_->queueActuatorCommand(
-        node_addr, static_cast<uint8_t>(actuator_type), static_cast<uint8_t>(command), params,
-        param_length);
+    bool queued =
+        hub_router_->queueActuatorCommand(node_addr, static_cast<uint8_t>(actuator_type),
+                                          static_cast<uint8_t>(command), params, param_length);
 
     if (queued) {
         char response[64];
-        snprintf(response, sizeof(response), "QUEUED ACTUATOR %u %u %u\n", node_addr,
-                 actuator_type, command);
+        snprintf(response, sizeof(response), "QUEUED ACTUATOR %u %u %u\n", node_addr, actuator_type,
+                 command);
         uartSend(response);
         logger.info("Queued actuator command for 0x%04X: type=%u cmd=%u", node_addr, actuator_type,
                     command);
