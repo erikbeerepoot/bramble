@@ -209,18 +209,18 @@ void IrrigationMode::onStateChange(IrrigationState state)
                 // Timer-driven: set RTC Alarm A to wake us after duration, then sleep
                 logger.info("Setting valve timer: %u seconds for valve %u", valve_duration_seconds_,
                             pending_close_valve_id_);
-                reliable_pmu_->setValveTimer(valve_duration_seconds_, pending_close_valve_id_,
-                                             [this](bool success, PMU::ErrorCode error) {
-                                                 if (success) {
-                                                     irrigation_state_.reportValveTimerSet();
-                                                 } else {
-                                                     logger.error("Failed to set valve timer: %d",
-                                                                  static_cast<int>(error));
-                                                     // Fall back to keepAlive behavior
-                                                     reliable_pmu_->keepAwake(KEEP_AWAKE_PROCESSING_SECONDS);
-                                                     scheduleKeepAwake();
-                                                 }
-                                             });
+                reliable_pmu_->setValveTimer(
+                    valve_duration_seconds_, pending_close_valve_id_,
+                    [this](bool success, PMU::ErrorCode error) {
+                        if (success) {
+                            irrigation_state_.reportValveTimerSet();
+                        } else {
+                            logger.error("Failed to set valve timer: %d", static_cast<int>(error));
+                            // Fall back to keepAlive behavior
+                            reliable_pmu_->keepAwake(KEEP_AWAKE_PROCESSING_SECONDS);
+                            scheduleKeepAwake();
+                        }
+                    });
             } else {
                 // No duration — legacy keepAlive behavior
                 if (pmu_available_ && reliable_pmu_) {
