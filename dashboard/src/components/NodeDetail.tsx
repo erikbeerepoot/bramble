@@ -16,7 +16,7 @@ import {
   getBatteryStatus,
   getHealthStatus,
 } from '../types';
-import { getNodeSensorData, getNodeStatistics, deleteNode, rebootNode } from '../api/client';
+import { getNodeSensorData, getNodeStatistics, deleteNode, rebootNode, setWakeInterval } from '../api/client';
 import { NodeType } from '../types';
 import CurtainControl from './CurtainControl';
 import IrrigationControl from './IrrigationControl';
@@ -58,6 +58,9 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
   const [advancedExpanded, setAdvancedExpanded] = useState(false);
   const [showRebootConfirm, setShowRebootConfirm] = useState(false);
   const [rebooting, setRebooting] = useState(false);
+  const [wakeIntervalMinutes, setWakeIntervalMinutes] = useState('10');
+  const [settingWakeInterval, setSettingWakeInterval] = useState(false);
+  const [wakeIntervalStatus, setWakeIntervalStatus] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const hasSensorData = node.type === NodeType.SENSOR;
@@ -165,6 +168,24 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
       setError(err instanceof Error ? err.message : 'Failed to queue reboot');
     } finally {
       setRebooting(false);
+    }
+  };
+
+  const handleSetWakeInterval = async () => {
+    const minutes = parseFloat(wakeIntervalMinutes);
+    if (isNaN(minutes) || minutes < 1 || minutes > 60) {
+      setWakeIntervalStatus('Invalid: enter 1-60 minutes');
+      return;
+    }
+    setSettingWakeInterval(true);
+    setWakeIntervalStatus(null);
+    try {
+      await setWakeInterval(node.device_id, Math.round(minutes * 60));
+      setWakeIntervalStatus('Queued successfully');
+    } catch (err) {
+      setWakeIntervalStatus(err instanceof Error ? err.message : 'Failed to set wake interval');
+    } finally {
+      setSettingWakeInterval(false);
     }
   };
 
@@ -471,6 +492,41 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
 
             {advancedExpanded && (
               <div className="mt-4 space-y-4">
+                {/* Wake Interval — battery-powered nodes only */}
+                {(node.type === NodeType.SENSOR || node.type === NodeType.IRRIGATION) && (
+                  <div>
+                    <p className="text-sm text-gray-500 mb-2">
+                      Set how often the node wakes up to report data and check for updates.
+                    </p>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="number"
+                        min="1"
+                        max="60"
+                        value={wakeIntervalMinutes}
+                        onChange={(e) => {
+                          setWakeIntervalMinutes(e.target.value);
+                          setWakeIntervalStatus(null);
+                        }}
+                        className="w-20 px-2 py-1.5 border border-gray-300 rounded-md text-sm"
+                      />
+                      <span className="text-sm text-gray-500">minutes</span>
+                      <button
+                        onClick={handleSetWakeInterval}
+                        disabled={settingWakeInterval}
+                        className="btn btn-secondary text-sm"
+                      >
+                        {settingWakeInterval ? 'Setting...' : 'Set'}
+                      </button>
+                    </div>
+                    {wakeIntervalStatus && (
+                      <p className={`text-xs mt-1 ${wakeIntervalStatus.startsWith('Queued') ? 'text-green-600' : 'text-red-600'}`}>
+                        {wakeIntervalStatus}
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 {/* Reboot Node */}
                 <div>
                   <p className="text-sm text-gray-500 mb-2">
