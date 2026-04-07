@@ -5,6 +5,8 @@
 #include "hardware/watchdog.h"
 
 #include "hal/logger.h"
+#include "hal/pmu_protocol.h"
+#include "hal/pmu_reliability.h"
 #include "lora/address_manager.h"
 #include "lora/hub_router.h"
 #include "lora/network_stats.h"
@@ -160,6 +162,138 @@ void ApplicationMode::onHeartbeatResponse(const HeartbeatResponsePayload *payloa
     if (payload->pending_update_flags & PENDING_FLAG_FACTORY_RESET) {
         logger.warn("Hub requests factory reset (PENDING_FLAG_FACTORY_RESET)");
         onFactoryResetRequested();
+    }
+}
+
+void ApplicationMode::onUpdateAvailable(const UpdateAvailablePayload *payload)
+{
+    if (!payload) {
+        logger.error("NULL update payload");
+        onUpdateFailed();
+        return;
+    }
+
+    // Cancel the pending CHECK_UPDATES message (UPDATE_AVAILABLE is the response)
+    if (update_state_.pending_check_seq != 0) {
+        messenger_.cancelPendingMessage(update_state_.pending_check_seq);
+        update_state_.pending_check_seq = 0;
+    }
+
+    // Keep awake while processing
+    if (reliable_pmu_) {
+        reliable_pmu_->keepAwake(10);
+    }
+
+    // No more updates?
+    if (payload->has_update == 0) {
+        update_state_.reset();
+        onUpdateReceived(false);
+        return;
+    }
+
+    // We have an update to apply
+    UpdateType update_type = static_cast<UpdateType>(payload->update_type);
+    uint8_t hub_sequence = payload->sequence;
+
+    logger.info("Received update: type=%d, seq=%d", payload->update_type, hub_sequence);
+
+    // Already processed?
+    if (hub_sequence <= update_state_.current_sequence) {
+        logger.info("  Already processed seq=%d (current=%d), re-checking", hub_sequence,
+                    update_state_.current_sequence);
+        sendCheckUpdates();
+        return;
+    }
+
+    // Signal that we have an update to apply
+    onUpdateReceived(true);
+
+    // Dispatch generic update types handled by the base class
+    switch (update_type) {
+        case UpdateType::SET_WAKE_INTERVAL: {
+            if (!reliable_pmu_) {
+                logger.error("  No PMU available for SET_WAKE_INTERVAL");
+                onUpdateFailed();
+                return;
+            }
+            uint16_t interval_seconds = payload->payload_data[0] | (payload->payload_data[1] << 8);
+            logger.info("  SET_WAKE_INTERVAL: %d seconds", interval_seconds);
+
+            reliable_pmu_->setWakeInterval(
+                interval_seconds, [this, hub_sequence](bool success, PMU::ErrorCode error) {
+                    if (success) {
+                        logger.info("  Wake interval set successfully");
+                        onUpdateApplied(hub_sequence);
+                    } else {
+                        logger.error("  Failed to set wake interval: error %d",
+                                     static_cast<int>(error));
+                        onUpdateFailed();
+                    }
+                });
+            break;
+        }
+
+        case UpdateType::SET_DATETIME: {
+            if (!reliable_pmu_) {
+                logger.error("  No PMU available for SET_DATETIME");
+                onUpdateFailed();
+                return;
+            }
+            const uint8_t *data = payload->payload_data;
+            PMU::DateTime datetime(data[0], data[1], data[2], data[3], data[4], data[5], data[6]);
+
+            logger.info("  SET_DATETIME: 20%02d-%02d-%02d %02d:%02d:%02d", datetime.year,
+                        datetime.month, datetime.day, datetime.hour, datetime.minute,
+                        datetime.second);
+
+            reliable_pmu_->setDateTime(
+                datetime, [this, hub_sequence](bool success, PMU::ErrorCode error) {
+                    if (success) {
+                        logger.info("  DateTime set successfully");
+                        onUpdateApplied(hub_sequence);
+                    } else {
+                        logger.error("  Failed to set datetime: error %d",
+                                     static_cast<int>(error));
+                        onUpdateFailed();
+                    }
+                });
+            break;
+        }
+
+        default:
+            // Mode-specific update type — delegate to subclass
+            onModeSpecificUpdate(payload, hub_sequence);
+            break;
+    }
+}
+
+void ApplicationMode::onModeSpecificUpdate(const UpdateAvailablePayload *payload,
+                                           uint8_t hub_sequence)
+{
+    logger.error("Unknown update type %d", payload->update_type);
+    onUpdateFailed();
+}
+
+void ApplicationMode::onUpdateApplied(uint8_t hub_sequence)
+{
+    update_state_.current_sequence = hub_sequence;
+}
+
+void ApplicationMode::onUpdateFailed()
+{
+    update_state_.reset();
+}
+
+void ApplicationMode::sendCheckUpdates()
+{
+    logger.info("Sending CHECK_UPDATES (seq=%d)", update_state_.current_sequence);
+
+    uint8_t seq_num = messenger_.sendCheckUpdates(ADDRESS_HUB, update_state_.current_sequence);
+    if (seq_num != 0) {
+        update_state_.pending_check_seq = seq_num;
+    } else {
+        logger.error("Failed to send CHECK_UPDATES");
+        onUpdateFailed();
     }
 }
 

@@ -17,6 +17,25 @@ class AddressManager;
 class HubRouter;
 class NetworkStats;
 
+namespace PMU {
+class ReliablePmuClient;
+}
+
+/**
+ * @brief Update pull state tracking
+ *
+ * Tracks sequence numbers and message state for the CHECK_UPDATES /
+ * UPDATE_AVAILABLE protocol between nodes and hub.
+ */
+struct UpdatePullState {
+    uint8_t current_sequence;   // Node's current sequence number
+    uint8_t pending_check_seq;  // Sequence number of pending CHECK_UPDATES message
+
+    UpdatePullState() : current_sequence(0), pending_check_seq(0) {}
+
+    void reset() { pending_check_seq = 0; }
+};
+
 /**
  * @brief Base class for different application modes (demo, production, hub)
  *
@@ -58,6 +77,8 @@ protected:
     AddressManager *address_manager_;
     HubRouter *hub_router_;
     NetworkStats *network_stats_;
+    PMU::ReliablePmuClient *reliable_pmu_ = nullptr;
+    UpdatePullState update_state_;
     std::unique_ptr<LEDPattern> led_pattern_;
     std::unique_ptr<LEDPattern> operational_pattern_;  // Pattern to switch to after RTC sync
     PeriodicTaskManager task_manager_;
@@ -100,10 +121,56 @@ protected:
     virtual void onActuatorCommand(const ActuatorPayload *payload) {}
 
     /**
-     * @brief Handle incoming update available messages (optional override)
+     * @brief Handle incoming update available messages
+     *
+     * Base implementation handles the update pull protocol (sequence tracking,
+     * dedup, cancel pending CHECK_UPDATES) and dispatches generic update types
+     * (SET_WAKE_INTERVAL, SET_DATETIME) via the PMU client. Mode-specific
+     * update types are forwarded to onModeSpecificUpdate().
+     *
      * @param payload Update available payload
      */
-    virtual void onUpdateAvailable(const UpdateAvailablePayload *payload) {}
+    virtual void onUpdateAvailable(const UpdateAvailablePayload *payload);
+
+    /**
+     * @brief Handle mode-specific update types
+     *
+     * Called by the base onUpdateAvailable() for update types not handled
+     * generically (e.g. SET_SCHEDULE, REMOVE_SCHEDULE, ACTUATOR_COMMAND).
+     * Default implementation logs an error and calls onUpdateFailed().
+     *
+     * @param payload Full update payload
+     * @param hub_sequence Sequence number from hub for this update
+     */
+    virtual void onModeSpecificUpdate(const UpdateAvailablePayload *payload, uint8_t hub_sequence);
+
+    /**
+     * @brief Called when an update is successfully applied
+     *
+     * Base implementation advances the update sequence number.
+     * Modes should override to also report to their state machines.
+     *
+     * @param hub_sequence The sequence number of the applied update
+     */
+    virtual void onUpdateApplied(uint8_t hub_sequence);
+
+    /**
+     * @brief Called when an update fails to apply
+     *
+     * Base implementation resets the pending check state.
+     * Modes should override to also report to their state machines.
+     */
+    virtual void onUpdateFailed();
+
+    /**
+     * @brief Called when an UPDATE_AVAILABLE message is received
+     *
+     * Notifies the mode whether there are updates to apply.
+     * Modes should override to report to their state machines.
+     *
+     * @param has_updates true if an update follows, false if no more updates
+     */
+    virtual void onUpdateReceived(bool has_updates) {}
 
     /**
      * @brief Handle incoming heartbeat response messages (optional override)
@@ -138,6 +205,24 @@ protected:
      * (e.g. IrrigationMode) can override to handle re-registration internally.
      */
     virtual void onReregistrationRequested();
+
+    /**
+     * @brief Set the PMU client for generic update handling
+     *
+     * Call from onStart() after creating the PMU client. Enables
+     * base class handling of SET_WAKE_INTERVAL and SET_DATETIME updates.
+     *
+     * @param pmu Pointer to reliable PMU client (nullptr to disable)
+     */
+    void setReliablePmu(PMU::ReliablePmuClient *pmu) { reliable_pmu_ = pmu; }
+
+    /**
+     * @brief Send CHECK_UPDATES message to hub
+     *
+     * Sends a CHECK_UPDATES message with the current update sequence number.
+     * Used by the update pull protocol to request pending updates from the hub.
+     */
+    void sendCheckUpdates();
 
     /**
      * @brief Check if we should use interrupt-based sleep
