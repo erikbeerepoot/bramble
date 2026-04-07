@@ -114,44 +114,42 @@ function App() {
 
   return (
     <AppContext.Provider value={contextValue}>
-      <div className="min-h-screen bg-gray-50">
-        <header className="bg-bramble-700 text-white shadow-lg">
-          <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8">
+      <div className="min-h-screen bg-surface">
+        <header className="bg-brand text-white shadow-md">
+          <div className="px-6 py-4">
             <div className="flex items-center justify-between gap-4">
               <div className="flex items-center gap-3 min-w-0">
-                <h1 className="text-xl sm:text-2xl font-bold truncate">Bramble</h1>
-                <div
-                  className={`flex items-center space-x-2 text-sm shrink-0 ${connected ? 'text-green-300' : 'text-red-300'}`}
-                >
-                  <span
-                    className={`w-2 h-2 rounded-full ${connected ? 'bg-green-400' : 'bg-red-400'}`}
-                  ></span>
-                  <span className="hidden sm:inline">
+                <h1 className="text-xl font-semibold truncate">Bramble</h1>
+                <div className="flex items-center gap-2 shrink-0">
+                  <div
+                    className={`w-2 h-2 rounded-full ${connected ? 'bg-status-online shadow-sm shadow-green-400' : 'bg-status-error shadow-sm shadow-red-400'}`}
+                  ></div>
+                  <span className={`text-sm hidden sm:inline ${connected ? 'opacity-90' : 'text-red-300'}`}>
                     {connected ? 'Connected' : 'Disconnected'}
                   </span>
                 </div>
               </div>
-              <nav className="flex space-x-2 sm:space-x-4 shrink-0">
+              <nav className="flex gap-2 sm:gap-4 shrink-0">
                 <Link
                   to="/nodes"
-                  className={`px-3 py-2 rounded-md text-sm font-medium ${
-                    isNodesActive ? 'bg-bramble-800' : 'hover:bg-bramble-600'
+                  className={`px-3 py-1.5 rounded text-sm font-medium transition-opacity ${
+                    isNodesActive ? 'bg-white/15' : 'hover:bg-white/10 hover:opacity-80'
                   }`}
                 >
                   Nodes
                 </Link>
                 <Link
                   to="/visualize"
-                  className={`px-3 py-2 rounded-md text-sm font-medium ${
-                    isVisualizeActive ? 'bg-bramble-800' : 'hover:bg-bramble-600'
+                  className={`px-3 py-1.5 rounded text-sm font-medium transition-opacity ${
+                    isVisualizeActive ? 'bg-white/15' : 'hover:bg-white/10 hover:opacity-80'
                   }`}
                 >
                   Visualize
                 </Link>
                 <Link
                   to="/settings"
-                  className={`px-3 py-2 rounded-md text-sm font-medium ${
-                    isSettingsActive ? 'bg-bramble-800' : 'hover:bg-bramble-600'
+                  className={`px-3 py-1.5 rounded text-sm font-medium transition-opacity ${
+                    isSettingsActive ? 'bg-white/15' : 'hover:bg-white/10 hover:opacity-80'
                   }`}
                 >
                   Settings
@@ -161,7 +159,7 @@ function App() {
           </div>
         </header>
 
-        <main className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
+        <main className="max-w-7xl mx-auto px-6 py-8">
           <Outlet />
         </main>
       </div>

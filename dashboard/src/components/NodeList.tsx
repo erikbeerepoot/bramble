@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
 import type { Node, Zone } from '../types';
 import { useAppContext } from '../App';
 import NodeCard from './NodeCard';
@@ -112,44 +113,31 @@ function NodeList() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h2 className="text-xl font-semibold text-gray-900">Network Nodes</h2>
-          <p className="text-sm text-gray-500">
-            {onlineNodes.length} online, {offlineNodes.length} offline
-          </p>
-        </div>
-        <div className="flex items-center space-x-3">
-          <label className="flex items-center space-x-2 text-sm text-gray-600 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={hideOffline}
-              onChange={(e) => setHideOffline(e.target.checked)}
-              className="rounded border-gray-300 text-bramble-600 focus:ring-bramble-500"
-            />
-            <span>Hide offline</span>
-          </label>
-          <button
-            onClick={fetchNodes}
-            disabled={refreshing}
-            className="btn btn-secondary flex items-center space-x-2"
-          >
-            <svg
-              className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`}
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-              />
-            </svg>
-            <span>{refreshing ? 'Refreshing...' : 'Refresh'}</span>
-          </button>
-        </div>
+      <div className="mb-6">
+        <h2 className="text-2xl font-semibold text-gray-900 mb-1">Network Nodes</h2>
+        <p className="text-sm text-gray-500">
+          {onlineNodes.length} online, {offlineNodes.length} offline
+        </p>
+      </div>
+
+      <div className="flex items-center justify-end gap-3 mb-6">
+        <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-700 select-none">
+          <input
+            type="checkbox"
+            checked={hideOffline}
+            onChange={(e) => setHideOffline(e.target.checked)}
+            className="w-4 h-4 rounded border-gray-300 text-gray-600 focus:ring-2 focus:ring-gray-400 focus:ring-offset-0"
+          />
+          Hide offline
+        </label>
+        <button
+          onClick={fetchNodes}
+          disabled={refreshing}
+          className="flex items-center gap-2 px-4 py-2 bg-surface-card border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm"
+        >
+          <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+          <span>{refreshing ? 'Refreshing...' : 'Refresh'}</span>
+        </button>
       </div>
 
       {visibleNodes.length === 0 ? (
@@ -187,33 +175,28 @@ function NodeList() {
               <div key={zoneKey}>
                 <button
                   onClick={() => toggleZone(zoneKey)}
-                  className="flex items-center space-x-2 mb-3 group"
+                  className="flex items-center gap-2.5 mb-3 text-gray-800 hover:text-gray-900 transition-colors group"
                 >
-                  <svg
-                    className={`w-4 h-4 text-gray-400 transition-transform ${isCollapsed ? '' : 'rotate-90'}`}
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M9 5l7 7-7 7"
-                    />
-                  </svg>
+                  {isCollapsed ? (
+                    <ChevronRight className="w-4 h-4 text-gray-500 group-hover:text-gray-700" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4 text-gray-500 group-hover:text-gray-700" />
+                  )}
                   {group.zone ? (
                     <>
                       <span
-                        className="w-3 h-3 rounded-full"
-                        style={{ backgroundColor: group.zone.color }}
+                        className="w-2.5 h-2.5 rounded-full shadow-sm"
+                        style={{
+                          backgroundColor: group.zone.color,
+                          boxShadow: `0 0 6px ${group.zone.color}40`,
+                        }}
                       />
-                      <span className="font-medium text-gray-900">{group.zone.name}</span>
+                      <span className="font-medium">{group.zone.name}</span>
                     </>
                   ) : (
                     <span className="font-medium text-gray-500">Unzoned</span>
                   )}
-                  <span className="text-sm text-gray-400">
+                  <span className="text-sm text-gray-500">
                     ({group.nodes.length} node{group.nodes.length !== 1 ? 's' : ''}, {onlineCount}{' '}
                     online)
                   </span>
