@@ -169,6 +169,11 @@ void SensorMode::onStart()
         }
     });
 
+    if (pmu_ok && pmu_manager_->getReliablePmu()) {
+        // Register PMU with base class for generic update handling
+        setReliablePmu(pmu_manager_->getReliablePmu());
+    }
+
     if (!pmu_ok) {
         logger.warn("PMU client not available - sending heartbeat for time sync");
         heartbeat_client_->send();
@@ -682,10 +687,12 @@ void SensorMode::onHeartbeatResponse(const HeartbeatResponsePayload *payload)
     // Call base class implementation to update RP2040 RTC
     ApplicationMode::onHeartbeatResponse(payload);
 
-    // Log pending flags (sensor mode doesn't handle updates yet)
-    if (payload && payload->pending_update_flags != PENDING_FLAG_NONE) {
-        logger.info("Pending update flags: 0x%02X (not handled in sensor mode)",
+    // Check for pending updates that require the update pull protocol
+    // Sensor nodes only support generic updates (wake interval, datetime)
+    if (payload && (payload->pending_update_flags & PENDING_FLAG_WAKE_INTERVAL)) {
+        logger.info("Pending update flags: 0x%02X, sending CHECK_UPDATES",
                     payload->pending_update_flags);
+        sendCheckUpdates();
     }
 
     // Delegate to heartbeat client — ResponseCallback handles PMU sync + state machine
@@ -710,6 +717,18 @@ void SensorMode::onFactoryResetRequested()
         logger.warn("PMU manager not available - performing RP2040-only watchdog reboot");
         watchdog_reboot(0, 0, 0);
     }
+}
+
+void SensorMode::onUpdateApplied(uint8_t hub_sequence)
+{
+    ApplicationMode::onUpdateApplied(hub_sequence);
+    logger.info("Update applied (seq=%d)", hub_sequence);
+}
+
+void SensorMode::onUpdateFailed()
+{
+    ApplicationMode::onUpdateFailed();
+    logger.warn("Update failed");
 }
 
 void SensorMode::initializeFlashTimestamps()

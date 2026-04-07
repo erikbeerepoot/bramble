@@ -164,6 +164,16 @@ public:
     bool isAvailable() const { return pmu_available_; }
 
     /**
+     * @brief Get access to the reliable PMU client
+     *
+     * Used to register the PMU with ApplicationMode for generic update
+     * handling (SET_WAKE_INTERVAL, SET_DATETIME).
+     *
+     * @return Pointer to ReliablePmuClient, or nullptr if PMU unavailable
+     */
+    PMU::ReliablePmuClient *getReliablePmu() { return reliable_pmu_; }
+
+    /**
      * @brief Check if sleep has been signaled and acknowledged
      *
      * When true, the main loop should halt to prevent UART activity from
