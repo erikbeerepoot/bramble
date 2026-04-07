@@ -100,6 +100,8 @@ private:
     void onHeartbeatResponse(const HeartbeatResponsePayload *payload) override;
     void onRebootRequested() override;
     void onFactoryResetRequested() override;
+    void onUpdateApplied(uint8_t hub_sequence) override;
+    void onUpdateFailed() override;
 
     /**
      * @brief Check if enough time has elapsed since last transmission
