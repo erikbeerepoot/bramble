@@ -43,6 +43,8 @@ struct UpdatePullState {
  */
 class ApplicationMode {
 public:
+    static constexpr uint16_t KEEP_AWAKE_PROCESSING_SECONDS = 10;
+
     // Callback type for reregistration required (hub doesn't recognize node)
     using ReregistrationCallback = std::function<void()>;
 
@@ -131,6 +133,9 @@ protected:
      * @param payload Update available payload
      */
     virtual void onUpdateAvailable(const UpdateAvailablePayload *payload);
+
+    void handleSetWakeInterval(const UpdateAvailablePayload *payload, uint8_t hub_sequence);
+    void handleSetDatetime(const UpdateAvailablePayload *payload, uint8_t hub_sequence);
 
     /**
      * @brief Handle mode-specific update types
