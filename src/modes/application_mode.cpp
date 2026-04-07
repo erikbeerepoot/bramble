@@ -247,8 +247,7 @@ void ApplicationMode::handleSetWakeInterval(const UpdateAvailablePayload *payloa
         });
 }
 
-void ApplicationMode::handleSetDatetime(const UpdateAvailablePayload *payload,
-                                        uint8_t hub_sequence)
+void ApplicationMode::handleSetDatetime(const UpdateAvailablePayload *payload, uint8_t hub_sequence)
 {
     if (!reliable_pmu_) {
         logger.error("  No PMU available for SET_DATETIME");
@@ -261,16 +260,15 @@ void ApplicationMode::handleSetDatetime(const UpdateAvailablePayload *payload,
     logger.info("  SET_DATETIME: 20%02d-%02d-%02d %02d:%02d:%02d", datetime.year, datetime.month,
                 datetime.day, datetime.hour, datetime.minute, datetime.second);
 
-    reliable_pmu_->setDateTime(
-        datetime, [this, hub_sequence](bool success, PMU::ErrorCode error) {
-            if (success) {
-                logger.info("  DateTime set successfully");
-                onUpdateApplied(hub_sequence);
-            } else {
-                logger.error("  Failed to set datetime: error %d", static_cast<int>(error));
-                onUpdateFailed();
-            }
-        });
+    reliable_pmu_->setDateTime(datetime, [this, hub_sequence](bool success, PMU::ErrorCode error) {
+        if (success) {
+            logger.info("  DateTime set successfully");
+            onUpdateApplied(hub_sequence);
+        } else {
+            logger.error("  Failed to set datetime: error %d", static_cast<int>(error));
+            onUpdateFailed();
+        }
+    });
 }
 
 void ApplicationMode::onModeSpecificUpdate(const UpdateAvailablePayload *payload,
