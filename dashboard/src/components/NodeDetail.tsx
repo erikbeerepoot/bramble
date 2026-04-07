@@ -58,7 +58,7 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
   const [advancedExpanded, setAdvancedExpanded] = useState(false);
   const [showRebootConfirm, setShowRebootConfirm] = useState(false);
   const [rebooting, setRebooting] = useState(false);
-  const [wakeIntervalMinutes, setWakeIntervalMinutes] = useState('10');
+  const [wakeIntervalMinutes, setWakeIntervalMinutes] = useState('1');
   const [settingWakeInterval, setSettingWakeInterval] = useState(false);
   const [wakeIntervalStatus, setWakeIntervalStatus] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
