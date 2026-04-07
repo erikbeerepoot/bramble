@@ -319,7 +319,7 @@ function IrrigationControl({ deviceId }: IrrigationControlProps) {
       <Drawer.Root open={showAddForm} onOpenChange={setShowAddForm}>
         <Drawer.Portal>
           <Drawer.Overlay className="fixed inset-0 bg-black/40 z-40" />
-          <Drawer.Content className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-2xl flex flex-col max-h-[85vh] max-w-sm sm:max-w-2xl mx-auto shadow-2xl focus:outline-none">
+          <Drawer.Content className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-2xl flex flex-col max-h-[85vh] max-w-lg sm:max-w-xl mx-auto shadow-2xl focus:outline-none">
             <div className="flex justify-center pt-3 pb-2">
               <div className="w-9 h-1 bg-gray-300 rounded-full" />
             </div>
