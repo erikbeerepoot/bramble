@@ -579,12 +579,9 @@ def get_queue(device_id: int):
         JSON array of queued updates
     """
     try:
-        db = get_database()
-        node_info = db.get_node_by_device_id(device_id)
-        if not node_info or not node_info.get('address'):
+        address = _resolve_node_address(device_id)
+        if address is None:
             return jsonify({'error': f'Node with device_id {device_id} not found'}), 404
-
-        address = node_info['address']
         serial = get_serial()
         responses = serial.send_command(f'GET_QUEUE {address}')
 
@@ -647,12 +644,11 @@ def add_schedule(device_id: int):
         JSON response with task_id for tracking (202 Accepted)
     """
     try:
-        db = get_database()
-        node_info = db.get_node_by_device_id(device_id)
-        if not node_info or not node_info.get('address'):
+        address = _resolve_node_address(device_id)
+        if address is None:
             return jsonify({'error': f'Node with device_id {device_id} not found'}), 404
 
-        address = node_info['address']
+        db = get_database()
 
         data = request.get_json()
         if not data:
@@ -729,12 +725,11 @@ def remove_schedule(device_id: int, index: int):
         if not 0 <= index <= 7:
             return jsonify({'error': 'Schedule index must be 0-7'}), 400
 
-        db = get_database()
-        node_info = db.get_node_by_device_id(device_id)
-        if not node_info or not node_info.get('address'):
+        address = _resolve_node_address(device_id)
+        if address is None:
             return jsonify({'error': f'Node with device_id {device_id} not found'}), 404
 
-        address = node_info['address']
+        db = get_database()
 
         # Remove from local schedule storage
         db.delete_schedule(device_id=device_id, index=index)
@@ -921,12 +916,9 @@ def set_wake_interval(device_id: int):
         JSON response with task_id for tracking (202 Accepted)
     """
     try:
-        db = get_database()
-        node_info = db.get_node_by_device_id(device_id)
-        if not node_info or not node_info.get('address'):
+        address = _resolve_node_address(device_id)
+        if address is None:
             return jsonify({'error': f'Node with device_id {device_id} not found'}), 404
-
-        address = node_info['address']
 
         data = request.get_json()
         if not data:
@@ -981,12 +973,9 @@ def set_datetime(device_id: int):
         JSON response with task_id for tracking (202 Accepted)
     """
     try:
-        db = get_database()
-        node_info = db.get_node_by_device_id(device_id)
-        if not node_info or not node_info.get('address'):
+        address = _resolve_node_address(device_id)
+        if address is None:
             return jsonify({'error': f'Node with device_id {device_id} not found'}), 404
-
-        address = node_info['address']
 
         data = request.get_json()
         if not data:
