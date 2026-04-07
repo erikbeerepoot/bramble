@@ -75,6 +75,7 @@ volatile int buttonWakeFlag = 0;
 
 // Valve timer state (set when configuring Alarm A, read on alarm fire)
 static uint8_t valveTimerValveId = 0;
+static bool valveTimerActive = false;
 
 // Clock source fallback flag - set if LSE crystal fails to start
 static bool usingLSIFallback = false;
@@ -238,8 +239,12 @@ int main(void)
 
         if (valveTimerFlag) {
             valveTimerFlag = false;
-            // Valve close alarm fired — set wake type before dispatching
-            // so determineWakeType() won't override it
+            // Valve close alarm fired — re-enable periodic wake timer
+            uint32_t interval = protocol.getWakeInterval();
+            if (interval > 0) {
+                configureRTCWakeup(interval);
+            }
+            // Set wake type before dispatching so determineWakeType() won't override it
             pmuState.setWakeType(WakeType::VALVE_TIMER);
             pmuState.dispatch(PmuEvent::RTC_WAKEUP);
         }
@@ -726,7 +731,13 @@ static void configureValveCloseAlarm(uint16_t durationSeconds, uint8_t valveId)
         led.setColor(LED::RED);
         HAL_Delay(500);
         led.off();
+        return;
     }
+
+    valveTimerActive = true;
+
+    // Disable periodic wake timer — only the alarm should wake us during watering
+    HAL_RTCEx_DeactivateWakeUpTimer(&hrtc);
 }
 
 /**
@@ -736,6 +747,7 @@ static void configureValveCloseAlarm(uint16_t durationSeconds, uint8_t valveId)
 void HAL_RTC_AlarmAEventCallback(RTC_HandleTypeDef *hrtc)
 {
     valveTimerFlag = true;
+    valveTimerActive = false;
 }
 
 /**
@@ -985,8 +997,19 @@ static void updateLedForState(PmuState state, WakeType wakeType)
             led.setColor(LED::RED);
             break;
 
-        case PmuState::BOOTING:
         case PmuState::SLEEPING:
+#ifdef USE_WS2812
+            if (valveTimerActive) {
+                led.setRGB(0, 0, 255);  // Blue while watering
+            } else {
+                led.off();
+            }
+#else
+            led.off();
+#endif
+            break;
+
+        case PmuState::BOOTING:
         default:
             led.off();
             break;
