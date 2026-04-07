@@ -198,6 +198,15 @@ public:
      */
     void reportValveClosed();
 
+    /**
+     * @brief Report that a valve timer was set and node should sleep
+     *
+     * Valve remains physically open (DC latching). PMU Alarm A will
+     * wake the node to close it after the duration.
+     * Transitions VALVE_ACTIVE -> READY_FOR_SLEEP.
+     */
+    void reportValveTimerSet();
+
     // =========================================================================
     // Sleep/Wake Events
     // =========================================================================

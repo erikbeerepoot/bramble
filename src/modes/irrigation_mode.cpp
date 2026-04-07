@@ -182,10 +182,15 @@ void IrrigationMode::onStateChange(IrrigationState state)
             messenger_.setRegistrationSuccessCallback(
                 [this](uint16_t new_address) {
                     logger.info("Re-registration assigned address 0x%04X", new_address);
+                    // Reset update sequence FIRST — hub starts fresh for new address
+                    update_state_.current_sequence = 0;
+                    // Clear callback before flash write to avoid re-entrancy
+                    messenger_.setRegistrationSuccessCallback(nullptr);
+                    // Save address to flash (may disrupt XIP cache on RP2350)
                     if (address_saved_callback_) {
                         address_saved_callback_(new_address);
                     }
-                    messenger_.setRegistrationSuccessCallback(nullptr);
+                    // SM transition last — if flash corrupted state, at least seq is reset
                     irrigation_state_.reportReregistrationComplete();
                 });
             break;
@@ -208,8 +213,7 @@ void IrrigationMode::onStateChange(IrrigationState state)
                     valve_duration_seconds_, pending_close_valve_id_,
                     [this](bool success, PMU::ErrorCode error) {
                         if (success) {
-                            logger.info("Valve timer set — sleeping with valve open");
-                            irrigation_state_.reportValveClosed();  // -> READY_FOR_SLEEP
+                            irrigation_state_.reportValveTimerSet();
                         } else {
                             logger.error("Failed to set valve timer: %d",
                                          static_cast<int>(error));

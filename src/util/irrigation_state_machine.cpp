@@ -80,8 +80,8 @@ void IrrigationStateMachine::reportReregistrationRequired()
 void IrrigationStateMachine::reportReregistrationComplete()
 {
     if (state_ != IrrigationState::AWAITING_REGISTRATION) {
-        logger.warn("reportReregistrationComplete() called in unexpected state: %s",
-                    stateName(state_));
+        logger.warn("reportReregistrationComplete() called in unexpected state: %s (raw=%u)",
+                    stateName(state_), static_cast<unsigned>(state_));
         return;
     }
     logger.info("Re-registration complete");
@@ -135,7 +135,17 @@ void IrrigationStateMachine::reportValveClosed()
         logger.warn("reportValveClosed() called in unexpected state: %s", stateName(state_));
         return;
     }
-    logger.info("Valve closed");
+    logger.info("All valves closed");
+    transitionTo(IrrigationState::READY_FOR_SLEEP);
+}
+
+void IrrigationStateMachine::reportValveTimerSet()
+{
+    if (state_ != IrrigationState::VALVE_ACTIVE) {
+        logger.warn("reportValveTimerSet() called in unexpected state: %s", stateName(state_));
+        return;
+    }
+    logger.info("Valve timer set — sleeping with valve open");
     transitionTo(IrrigationState::READY_FOR_SLEEP);
 }
 

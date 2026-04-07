@@ -29,7 +29,7 @@ struct __attribute__((packed)) IrrigationPersistedState {
 };
 static_assert(sizeof(IrrigationPersistedState) == 32, "IrrigationPersistedState must be 32 bytes");
 
-constexpr uint8_t IRRIGATION_STATE_VERSION = 3;
+constexpr uint8_t IRRIGATION_STATE_VERSION = 5;
 
 /**
  * @brief Update pull state tracking
