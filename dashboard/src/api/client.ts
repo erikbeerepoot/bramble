@@ -257,6 +257,16 @@ export async function stopValve(
   });
 }
 
+export async function setWakeInterval(
+  deviceId: string,
+  intervalSeconds: number
+): Promise<{ status: string; task_id: string; message: string }> {
+  return fetchApi(`/api/nodes/${deviceId}/wake-interval`, {
+    method: 'POST',
+    body: JSON.stringify({ interval_seconds: intervalSeconds }),
+  });
+}
+
 export async function controlCurtain(
   address: number,
   action: 'open' | 'close' | 'stop' | 'calibrate'
