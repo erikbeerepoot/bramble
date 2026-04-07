@@ -3,11 +3,13 @@
 @tailwind utilities;
 
 body {
-  @apply bg-gray-50 text-gray-900;
+  background-color: theme('colors.surface.DEFAULT');
+  @apply text-gray-900;
 }
 
 .card {
-  @apply bg-white rounded-lg shadow-md p-4 overflow-hidden;
+  background-color: theme('colors.surface.card');
+  @apply rounded-xl shadow-sm p-4 overflow-hidden;
 }
 
 .btn {
