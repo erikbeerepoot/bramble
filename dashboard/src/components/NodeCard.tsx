@@ -1,7 +1,17 @@
 import { useEffect, useState } from 'react';
 import type { Node, Zone, SensorReading } from '../types';
 import { getOverallNodeHealth, NodeType } from '../types';
-import { getNodeLatestReading } from '../api/client';
+import { getNodeLatestReading, getNodeSensorData } from '../api/client';
+import Sparkline from './Sparkline';
+
+/**
+ * Switch between 'inline' and 'backdrop' to compare the two sparkline styles.
+ * - 'inline':   clean sparkline rendered below the temp/humidity text
+ * - 'backdrop': semi-transparent area chart filling the card background
+ */
+const SPARKLINE_VARIANT: 'inline' | 'backdrop' = 'backdrop';
+
+const SPARKLINE_HOURS = 6;
 
 interface NodeCardProps {
   node: Node;
@@ -36,13 +46,89 @@ function NodeCard({ node, zone, onClick }: NodeCardProps) {
   const displayName = node.metadata?.name || `Node ${BigInt(node.device_id).toString(16).toUpperCase()}`;
   const health = getOverallNodeHealth(node);
   const [reading, setReading] = useState<SensorReading | null>(null);
+  const [sparklineData, setSparklineData] = useState<SensorReading[]>([]);
 
   useEffect(() => {
     if (node.online && node.type === NodeType.SENSOR) {
       getNodeLatestReading(node.device_id).then(setReading);
+
+      const now = Math.floor(Date.now() / 1000);
+      const startTime = now - SPARKLINE_HOURS * 3600;
+      getNodeSensorData(node.device_id, {
+        startTime,
+        downsample: 120, // ~3 points per hour = ~18 points for 6h
+      }).then((res) => setSparklineData(res.readings));
     }
   }, [node.device_id, node.online, node.type]);
 
+  const isSensor = node.type === NodeType.SENSOR;
+  const hasSparkline = isSensor && sparklineData.length >= 2;
+
+  if (SPARKLINE_VARIANT === 'backdrop') {
+    return (
+      <div
+        onClick={onClick}
+        className="card cursor-pointer hover:shadow-lg transition-shadow border border-gray-200 overflow-hidden relative"
+        style={zone ? { borderLeftWidth: '4px', borderLeftColor: zone.color } : undefined}
+      >
+        {/* Backdrop sparkline fills the card */}
+        {hasSparkline && (
+          <Sparkline
+            readings={sparklineData}
+            dataKey="temperature_celsius"
+            variant="backdrop"
+            color="#6366f1"
+          />
+        )}
+
+        {/* Card content floats above the chart */}
+        <div className="relative z-10">
+          <div className="flex items-start justify-between">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center space-x-2">
+                <h3 className="text-lg font-medium text-gray-900 truncate">
+                  {displayName}
+                </h3>
+                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                  node.online
+                    ? 'bg-green-100 text-green-800'
+                    : 'bg-red-100 text-red-800'
+                }`}>
+                  {node.online ? 'Online' : 'Offline'}
+                </span>
+              </div>
+
+              {reading && (
+                <div className="mt-2 flex items-center space-x-4 text-sm">
+                  <span className="text-gray-700">
+                    {reading.temperature_celsius.toFixed(1)}°C
+                  </span>
+                  <span className="text-gray-700">
+                    {reading.humidity_percent.toFixed(0)}%
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Overall health indicator */}
+            <div
+              className={`flex-shrink-0 ml-4 w-3 h-3 rounded-full ${HEALTH_DOT_COLOR[health]}`}
+              title={HEALTH_LABEL[health]}
+            />
+          </div>
+
+          <div className="mt-3 flex items-center justify-between text-sm">
+            <span className="text-gray-500 font-medium">{node.type}</span>
+            <div className="text-gray-400">
+              Last seen: {formatLastSeen(node.last_seen_seconds)}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Inline variant
   return (
     <div
       onClick={onClick}
@@ -74,7 +160,6 @@ function NodeCard({ node, zone, onClick }: NodeCardProps) {
               </span>
             </div>
           )}
-
         </div>
 
         {/* Overall health indicator */}
@@ -83,6 +168,19 @@ function NodeCard({ node, zone, onClick }: NodeCardProps) {
           title={HEALTH_LABEL[health]}
         />
       </div>
+
+      {/* Inline sparkline */}
+      {hasSparkline && (
+        <div className="mt-2">
+          <Sparkline
+            readings={sparklineData}
+            dataKey="temperature_celsius"
+            variant="inline"
+            color="#6366f1"
+            height={36}
+          />
+        </div>
+      )}
 
       <div className="mt-3 flex items-center justify-between text-sm">
         <span className="text-gray-500 font-medium">{node.type}</span>
