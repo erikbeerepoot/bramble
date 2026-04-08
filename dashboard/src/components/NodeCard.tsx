@@ -2,7 +2,10 @@ import { useEffect, useState } from 'react';
 import { Droplet, Home, Thermometer } from 'lucide-react';
 import type { Node, Zone, SensorReading } from '../types';
 import { getOverallNodeHealth, NodeType } from '../types';
-import { getNodeLatestReading } from '../api/client';
+import { getNodeLatestReading, getNodeSensorData } from '../api/client';
+import Sparkline from './Sparkline';
+
+const SPARKLINE_HOURS = 6;
 
 interface NodeCardProps {
   node: Node;
@@ -26,15 +29,26 @@ const HEALTH_LABEL: Record<string, string> = {
 };
 
 function NodeCard({ node, zone, onClick }: NodeCardProps) {
-  const displayName = node.metadata?.name || `Node ${BigInt(node.device_id).toString(16).toUpperCase()}`;
+  const displayName =
+    node.metadata?.name || `Node ${BigInt(node.device_id).toString(16).toUpperCase()}`;
   const health = getOverallNodeHealth(node);
   const [reading, setReading] = useState<SensorReading | null>(null);
+  const [sparklineData, setSparklineData] = useState<SensorReading[]>([]);
 
   useEffect(() => {
     if (node.online && node.type === NodeType.SENSOR) {
       getNodeLatestReading(node.device_id).then(setReading);
+
+      const now = Math.floor(Date.now() / 1000);
+      const startTime = now - SPARKLINE_HOURS * 3600;
+      getNodeSensorData(node.device_id, {
+        startTime,
+        downsample: 120, // ~3 points per hour = ~18 points for 6h
+      }).then((res) => setSparklineData(res.readings));
     }
   }, [node.device_id, node.online, node.type]);
+
+  const hasSparkline = node.type === NodeType.SENSOR && sparklineData.length >= 2;
 
   const getNodeIcon = (type: string) => {
     switch (type) {
@@ -61,35 +75,45 @@ function NodeCard({ node, zone, onClick }: NodeCardProps) {
         backgroundColor: zoneColor ? `${zoneColor}03` : undefined,
       }}
     >
+      {/* Backdrop sparkline fills the card */}
+      {hasSparkline && (
+        <Sparkline
+          readings={sparklineData}
+          dataKey="temperature_celsius"
+          variant="backdrop"
+          color="#6366f1"
+        />
+      )}
+
       {/* Status dot */}
-      <div className="absolute top-4 right-4">
+      <div className="absolute top-4 right-4 z-10">
         <div
           className="w-2.5 h-2.5 rounded-full shadow-sm"
           title={HEALTH_LABEL[health]}
           style={{
-            backgroundColor: node.online ? (zoneColor || '#22c55e') : '#9ca3af',
-            boxShadow: node.online
-              ? `0 0 6px ${zoneColor || '#22c55e'}60`
-              : '0 0 4px #9ca3af40',
+            backgroundColor: node.online ? zoneColor || '#22c55e' : '#9ca3af',
+            boxShadow: node.online ? `0 0 6px ${zoneColor || '#22c55e'}60` : '0 0 4px #9ca3af40',
           }}
         ></div>
       </div>
 
-      <div className="px-5 py-4">
+      <div className="relative z-10 px-5 py-4">
         {/* Name & badge */}
         <div className="flex items-center gap-3 mb-3">
-          <h3 className="text-base font-semibold text-gray-900 truncate">
-            {displayName}
-          </h3>
+          <h3 className="text-base font-semibold text-gray-900 truncate">{displayName}</h3>
           <span
             className="px-2.5 py-0.5 rounded-full text-xs font-medium"
-            style={zoneColor ? {
-              backgroundColor: `${zoneColor}15`,
-              color: zoneColor,
-            } : {
-              backgroundColor: node.online ? '#22c55e15' : '#ef444415',
-              color: node.online ? '#22c55e' : '#ef4444',
-            }}
+            style={
+              zoneColor
+                ? {
+                    backgroundColor: `${zoneColor}15`,
+                    color: zoneColor,
+                  }
+                : {
+                    backgroundColor: node.online ? '#22c55e15' : '#ef444415',
+                    color: node.online ? '#22c55e' : '#ef4444',
+                  }
+            }
           >
             {node.online ? 'Online' : 'Offline'}
           </span>
