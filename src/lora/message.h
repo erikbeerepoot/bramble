@@ -335,10 +335,10 @@ constexpr size_t MAX_EVENT_BATCH_RECORDS = 32;
  * Hub reconstructs unix timestamps from the time reference and per-record offsets.
  */
 struct __attribute__((packed)) EventLogBatchPayload {
-    uint32_t time_ref_unix;                            // Unix timestamp at reference point
-    uint32_t time_ref_uptime;                          // Uptime (ms) at reference point
-    uint8_t record_count;                              // Number of records (1-32)
-    EventRecord records[MAX_EVENT_BATCH_RECORDS];      // 6 bytes each
+    uint32_t time_ref_unix;                        // Unix timestamp at reference point
+    uint32_t time_ref_uptime;                      // Uptime (ms) at reference point
+    uint8_t record_count;                          // Number of records (1-32)
+    EventRecord records[MAX_EVENT_BATCH_RECORDS];  // 6 bytes each
 };
 
 /**

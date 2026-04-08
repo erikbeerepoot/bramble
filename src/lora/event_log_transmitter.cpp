@@ -42,8 +42,7 @@ bool EventLogTransmitter::transmitIfPending(EventLog<64> &log)
     message->header.seq_num = 0;  // Assigned by send()
 
     // Payload
-    EventLogBatchPayload *payload =
-        reinterpret_cast<EventLogBatchPayload *>(message->payload);
+    EventLogBatchPayload *payload = reinterpret_cast<EventLogBatchPayload *>(message->payload);
     payload->time_ref_unix = log.timeRefUnix();
     payload->time_ref_uptime = log.timeRefUptime();
     payload->record_count = actual;
