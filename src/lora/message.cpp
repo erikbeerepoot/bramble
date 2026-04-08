@@ -37,6 +37,8 @@ const char *MessageHandler::getMessageTypeName(uint8_t type)
             return "BATCH_ACK";
         case MSG_TYPE_EVENT:
             return "EVENT";
+        case MSG_TYPE_EVENT_LOG:
+            return "EVENT_LOG";
         default:
             return "UNKNOWN";
     }

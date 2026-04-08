@@ -228,6 +228,12 @@ void HubMode::processIncomingMessage(uint8_t *rx_buffer, int rx_len, uint32_t cu
                 reinterpret_cast<const EventPayload *>(rx_buffer + sizeof(MessageHeader));
             handleEvent(header->src_addr, event);
             // Fall through to base class (BEST_EFFORT, no ACK needed)
+        } else if (header->type == MSG_TYPE_EVENT_LOG) {
+            // Forward batched event log records to Raspberry Pi
+            const EventLogBatchPayload *batch =
+                reinterpret_cast<const EventLogBatchPayload *>(rx_buffer + sizeof(MessageHeader));
+            handleEventLogBatch(header->src_addr, batch);
+            // Fall through to base class (BEST_EFFORT, no ACK needed)
         } else if (header->type == MSG_TYPE_SENSOR_DATA_BATCH) {
             // Forward batch sensor data to Raspberry Pi
             const SensorDataBatchPayload *batch =
@@ -777,6 +783,42 @@ void HubMode::handleEvent(uint16_t source_addr, const EventPayload *payload)
 
     logger.debug("Forwarded event: node=%u, code=0x%04X, data_len=%u", source_addr,
                  payload->event_code, payload->data_length);
+}
+
+void HubMode::handleEventLogBatch(uint16_t source_addr, const EventLogBatchPayload *batch)
+{
+    if (!batch || batch->record_count == 0 || batch->record_count > MAX_EVENT_BATCH_RECORDS) {
+        return;
+    }
+
+    // Look up device_id from address manager
+    uint64_t device_id = 0;
+    const NodeInfo *node = address_manager_->getNodeInfo(source_addr);
+    if (node) {
+        device_id = node->device_id;
+    }
+
+    char device_id_str[21];
+    uint64_to_str(device_id, device_id_str, sizeof(device_id_str));
+
+    // Forward each event record as a separate line to Raspberry Pi
+    // Format: EVENT_LOG <addr> <device_id> <unix_ts> <event_type> <severity> <detail>
+    for (uint8_t i = 0; i < batch->record_count; i++) {
+        const EventRecord &rec = batch->records[i];
+
+        // Reconstruct unix timestamp from time reference + offset
+        uint32_t unix_ts = 0;
+        if (batch->time_ref_unix > 0) {
+            unix_ts = batch->time_ref_unix + rec.uptime_offset;
+        }
+
+        char line[128];
+        snprintf(line, sizeof(line), "EVENT_LOG %u %s %lu %u %u %u\n", source_addr, device_id_str,
+                 static_cast<unsigned long>(unix_ts), rec.event_type, rec.severity, rec.detail);
+        uartSend(line);
+    }
+
+    logger.debug("Forwarded %u event log records from node %u", batch->record_count, source_addr);
 }
 
 void HubMode::handleHeartbeat(uint16_t source_addr, const HeartbeatPayload *payload, int16_t rssi)

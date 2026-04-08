@@ -290,13 +290,37 @@ function IrrigationControl({ deviceId }: IrrigationControlProps) {
                     {formatDays(schedule.days)}
                   </div>
                 </div>
-                <button
-                  onClick={() => handleDeleteSchedule(schedule.index)}
-                  disabled={deletingIndex !== null}
-                  className="text-sm text-red-500 hover:text-red-700 disabled:opacity-50"
-                >
-                  {deletingIndex === schedule.index ? 'Removing...' : 'Delete'}
-                </button>
+                <div className="flex items-center gap-2">
+                  {schedule.status === 'confirmed' ? (
+                    <span
+                      className="inline-flex items-center gap-1 text-xs text-green-700 bg-green-50 px-1.5 py-0.5 rounded"
+                      title={schedule.confirmed_at ? `Confirmed ${new Date(schedule.confirmed_at * 1000).toLocaleString()}` : 'Confirmed'}
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                      Confirmed
+                    </span>
+                  ) : schedule.status === 'failed' ? (
+                    <span
+                      className="inline-flex items-center gap-1 text-xs text-red-700 bg-red-50 px-1.5 py-0.5 rounded"
+                      title={schedule.confirmed_at ? `Failed ${new Date(schedule.confirmed_at * 1000).toLocaleString()}` : 'Failed'}
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                      Failed
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-xs text-yellow-700 bg-yellow-50 px-1.5 py-0.5 rounded">
+                      <span className="w-1.5 h-1.5 rounded-full bg-yellow-500" />
+                      Pending
+                    </span>
+                  )}
+                  <button
+                    onClick={() => handleDeleteSchedule(schedule.index)}
+                    disabled={deletingIndex !== null}
+                    className="text-sm text-red-500 hover:text-red-700 disabled:opacity-50"
+                  >
+                    {deletingIndex === schedule.index ? 'Removing...' : 'Delete'}
+                  </button>
+                </div>
               </div>
             ))}
           </div>

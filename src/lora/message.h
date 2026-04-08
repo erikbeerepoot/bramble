@@ -3,6 +3,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "util/event_record.h"
+
 // Message protocol constants
 constexpr uint16_t MESSAGE_MAGIC = 0xBEEF;
 constexpr size_t MESSAGE_HEADER_SIZE = 9;
@@ -42,7 +44,8 @@ enum MessageType {
     MSG_TYPE_HEARTBEAT_RESPONSE = 0x0B,  // Hub → Node: Heartbeat response with current time
     MSG_TYPE_SENSOR_DATA_BATCH = 0x0C,   // Batch transmission of sensor records from flash
     MSG_TYPE_BATCH_ACK = 0x0D,           // Batch acknowledgment from hub
-    MSG_TYPE_EVENT = 0x0E                // Generic event notification (any node type)
+    MSG_TYPE_EVENT = 0x0E,               // Generic event notification (any node type)
+    MSG_TYPE_EVENT_LOG = 0x0F            // Batched event log records (any node type)
 };
 
 // Sensor data subtypes
@@ -318,6 +321,24 @@ struct __attribute__((packed)) BatchAckPayload {
     uint8_t ack_seq_num;       // Sequence number being acknowledged
     uint8_t status;            // ACK status (0=success)
     uint8_t records_received;  // Number of records successfully stored
+};
+
+// Event log batch constants
+// Max records: (247 payload - 9 batch header) / 6 bytes per record = 39
+// Use 32 as a practical limit
+constexpr size_t MAX_EVENT_BATCH_RECORDS = 32;
+
+/**
+ * @brief Event log batch payload (Node → Hub)
+ *
+ * Transmits multiple event records in a single BEST_EFFORT message.
+ * Hub reconstructs unix timestamps from the time reference and per-record offsets.
+ */
+struct __attribute__((packed)) EventLogBatchPayload {
+    uint32_t time_ref_unix;                            // Unix timestamp at reference point
+    uint32_t time_ref_uptime;                          // Uptime (ms) at reference point
+    uint8_t record_count;                              // Number of records (1-32)
+    EventRecord records[MAX_EVENT_BATCH_RECORDS];      // 6 bytes each
 };
 
 /**

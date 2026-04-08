@@ -270,6 +270,8 @@ export interface IrrigationSchedule {
   days: number;      // bitmask (127 = all days)
   valve: number;
   created_at: number;
+  status?: 'pending' | 'confirmed' | 'failed';
+  confirmed_at?: number;
 }
 
 export interface IrrigationSchedulesResponse {

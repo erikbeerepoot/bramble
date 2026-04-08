@@ -174,6 +174,7 @@ else()
         src/lora/reliable_messenger.cpp
         src/lora/address_manager.cpp
         src/lora/batch_transmitter.cpp
+        src/lora/event_log_transmitter.cpp
         src/lora/heartbeat_client.cpp
         src/lora/hub_router.cpp
         src/lora/network_stats.cpp

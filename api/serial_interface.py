@@ -127,7 +127,7 @@ class SerialInterface:
         "BATCH_COMPLETE ", "SENSOR_DATA ", "HUB_READY",
         "NODE_LIST ", "NODE ", "GET_DATETIME", "QUEUE ",
         "QUEUED ", "ERROR ", "DELETED_NODE ", "BATCH_ACK_SENT ",
-        "EVENT ",
+        "EVENT_LOG ", "EVENT ",
     ]
 
     def _handle_line(self, line: str):
@@ -166,6 +166,11 @@ class SerialInterface:
         # Handle heartbeat messages
         if line.startswith("HEARTBEAT "):
             self._handle_heartbeat(line)
+            return
+
+        # Handle event log batch records (check before EVENT to avoid prefix collision)
+        if line.startswith("EVENT_LOG "):
+            self._handle_event_log(line)
             return
 
         # Handle event messages
@@ -466,6 +471,58 @@ class SerialInterface:
 
         except (ValueError, IndexError) as e:
             logger.error(f"Failed to parse EVENT: {e}")
+
+    def _handle_event_log(self, line: str):
+        """Handle event log record from hub.
+
+        Format: EVENT_LOG <node_addr> <device_id> <unix_ts> <event_type> <severity> <detail>
+        """
+        if not self.database:
+            logger.warning("Received event log but no database configured")
+            return
+
+        try:
+            parts = line.split()
+            if len(parts) < 7:
+                logger.error(f"Invalid EVENT_LOG format: {line}")
+                return
+
+            device_id = int(parts[2])
+            unix_ts = int(parts[3])
+            event_type = int(parts[4])
+            severity = int(parts[5])
+            detail = int(parts[6])
+
+            if device_id == 0:
+                logger.warning(f"Event log from node {parts[1]} has no device_id, skipping")
+                return
+
+            # Store as a node event (event_code = event_type, data_hex = severity:detail)
+            data_hex = f"{severity:02X}{detail:04X}"
+            self.database.insert_event(device_id, unix_ts, event_type, data_hex)
+
+            # Handle schedule confirmation events
+            SCHEDULE_APPLIED = 0x70
+            SCHEDULE_REMOVED = 0x71
+            SCHEDULE_FAILED = 0x72
+
+            if event_type == SCHEDULE_APPLIED:
+                self.database.confirm_schedule(device_id, detail, unix_ts)
+                logger.info(f"Schedule confirmed: device_id={device_id}, index={detail}")
+            elif event_type == SCHEDULE_REMOVED:
+                self.database.confirm_schedule_removed(device_id, detail, unix_ts)
+                logger.info(f"Schedule removal confirmed: device_id={device_id}, index={detail}")
+            elif event_type == SCHEDULE_FAILED:
+                self.database.fail_schedule(device_id, detail, unix_ts)
+                logger.info(f"Schedule failed: device_id={device_id}, index={detail}")
+            else:
+                logger.debug(
+                    f"Event log: device_id={device_id}, type=0x{event_type:02X}, "
+                    f"severity={severity}, detail={detail}"
+                )
+
+        except (ValueError, IndexError) as e:
+            logger.error(f"Failed to parse EVENT_LOG: {e}")
 
     def _handle_sensor_batch_start(self, line: str):
         """Handle start of sensor batch from hub.

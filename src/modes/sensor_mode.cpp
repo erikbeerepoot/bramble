@@ -84,6 +84,7 @@ void SensorMode::onStart()
         logger.info("Registration success callback: assigned address 0x%04X", assigned_addr);
         task_queue_.cancel(state_watchdog_id_);
         state_watchdog_id_ = 0;
+        event_log_.record(EventType::REGISTRATION_OK, 0, assigned_addr);
         sensor_state_.reportRegistrationComplete();
     });
 
@@ -91,6 +92,9 @@ void SensorMode::onStart()
     transmitter_ = std::make_unique<BatchTransmitter>(
         messenger_,
         BatchTransmitter::Config{.max_batches_per_cycle = 20, .hub_address = HUB_ADDRESS});
+
+    // Initialize event log transmitter
+    event_log_transmitter_ = std::make_unique<EventLogTransmitter>(messenger_);
 
     // Initialize heartbeat client
     heartbeat_client_ = std::make_unique<HeartbeatClient>(messenger_);
@@ -271,6 +275,10 @@ void SensorMode::onStateChange(SensorState state)
                     }
                 }
             }
+            // Transmit event log before going to sleep
+            if (event_log_transmitter_ && event_log_.hasPending()) {
+                event_log_transmitter_->transmitIfPending(event_log_);
+            }
             if (pmu_manager_) {
                 pmu_manager_->signalReadyForSleep();
             }
@@ -355,6 +363,7 @@ void SensorMode::readAndStoreSensorData(uint32_t current_time)
 
     if (!reading.valid) {
         logger.error("Failed to read sensor");
+        event_log_.record(EventType::SENSOR_READ_FAIL, 2, 0);
         return;
     }
 
@@ -669,6 +678,7 @@ void SensorMode::transmitBacklog()
                         return;  // Don't report complete yet
                     } else if (remaining == 0) {
                         logger.info("All backlog transmitted");
+                        event_log_.record(EventType::TX_BATCH_OK, 0, 0);
                         flash_buffer_->updateLastSync(getUnixTimestamp());
                     } else {
                         logger.info("Batch limit reached, %lu records remaining", remaining);
@@ -686,6 +696,14 @@ void SensorMode::onHeartbeatResponse(const HeartbeatResponsePayload *payload)
 {
     // Call base class implementation to update RP2040 RTC
     ApplicationMode::onHeartbeatResponse(payload);
+
+    // Set event log time reference for uptime-to-unix conversion
+    uint32_t uptime_ms = to_ms_since_boot(get_absolute_time());
+    uint32_t unix_ts = getUnixTimestamp();
+    if (unix_ts > 0) {
+        event_log_.setTimeReference(uptime_ms, unix_ts);
+        event_log_.record(EventType::TIME_SYNC_OK, 0, 0);
+    }
 
     // Check for pending updates that require the update pull protocol
     // Sensor nodes only support generic updates (wake interval, datetime)
@@ -777,6 +795,7 @@ bool SensorMode::tryInitSensor()
 
     if (sensor_->init()) {
         // Report success to state machine (transitions to OPERATIONAL)
+        event_log_.record(EventType::SENSOR_INIT_OK, 0, 0);
         sensor_state_.reportSensorInitSuccess();
         logger.debug("CHT832X sensor initialized on I2C1 (SDA=%d, SCL=%d)", PIN_I2C_SDA,
                      PIN_I2C_SCL);
@@ -784,6 +803,7 @@ bool SensorMode::tryInitSensor()
         return true;
     }
 
+    event_log_.record(EventType::SENSOR_INIT_FAIL, 2, 0);
     // Report failure to state machine (transitions to DEGRADED_NO_SENSOR)
     sensor_state_.reportSensorInitFailure();
     logger.error("Failed to initialize CHT832X sensor!");

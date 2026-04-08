@@ -26,7 +26,7 @@ public:
     {
         if (!header || header->magic != MESSAGE_MAGIC)
             return false;
-        if (header->type < MSG_TYPE_SENSOR_DATA || header->type > MSG_TYPE_EVENT)
+        if (header->type < MSG_TYPE_SENSOR_DATA || header->type > MSG_TYPE_EVENT_LOG)
             return false;
         return isValidAddress(header->src_addr) && isValidAddress(header->dst_addr);
     }
@@ -126,6 +126,10 @@ public:
                 // data_length is at offset 2
                 return validateVariablePayload(payload, payload_length, 3, MAX_EVENT_DATA_LENGTH,
                                                2);
+
+            case MSG_TYPE_EVENT_LOG:
+                // Batch header (9 bytes) + variable records (6 bytes each)
+                return payload_length >= 9 && payload_length <= sizeof(EventLogBatchPayload);
 
             default:
                 return false;

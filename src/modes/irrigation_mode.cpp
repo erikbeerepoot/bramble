@@ -127,6 +127,9 @@ void IrrigationMode::onStart()
     led_pattern_ = std::make_unique<BlinkingPattern>(led_, 255, 165, 0, 250, 250);
     operational_pattern_ = std::make_unique<ShortBlinkPattern>(led_, 0, 0, 255);
 
+    // Initialize event log transmitter
+    event_log_transmitter_ = std::make_unique<EventLogTransmitter>(messenger_);
+
     // Add heartbeat task
     task_manager_.addTask(
         [this](uint32_t time) {
@@ -213,6 +216,8 @@ void IrrigationMode::onStateChange(IrrigationState state)
                     valve_duration_seconds_, pending_close_valve_id_,
                     [this](bool success, PMU::ErrorCode error) {
                         if (success) {
+                            event_log_.record(EventType::VALVE_TIMER_SET, 0,
+                                              pending_close_valve_id_);
                             irrigation_state_.reportValveTimerSet();
                         } else {
                             logger.error("Failed to set valve timer: %d", static_cast<int>(error));
@@ -232,6 +237,10 @@ void IrrigationMode::onStateChange(IrrigationState state)
 
         case IrrigationState::READY_FOR_SLEEP:
             switchToOperationalPattern();
+            // Transmit event log before going to sleep
+            if (event_log_transmitter_ && event_log_.hasPending()) {
+                event_log_transmitter_->transmitIfPending(event_log_);
+            }
             signalReadyForSleep();
             break;
 
@@ -290,6 +299,7 @@ void IrrigationMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEn
         logger.info("Valve timer wake - closing valve %d", pending_close_valve_id_);
         if (pending_close_valve_id_ < ValveController::NUM_VALVES) {
             valve_controller_.closeValve(pending_close_valve_id_);
+            event_log_.record(EventType::VALVE_TIMER_CLOSE, 0, pending_close_valve_id_);
         }
         pending_valve_close_ = false;
         pending_close_valve_id_ = 0;
@@ -301,6 +311,7 @@ void IrrigationMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEn
         logger.info("Scheduled wake - valve %d for %d seconds", entry->valveId, entry->duration);
         if (entry->valveId < ValveController::NUM_VALVES) {
             valve_controller_.openValve(entry->valveId);
+            event_log_.record(EventType::VALVE_OPEN, 0, entry->valveId);
             // Set up timer-driven close (same path as ad-hoc commands)
             if (entry->duration > 0) {
                 pending_valve_close_ = true;
@@ -389,10 +400,12 @@ void IrrigationMode::onActuatorCommand(const ActuatorPayload *payload)
                 logger.info("Opening valve %d (no duration)", valve_id);
             }
             valve_controller_.openValve(valve_id);
+            event_log_.record(EventType::VALVE_OPEN, 0, valve_id);
             irrigation_state_.reportValveOpened();
         } else if (payload->command == CMD_TURN_OFF) {
             logger.info("Closing valve %d", valve_id);
             valve_controller_.closeValve(valve_id);
+            event_log_.record(EventType::VALVE_CLOSE, 0, valve_id);
             // Only report closed if no valves remain open
             if (valve_controller_.getActiveValveMask() == 0) {
                 if (keepawake_task_id_ != 0) {
@@ -423,6 +436,13 @@ void IrrigationMode::onHeartbeatResponse(const HeartbeatResponsePayload *payload
 
     if (!payload) {
         return;
+    }
+
+    // Set event log time reference for uptime-to-unix conversion
+    uint32_t uptime_ms = to_ms_since_boot(get_absolute_time());
+    uint32_t unix_ts = getUnixTimestamp();
+    if (unix_ts > 0) {
+        event_log_.setTimeReference(uptime_ms, unix_ts);
     }
 
     if (payload->pending_update_flags != PENDING_FLAG_NONE) {
@@ -487,13 +507,15 @@ void IrrigationMode::onModeSpecificUpdate(const UpdateAvailablePayload *payload,
                         entry.hour, entry.minute, entry.valveId, entry.duration,
                         static_cast<uint8_t>(entry.daysMask));
 
-            reliable_pmu_->setSchedule(entry, [this, hub_sequence](bool success,
-                                                                   PMU::ErrorCode error) {
+            reliable_pmu_->setSchedule(entry, [this, hub_sequence, index](bool success,
+                                                                        PMU::ErrorCode error) {
                 if (success) {
                     logger.info("  Schedule applied successfully");
+                    event_log_.record(EventType::SCHEDULE_APPLIED, 0, index);
                     onUpdateApplied(hub_sequence);
                 } else {
                     logger.error("  Failed to apply schedule: error %d", static_cast<int>(error));
+                    event_log_.record(EventType::SCHEDULE_FAILED, 2, index);
                     onUpdateFailed();
                 }
             });
@@ -504,13 +526,15 @@ void IrrigationMode::onModeSpecificUpdate(const UpdateAvailablePayload *payload,
             uint8_t index = payload->payload_data[0];
             logger.info("  REMOVE_SCHEDULE[%d]", index);
 
-            reliable_pmu_->clearSchedule(index, [this, hub_sequence](bool success,
-                                                                     PMU::ErrorCode error) {
+            reliable_pmu_->clearSchedule(index, [this, hub_sequence, index](bool success,
+                                                                            PMU::ErrorCode error) {
                 if (success) {
                     logger.info("  Schedule removed successfully");
+                    event_log_.record(EventType::SCHEDULE_REMOVED, 0, index);
                     onUpdateApplied(hub_sequence);
                 } else {
                     logger.error("  Failed to remove schedule: error %d", static_cast<int>(error));
+                    event_log_.record(EventType::SCHEDULE_FAILED, 2, index);
                     onUpdateFailed();
                 }
             });

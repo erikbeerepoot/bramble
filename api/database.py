@@ -219,6 +219,8 @@ class SensorDatabase:
         days INTEGER NOT NULL,
         valve INTEGER NOT NULL,
         created_at INTEGER NOT NULL,
+        status VARCHAR DEFAULT 'pending',
+        confirmed_at INTEGER,
         PRIMARY KEY (device_id, schedule_index)
     );
     """
@@ -300,8 +302,33 @@ class SensorDatabase:
                 statement = statement.strip()
                 if statement:
                     conn.execute(statement)
+            self._migrate_schema(conn)
             self._init_id_counter(conn)
             logger.info(f"Database initialized at {self.db_path}")
+
+    def _migrate_schema(self, conn):
+        """Apply schema migrations for existing databases."""
+        # Add status and confirmed_at columns to irrigation_schedules if missing
+        try:
+            cols = conn.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name = 'irrigation_schedules'"
+            ).fetchall()
+            col_names = {row[0] for row in cols}
+            if 'status' not in col_names:
+                conn.execute(
+                    "ALTER TABLE irrigation_schedules "
+                    "ADD COLUMN status VARCHAR DEFAULT 'pending'"
+                )
+                logger.info("Migrated irrigation_schedules: added status column")
+            if 'confirmed_at' not in col_names:
+                conn.execute(
+                    "ALTER TABLE irrigation_schedules "
+                    "ADD COLUMN confirmed_at INTEGER"
+                )
+                logger.info("Migrated irrigation_schedules: added confirmed_at column")
+        except Exception as e:
+            logger.warning(f"Schema migration check failed: {e}")
 
     def close(self):
         """Close the persistent database connection."""
@@ -1416,10 +1443,12 @@ class SensorDatabase:
             with self._get_connection() as conn:
                 conn.execute("""
                     INSERT INTO irrigation_schedules
-                        (device_id, schedule_index, hour, minute, duration, days, valve, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        (device_id, schedule_index, hour, minute, duration, days, valve, created_at,
+                         status, confirmed_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL)
                     ON CONFLICT (device_id, schedule_index)
-                    DO UPDATE SET hour = ?, minute = ?, duration = ?, days = ?, valve = ?, created_at = ?
+                    DO UPDATE SET hour = ?, minute = ?, duration = ?, days = ?, valve = ?,
+                                  created_at = ?, status = 'pending', confirmed_at = NULL
                 """, (device_id, index, hour, minute, duration, days, valve, now,
                       hour, minute, duration, days, valve, now))
                 return True
@@ -1439,7 +1468,8 @@ class SensorDatabase:
         try:
             with self._get_connection() as conn:
                 result = conn.execute("""
-                    SELECT schedule_index, hour, minute, duration, days, valve, created_at
+                    SELECT schedule_index, hour, minute, duration, days, valve, created_at,
+                           status, confirmed_at
                     FROM irrigation_schedules
                     WHERE device_id = ?
                     ORDER BY schedule_index
@@ -1453,6 +1483,8 @@ class SensorDatabase:
                     'days': row[4],
                     'valve': row[5],
                     'created_at': row[6],
+                    'status': row[7] or 'pending',
+                    'confirmed_at': row[8],
                 } for row in rows]
         except duckdb.Error as e:
             logger.error(f"Failed to get schedules: {e}")
@@ -1477,4 +1509,75 @@ class SensorDatabase:
                 return True
         except duckdb.Error as e:
             logger.error(f"Failed to delete schedule: {e}")
+            return False
+
+    def confirm_schedule(self, device_id: int, schedule_index: int,
+                         timestamp: int) -> bool:
+        """Mark a schedule as confirmed by the node.
+
+        Args:
+            device_id: Device identifier
+            schedule_index: Schedule index confirmed by node
+            timestamp: Unix timestamp of confirmation
+
+        Returns:
+            True if updated successfully
+        """
+        try:
+            with self._get_connection() as conn:
+                conn.execute("""
+                    UPDATE irrigation_schedules
+                    SET status = 'confirmed', confirmed_at = ?
+                    WHERE device_id = ? AND schedule_index = ?
+                """, (timestamp, device_id, schedule_index))
+                return True
+        except duckdb.Error as e:
+            logger.error(f"Failed to confirm schedule: {e}")
+            return False
+
+    def confirm_schedule_removed(self, device_id: int, schedule_index: int,
+                                 timestamp: int) -> bool:
+        """Remove a schedule after node confirms removal.
+
+        Args:
+            device_id: Device identifier
+            schedule_index: Schedule index removed by node
+            timestamp: Unix timestamp of removal
+
+        Returns:
+            True if deleted successfully
+        """
+        try:
+            with self._get_connection() as conn:
+                conn.execute("""
+                    DELETE FROM irrigation_schedules
+                    WHERE device_id = ? AND schedule_index = ?
+                """, (device_id, schedule_index))
+                return True
+        except duckdb.Error as e:
+            logger.error(f"Failed to confirm schedule removal: {e}")
+            return False
+
+    def fail_schedule(self, device_id: int, schedule_index: int,
+                      timestamp: int) -> bool:
+        """Mark a schedule as failed on the node.
+
+        Args:
+            device_id: Device identifier
+            schedule_index: Schedule index that failed
+            timestamp: Unix timestamp of failure
+
+        Returns:
+            True if updated successfully
+        """
+        try:
+            with self._get_connection() as conn:
+                conn.execute("""
+                    UPDATE irrigation_schedules
+                    SET status = 'failed', confirmed_at = ?
+                    WHERE device_id = ? AND schedule_index = ?
+                """, (timestamp, device_id, schedule_index))
+                return True
+        except duckdb.Error as e:
+            logger.error(f"Failed to mark schedule as failed: {e}")
             return False
