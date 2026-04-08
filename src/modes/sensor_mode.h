@@ -6,10 +6,8 @@
 #include "../hal/cht832x.h"
 #include "../hal/external_flash.h"
 #include "../lora/batch_transmitter.h"
-#include "../lora/event_log_transmitter.h"
 #include "../lora/heartbeat_client.h"
 #include "../storage/sensor_flash_buffer.h"
-#include "../util/event_log.h"
 #include "../util/sensor_pmu_manager.h"
 #include "../util/sensor_state_machine.h"
 #include "../util/task_queue.h"
@@ -137,9 +135,6 @@ private:
     // Batch transmission
     std::unique_ptr<BatchTransmitter> transmitter_;
 
-    // Event logging
-    EventLog<64> event_log_;
-    std::unique_ptr<EventLogTransmitter> event_log_transmitter_;
 
     // Fallback storage for direct transmit when flash unavailable
     SensorDataRecord current_reading_ = {};

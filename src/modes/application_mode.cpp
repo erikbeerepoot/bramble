@@ -140,6 +140,13 @@ void ApplicationMode::onHeartbeatResponse(const HeartbeatResponsePayload *payloa
         logger.info("RTC synchronized: %04d-%02d-%02d %02d:%02d:%02d (dow=%d)", dt.year, dt.month,
                     dt.day, dt.hour, dt.min, dt.sec, dt.dotw);
 
+        // Set event log time reference for uptime-to-unix conversion
+        uint32_t uptime_ms = to_ms_since_boot(get_absolute_time());
+        uint32_t unix_ts = getUnixTimestamp();
+        if (unix_ts > 0) {
+            event_log_.setTimeReference(uptime_ms, unix_ts);
+        }
+
         // Switch to operational LED pattern now that we're initialized
         switchToOperationalPattern();
     } else {
@@ -305,6 +312,18 @@ void ApplicationMode::onReregistrationRequested()
 {
     if (reregistration_callback_) {
         reregistration_callback_();
+    }
+}
+
+void ApplicationMode::initEventLogTransmitter()
+{
+    event_log_transmitter_ = std::make_unique<EventLogTransmitter>(messenger_);
+}
+
+void ApplicationMode::onBeforeSleep()
+{
+    if (event_log_transmitter_ && event_log_.hasPending()) {
+        event_log_transmitter_->transmitIfPending(event_log_);
     }
 }
 

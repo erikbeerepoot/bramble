@@ -3,8 +3,6 @@
 #include "../hal/pmu_client.h"
 #include "../hal/pmu_reliability.h"
 #include "../hal/valve_controller.h"
-#include "../lora/event_log_transmitter.h"
-#include "../util/event_log.h"
 #include "../util/irrigation_state_machine.h"
 #include "../util/task_queue.h"
 #include "application_mode.h"
@@ -54,8 +52,6 @@ public:
 
 private:
     ValveController valve_controller_;
-    EventLog<64> event_log_;
-    std::unique_ptr<EventLogTransmitter> event_log_transmitter_;
     PmuClient *pmu_client_ = nullptr;
     PMU::ReliablePmuClient *reliable_pmu_ = nullptr;
     bool pmu_available_ = false;

@@ -127,8 +127,8 @@ void IrrigationMode::onStart()
     led_pattern_ = std::make_unique<BlinkingPattern>(led_, 255, 165, 0, 250, 250);
     operational_pattern_ = std::make_unique<ShortBlinkPattern>(led_, 0, 0, 255);
 
-    // Initialize event log transmitter
-    event_log_transmitter_ = std::make_unique<EventLogTransmitter>(messenger_);
+    // Initialize event log transmitter (in base class)
+    initEventLogTransmitter();
 
     // Add heartbeat task
     task_manager_.addTask(
@@ -237,10 +237,7 @@ void IrrigationMode::onStateChange(IrrigationState state)
 
         case IrrigationState::READY_FOR_SLEEP:
             switchToOperationalPattern();
-            // Transmit event log before going to sleep
-            if (event_log_transmitter_ && event_log_.hasPending()) {
-                event_log_transmitter_->transmitIfPending(event_log_);
-            }
+            onBeforeSleep();
             signalReadyForSleep();
             break;
 
@@ -436,13 +433,6 @@ void IrrigationMode::onHeartbeatResponse(const HeartbeatResponsePayload *payload
 
     if (!payload) {
         return;
-    }
-
-    // Set event log time reference for uptime-to-unix conversion
-    uint32_t uptime_ms = to_ms_since_boot(get_absolute_time());
-    uint32_t unix_ts = getUnixTimestamp();
-    if (unix_ts > 0) {
-        event_log_.setTimeReference(uptime_ms, unix_ts);
     }
 
     if (payload->pending_update_flags != PENDING_FLAG_NONE) {

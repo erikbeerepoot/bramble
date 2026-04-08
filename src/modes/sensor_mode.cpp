@@ -93,8 +93,8 @@ void SensorMode::onStart()
         messenger_,
         BatchTransmitter::Config{.max_batches_per_cycle = 20, .hub_address = HUB_ADDRESS});
 
-    // Initialize event log transmitter
-    event_log_transmitter_ = std::make_unique<EventLogTransmitter>(messenger_);
+    // Initialize event log transmitter (in base class)
+    initEventLogTransmitter();
 
     // Initialize heartbeat client
     heartbeat_client_ = std::make_unique<HeartbeatClient>(messenger_);
@@ -275,10 +275,7 @@ void SensorMode::onStateChange(SensorState state)
                     }
                 }
             }
-            // Transmit event log before going to sleep
-            if (event_log_transmitter_ && event_log_.hasPending()) {
-                event_log_transmitter_->transmitIfPending(event_log_);
-            }
+            onBeforeSleep();
             if (pmu_manager_) {
                 pmu_manager_->signalReadyForSleep();
             }
@@ -697,13 +694,8 @@ void SensorMode::onHeartbeatResponse(const HeartbeatResponsePayload *payload)
     // Call base class implementation to update RP2040 RTC
     ApplicationMode::onHeartbeatResponse(payload);
 
-    // Set event log time reference for uptime-to-unix conversion
-    uint32_t uptime_ms = to_ms_since_boot(get_absolute_time());
-    uint32_t unix_ts = getUnixTimestamp();
-    if (unix_ts > 0) {
-        event_log_.setTimeReference(uptime_ms, unix_ts);
-        event_log_.record(EventType::TIME_SYNC_OK, 0, 0);
-    }
+    // Time reference is set by base class onHeartbeatResponse()
+    event_log_.record(EventType::TIME_SYNC_OK, 0, 0);
 
     // Check for pending updates that require the update pull protocol
     // Sensor nodes only support generic updates (wake interval, datetime)

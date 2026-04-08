@@ -6,9 +6,11 @@
 #include "hal/neopixel.h"
 #include "hal/rtc_compat.h"
 #include "led_patterns.h"
+#include "lora/event_log_transmitter.h"
 #include "lora/message.h"
 #include "periodic_task_manager.h"
 #include "util/base_state_machine.h"
+#include "util/event_log.h"
 
 // Forward declarations
 class ReliableMessenger;
@@ -80,6 +82,8 @@ protected:
     HubRouter *hub_router_;
     NetworkStats *network_stats_;
     PMU::ReliablePmuClient *reliable_pmu_ = nullptr;
+    EventLog<64> event_log_;
+    std::unique_ptr<EventLogTransmitter> event_log_transmitter_;
     UpdatePullState update_state_;
     std::unique_ptr<LEDPattern> led_pattern_;
     std::unique_ptr<LEDPattern> operational_pattern_;  // Pattern to switch to after RTC sync
@@ -228,6 +232,24 @@ protected:
      * Used by the update pull protocol to request pending updates from the hub.
      */
     void sendCheckUpdates();
+
+    /**
+     * @brief Initialize the event log transmitter
+     *
+     * Call from onStart() after messenger is ready. Creates the transmitter
+     * that sends event log batches to the hub.
+     */
+    void initEventLogTransmitter();
+
+    /**
+     * @brief Lifecycle hook called before the node signals ready-for-sleep
+     *
+     * Default implementation transmits pending event log records.
+     * Modes override to add mode-specific cleanup (e.g. flash persistence
+     * for sensor node). Sensor mode should gate on radio activity to avoid
+     * transmitting on non-radio wake cycles.
+     */
+    virtual void onBeforeSleep();
 
     /**
      * @brief Check if we should use interrupt-based sleep

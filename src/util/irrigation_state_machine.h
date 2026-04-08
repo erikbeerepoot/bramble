@@ -60,6 +60,7 @@ enum class IrrigationState : uint8_t {
     CHECKING_UPDATES,       // CHECK_UPDATES sent, awaiting UPDATE_AVAILABLE
     APPLYING_UPDATE,        // PMU command in flight (schedule, datetime, wake interval)
     VALVE_ACTIVE,           // Valve open from scheduled wake
+    TRANSMITTING_EVENTS,    // Sending event log batch before sleep
     READY_FOR_SLEEP,        // All wake work done, signal PMU to sleep
     ERROR,                  // Unrecoverable error
 };
