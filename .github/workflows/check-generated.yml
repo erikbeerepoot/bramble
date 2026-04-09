@@ -1,0 +1,30 @@
+name: Generated files up to date
+
+on:
+  pull_request:
+    paths:
+      - 'src/util/event_record.h'
+      - 'src/lora/message.h'
+      - 'tools/gen_event_types.py'
+      - 'api/event_types.py'
+      - 'dashboard/src/generated/eventTypes.ts'
+
+jobs:
+  check-generated:
+    name: Check event types are regenerated
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Regenerate event types
+        run: python3 tools/gen_event_types.py
+
+      - name: Fail if generated files are stale
+        run: |
+          if ! git diff --exit-code -- api/event_types.py dashboard/src/generated/eventTypes.ts; then
+            echo "::error::Generated event types are out of sync with C++ headers."
+            echo "::error::Run: python3 tools/gen_event_types.py"
+            exit 1
+          fi

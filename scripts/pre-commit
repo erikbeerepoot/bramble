@@ -23,6 +23,27 @@ fi
 # Track if any files were formatted
 FILES_FORMATTED=0
 
+# Regenerate event type definitions if source headers are staged.
+# Keeps api/event_types.py and dashboard/src/generated/eventTypes.ts in sync
+# with src/util/event_record.h and src/lora/message.h.
+EVENT_HEADERS=$(echo "$STAGED_FILES" | grep -E '^(src/util/event_record\.h|src/lora/message\.h)$' || true)
+if [ -n "$EVENT_HEADERS" ]; then
+    if command -v python3 &> /dev/null; then
+        echo -e "${GREEN}Regenerating event types from C++ headers...${NC}"
+        if python3 tools/gen_event_types.py; then
+            git add api/event_types.py dashboard/src/generated/eventTypes.ts
+            # Re-add to STAGED_FILES so downstream formatters pick them up.
+            STAGED_FILES="$STAGED_FILES"$'\n'"api/event_types.py"$'\n'"dashboard/src/generated/eventTypes.ts"
+            FILES_FORMATTED=1
+        else
+            echo -e "${RED}Error: tools/gen_event_types.py failed${NC}"
+            exit 1
+        fi
+    else
+        echo -e "${YELLOW}Warning: python3 not found, cannot regenerate event types${NC}"
+    fi
+fi
+
 # Format C/C++ files with clang-format
 CPP_FILES=$(echo "$STAGED_FILES" | grep -E '\.(c|cpp|cc|h|hpp)$' || true)
 if [ -n "$CPP_FILES" ]; then

@@ -244,18 +244,10 @@ export interface NodeEventsResponse {
   events: NodeEvent[];
 }
 
-// Event code display names
-export const EVENT_CODE_NAMES: Record<number, string> = {
-  0x0100: 'Curtain Opened',
-  0x0101: 'Curtain Closed',
-  0x0102: 'Curtain Stopped',
-  0x0103: 'Motor Error',
-  0x0104: 'Calibration Complete',
-  0x0200: 'Valve 1 Opened',
-  0x0201: 'Valve 1 Closed',
-  0x0202: 'Valve 2 Opened',
-  0x0203: 'Valve 2 Closed',
-};
+// Event code display names are generated from C++ headers.
+// Regenerate with `python3 tools/gen_event_types.py`.
+import { EVENT_CODE_NAMES } from '../generated/eventTypes';
+export { EVENT_CODE_NAMES, EventType, EventCode } from '../generated/eventTypes';
 
 export function getEventName(code: number): string {
   return EVENT_CODE_NAMES[code] || `Event 0x${code.toString(16).padStart(4, '0')}`;
