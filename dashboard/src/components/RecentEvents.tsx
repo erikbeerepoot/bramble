@@ -22,6 +22,7 @@ import {
   Check,
 } from 'lucide-react';
 import { format, isToday, isYesterday } from 'date-fns';
+import { motion, AnimatePresence } from 'motion/react';
 import { useState } from 'react';
 import type { NodeEvent } from '../types';
 import { getEventName, EventType, EventCode } from '../types';
@@ -246,36 +247,43 @@ export function RecentEvents({ events, loading }: RecentEventsProps) {
               <div className="text-xs font-medium text-gray-500 mb-1.5 px-1">{day}</div>
 
               <div>
-                {dayEvents.map((event, index) => {
-                  const visual = EVENT_VISUALS[event.event_code] ?? DEFAULT_VISUAL;
-                  const Icon = visual.icon;
-                  return (
-                    <div
-                      key={`${event.timestamp}-${event.event_code}-${index}`}
-                      className="group relative flex items-start gap-2.5 py-1.5 px-1.5 rounded-md hover:bg-gray-50 transition-colors"
-                    >
-                      <div className="relative flex-shrink-0 mt-px">
-                        <div
-                          className={`w-6 h-6 rounded-full ${visual.bgColor} flex items-center justify-center`}
-                        >
-                          <Icon className={`w-3 h-3 ${visual.color}`} />
+                <AnimatePresence initial={false}>
+                  {dayEvents.map((event, index) => {
+                    const visual = EVENT_VISUALS[event.event_code] ?? DEFAULT_VISUAL;
+                    const Icon = visual.icon;
+                    return (
+                      <motion.div
+                        key={`${event.timestamp}-${event.event_code}-${index}`}
+                        layout
+                        initial={{ opacity: 0, y: -12, scale: 0.97 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.97 }}
+                        transition={{ duration: 0.25, ease: 'easeOut' }}
+                        className="group relative flex items-start gap-2.5 py-1.5 px-1.5 rounded-md hover:bg-gray-50 transition-colors"
+                      >
+                        <div className="relative flex-shrink-0 mt-px">
+                          <div
+                            className={`w-6 h-6 rounded-full ${visual.bgColor} flex items-center justify-center`}
+                          >
+                            <Icon className={`w-3 h-3 ${visual.color}`} />
+                          </div>
+                          {index < dayEvents.length - 1 && (
+                            <div className="absolute top-7 left-1/2 -translate-x-px w-px h-2.5 bg-gray-200" />
+                          )}
                         </div>
-                        {index < dayEvents.length - 1 && (
-                          <div className="absolute top-7 left-1/2 -translate-x-px w-px h-2.5 bg-gray-200" />
-                        )}
-                      </div>
 
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between gap-2 mb-px">
-                          <span className="text-sm font-medium text-gray-900">
-                            {getEventName(event.event_code)}
-                          </span>
-                          <CopyableTimestamp timestamp={event.timestamp} />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start justify-between gap-2 mb-px">
+                            <span className="text-sm font-medium text-gray-900">
+                              {getEventName(event.event_code)}
+                            </span>
+                            <CopyableTimestamp timestamp={event.timestamp} />
+                          </div>
                         </div>
-                      </div>
-                    </div>
-                  );
-                })}
+                      </motion.div>
+                    );
+                  })}
+                </AnimatePresence>
               </div>
             </div>
           ))}
