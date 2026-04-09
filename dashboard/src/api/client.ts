@@ -22,7 +22,11 @@ function getBaseUrl(): string {
 }
 
 export function setApiUrl(url: string): void {
-  localStorage.setItem(API_URL_KEY, url);
+  if (url) {
+    localStorage.setItem(API_URL_KEY, url);
+  } else {
+    localStorage.removeItem(API_URL_KEY);
+  }
 }
 
 export function getApiUrl(): string {
@@ -99,9 +103,7 @@ export async function getNodeSensorData(
   return fetchApi<SensorDataResponse>(endpoint, { signal: options?.signal });
 }
 
-export async function getNodeLatestReading(
-  deviceId: string
-): Promise<SensorReading | null> {
+export async function getNodeLatestReading(deviceId: string): Promise<SensorReading | null> {
   try {
     return await fetchApi<SensorReading>(`/api/nodes/${deviceId}/sensor-data/latest`);
   } catch {
@@ -167,10 +169,7 @@ export async function deleteZone(zoneId: number): Promise<void> {
   });
 }
 
-export async function setNodeZone(
-  deviceId: string,
-  zoneId: number | null
-): Promise<NodeMetadata> {
+export async function setNodeZone(deviceId: string, zoneId: number | null): Promise<NodeMetadata> {
   return fetchApi<NodeMetadata>(`/api/nodes/${deviceId}/zone`, {
     method: 'PUT',
     body: JSON.stringify({ zone_id: zoneId }),
