@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { controlCurtain, getNodeEvents } from '../api/client';
 import type { NodeEvent } from '../types';
 import { getEventName } from '../types';
+import { REFRESH_INTERVAL_MS } from '../config';
 
 interface CurtainControlProps {
   address: number;
@@ -14,7 +15,6 @@ function CurtainControl({ address, deviceId }: CurtainControlProps) {
   const [error, setError] = useState<string | null>(null);
   const [events, setEvents] = useState<NodeEvent[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(true);
-
 
   const fetchEvents = useCallback(async () => {
     try {
@@ -29,6 +29,8 @@ function CurtainControl({ address, deviceId }: CurtainControlProps) {
 
   useEffect(() => {
     fetchEvents();
+    const interval = setInterval(fetchEvents, REFRESH_INTERVAL_MS);
+    return () => clearInterval(interval);
   }, [fetchEvents]);
 
   const handleAction = async (action: 'open' | 'close' | 'stop') => {
@@ -88,13 +90,9 @@ function CurtainControl({ address, deviceId }: CurtainControlProps) {
         </div>
 
         {lastAction && !error && (
-          <p className="mt-3 text-sm text-green-600">
-            Curtain {lastAction} command queued.
-          </p>
+          <p className="mt-3 text-sm text-green-600">Curtain {lastAction} command queued.</p>
         )}
-        {error && (
-          <p className="mt-3 text-sm text-red-600">{error}</p>
-        )}
+        {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
       </div>
 
       {/* Event History */}
@@ -114,7 +112,9 @@ function CurtainControl({ address, deviceId }: CurtainControlProps) {
                 {events.map((event, index) => (
                   <tr key={index}>
                     <td className="py-1.5 text-gray-700">{getEventName(event.event_code)}</td>
-                    <td className="py-1.5 text-gray-400 text-right whitespace-nowrap">{formatTime(event.timestamp)}</td>
+                    <td className="py-1.5 text-gray-400 text-right whitespace-nowrap">
+                      {formatTime(event.timestamp)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
