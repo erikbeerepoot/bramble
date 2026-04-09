@@ -517,7 +517,8 @@ void IrrigationMode::onModeSpecificUpdate(const UpdateAvailablePayload *payload,
                 if (success || error == PMU::ErrorCode::InvalidIndex) {
                     // Treat removing a non-existent schedule as success (idempotent)
                     if (!success) {
-                        logger.info("  Schedule index %d already empty - treating as removed", index);
+                        logger.info("  Schedule index %d already empty - treating as removed",
+                                    index);
                     } else {
                         logger.info("  Schedule removed successfully");
                     }
