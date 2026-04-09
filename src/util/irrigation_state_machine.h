@@ -229,6 +229,13 @@ public:
      */
     void reportWatchdogTimeout();
 
+    /**
+     * @brief Report that pending event log batch has been transmitted (or drain timed out)
+     *
+     * Transitions TRANSMITTING_EVENTS -> READY_FOR_SLEEP.
+     */
+    void reportEventsTransmitted();
+
     // =========================================================================
     // State Queries
     // =========================================================================

@@ -62,6 +62,8 @@ private:
     uint64_t device_id_;       // Unique board ID for heartbeat identification
     uint16_t wake_timeout_id_ = 0;
     uint16_t keepawake_task_id_ = 0;
+    uint16_t drain_task_id_ = 0;
+    uint32_t drain_start_ms_ = 0;
     bool pending_valve_close_ = false;
     uint8_t pending_close_valve_id_ = 0;
     uint16_t valve_duration_seconds_ = 0;

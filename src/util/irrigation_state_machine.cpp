@@ -43,7 +43,7 @@ void IrrigationStateMachine::reportRegistrationTimeout()
         return;
     }
     logger.warn("Registration timed out - will retry on next wake");
-    transitionTo(IrrigationState::READY_FOR_SLEEP);
+    transitionTo(IrrigationState::TRANSMITTING_EVENTS);
 }
 
 void IrrigationStateMachine::reportHeartbeatSending()
@@ -99,7 +99,7 @@ void IrrigationStateMachine::reportUpdateReceived(bool hasMore)
         transitionTo(IrrigationState::APPLYING_UPDATE);
     } else {
         logger.info("No more updates");
-        transitionTo(IrrigationState::READY_FOR_SLEEP);
+        transitionTo(IrrigationState::TRANSMITTING_EVENTS);
     }
 }
 
@@ -120,7 +120,7 @@ void IrrigationStateMachine::reportUpdateFailed()
         return;
     }
     logger.warn("Update failed - sleeping");
-    transitionTo(IrrigationState::READY_FOR_SLEEP);
+    transitionTo(IrrigationState::TRANSMITTING_EVENTS);
 }
 
 void IrrigationStateMachine::reportValveOpened()
@@ -136,7 +136,7 @@ void IrrigationStateMachine::reportValveClosed()
         return;
     }
     logger.info("All valves closed");
-    transitionTo(IrrigationState::READY_FOR_SLEEP);
+    transitionTo(IrrigationState::TRANSMITTING_EVENTS);
 }
 
 void IrrigationStateMachine::reportValveTimerSet()
@@ -146,7 +146,7 @@ void IrrigationStateMachine::reportValveTimerSet()
         return;
     }
     logger.info("Valve timer set — sleeping with valve open");
-    transitionTo(IrrigationState::READY_FOR_SLEEP);
+    transitionTo(IrrigationState::TRANSMITTING_EVENTS);
 }
 
 void IrrigationStateMachine::reportWakeFromSleep(PMU::WakeReason reason)
@@ -177,6 +177,15 @@ void IrrigationStateMachine::reportWakeFromSleep(PMU::WakeReason reason)
 void IrrigationStateMachine::reportWatchdogTimeout()
 {
     logger.warn("State watchdog timeout in %s - forcing sleep", stateName(state_));
+    transitionTo(IrrigationState::TRANSMITTING_EVENTS);
+}
+
+void IrrigationStateMachine::reportEventsTransmitted()
+{
+    if (state_ != IrrigationState::TRANSMITTING_EVENTS) {
+        logger.warn("reportEventsTransmitted() called in unexpected state: %s", stateName(state_));
+        return;
+    }
     transitionTo(IrrigationState::READY_FOR_SLEEP);
 }
 
@@ -214,6 +223,8 @@ const char *IrrigationStateMachine::stateName(IrrigationState state)
             return "APPLYING_UPDATE";
         case IrrigationState::VALVE_ACTIVE:
             return "VALVE_ACTIVE";
+        case IrrigationState::TRANSMITTING_EVENTS:
+            return "TRANSMITTING_EVENTS";
         case IrrigationState::READY_FOR_SLEEP:
             return "READY_FOR_SLEEP";
         case IrrigationState::ERROR:
