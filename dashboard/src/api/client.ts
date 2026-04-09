@@ -202,11 +202,59 @@ export async function getNodeEvents(
 }
 
 // Irrigation API methods
+//
+// Schedules are stored on the node's PMU in UTC (the PMU's RTC is synced to
+// UTC via the hub heartbeat response). The dashboard always works in the
+// user's local time, so we convert at the boundary:
+//   - localScheduleToUtc() on POST  (writing to API)
+//   - utcScheduleToLocal() on GET   (reading from API)
+//
+// When the local→UTC conversion crosses midnight, the day-of-week bitmask
+// shifts too. We snapshot the current DST offset; schedules will drift by
+// an hour at DST boundaries until re-saved.
+
+function shiftSchedule(
+  hour: number,
+  minute: number,
+  days: number,
+  toUtc: boolean,
+): { hour: number; minute: number; days: number } {
+  const date = new Date();
+  if (toUtc) {
+    date.setHours(hour, minute, 0, 0);
+    const newHour = date.getUTCHours();
+    const newMinute = date.getUTCMinutes();
+    const shift = (date.getUTCDay() - date.getDay() + 7) % 7;
+    let newDays = 0;
+    for (let i = 0; i < 7; i++) {
+      if (days & (1 << i)) newDays |= 1 << ((i + shift) % 7);
+    }
+    return { hour: newHour, minute: newMinute, days: newDays };
+  } else {
+    date.setUTCHours(hour, minute, 0, 0);
+    const newHour = date.getHours();
+    const newMinute = date.getMinutes();
+    const shift = (date.getDay() - date.getUTCDay() + 7) % 7;
+    let newDays = 0;
+    for (let i = 0; i < 7; i++) {
+      if (days & (1 << i)) newDays |= 1 << ((i + shift) % 7);
+    }
+    return { hour: newHour, minute: newMinute, days: newDays };
+  }
+}
 
 export async function getIrrigationSchedules(
   deviceId: string
 ): Promise<IrrigationSchedulesResponse> {
-  return fetchApi<IrrigationSchedulesResponse>(`/api/nodes/${deviceId}/schedules`);
+  const response = await fetchApi<IrrigationSchedulesResponse>(
+    `/api/nodes/${deviceId}/schedules`
+  );
+  // Convert UTC → local for display
+  response.schedules = response.schedules.map((s) => {
+    const local = shiftSchedule(s.hour, s.minute, s.days, false);
+    return { ...s, hour: local.hour, minute: local.minute, days: local.days };
+  });
+  return response;
 }
 
 export async function addIrrigationSchedule(
@@ -220,9 +268,16 @@ export async function addIrrigationSchedule(
     valve: number;
   }
 ): Promise<{ status: string; task_id: string; message: string }> {
+  // Convert local → UTC before sending
+  const utc = shiftSchedule(schedule.hour, schedule.minute, schedule.days, true);
   return fetchApi(`/api/nodes/${deviceId}/schedules`, {
     method: 'POST',
-    body: JSON.stringify(schedule),
+    body: JSON.stringify({
+      ...schedule,
+      hour: utc.hour,
+      minute: utc.minute,
+      days: utc.days,
+    }),
   });
 }
 

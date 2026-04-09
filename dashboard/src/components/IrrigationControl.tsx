@@ -178,6 +178,7 @@ function IrrigationControl({ deviceId }: IrrigationControlProps) {
         return;
       }
 
+      // API client converts local→UTC for the PMU
       await addIrrigationSchedule(deviceId, {
         index: nextIndex,
         hour: formHour,
