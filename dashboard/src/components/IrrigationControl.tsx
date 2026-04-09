@@ -10,6 +10,7 @@ import {
 } from '../api/client';
 import type { NodeEvent, IrrigationSchedule } from '../types';
 import { getEventName, formatDays, formatDuration, DAY_LABELS } from '../types';
+import { REFRESH_INTERVAL_MS } from '../config';
 
 interface IrrigationControlProps {
   deviceId: string;
@@ -19,8 +20,16 @@ interface IrrigationControlProps {
 const DURATION_NOTCHES = [1, 5, 10, 15, 20, 30, 45, 60, 90, 120]; // minutes
 
 const DURATION_LABELS: Record<number, string> = {
-  1: '1', 5: '5', 10: '10', 15: '15', 20: '20', 30: '30', 45: '45',
-  60: '1h', 90: '1.5h', 120: '2h',
+  1: '1',
+  5: '5',
+  10: '10',
+  15: '15',
+  20: '20',
+  30: '30',
+  45: '45',
+  60: '1h',
+  90: '1.5h',
+  120: '2h',
 };
 
 function formatDurationShort(minutes: number): string {
@@ -30,10 +39,12 @@ function formatDurationShort(minutes: number): string {
   return `${minutes}m`;
 }
 
-
 function IrrigationControl({ deviceId }: IrrigationControlProps) {
   // Run-once state
-  const [selectedDuration, setSelectedDuration] = useState<Record<number, number>>({ 0: 300, 1: 300 });
+  const [selectedDuration, setSelectedDuration] = useState<Record<number, number>>({
+    0: 300,
+    1: 300,
+  });
   const [sendingValve, setSendingValve] = useState<number | null>(null);
   const [stoppingValve, setStoppingValve] = useState<number | null>(null);
   const [valveMessage, setValveMessage] = useState<string | null>(null);
@@ -83,6 +94,11 @@ function IrrigationControl({ deviceId }: IrrigationControlProps) {
   useEffect(() => {
     fetchSchedules();
     fetchEvents();
+    const interval = setInterval(() => {
+      fetchSchedules();
+      fetchEvents();
+    }, REFRESH_INTERVAL_MS);
+    return () => clearInterval(interval);
   }, [fetchSchedules, fetchEvents]);
 
   const handleRun = async (valve: number) => {
@@ -123,7 +139,8 @@ function IrrigationControl({ deviceId }: IrrigationControlProps) {
       // Find next available index
       const usedIndices = new Set(schedules.map((s) => s.index));
       let nextIndex = -1;
-      for (let i = 0; i < 7; i++) {  // Reserve index 7 for run-once
+      for (let i = 0; i < 7; i++) {
+        // Reserve index 7 for run-once
         if (!usedIndices.has(i)) {
           nextIndex = i;
           break;
@@ -254,9 +271,7 @@ function IrrigationControl({ deviceId }: IrrigationControlProps) {
         {valveMessage && !valveError && (
           <p className="mt-2 text-sm text-green-600">{valveMessage}</p>
         )}
-        {valveError && (
-          <p className="mt-2 text-sm text-red-600">{valveError}</p>
-        )}
+        {valveError && <p className="mt-2 text-sm text-red-600">{valveError}</p>}
       </div>
 
       {/* Schedules */}
@@ -281,20 +296,21 @@ function IrrigationControl({ deviceId }: IrrigationControlProps) {
                     Valve {schedule.valve + 1}
                   </span>
                   <span className="text-sm text-gray-500 mx-2">
-                    {String(schedule.hour).padStart(2, '0')}:{String(schedule.minute).padStart(2, '0')}
+                    {String(schedule.hour).padStart(2, '0')}:
+                    {String(schedule.minute).padStart(2, '0')}
                   </span>
-                  <span className="text-sm text-gray-500">
-                    {formatDuration(schedule.duration)}
-                  </span>
-                  <div className="text-xs text-gray-400 mt-0.5">
-                    {formatDays(schedule.days)}
-                  </div>
+                  <span className="text-sm text-gray-500">{formatDuration(schedule.duration)}</span>
+                  <div className="text-xs text-gray-400 mt-0.5">{formatDays(schedule.days)}</div>
                 </div>
                 <div className="flex items-center gap-2">
                   {schedule.status === 'confirmed' ? (
                     <span
                       className="inline-flex items-center gap-1 text-xs text-green-700 bg-green-50 px-1.5 py-0.5 rounded"
-                      title={schedule.confirmed_at ? `Confirmed ${new Date(schedule.confirmed_at * 1000).toLocaleString()}` : 'Confirmed'}
+                      title={
+                        schedule.confirmed_at
+                          ? `Confirmed ${new Date(schedule.confirmed_at * 1000).toLocaleString()}`
+                          : 'Confirmed'
+                      }
                     >
                       <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
                       Confirmed
@@ -302,7 +318,11 @@ function IrrigationControl({ deviceId }: IrrigationControlProps) {
                   ) : schedule.status === 'failed' ? (
                     <span
                       className="inline-flex items-center gap-1 text-xs text-red-700 bg-red-50 px-1.5 py-0.5 rounded"
-                      title={schedule.confirmed_at ? `Failed ${new Date(schedule.confirmed_at * 1000).toLocaleString()}` : 'Failed'}
+                      title={
+                        schedule.confirmed_at
+                          ? `Failed ${new Date(schedule.confirmed_at * 1000).toLocaleString()}`
+                          : 'Failed'
+                      }
                     >
                       <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
                       Failed
@@ -326,9 +346,7 @@ function IrrigationControl({ deviceId }: IrrigationControlProps) {
           </div>
         )}
 
-        {scheduleError && (
-          <p className="text-sm text-red-600 mb-2">{scheduleError}</p>
-        )}
+        {scheduleError && <p className="text-sm text-red-600 mb-2">{scheduleError}</p>}
 
         <button
           onClick={() => setShowAddForm(true)}
@@ -344,9 +362,7 @@ function IrrigationControl({ deviceId }: IrrigationControlProps) {
           <div className="fixed inset-0 bg-black/40" onClick={() => setShowAddForm(false)} />
           <div className="relative z-50 bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[85vh] overflow-y-auto">
             <div className="px-6 pb-8 pt-6">
-              <h2 className="text-xl font-semibold text-gray-900 mb-6 text-center">
-                New Schedule
-              </h2>
+              <h2 className="text-xl font-semibold text-gray-900 mb-6 text-center">New Schedule</h2>
 
               {/* Valve Selector */}
               <div className="mb-6">
@@ -357,9 +373,7 @@ function IrrigationControl({ deviceId }: IrrigationControlProps) {
                       key={v}
                       onClick={() => setFormValve(v)}
                       className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-all ${
-                        formValve === v
-                          ? 'bg-white text-gray-900 shadow-sm'
-                          : 'text-gray-600'
+                        formValve === v ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600'
                       }`}
                     >
                       Valve {v + 1}
@@ -393,7 +407,9 @@ function IrrigationControl({ deviceId }: IrrigationControlProps) {
                 >
                   {DURATION_NOTCHES.map((m) => (
                     <option key={m} value={m}>
-                      {m >= 60 ? `${Math.floor(m / 60)}h${m % 60 > 0 ? ` ${m % 60}m` : ''}` : `${m} minutes`}
+                      {m >= 60
+                        ? `${Math.floor(m / 60)}h${m % 60 > 0 ? ` ${m % 60}m` : ''}`
+                        : `${m} minutes`}
                     </option>
                   ))}
                 </select>
@@ -460,7 +476,9 @@ function IrrigationControl({ deviceId }: IrrigationControlProps) {
                 {events.map((event, index) => (
                   <tr key={index}>
                     <td className="py-1.5 text-gray-700">{getEventName(event.event_code)}</td>
-                    <td className="py-1.5 text-gray-400 text-right whitespace-nowrap">{formatTime(event.timestamp)}</td>
+                    <td className="py-1.5 text-gray-400 text-right whitespace-nowrap">
+                      {formatTime(event.timestamp)}
+                    </td>
                   </tr>
                 ))}
               </tbody>

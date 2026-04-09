@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, createContext, useContext } from 'rea
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import type { Node, Zone } from './types';
 import { getNodes, checkHealth, getZones } from './api/client';
+import { REFRESH_INTERVAL_MS } from './config';
 
 interface AppContextType {
   nodes: Node[];
@@ -89,7 +90,7 @@ function App() {
 
     const interval = setInterval(() => {
       fetchNodes();
-    }, 30000);
+    }, REFRESH_INTERVAL_MS);
 
     return () => clearInterval(interval);
   }, [fetchNodes, fetchZones, checkConnection]);
@@ -124,7 +125,9 @@ function App() {
                   <div
                     className={`w-2 h-2 rounded-full ${connected ? 'bg-status-online shadow-sm shadow-green-400' : 'bg-status-error shadow-sm shadow-red-400'}`}
                   ></div>
-                  <span className={`text-sm hidden sm:inline ${connected ? 'opacity-90' : 'text-red-300'}`}>
+                  <span
+                    className={`text-sm hidden sm:inline ${connected ? 'opacity-90' : 'text-red-300'}`}
+                  >
                     {connected ? 'Connected' : 'Disconnected'}
                   </span>
                 </div>
