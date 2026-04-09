@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Zap, Play, Square } from 'lucide-react';
+import { Zap, Play, Square, Check, X } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   runValve,
   stopValve,
@@ -9,10 +10,18 @@ import {
   getNodeEvents,
 } from '../api/client';
 import type { NodeEvent, IrrigationSchedule } from '../types';
-import { formatDuration, DAY_LABELS } from '../types';
+import { DAY_LABELS } from '../types';
 import { REFRESH_INTERVAL_MS } from '../config';
 import { SchedulesList } from './SchedulesList';
 import { RecentEvents } from './RecentEvents';
+
+type ValveActionState = 'idle' | 'sending' | 'queued' | 'error';
+
+interface ValveState {
+  state: ValveActionState;
+  action?: 'run' | 'stop';
+  errorMessage?: string;
+}
 
 interface IrrigationControlProps {
   deviceId: string;
@@ -47,10 +56,14 @@ function IrrigationControl({ deviceId }: IrrigationControlProps) {
     0: 300,
     1: 300,
   });
-  const [sendingValve, setSendingValve] = useState<number | null>(null);
-  const [stoppingValve, setStoppingValve] = useState<number | null>(null);
-  const [valveMessage, setValveMessage] = useState<string | null>(null);
-  const [valveError, setValveError] = useState<string | null>(null);
+  const [valveStates, setValveStates] = useState<Record<number, ValveState>>({
+    0: { state: 'idle' },
+    1: { state: 'idle' },
+  });
+
+  const setValveState = useCallback((valve: number, next: ValveState) => {
+    setValveStates((prev) => ({ ...prev, [valve]: next }));
+  }, []);
 
   // Schedule state
   const [schedules, setSchedules] = useState<IrrigationSchedule[]>([]);
@@ -104,34 +117,45 @@ function IrrigationControl({ deviceId }: IrrigationControlProps) {
   }, [fetchSchedules, fetchEvents]);
 
   const handleRun = async (valve: number) => {
-    setSendingValve(valve);
-    setValveError(null);
-    setValveMessage(null);
+    setValveState(valve, { state: 'sending', action: 'run' });
     try {
       const duration = selectedDuration[valve] || 300;
       await runValve(deviceId, valve, duration);
-      setValveMessage(`Valve ${valve + 1} run command queued (${formatDuration(duration)})`);
+      setValveState(valve, { state: 'queued', action: 'run' });
+      // Refresh events soon to pick up Valve Open / Valve Timer Set.
       setTimeout(fetchEvents, 3000);
+      // Return to idle after the Queued checkmark has been visible.
+      setTimeout(() => {
+        setValveStates((prev) =>
+          prev[valve].state === 'queued' ? { ...prev, [valve]: { state: 'idle' } } : prev
+        );
+      }, 2000);
     } catch (err) {
-      setValveError(err instanceof Error ? err.message : 'Failed to send command');
-    } finally {
-      setSendingValve(null);
+      setValveState(valve, {
+        state: 'error',
+        action: 'run',
+        errorMessage: err instanceof Error ? err.message : 'Failed to send run command',
+      });
     }
   };
 
   const handleStop = async (valve: number) => {
-    setStoppingValve(valve);
-    setValveError(null);
-    setValveMessage(null);
+    setValveState(valve, { state: 'sending', action: 'stop' });
     try {
       await stopValve(deviceId, valve);
-      setValveMessage(`Valve ${valve + 1} stop command queued`);
+      setValveState(valve, { state: 'idle' });
       setTimeout(fetchEvents, 3000);
     } catch (err) {
-      setValveError(err instanceof Error ? err.message : 'Failed to send stop command');
-    } finally {
-      setStoppingValve(null);
+      setValveState(valve, {
+        state: 'error',
+        action: 'stop',
+        errorMessage: err instanceof Error ? err.message : 'Failed to send stop command',
+      });
     }
+  };
+
+  const dismissValveError = (valve: number) => {
+    setValveState(valve, { state: 'idle' });
   };
 
   const handleAddSchedule = async () => {
@@ -194,11 +218,14 @@ function IrrigationControl({ deviceId }: IrrigationControlProps) {
     setFormDays((prev) => prev ^ (1 << bit));
   };
 
-  const isBusy = sendingValve !== null || stoppingValve !== null;
-
   const renderValveRow = (valve: number) => {
+    const valveState = valveStates[valve];
     const duration = selectedDuration[valve] || DURATION_NOTCHES[0] * 60;
     const minutes = duration / 60;
+    const isBusy = valveState.state === 'sending' || valveState.state === 'queued';
+    const isRunSending = valveState.state === 'sending' && valveState.action === 'run';
+    const isStopSending = valveState.state === 'sending' && valveState.action === 'stop';
+
     return (
       <div key={valve} className="space-y-3">
         {/* Header */}
@@ -225,23 +252,92 @@ function IrrigationControl({ deviceId }: IrrigationControlProps) {
 
         {/* Action buttons */}
         <div className="flex gap-3">
-          <button
+          <motion.button
             onClick={() => handleRun(valve)}
             disabled={isBusy}
-            className="flex-1 flex items-center justify-center gap-2 h-11 bg-green-600 text-white rounded-xl font-medium hover:bg-green-700 active:bg-green-800 transition-colors disabled:opacity-50"
+            className="relative flex-1 h-11 rounded-xl font-medium bg-green-600 text-white hover:bg-green-700 active:bg-green-800 transition-colors disabled:cursor-not-allowed disabled:opacity-90"
+            animate={{ scale: valveState.state === 'queued' ? [1, 1.03, 1] : 1 }}
+            transition={{ duration: 0.3 }}
           >
-            <Play className="w-4 h-4 fill-current" />
-            {sendingValve === valve ? 'Sending...' : `Run ${formatDurationShort(minutes)}`}
-          </button>
+            <AnimatePresence mode="wait" initial={false}>
+              {isRunSending ? (
+                <motion.div
+                  key="sending"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.18 }}
+                  className="flex items-center justify-center gap-2"
+                >
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                  >
+                    <Zap className="w-4 h-4" />
+                  </motion.div>
+                  <span>Sending...</span>
+                </motion.div>
+              ) : valveState.state === 'queued' ? (
+                <motion.div
+                  key="queued"
+                  initial={{ opacity: 0, scale: 0.85 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.85 }}
+                  transition={{ duration: 0.25, type: 'spring' }}
+                  className="flex items-center justify-center gap-2"
+                >
+                  <Check className="w-5 h-5 stroke-[3]" />
+                  <span>Queued</span>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="idle"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.18 }}
+                  className="flex items-center justify-center gap-2"
+                >
+                  <Play className="w-4 h-4 fill-current" />
+                  <span>Run {formatDurationShort(minutes)}</span>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.button>
           <button
             onClick={() => handleStop(valve)}
             disabled={isBusy}
-            className="flex-1 flex items-center justify-center gap-2 h-11 bg-red-100 text-red-700 rounded-xl font-medium hover:bg-red-200 active:bg-red-300 transition-colors disabled:opacity-50"
+            className="flex-1 flex items-center justify-center gap-2 h-11 bg-red-100 text-red-700 rounded-xl font-medium hover:bg-red-200 active:bg-red-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Square className="w-4 h-4 fill-current" />
-            {stoppingValve === valve ? 'Stopping...' : 'Stop'}
+            <span>{isStopSending ? 'Stopping...' : 'Stop'}</span>
           </button>
         </div>
+
+        {/* Persistent error — stays until dismissed */}
+        <AnimatePresence>
+          {valveState.state === 'error' && valveState.errorMessage && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.2 }}
+              className="bg-red-50 border border-red-200 rounded-xl p-3 flex items-start justify-between gap-3 overflow-hidden"
+            >
+              <div className="flex items-start gap-2 flex-1 min-w-0">
+                <X className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" />
+                <p className="text-sm text-red-700 break-words">{valveState.errorMessage}</p>
+              </div>
+              <button
+                onClick={() => dismissValveError(valve)}
+                className="text-red-400 hover:text-red-600 transition-colors flex-shrink-0"
+                aria-label="Dismiss error"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     );
   };
@@ -259,10 +355,6 @@ function IrrigationControl({ deviceId }: IrrigationControlProps) {
           <div className="border-t border-gray-200" />
           {renderValveRow(1)}
         </div>
-        {valveMessage && !valveError && (
-          <p className="mt-2 text-sm text-green-600">{valveMessage}</p>
-        )}
-        {valveError && <p className="mt-2 text-sm text-red-600">{valveError}</p>}
       </div>
 
       {/* Schedules */}
