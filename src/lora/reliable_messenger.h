@@ -279,6 +279,18 @@ public:
     size_t getPendingCount() const { return pending_messages_.size(); }
 
     /**
+     * @brief Check if the messenger has nothing to send and nothing in flight
+     *
+     * Returns true when the outbound queue is empty, no messages are awaiting
+     * ACK, and the radio is not currently transmitting. Used to safely drain
+     * pending TX before sleeping.
+     */
+    bool isFullyIdle() const
+    {
+        return message_queue_.empty() && pending_messages_.empty() && !is_transmitting_;
+    }
+
+    /**
      * @brief Check if a specific message was acknowledged
      * @param seq_num Sequence number to check
      * @return true if ACK received for this sequence number

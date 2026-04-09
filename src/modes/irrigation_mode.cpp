@@ -31,6 +31,9 @@ constexpr uint8_t IRRIGATION_BOARD_VERSION = 3;
 // Timeout for wake notification after ClearToSend
 constexpr uint32_t WAKE_NOTIFICATION_TIMEOUT_MS = 1000;
 
+// Maximum time to wait for LoRa TX queue to drain before sleeping
+constexpr uint32_t LORA_DRAIN_TIMEOUT_MS = 5000;
+
 static Logger logger("IRRIG");
 static Logger pmu_logger("PMU");
 
@@ -231,9 +234,35 @@ void IrrigationMode::onStateChange(IrrigationState state)
             }
             break;
 
+        case IrrigationState::TRANSMITTING_EVENTS: {
+            // Enqueue any pending event log records into the messenger TX queue,
+            // then poll until the messenger fully drains before signaling sleep.
+            // This prevents the PMU from cutting power mid-LoRa-TX.
+            onBeforeSleep();
+            drain_start_ms_ = to_ms_since_boot(get_absolute_time());
+            drain_task_id_ = task_queue_.post(
+                [this](uint32_t now) -> bool {
+                    if (messenger_.isFullyIdle()) {
+                        logger.info("LoRa TX drained - proceeding to sleep");
+                        drain_task_id_ = 0;
+                        irrigation_state_.reportEventsTransmitted();
+                        return true;
+                    }
+                    // Watchdog: don't drain forever
+                    if (now - drain_start_ms_ > LORA_DRAIN_TIMEOUT_MS) {
+                        logger.warn("LoRa drain timeout - sleeping anyway (event log lost)");
+                        drain_task_id_ = 0;
+                        irrigation_state_.reportEventsTransmitted();
+                        return true;
+                    }
+                    return false;  // re-check on next tick
+                },
+                TaskPriority::High);
+            break;
+        }
+
         case IrrigationState::READY_FOR_SLEEP:
             switchToOperationalPattern();
-            onBeforeSleep();
             signalReadyForSleep();
             break;
 
