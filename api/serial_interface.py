@@ -9,6 +9,7 @@ import logging
 
 from config import Config
 from database import SensorDatabase, SensorReading
+from event_types import EventType
 
 
 logger = logging.getLogger(__name__)
@@ -502,17 +503,13 @@ class SerialInterface:
             self.database.insert_event(device_id, unix_ts, event_type, data_hex)
 
             # Handle schedule confirmation events
-            SCHEDULE_APPLIED = 0x70
-            SCHEDULE_REMOVED = 0x71
-            SCHEDULE_FAILED = 0x72
-
-            if event_type == SCHEDULE_APPLIED:
+            if event_type == EventType.SCHEDULE_APPLIED:
                 self.database.confirm_schedule(device_id, detail, unix_ts)
                 logger.info(f"Schedule confirmed: device_id={device_id}, index={detail}")
-            elif event_type == SCHEDULE_REMOVED:
+            elif event_type == EventType.SCHEDULE_REMOVED:
                 self.database.confirm_schedule_removed(device_id, detail, unix_ts)
                 logger.info(f"Schedule removal confirmed: device_id={device_id}, index={detail}")
-            elif event_type == SCHEDULE_FAILED:
+            elif event_type == EventType.SCHEDULE_FAILED:
                 self.database.fail_schedule(device_id, detail, unix_ts)
                 logger.info(f"Schedule failed: device_id={device_id}, index={detail}")
             else:
