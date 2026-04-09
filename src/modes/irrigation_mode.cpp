@@ -527,12 +527,14 @@ void IrrigationMode::onModeSpecificUpdate(const UpdateAvailablePayload *payload,
                 if (success) {
                     logger.info("  Schedule applied successfully");
                     event_log_.record(EventType::SCHEDULE_APPLIED, 0, index);
-                    onUpdateApplied(hub_sequence);
                 } else {
+                    // Treat failure as terminal — record SCHEDULE_FAILED event so the
+                    // dashboard sees it, then advance the sequence so the queue keeps
+                    // moving. The user can retry from the dashboard if needed.
                     logger.error("  Failed to apply schedule: error %d", static_cast<int>(error));
                     event_log_.record(EventType::SCHEDULE_FAILED, 2, index);
-                    onUpdateFailed();
                 }
+                onUpdateApplied(hub_sequence);
             });
             break;
         }
@@ -551,12 +553,12 @@ void IrrigationMode::onModeSpecificUpdate(const UpdateAvailablePayload *payload,
                         logger.info("  Schedule removed successfully");
                     }
                     event_log_.record(EventType::SCHEDULE_REMOVED, 0, index);
-                    onUpdateApplied(hub_sequence);
                 } else {
+                    // Terminal failure — record event, advance queue.
                     logger.error("  Failed to remove schedule: error %d", static_cast<int>(error));
                     event_log_.record(EventType::SCHEDULE_FAILED, 2, index);
-                    onUpdateFailed();
                 }
+                onUpdateApplied(hub_sequence);
             });
             break;
         }
