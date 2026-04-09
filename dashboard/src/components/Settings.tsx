@@ -59,37 +59,33 @@ function Settings() {
               type="url"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
-              placeholder="http://pi:5000"
+              placeholder="(leave empty for same-origin)"
               className="input w-full"
             />
             <p className="mt-1 text-sm text-gray-500">
-              The URL of your Bramble API server (usually running on your Raspberry Pi)
+              Leave empty to use the dashboard's own origin (recommended for the standard
+              deployment, where nginx proxies <code>/api/*</code> to the API container). Only set
+              this if you're running the dashboard against an API on a different host.
             </p>
           </div>
 
           {testResult && (
-            <div className={`p-3 rounded-md text-sm ${
-              testResult.success
-                ? 'bg-green-50 border border-green-200 text-green-700'
-                : 'bg-red-50 border border-red-200 text-red-700'
-            }`}>
+            <div
+              className={`p-3 rounded-md text-sm ${
+                testResult.success
+                  ? 'bg-green-50 border border-green-200 text-green-700'
+                  : 'bg-red-50 border border-red-200 text-red-700'
+              }`}
+            >
               {testResult.message}
             </div>
           )}
 
           <div className="flex space-x-3">
-            <button
-              onClick={handleTest}
-              disabled={testing || !url}
-              className="btn btn-secondary"
-            >
+            <button onClick={handleTest} disabled={testing} className="btn btn-secondary">
               {testing ? 'Testing...' : 'Test Connection'}
             </button>
-            <button
-              onClick={handleSave}
-              disabled={!url}
-              className="btn btn-primary"
-            >
+            <button onClick={handleSave} className="btn btn-primary">
               Save & Return
             </button>
           </div>
@@ -98,9 +94,7 @@ function Settings() {
 
       <div className="card mt-4">
         <h3 className="text-lg font-medium text-gray-900 mb-2">About</h3>
-        <p className="text-sm text-gray-600">
-          Bramble Dashboard v0.1.0
-        </p>
+        <p className="text-sm text-gray-600">Bramble Dashboard v0.1.0</p>
         <p className="text-sm text-gray-500 mt-1">
           Monitor your LoRa sensor network and irrigation system.
         </p>
