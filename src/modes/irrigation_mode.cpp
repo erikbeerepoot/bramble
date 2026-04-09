@@ -514,8 +514,13 @@ void IrrigationMode::onModeSpecificUpdate(const UpdateAvailablePayload *payload,
 
             reliable_pmu_->clearSchedule(index, [this, hub_sequence, index](bool success,
                                                                             PMU::ErrorCode error) {
-                if (success) {
-                    logger.info("  Schedule removed successfully");
+                if (success || error == PMU::ErrorCode::InvalidIndex) {
+                    // Treat removing a non-existent schedule as success (idempotent)
+                    if (!success) {
+                        logger.info("  Schedule index %d already empty - treating as removed", index);
+                    } else {
+                        logger.info("  Schedule removed successfully");
+                    }
                     event_log_.record(EventType::SCHEDULE_REMOVED, 0, index);
                     onUpdateApplied(hub_sequence);
                 } else {
