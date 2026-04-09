@@ -9,8 +9,10 @@ import {
   getNodeEvents,
 } from '../api/client';
 import type { NodeEvent, IrrigationSchedule } from '../types';
-import { getEventName, formatDays, formatDuration, DAY_LABELS } from '../types';
+import { formatDuration, DAY_LABELS } from '../types';
 import { REFRESH_INTERVAL_MS } from '../config';
+import { SchedulesList } from './SchedulesList';
+import { RecentEvents } from './RecentEvents';
 
 interface IrrigationControlProps {
   deviceId: string;
@@ -192,17 +194,6 @@ function IrrigationControl({ deviceId }: IrrigationControlProps) {
     setFormDays((prev) => prev ^ (1 << bit));
   };
 
-  const formatTime = (timestamp: number): string => {
-    const date = new Date(timestamp * 1000);
-    return date.toLocaleString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    });
-  };
-
   const isBusy = sendingValve !== null || stoppingValve !== null;
 
   const renderValveRow = (valve: number) => {
@@ -275,85 +266,15 @@ function IrrigationControl({ deviceId }: IrrigationControlProps) {
       </div>
 
       {/* Schedules */}
-      <div className="card">
-        <h3 className="text-lg font-medium text-gray-900 mb-4">Schedules</h3>
-        {loadingSchedules ? (
-          <div className="animate-pulse space-y-2">
-            <div className="h-4 bg-gray-200 rounded w-3/4" />
-            <div className="h-4 bg-gray-200 rounded w-1/2" />
-          </div>
-        ) : schedules.length === 0 ? (
-          <p className="text-sm text-gray-400 mb-3">No schedules configured.</p>
-        ) : (
-          <div className="space-y-2 mb-3">
-            {schedules.map((schedule) => (
-              <div
-                key={schedule.index}
-                className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
-              >
-                <div>
-                  <span className="text-sm font-medium text-gray-700">
-                    Valve {schedule.valve + 1}
-                  </span>
-                  <span className="text-sm text-gray-500 mx-2">
-                    {String(schedule.hour).padStart(2, '0')}:
-                    {String(schedule.minute).padStart(2, '0')}
-                  </span>
-                  <span className="text-sm text-gray-500">{formatDuration(schedule.duration)}</span>
-                  <div className="text-xs text-gray-400 mt-0.5">{formatDays(schedule.days)}</div>
-                </div>
-                <div className="flex items-center gap-2">
-                  {schedule.status === 'confirmed' ? (
-                    <span
-                      className="inline-flex items-center gap-1 text-xs text-green-700 bg-green-50 px-1.5 py-0.5 rounded"
-                      title={
-                        schedule.confirmed_at
-                          ? `Confirmed ${new Date(schedule.confirmed_at * 1000).toLocaleString()}`
-                          : 'Confirmed'
-                      }
-                    >
-                      <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                      Confirmed
-                    </span>
-                  ) : schedule.status === 'failed' ? (
-                    <span
-                      className="inline-flex items-center gap-1 text-xs text-red-700 bg-red-50 px-1.5 py-0.5 rounded"
-                      title={
-                        schedule.confirmed_at
-                          ? `Failed ${new Date(schedule.confirmed_at * 1000).toLocaleString()}`
-                          : 'Failed'
-                      }
-                    >
-                      <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
-                      Failed
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 text-xs text-yellow-700 bg-yellow-50 px-1.5 py-0.5 rounded">
-                      <span className="w-1.5 h-1.5 rounded-full bg-yellow-500" />
-                      Pending
-                    </span>
-                  )}
-                  <button
-                    onClick={() => handleDeleteSchedule(schedule.index)}
-                    disabled={deletingIndex !== null}
-                    className="text-sm text-red-500 hover:text-red-700 disabled:opacity-50"
-                  >
-                    {deletingIndex === schedule.index ? 'Removing...' : 'Delete'}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {scheduleError && <p className="text-sm text-red-600 mb-2">{scheduleError}</p>}
-
-        <button
-          onClick={() => setShowAddForm(true)}
-          className="text-sm text-blue-600 hover:text-blue-700"
-        >
-          + Add Schedule
-        </button>
+      <div>
+        <SchedulesList
+          schedules={schedules}
+          loading={loadingSchedules}
+          deletingIndex={deletingIndex}
+          onDelete={handleDeleteSchedule}
+          onAdd={() => setShowAddForm(true)}
+        />
+        {scheduleError && <p className="text-sm text-red-600 mt-2 px-1">{scheduleError}</p>}
       </div>
 
       {/* Add Schedule Modal */}
@@ -460,32 +381,7 @@ function IrrigationControl({ deviceId }: IrrigationControlProps) {
       )}
 
       {/* Recent Events */}
-      <div className="card">
-        <h4 className="text-sm font-medium text-gray-700 mb-3">Recent Events</h4>
-        {loadingEvents ? (
-          <div className="animate-pulse space-y-2">
-            <div className="h-4 bg-gray-200 rounded w-3/4" />
-            <div className="h-4 bg-gray-200 rounded w-1/2" />
-          </div>
-        ) : events.length === 0 ? (
-          <p className="text-sm text-gray-400">No events recorded yet.</p>
-        ) : (
-          <div className="overflow-y-auto max-h-64">
-            <table className="w-full text-sm">
-              <tbody className="divide-y divide-gray-100">
-                {events.map((event, index) => (
-                  <tr key={index}>
-                    <td className="py-1.5 text-gray-700">{getEventName(event.event_code)}</td>
-                    <td className="py-1.5 text-gray-400 text-right whitespace-nowrap">
-                      {formatTime(event.timestamp)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      <RecentEvents events={events} loading={loadingEvents} />
     </div>
   );
 }
