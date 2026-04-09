@@ -93,7 +93,7 @@ def queue_set_schedule(node_address: int, index: int, hour: int, minute: int,
     Returns:
         huey TaskResultWrapper for tracking status
     """
-    command = f"SET_SCHEDULE {node_address} {index} {hour} {minute} {duration} {days} {valve}"
+    command = f"SET_SCHEDULE {node_address} {index} {hour}:{minute} {duration} {days} {valve}"
     command_id = f"schedule-{node_address}-{index}"
     return send_hub_command(command, command_id)
 
