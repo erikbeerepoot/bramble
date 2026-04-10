@@ -32,6 +32,15 @@ body {
 .scrollbar-hide::-webkit-scrollbar { display: none; }
 .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
 
+/* Recent-events list item fade-in with stagger */
+@keyframes event-fade-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.event-item {
+  animation: event-fade-in 0.2s ease-out both;
+}
+
 /* Plotly hover tooltip styling - semi-opaque background */
 .hoverlayer .hovertext path {
   fill: rgba(255, 255, 255, 0.95) !important;
