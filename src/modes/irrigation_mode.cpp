@@ -215,6 +215,7 @@ void IrrigationMode::onStateChange(IrrigationState state)
                     valve_duration_seconds_, pending_close_valve_id_,
                     [this](bool success, PMU::ErrorCode error) {
                         if (success) {
+                            valve_timer_armed_ = true;
                             event_log_.record(EventType::VALVE_TIMER_SET, 0,
                                               pending_close_valve_id_);
                             irrigation_state_.reportValveTimerSet();
@@ -326,6 +327,7 @@ void IrrigationMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEn
         pending_valve_close_ = false;
         pending_close_valve_id_ = 0;
         valve_duration_seconds_ = 0;
+        valve_timer_armed_ = false;
     }
 
     // For scheduled wakes, open the valve and set up timer-driven close
@@ -339,6 +341,7 @@ void IrrigationMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEn
                 pending_valve_close_ = true;
                 pending_close_valve_id_ = entry->valveId;
                 valve_duration_seconds_ = entry->duration;
+                valve_timer_armed_ = false;  // PMU timer not yet set; will arm in VALVE_ACTIVE
             }
         } else {
             logger.error("Invalid valve ID %d in schedule", entry->valveId);
@@ -609,6 +612,15 @@ void IrrigationMode::onUpdateFailed()
 
 void IrrigationMode::onUpdateReceived(bool has_updates)
 {
+    // If we just opened a valve via Scheduled wake but haven't armed the PMU
+    // close timer yet, detour through VALVE_ACTIVE to set it up before sleeping.
+    // (The cold-boot path in handlePmuWake doesn't go through VALVE_ACTIVE on
+    // its own — see reportWakeFromSleep is bypassed when state==INITIALIZING.)
+    if (!has_updates && pending_valve_close_ && !valve_timer_armed_) {
+        logger.info("Pending valve close needs PMU timer setup - entering VALVE_ACTIVE");
+        irrigation_state_.reportValveOpened();
+        return;
+    }
     irrigation_state_.reportUpdateReceived(has_updates);
 }
 
@@ -675,6 +687,8 @@ void IrrigationMode::packState(IrrigationPersistedState &out) const
     }
     out.pending_valve_close = pending_valve_close_ ? 1 : 0;
     out.pending_close_valve_id = pending_close_valve_id_;
+    out.valve_timer_armed = valve_timer_armed_ ? 1 : 0;
+    out.valve_duration_seconds = valve_duration_seconds_;
 }
 
 bool IrrigationMode::unpackState(const IrrigationPersistedState *persisted)
@@ -720,10 +734,13 @@ bool IrrigationMode::unpackState(const IrrigationPersistedState *persisted)
     // Restore pending valve close state
     pending_valve_close_ = (persisted->pending_valve_close != 0);
     pending_close_valve_id_ = persisted->pending_close_valve_id;
+    valve_timer_armed_ = (persisted->valve_timer_armed != 0);
+    valve_duration_seconds_ = persisted->valve_duration_seconds;
 
-    pmu_logger.info("Restored state: seq=%u, addr=0x%04X, update_seq=%u, pending_close=%u",
-                    persisted->next_seq_num, persisted->assigned_address,
-                    persisted->update_sequence, persisted->pending_valve_close);
+    pmu_logger.info(
+        "Restored state: seq=%u, addr=0x%04X, update_seq=%u, pending_close=%u, timer_armed=%u",
+        persisted->next_seq_num, persisted->assigned_address, persisted->update_sequence,
+        persisted->pending_valve_close, persisted->valve_timer_armed);
 
     return true;
 }
