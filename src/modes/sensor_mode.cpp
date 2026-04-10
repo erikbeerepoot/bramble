@@ -195,6 +195,7 @@ void SensorMode::onStateChange(SensorState state)
             if (rtc_running()) {
                 sensor_state_.reportTimeSyncComplete();
             } else {
+                event_log_.record(EventType::TIME_SYNC_TIMEOUT, 1, 0);
                 sensor_state_.reportSyncTimeout();
             }
         });
@@ -656,7 +657,9 @@ void SensorMode::transmitBacklog()
     if (!transmitter_->transmit(
             records, valid_records_count,
             [this, total_records_scanned, start_index](bool success) {
-                if (success && flash_buffer_) {
+                if (!success) {
+                    event_log_.record(EventType::TX_BATCH_FAIL, 2, 0);
+                } else if (flash_buffer_) {
                     // Mark each record's transmission_status in flash (NOR-friendly single-byte
                     // write)
                     for (uint32_t i = 0; i < total_records_scanned; i++) {
@@ -685,6 +688,7 @@ void SensorMode::transmitBacklog()
             },
             start_index)) {
         logger.warn("Batch transmission failed to initiate");
+        event_log_.record(EventType::TX_BATCH_FAIL, 2, 0);
         sensor_state_.reportTransmitComplete();
     }
 }
@@ -932,6 +936,7 @@ void SensorMode::attemptRegistration()
         sensor_state_.expectResponse();
     } else {
         logger.error("Failed to send registration request");
+        event_log_.record(EventType::REGISTRATION_FAIL, 2, 0);
         // Failed to send - go to sleep and retry next cycle
         sensor_state_.reportRegistrationTimeout();
     }

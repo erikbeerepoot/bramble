@@ -23,6 +23,13 @@ extern void processIncomingMessage(uint8_t *rx_buffer, int rx_len, ReliableMesse
 
 void ApplicationMode::run()
 {
+    // Record boot event — watchdog_caused_reboot() is only valid before watchdog_enable()
+    if (watchdog_caused_reboot()) {
+        event_log_.record(EventType::BOOT_WATCHDOG, 1, 0);
+    } else {
+        event_log_.record(EventType::BOOT_COLD, 0, 0);
+    }
+
     // Initialize RTC for all nodes
     rtc_init();
     logger.debug("RTC initialized");
@@ -322,6 +329,7 @@ void ApplicationMode::initEventLogTransmitter()
 
 void ApplicationMode::onBeforeSleep()
 {
+    event_log_.record(EventType::SLEEP_ENTER, 0, 0);
     if (event_log_transmitter_ && event_log_.hasPending()) {
         event_log_transmitter_->transmitIfPending(event_log_);
     }
