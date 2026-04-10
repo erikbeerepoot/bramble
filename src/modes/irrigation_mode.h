@@ -25,11 +25,16 @@ struct __attribute__((packed)) IrrigationPersistedState {
     uint8_t valve_states[4];         // ValveState per valve (CLOSED=0, OPEN=1, UNKNOWN=2)
     uint8_t pending_valve_close;     // 0=no pending close, 1=pending valve close timer
     uint8_t pending_close_valve_id;  // Which valve to close when timer fires
-    uint8_t padding[20];             // Reserved (pad to 32 bytes)
+    uint8_t valve_timer_armed;       // 0=PMU timer not armed yet, 1=armed (PMU will fire it)
+    uint16_t valve_duration_seconds; // Duration the valve was opened for (used to arm timer)
+    uint8_t padding[17];             // Reserved (pad to 32 bytes)
 };
 static_assert(sizeof(IrrigationPersistedState) == 32, "IrrigationPersistedState must be 32 bytes");
 
-constexpr uint8_t IRRIGATION_STATE_VERSION = 5;
+// Bumped to 6: added valve_timer_armed and valve_duration_seconds.
+// Old state from version 5 will be rejected, triggering cold start (closes all valves)
+// which rescues any valve stuck open from a missed timer setup.
+constexpr uint8_t IRRIGATION_STATE_VERSION = 6;
 
 /**
  * @brief Irrigation node mode for valve control
@@ -67,6 +72,7 @@ private:
     bool pending_valve_close_ = false;
     uint8_t pending_close_valve_id_ = 0;
     uint16_t valve_duration_seconds_ = 0;
+    bool valve_timer_armed_ = false;  // True when PMU has accepted setValveTimer
     AddressSavedCallback address_saved_callback_;
 
     /**
