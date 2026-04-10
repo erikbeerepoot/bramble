@@ -7,13 +7,11 @@ import {
   getIrrigationSchedules,
   addIrrigationSchedule,
   deleteIrrigationSchedule,
-  getNodeEvents,
 } from '../api/client';
-import type { NodeEvent, IrrigationSchedule } from '../types';
+import type { IrrigationSchedule } from '../types';
 import { DAY_LABELS } from '../types';
 import { REFRESH_INTERVAL_MS } from '../config';
 import { SchedulesList } from './SchedulesList';
-import { RecentEvents } from './RecentEvents';
 
 type ValveActionState = 'idle' | 'sending' | 'queued' | 'error';
 
@@ -25,6 +23,7 @@ interface ValveState {
 
 interface IrrigationControlProps {
   deviceId: string;
+  onEventTriggered?: () => void;
 }
 
 // Non-linear notches: fine-grained at short durations, coarser for long runs
@@ -50,7 +49,7 @@ function formatDurationShort(minutes: number): string {
   return `${minutes}m`;
 }
 
-function IrrigationControl({ deviceId }: IrrigationControlProps) {
+function IrrigationControl({ deviceId, onEventTriggered }: IrrigationControlProps) {
   // Run-once state
   const [selectedDuration, setSelectedDuration] = useState<Record<number, number>>({
     0: 300,
@@ -80,10 +79,6 @@ function IrrigationControl({ deviceId }: IrrigationControlProps) {
   const [formDays, setFormDays] = useState(127);
   const [savingSchedule, setSavingSchedule] = useState(false);
 
-  // Events state
-  const [events, setEvents] = useState<NodeEvent[]>([]);
-  const [loadingEvents, setLoadingEvents] = useState(true);
-
   const fetchSchedules = useCallback(async () => {
     try {
       const response = await getIrrigationSchedules(deviceId);
@@ -95,26 +90,11 @@ function IrrigationControl({ deviceId }: IrrigationControlProps) {
     }
   }, [deviceId]);
 
-  const fetchEvents = useCallback(async () => {
-    try {
-      const response = await getNodeEvents(deviceId, { limit: 20 });
-      setEvents(response.events);
-    } catch {
-      // Silently fail
-    } finally {
-      setLoadingEvents(false);
-    }
-  }, [deviceId]);
-
   useEffect(() => {
     fetchSchedules();
-    fetchEvents();
-    const interval = setInterval(() => {
-      fetchSchedules();
-      fetchEvents();
-    }, REFRESH_INTERVAL_MS);
+    const interval = setInterval(fetchSchedules, REFRESH_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [fetchSchedules, fetchEvents]);
+  }, [fetchSchedules]);
 
   const handleRun = async (valve: number) => {
     setValveState(valve, { state: 'sending', action: 'run' });
@@ -123,7 +103,7 @@ function IrrigationControl({ deviceId }: IrrigationControlProps) {
       await runValve(deviceId, valve, duration);
       setValveState(valve, { state: 'queued', action: 'run' });
       // Refresh events soon to pick up Valve Open / Valve Timer Set.
-      setTimeout(fetchEvents, 3000);
+      if (onEventTriggered) setTimeout(onEventTriggered, 3000);
       // Return to idle after the Queued checkmark has been visible.
       setTimeout(() => {
         setValveStates((prev) =>
@@ -144,7 +124,7 @@ function IrrigationControl({ deviceId }: IrrigationControlProps) {
     try {
       await stopValve(deviceId, valve);
       setValveState(valve, { state: 'idle' });
-      setTimeout(fetchEvents, 3000);
+      if (onEventTriggered) setTimeout(onEventTriggered, 3000);
     } catch (err) {
       setValveState(valve, {
         state: 'error',
@@ -472,9 +452,6 @@ function IrrigationControl({ deviceId }: IrrigationControlProps) {
           </div>
         </div>
       )}
-
-      {/* Recent Events */}
-      <RecentEvents events={events} loading={loadingEvents} />
     </div>
   );
 }
