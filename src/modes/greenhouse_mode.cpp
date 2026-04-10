@@ -282,6 +282,13 @@ void GreenhouseMode::onHeartbeatResponse(const HeartbeatResponsePayload *payload
         });
     }
 
+    // Pull any pending updates (actuator commands, wake interval, schedules)
+    if (payload && payload->pending_update_flags != PENDING_FLAG_NONE) {
+        logger.info("Pending update flags: 0x%02X, sending CHECK_UPDATES",
+                    payload->pending_update_flags);
+        sendCheckUpdates();
+    }
+
     updateGreenhouseState();
 }
 
