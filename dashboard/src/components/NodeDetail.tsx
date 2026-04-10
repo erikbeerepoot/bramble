@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type {
   Node,
+  NodeEvent,
   NodeStatistics,
   SensorReading,
   TimeRange,
@@ -16,7 +17,14 @@ import {
   getBatteryStatus,
   getHealthStatus,
 } from '../types';
-import { getNodeSensorData, getNodeStatistics, deleteNode, rebootNode, setWakeInterval } from '../api/client';
+import {
+  getNodeSensorData,
+  getNodeStatistics,
+  deleteNode,
+  rebootNode,
+  setWakeInterval,
+  getNodeEvents,
+} from '../api/client';
 import { NodeType } from '../types';
 import CurtainControl from './CurtainControl';
 import IrrigationControl from './IrrigationControl';
@@ -28,6 +36,8 @@ import BatteryGauge from './BatteryGauge';
 import SignalStrength from './SignalStrength';
 import HealthStatus from './HealthStatus';
 import BacklogStatus from './BacklogStatus';
+import { RecentEvents } from './RecentEvents';
+import { REFRESH_INTERVAL_MS } from '../config';
 
 interface NodeDetailProps {
   node: Node;
@@ -61,6 +71,8 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
   const [wakeIntervalMinutes, setWakeIntervalMinutes] = useState('1');
   const [settingWakeInterval, setSettingWakeInterval] = useState(false);
   const [wakeIntervalStatus, setWakeIntervalStatus] = useState<string | null>(null);
+  const [events, setEvents] = useState<NodeEvent[]>([]);
+  const [loadingEvents, setLoadingEvents] = useState(true);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const hasSensorData = node.type === NodeType.SENSOR;
@@ -137,6 +149,23 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
       abortControllerRef.current?.abort();
     };
   }, [fetchData]);
+
+  const fetchEvents = useCallback(async () => {
+    try {
+      const response = await getNodeEvents(node.device_id, { limit: 20 });
+      setEvents(response.events);
+    } catch {
+      // Silently fail — events are informational
+    } finally {
+      setLoadingEvents(false);
+    }
+  }, [node.device_id]);
+
+  useEffect(() => {
+    fetchEvents();
+    const interval = setInterval(fetchEvents, REFRESH_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [fetchEvents]);
 
   const handleMetadataUpdate = (metadata: NodeMetadata) => {
     onUpdate({
@@ -245,111 +274,112 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-1 flex flex-col gap-4">
           {/* 1. Statistics (sensor nodes only) */}
-          {hasSensorData && (loadingStatistics ? (
-            <div className="card animate-pulse">
-              <div className="h-5 w-24 bg-gray-200 rounded mb-4" />
-              <div className="space-y-3">
-                <div>
-                  <div className="h-3 w-24 bg-gray-200 rounded mb-1" />
-                  <div className="h-6 w-16 bg-gray-200 rounded" />
-                </div>
-                <div className="border-t pt-3">
-                  <div className="h-3 w-20 bg-gray-200 rounded mb-2" />
-                  <div className="grid grid-cols-3 gap-2">
-                    <div>
-                      <div className="h-3 w-8 bg-gray-200 rounded mb-1" />
-                      <div className="h-4 w-12 bg-gray-200 rounded" />
-                    </div>
-                    <div>
-                      <div className="h-3 w-8 bg-gray-200 rounded mb-1" />
-                      <div className="h-4 w-12 bg-gray-200 rounded" />
-                    </div>
-                    <div>
-                      <div className="h-3 w-8 bg-gray-200 rounded mb-1" />
-                      <div className="h-4 w-12 bg-gray-200 rounded" />
-                    </div>
-                  </div>
-                </div>
-                <div className="border-t pt-3">
-                  <div className="h-3 w-16 bg-gray-200 rounded mb-2" />
-                  <div className="grid grid-cols-3 gap-2">
-                    <div>
-                      <div className="h-3 w-8 bg-gray-200 rounded mb-1" />
-                      <div className="h-4 w-12 bg-gray-200 rounded" />
-                    </div>
-                    <div>
-                      <div className="h-3 w-8 bg-gray-200 rounded mb-1" />
-                      <div className="h-4 w-12 bg-gray-200 rounded" />
-                    </div>
-                    <div>
-                      <div className="h-3 w-8 bg-gray-200 rounded mb-1" />
-                      <div className="h-4 w-12 bg-gray-200 rounded" />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : (
-            statistics && (
-              <div className="card">
-                <h3 className="text-lg font-medium text-gray-900 mb-4">Statistics</h3>
-                <dl className="space-y-3">
+          {hasSensorData &&
+            (loadingStatistics ? (
+              <div className="card animate-pulse">
+                <div className="h-5 w-24 bg-gray-200 rounded mb-4" />
+                <div className="space-y-3">
                   <div>
-                    <dt className="text-sm text-gray-500">Total Readings</dt>
-                    <dd className="text-xl font-semibold text-gray-900">
-                      {statistics.total_readings.toLocaleString()}
-                    </dd>
+                    <div className="h-3 w-24 bg-gray-200 rounded mb-1" />
+                    <div className="h-6 w-16 bg-gray-200 rounded" />
                   </div>
                   <div className="border-t pt-3">
-                    <dt className="text-sm text-gray-500 mb-2">Temperature</dt>
-                    <div className="grid grid-cols-3 gap-2 text-sm">
+                    <div className="h-3 w-20 bg-gray-200 rounded mb-2" />
+                    <div className="grid grid-cols-3 gap-2">
                       <div>
-                        <div className="text-gray-400">Min</div>
-                        <div className="font-medium">
-                          {statistics.temperature.min_celsius?.toFixed(1) ?? '-'}C
-                        </div>
+                        <div className="h-3 w-8 bg-gray-200 rounded mb-1" />
+                        <div className="h-4 w-12 bg-gray-200 rounded" />
                       </div>
                       <div>
-                        <div className="text-gray-400">Avg</div>
-                        <div className="font-medium">
-                          {statistics.temperature.avg_celsius?.toFixed(1) ?? '-'}C
-                        </div>
+                        <div className="h-3 w-8 bg-gray-200 rounded mb-1" />
+                        <div className="h-4 w-12 bg-gray-200 rounded" />
                       </div>
                       <div>
-                        <div className="text-gray-400">Max</div>
-                        <div className="font-medium">
-                          {statistics.temperature.max_celsius?.toFixed(1) ?? '-'}C
-                        </div>
+                        <div className="h-3 w-8 bg-gray-200 rounded mb-1" />
+                        <div className="h-4 w-12 bg-gray-200 rounded" />
                       </div>
                     </div>
                   </div>
                   <div className="border-t pt-3">
-                    <dt className="text-sm text-gray-500 mb-2">Humidity</dt>
-                    <div className="grid grid-cols-3 gap-2 text-sm">
+                    <div className="h-3 w-16 bg-gray-200 rounded mb-2" />
+                    <div className="grid grid-cols-3 gap-2">
                       <div>
-                        <div className="text-gray-400">Min</div>
-                        <div className="font-medium">
-                          {statistics.humidity.min_percent?.toFixed(1) ?? '-'}%
-                        </div>
+                        <div className="h-3 w-8 bg-gray-200 rounded mb-1" />
+                        <div className="h-4 w-12 bg-gray-200 rounded" />
                       </div>
                       <div>
-                        <div className="text-gray-400">Avg</div>
-                        <div className="font-medium">
-                          {statistics.humidity.avg_percent?.toFixed(1) ?? '-'}%
-                        </div>
+                        <div className="h-3 w-8 bg-gray-200 rounded mb-1" />
+                        <div className="h-4 w-12 bg-gray-200 rounded" />
                       </div>
                       <div>
-                        <div className="text-gray-400">Max</div>
-                        <div className="font-medium">
-                          {statistics.humidity.max_percent?.toFixed(1) ?? '-'}%
-                        </div>
+                        <div className="h-3 w-8 bg-gray-200 rounded mb-1" />
+                        <div className="h-4 w-12 bg-gray-200 rounded" />
                       </div>
                     </div>
                   </div>
-                </dl>
+                </div>
               </div>
-            )
-          ))}
+            ) : (
+              statistics && (
+                <div className="card">
+                  <h3 className="text-lg font-medium text-gray-900 mb-4">Statistics</h3>
+                  <dl className="space-y-3">
+                    <div>
+                      <dt className="text-sm text-gray-500">Total Readings</dt>
+                      <dd className="text-xl font-semibold text-gray-900">
+                        {statistics.total_readings.toLocaleString()}
+                      </dd>
+                    </div>
+                    <div className="border-t pt-3">
+                      <dt className="text-sm text-gray-500 mb-2">Temperature</dt>
+                      <div className="grid grid-cols-3 gap-2 text-sm">
+                        <div>
+                          <div className="text-gray-400">Min</div>
+                          <div className="font-medium">
+                            {statistics.temperature.min_celsius?.toFixed(1) ?? '-'}C
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-gray-400">Avg</div>
+                          <div className="font-medium">
+                            {statistics.temperature.avg_celsius?.toFixed(1) ?? '-'}C
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-gray-400">Max</div>
+                          <div className="font-medium">
+                            {statistics.temperature.max_celsius?.toFixed(1) ?? '-'}C
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="border-t pt-3">
+                      <dt className="text-sm text-gray-500 mb-2">Humidity</dt>
+                      <div className="grid grid-cols-3 gap-2 text-sm">
+                        <div>
+                          <div className="text-gray-400">Min</div>
+                          <div className="font-medium">
+                            {statistics.humidity.min_percent?.toFixed(1) ?? '-'}%
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-gray-400">Avg</div>
+                          <div className="font-medium">
+                            {statistics.humidity.avg_percent?.toFixed(1) ?? '-'}%
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-gray-400">Max</div>
+                          <div className="font-medium">
+                            {statistics.humidity.max_percent?.toFixed(1) ?? '-'}%
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </dl>
+                </div>
+              )
+            ))}
 
           {/* Node Info */}
           <NodeNameEditor
@@ -520,7 +550,9 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
                       </button>
                     </div>
                     {wakeIntervalStatus && (
-                      <p className={`text-xs mt-1 ${wakeIntervalStatus.startsWith('Queued') ? 'text-green-600' : 'text-red-600'}`}>
+                      <p
+                        className={`text-xs mt-1 ${wakeIntervalStatus.startsWith('Queued') ? 'text-green-600' : 'text-red-600'}`}
+                      >
                         {wakeIntervalStatus}
                       </p>
                     )}
@@ -560,11 +592,11 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
         {/* Controls column — renders first on mobile */}
         <div className="lg:col-span-2 space-y-4 order-first lg:order-none">
           {node.type === NodeType.GREENHOUSE && (
-            <CurtainControl address={node.address} deviceId={node.device_id} />
+            <CurtainControl address={node.address} onEventTriggered={fetchEvents} />
           )}
 
           {node.type === NodeType.IRRIGATION && (
-            <IrrigationControl deviceId={node.device_id} />
+            <IrrigationControl deviceId={node.device_id} onEventTriggered={fetchEvents} />
           )}
 
           {hasSensorData && (
@@ -625,6 +657,8 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
               )}
             </div>
           )}
+
+          <RecentEvents events={events} loading={loadingEvents} />
         </div>
       </div>
 
