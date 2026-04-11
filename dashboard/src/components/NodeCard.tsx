@@ -48,7 +48,7 @@ function NodeCard({ node, zone, onClick }: NodeCardProps) {
     }
   }, [node.device_id, node.online, node.type]);
 
-  const hasSparkline = node.type === NodeType.SENSOR && sparklineData.length >= 2;
+  const hasSparkline = (node.type === NodeType.SENSOR || node.type === NodeType.GREENHOUSE) && sparklineData.length >= 2;
 
   const getNodeIcon = (type: string) => {
     switch (type) {

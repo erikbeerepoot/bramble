@@ -75,7 +75,7 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
   const [loadingEvents, setLoadingEvents] = useState(true);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  const hasSensorData = node.type === NodeType.SENSOR;
+  const hasSensorData = node.type === NodeType.SENSOR || node.type === NodeType.GREENHOUSE;
 
   const fetchData = useCallback(async () => {
     if (!hasSensorData) {
