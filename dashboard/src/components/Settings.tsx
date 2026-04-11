@@ -94,7 +94,7 @@ function Settings() {
 
       <div className="card mt-4">
         <h3 className="text-lg font-medium text-gray-900 mb-2">About</h3>
-        <p className="text-sm text-gray-600">Bramble Dashboard v0.1.0</p>
+        <p className="text-sm text-gray-600">Bramble Dashboard v{__APP_VERSION__}</p>
         <p className="text-sm text-gray-500 mt-1">
           Monitor your LoRa sensor network and irrigation system.
         </p>
