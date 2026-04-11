@@ -275,6 +275,9 @@ void Protocol::processReceivedByte(uint8_t byte)
             case Response::DateTimeResponse:
                 handleDateTimeResponse(data, dataLen);
                 break;
+            case Response::BlobData:
+                handleBlobData(data, dataLen);
+                break;
             default:
                 // Unknown response, ignore
                 break;
@@ -417,6 +420,11 @@ void Protocol::onScheduleEntry(ScheduleEntryCallback callback)
 void Protocol::onDateTime(DateTimeCallback callback)
 {
     pendingDateTimeCallback_ = callback;
+}
+
+void Protocol::onBlobData(BlobDataCallback callback)
+{
+    blobDataCallback_ = callback;
 }
 
 // Response handlers
@@ -566,6 +574,27 @@ void Protocol::handleDateTimeResponse(const uint8_t *data, uint8_t length)
         auto callback = pendingDateTimeCallback_;
         pendingDateTimeCallback_ = nullptr;
         callback(valid, datetime);
+    }
+}
+
+void Protocol::handleBlobData(const uint8_t *data, uint8_t length)
+{
+    // Expected format: {slot:1, total_length:2, offset:2, chunk_length:1, data[0-36]}
+    if (length < 6) {
+        return;
+    }
+
+    uint8_t slot = data[0];
+    uint16_t totalLength = data[1] | (data[2] << 8);
+    uint16_t offset = data[3] | (data[4] << 8);
+    uint8_t chunkLength = data[5];
+
+    if (chunkLength > length - 6) {
+        chunkLength = length - 6;
+    }
+
+    if (blobDataCallback_) {
+        blobDataCallback_(slot, totalLength, offset, chunkLength, data + 6);
     }
 }
 

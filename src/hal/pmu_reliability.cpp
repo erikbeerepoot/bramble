@@ -343,6 +343,97 @@ bool ReliablePmuClient::setValveTimer(uint16_t durationSeconds, uint8_t valveId,
 }
 
 // ============================================================================
+// Blob storage
+// ============================================================================
+
+bool ReliablePmuClient::saveBlob(uint8_t slot, const uint8_t *data, uint16_t length,
+                                 CommandCallback callback)
+{
+    // Clear operation
+    if (length == 0) {
+        // Payload: {slot:1, total_length:2, offset:2, chunk_length:1}
+        uint8_t clearData[6];
+        clearData[0] = slot;
+        clearData[1] = 0;
+        clearData[2] = 0;  // total_length = 0
+        clearData[3] = 0;
+        clearData[4] = 0;  // offset = 0
+        clearData[5] = 0;  // chunk_length = 0
+        return queueCommand(Command::SaveBlob, clearData, 6, callback);
+    }
+
+    // Send data in chunks
+    uint16_t offset = 0;
+    while (offset < length) {
+        uint8_t chunkSize = MAX_BLOB_CHUNK_SIZE;
+        if (offset + chunkSize > length) {
+            chunkSize = static_cast<uint8_t>(length - offset);
+        }
+
+        // Build payload: {slot:1, total_length:2, offset:2, chunk_length:1, data[]}
+        uint8_t payload[6 + MAX_BLOB_CHUNK_SIZE];
+        payload[0] = slot;
+        payload[1] = length & 0xFF;
+        payload[2] = (length >> 8) & 0xFF;
+        payload[3] = offset & 0xFF;
+        payload[4] = (offset >> 8) & 0xFF;
+        payload[5] = chunkSize;
+        std::memcpy(payload + 6, data + offset, chunkSize);
+
+        // Only the last chunk gets the user callback
+        bool isLast = (offset + chunkSize >= length);
+        CommandCallback chunkCallback = isLast ? callback : nullptr;
+
+        if (!queueCommand(Command::SaveBlob, payload, static_cast<uint8_t>(6 + chunkSize),
+                          chunkCallback)) {
+            return false;
+        }
+
+        offset += chunkSize;
+    }
+
+    return true;
+}
+
+bool ReliablePmuClient::loadBlob(uint8_t slot, uint8_t *buffer, uint16_t bufferSize,
+                                 BlobLoadCallback callback)
+{
+    // Register a BlobData callback to accumulate chunks
+    client_->getProtocol().onBlobData(
+        [buffer, bufferSize, callback](uint8_t slot, uint16_t totalLength, uint16_t offset,
+                                       uint8_t chunkLength, const uint8_t *data) {
+            // Copy chunk into caller's buffer
+            if (buffer && chunkLength > 0 && offset + chunkLength <= bufferSize) {
+                std::memcpy(buffer + offset, data, chunkLength);
+            }
+
+            // Check if this is the last chunk (or empty blob)
+            bool isComplete = (totalLength == 0) || (offset + chunkLength >= totalLength);
+            if (isComplete && callback) {
+                uint16_t actualLength = totalLength;
+                if (actualLength > bufferSize) {
+                    actualLength = bufferSize;
+                }
+                callback(true, actualLength);
+            }
+        });
+
+    // Send LoadBlob command: {slot:1}
+    return queueCommand(Command::LoadBlob, &slot, 1, [callback](bool success, ErrorCode error) {
+        // ACK received — BlobData responses will follow
+        // If NACK, signal failure
+        if (!success && callback) {
+            callback(false, 0);
+        }
+    });
+}
+
+bool ReliablePmuClient::clearBlob(uint8_t slot, CommandCallback callback)
+{
+    return saveBlob(slot, nullptr, 0, callback);
+}
+
+// ============================================================================
 // Event callbacks
 // ============================================================================
 

@@ -196,6 +196,39 @@ public:
                        CommandCallback callback = nullptr);
 
     /**
+     * @brief Save an opaque blob to a FRAM slot
+     * @param slot Blob slot ID (e.g. BLOB_SLOT_NODE_STATE, BLOB_SLOT_EVENT_LOG)
+     * @param data Pointer to blob data (may be nullptr if length is 0)
+     * @param length Total blob length in bytes
+     * @param callback Called when all chunks are ACK'd (optional)
+     * @return true if command(s) queued successfully
+     *
+     * Data is automatically chunked into MAX_BLOB_CHUNK_SIZE-byte messages.
+     * Passing length=0 clears the slot.
+     */
+    bool saveBlob(uint8_t slot, const uint8_t *data, uint16_t length,
+                  CommandCallback callback = nullptr);
+
+    /**
+     * @brief Load a blob from a FRAM slot
+     * @param slot Blob slot ID
+     * @param buffer Output buffer to receive blob data
+     * @param bufferSize Size of output buffer
+     * @param callback Called when load completes: (bool success, uint16_t length)
+     * @return true if command queued successfully
+     */
+    using BlobLoadCallback = std::function<void(bool success, uint16_t length)>;
+    bool loadBlob(uint8_t slot, uint8_t *buffer, uint16_t bufferSize, BlobLoadCallback callback);
+
+    /**
+     * @brief Clear a FRAM blob slot
+     * @param slot Blob slot ID
+     * @param callback Called when command completes (optional)
+     * @return true if command queued successfully
+     */
+    bool clearBlob(uint8_t slot, CommandCallback callback = nullptr);
+
+    /**
      * @brief Get access to the underlying PmuClient
      * Useful for accessing the protocol directly for operations
      * not covered by the reliable client.
