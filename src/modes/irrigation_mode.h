@@ -17,17 +17,17 @@
  * On cold start (battery disconnect), state_valid=false.
  */
 struct __attribute__((packed)) IrrigationPersistedState {
-    uint8_t version;                 // Format version
-    uint8_t board_version;           // Board hardware version (3=V3, 4=V4)
-    uint8_t next_seq_num;            // LoRa sequence number
-    uint8_t update_sequence;         // Current update pull sequence number
-    uint16_t assigned_address;       // Node address (survives warm reboot)
-    uint8_t valve_states[4];         // ValveState per valve (CLOSED=0, OPEN=1, UNKNOWN=2)
-    uint8_t pending_valve_close;     // 0=no pending close, 1=pending valve close timer
-    uint8_t pending_close_valve_id;  // Which valve to close when timer fires
-    uint8_t valve_timer_armed;       // 0=PMU timer not armed yet, 1=armed (PMU will fire it)
-    uint16_t valve_duration_seconds; // Duration the valve was opened for (used to arm timer)
-    uint8_t padding[17];             // Reserved (pad to 32 bytes)
+    uint8_t version;                  // Format version
+    uint8_t board_version;            // Board hardware version (3=V3, 4=V4)
+    uint8_t next_seq_num;             // LoRa sequence number
+    uint8_t update_sequence;          // Current update pull sequence number
+    uint16_t assigned_address;        // Node address (survives warm reboot)
+    uint8_t valve_states[4];          // ValveState per valve (CLOSED=0, OPEN=1, UNKNOWN=2)
+    uint8_t pending_valve_close;      // 0=no pending close, 1=pending valve close timer
+    uint8_t pending_close_valve_id;   // Which valve to close when timer fires
+    uint8_t valve_timer_armed;        // 0=PMU timer not armed yet, 1=armed (PMU will fire it)
+    uint16_t valve_duration_seconds;  // Duration the valve was opened for (used to arm timer)
+    uint8_t padding[17];              // Reserved (pad to 32 bytes)
 };
 static_assert(sizeof(IrrigationPersistedState) == 32, "IrrigationPersistedState must be 32 bytes");
 

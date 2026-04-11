@@ -135,7 +135,6 @@ private:
     // Batch transmission
     std::unique_ptr<BatchTransmitter> transmitter_;
 
-
     // Fallback storage for direct transmit when flash unavailable
     SensorDataRecord current_reading_ = {};
 
