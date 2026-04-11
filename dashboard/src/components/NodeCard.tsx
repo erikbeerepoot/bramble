@@ -36,7 +36,7 @@ function NodeCard({ node, zone, onClick }: NodeCardProps) {
   const [sparklineData, setSparklineData] = useState<SensorReading[]>([]);
 
   useEffect(() => {
-    if (node.online && node.type === NodeType.SENSOR) {
+    if (node.online && (node.type === NodeType.SENSOR || node.type === NodeType.GREENHOUSE)) {
       getNodeLatestReading(node.device_id).then(setReading);
 
       const now = Math.floor(Date.now() / 1000);
