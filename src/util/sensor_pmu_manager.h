@@ -6,6 +6,7 @@
 
 #include "../hal/pmu_client.h"
 #include "../hal/pmu_reliability.h"
+#include "event_log.h"
 #include "task_queue.h"
 
 class ReliableMessenger;
@@ -157,6 +158,16 @@ public:
      * @brief Set consecutive TX failure count
      */
     void setConsecutiveTxFailures(uint8_t count) { consecutive_tx_failures_ = count; }
+
+    /**
+     * @brief Load persisted event log from FRAM into the given EventLog
+     *
+     * Call after PMU initialization completes. Loads events that failed
+     * to transmit in the previous cycle so they can be retried.
+     *
+     * @param log Event log to populate with persisted records
+     */
+    void loadPersistedEventLog(EventLog<64> &log);
 
     /**
      * @brief Check if PMU hardware is available

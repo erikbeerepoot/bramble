@@ -176,6 +176,9 @@ void SensorMode::onStart()
     if (pmu_ok && pmu_manager_->getReliablePmu()) {
         // Register PMU with base class for generic update handling
         setReliablePmu(pmu_manager_->getReliablePmu());
+
+        // Load any events that failed to transmit in the previous cycle
+        pmu_manager_->loadPersistedEventLog(event_log_);
     }
 
     if (!pmu_ok) {

@@ -330,8 +330,25 @@ void ApplicationMode::initEventLogTransmitter()
 void ApplicationMode::onBeforeSleep()
 {
     event_log_.record(EventType::SLEEP_ENTER, 0, 0);
+
+    // Try LoRa TX of pending events
+    bool tx_ok = true;
     if (event_log_transmitter_ && event_log_.hasPending()) {
-        event_log_transmitter_->transmitIfPending(event_log_);
+        tx_ok = event_log_transmitter_->transmitIfPending(event_log_);
+    }
+
+    // If events remain after TX (failed or partial), persist to FRAM for next cycle
+    if (event_log_.hasPending() && reliable_pmu_) {
+        uint8_t blob_buffer[140];
+        uint16_t blob_len = event_log_.serializeToBlob(blob_buffer, sizeof(blob_buffer));
+        if (blob_len > 0) {
+            logger.info("Persisting %u events to FRAM (%u bytes)", event_log_.pendingCount(),
+                        blob_len);
+            reliable_pmu_->saveBlob(PMU::BLOB_SLOT_EVENT_LOG, blob_buffer, blob_len);
+        }
+    } else if (!event_log_.hasPending() && reliable_pmu_) {
+        // TX succeeded — clear any persisted events from previous cycle
+        reliable_pmu_->clearBlob(PMU::BLOB_SLOT_EVENT_LOG);
     }
 }
 

@@ -88,6 +88,20 @@ void IrrigationMode::onStart()
         // Register PMU with base class for generic update handling
         setReliablePmu(reliable_pmu_);
 
+        // Load any events that failed to transmit in the previous cycle
+        {
+            static uint8_t event_blob_buffer[140];
+            reliable_pmu_->loadBlob(
+                PMU::BLOB_SLOT_EVENT_LOG, event_blob_buffer, sizeof(event_blob_buffer),
+                [this](bool success, uint16_t length) {
+                    if (success && length > 0) {
+                        event_log_.deserializeFromBlob(event_blob_buffer, length);
+                        pmu_logger.info("Loaded %u persisted events from FRAM",
+                                        event_log_.pendingCount());
+                    }
+                });
+        }
+
         // Set up PMU callback handlers
         reliable_pmu_->onWake([this](PMU::WakeReason reason, const PMU::ScheduleEntry *entry,
                                      bool state_valid, const uint8_t *state) {
@@ -551,7 +565,8 @@ void IrrigationMode::onModeSpecificUpdate(const UpdateAvailablePayload *payload,
                 if (success || error == PMU::ErrorCode::InvalidIndex) {
                     // Treat removing a non-existent schedule as success (idempotent)
                     if (!success) {
-                        logger.info("  Schedule index %d already empty - treating as removed", index);
+                        logger.info("  Schedule index %d already empty - treating as removed",
+                                    index);
                     } else {
                         logger.info("  Schedule removed successfully");
                     }

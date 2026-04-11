@@ -334,3 +334,22 @@ bool SensorPmuManager::unpackState(const SensorPersistedState *persisted)
 
     return true;
 }
+
+void SensorPmuManager::loadPersistedEventLog(EventLog<64> &log)
+{
+    if (!pmu_available_ || !reliable_pmu_) {
+        return;
+    }
+
+    // Static buffer for blob data (max 140 bytes for event log slot)
+    static uint8_t event_blob_buffer[140];
+
+    reliable_pmu_->loadBlob(PMU::BLOB_SLOT_EVENT_LOG, event_blob_buffer, sizeof(event_blob_buffer),
+                            [&log](bool success, uint16_t length) {
+                                if (success && length > 0) {
+                                    log.deserializeFromBlob(event_blob_buffer, length);
+                                    pmu_logger.info("Loaded %u persisted events from FRAM",
+                                                    log.pendingCount());
+                                }
+                            });
+}
