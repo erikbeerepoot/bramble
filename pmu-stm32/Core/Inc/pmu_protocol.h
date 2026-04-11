@@ -22,7 +22,10 @@ enum class Command : uint8_t {
     ClearToSend = 0x19,    // RP2040 signals ready to receive wake info
     SystemReset = 0x1A,    // Request full system reset (PMU resets itself + RP2040)
     FactoryReset = 0x1B,   // Wipe FRAM persistent storage, then reset
-    SetValveTimer = 0x1C   // Set RTC Alarm A for valve auto-close (3 bytes: duration_lo, duration_hi, valve_id)
+    SetValveTimer =
+        0x1C,  // Set RTC Alarm A for valve auto-close (3 bytes: duration_lo, duration_hi, valve_id)
+    SaveBlob = 0x1D,  // Save chunked data to a FRAM blob slot
+    LoadBlob = 0x1E   // Load data from a FRAM blob slot
 };
 
 // Response codes (STM32 → RP2040)
@@ -34,7 +37,8 @@ enum class Response : uint8_t {
     WakeReason = 0x84,
     Status = 0x85,
     ScheduleComplete = 0x86,  // Scheduled watering complete, power down imminent
-    DateTimeResponse = 0x87   // Response to GetDateTime: valid flag + 7 datetime bytes
+    DateTimeResponse = 0x87,  // Response to GetDateTime: valid flag + 7 datetime bytes
+    BlobData = 0x88           // Response to LoadBlob: chunked blob data
 };
 
 // Error codes
@@ -87,9 +91,10 @@ inline bool operator!(DayOfWeek a)
 constexpr uint8_t START_BYTE = 0xAA;
 constexpr uint8_t END_BYTE = 0x55;
 constexpr uint8_t MAX_SCHEDULE_ENTRIES = 8;
-constexpr uint8_t MAX_MESSAGE_SIZE = 48;     // Increased to accommodate state blob (was 32)
+constexpr uint8_t MAX_MESSAGE_SIZE = 48;  // Increased to accommodate state blob (was 32)
 constexpr uint8_t SCHEDULE_ENTRY_SIZE = 7;
-constexpr uint8_t NODE_STATE_SIZE = 32;  // Opaque state blob stored in PMU RAM
+constexpr uint8_t NODE_STATE_SIZE = 32;      // Opaque state blob stored in PMU RAM
+constexpr uint8_t MAX_BLOB_CHUNK_SIZE = 36;  // Max data bytes per SaveBlob/BlobData message
 
 // Sequence number ranges (for deduplication)
 constexpr uint8_t SEQ_RP2040_MIN = 1;
@@ -165,8 +170,8 @@ public:
 
     // Find the schedule entry closest to triggering.
     // Returns true and populates `out` if found.
-    bool findNextEntry(uint8_t currentDay, uint8_t currentHour,
-                       uint8_t currentMinute, ScheduleEntry &out) const;
+    bool findNextEntry(uint8_t currentDay, uint8_t currentHour, uint8_t currentMinute,
+                       ScheduleEntry &out) const;
 
     // Get count of active entries
     uint8_t getCount() const;
@@ -305,8 +310,8 @@ public:
     }
 
     // Find the next scheduled entry. Returns true and populates `out` if found.
-    bool getNextScheduledEntry(uint8_t currentDay, uint8_t currentHour,
-                               uint8_t currentMinute, ScheduleEntry &out) const;
+    bool getNextScheduledEntry(uint8_t currentDay, uint8_t currentHour, uint8_t currentMinute,
+                               ScheduleEntry &out) const;
 
     // Set callback for valve timer alarm configuration
     void setValveTimerCallback(SetValveTimerCallback callback) { setValveTimer_ = callback; }
@@ -360,6 +365,8 @@ private:
     void handleReadyForSleep();
     void handleGetDateTime();
     void handleSetValveTimer(const uint8_t *data, uint8_t length);
+    void handleSaveBlob(const uint8_t *data, uint8_t length);
+    void handleLoadBlob(const uint8_t *data, uint8_t length);
 
     // Response senders (with sequence number echo)
     void sendAck();
