@@ -22,7 +22,9 @@ enum class Command : uint8_t {
     SystemReset = 0x1A,    // Request full system reset (PMU resets itself + RP2040)
     FactoryReset = 0x1B,   // Wipe FRAM persistent storage, then reset
     SetValveTimer =
-        0x1C  // Set RTC Alarm A for valve auto-close (3 bytes: duration_lo, duration_hi, valve_id)
+        0x1C,  // Set RTC Alarm A for valve auto-close (3 bytes: duration_lo, duration_hi, valve_id)
+    SaveBlob = 0x1D,  // Save chunked data to a FRAM blob slot
+    LoadBlob = 0x1E   // Load data from a FRAM blob slot
 };
 
 // Response codes (STM32 → RP2040)
@@ -34,7 +36,8 @@ enum class Response : uint8_t {
     WakeReason = 0x84,
     Status = 0x85,
     ScheduleComplete = 0x86,
-    DateTimeResponse = 0x87  // Response to GetDateTime: valid flag + 7 datetime bytes
+    DateTimeResponse = 0x87,  // Response to GetDateTime: valid flag + 7 datetime bytes
+    BlobData = 0x88           // Response to LoadBlob: chunked blob data
 };
 
 // Error codes
@@ -88,7 +91,12 @@ constexpr uint8_t START_BYTE = 0xAA;
 constexpr uint8_t END_BYTE = 0x55;
 constexpr uint8_t MAX_MESSAGE_SIZE = 64;
 constexpr uint8_t SCHEDULE_ENTRY_SIZE = 7;
-constexpr uint8_t NODE_STATE_SIZE = 32;  // Opaque state blob stored in PMU RAM
+constexpr uint8_t NODE_STATE_SIZE = 32;      // Opaque state blob stored in PMU RAM
+constexpr uint8_t MAX_BLOB_CHUNK_SIZE = 36;  // Max data bytes per SaveBlob/BlobData message
+
+// Blob slot IDs
+constexpr uint8_t BLOB_SLOT_NODE_STATE = 0;
+constexpr uint8_t BLOB_SLOT_EVENT_LOG = 1;
 
 // Sequence number ranges (for deduplication)
 constexpr uint8_t SEQ_RP2040_MIN = 1;
@@ -224,6 +232,10 @@ using WakeIntervalCallback = std::function<void(uint32_t seconds)>;
 using ScheduleEntryCallback = std::function<void(const ScheduleEntry &entry)>;
 using DateTimeCallback = std::function<void(bool valid, const DateTime &datetime)>;
 
+// Callback for blob data chunks from LoadBlob response
+using BlobDataCallback = std::function<void(uint8_t slot, uint16_t totalLength, uint16_t offset,
+                                            uint8_t chunkLength, const uint8_t *data)>;
+
 // Callback for ACK with sequence number
 using AckCallback = std::function<void(uint8_t seqNum, bool success, ErrorCode error)>;
 
@@ -262,6 +274,7 @@ public:
     void onWakeInterval(WakeIntervalCallback callback);
     void onScheduleEntry(ScheduleEntryCallback callback);
     void onDateTime(DateTimeCallback callback);
+    void onBlobData(BlobDataCallback callback);
 
     // Get next sequence number for legacy API
     uint8_t getNextSequenceNumber();
@@ -287,6 +300,9 @@ private:
     // Pending datetime callback (for GetDateTime response)
     DateTimeCallback pendingDateTimeCallback_;
 
+    // Blob data callback (for LoadBlob responses)
+    BlobDataCallback blobDataCallback_;
+
     // Response handlers
     void handleAck(uint8_t seqNum);
     void handleNack(uint8_t seqNum, const uint8_t *data, uint8_t length);
@@ -295,6 +311,7 @@ private:
     void handleWakeNotification(const uint8_t *data, uint8_t length);
     void handleScheduleComplete();
     void handleDateTimeResponse(const uint8_t *data, uint8_t length);
+    void handleBlobData(const uint8_t *data, uint8_t length);
 
     // Helper to send built message
     void sendMessage();
