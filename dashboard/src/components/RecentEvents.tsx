@@ -20,15 +20,32 @@ import {
   ArrowDownFromLine,
   Copy,
   Check,
+  Loader2,
 } from 'lucide-react';
 import { format, isToday, isYesterday } from 'date-fns';
 import { useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import type { NodeEvent } from '../types';
 import { getEventName, EventType, EventCode } from '../types';
+import type { CurtainAction } from './CurtainControl';
+
+export interface PendingEvent {
+  action: CurtainAction;
+  expectedEventCode: number;
+  createdAt: number;
+  status: 'pending' | 'confirmed';
+}
+
+const PENDING_EVENT_LABELS: Record<CurtainAction, string> = {
+  open: 'Curtain Opened',
+  close: 'Curtain Closed',
+  stop: 'Curtain Stopped',
+};
 
 interface RecentEventsProps {
   events: NodeEvent[];
   loading: boolean;
+  pendingEvent?: PendingEvent | null;
 }
 
 type IconComponent = typeof Calendar;
@@ -200,8 +217,61 @@ function CopyableTimestamp({ timestamp }: { timestamp: number }) {
   );
 }
 
-export function RecentEvents({ events, loading }: RecentEventsProps) {
-  const groupedEvents = events.reduce(
+function PendingEventIcon({ status }: { status: 'pending' | 'confirmed' }) {
+  return (
+    <AnimatePresence mode="wait">
+      {status === 'pending' ? (
+        <motion.div
+          key="pending"
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.8 }}
+          transition={{ duration: 0.2 }}
+          className="w-6 h-6 rounded-full bg-blue-50 flex items-center justify-center"
+        >
+          <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
+        </motion.div>
+      ) : (
+        <motion.div
+          key="confirmed"
+          className="relative w-6 h-6 flex items-center justify-center"
+        >
+          <motion.div
+            initial={{ scale: 0, opacity: 0.6 }}
+            animate={{ scale: 1.4, opacity: 0 }}
+            transition={{ duration: 0.6 }}
+            className="absolute inset-0 bg-emerald-400 rounded-full"
+          />
+          <motion.div
+            initial={{ opacity: 0, scale: 0.3, rotate: -180 }}
+            animate={{ opacity: 1, scale: 1, rotate: 0 }}
+            transition={{
+              duration: 0.6,
+              scale: { type: 'spring', stiffness: 260, damping: 12 },
+              rotate: { duration: 0.5 },
+            }}
+          >
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 fill-emerald-100" />
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+export function RecentEvents({ events, loading, pendingEvent }: RecentEventsProps) {
+  // Filter out the real event that matches the pending one to avoid duplicates
+  const filteredEvents = pendingEvent
+    ? events.filter(
+        (e) =>
+          !(
+            e.event_code === pendingEvent.expectedEventCode &&
+            e.timestamp >= pendingEvent.createdAt - 5
+          )
+      )
+    : events;
+
+  const groupedEvents = filteredEvents.reduce(
     (acc, event) => {
       const date = new Date(event.timestamp * 1000);
       let dayLabel: string;
@@ -221,6 +291,21 @@ export function RecentEvents({ events, loading }: RecentEventsProps) {
     {} as Record<string, NodeEvent[]>
   );
 
+  // Ensure "Today" group exists if we have a pending event
+  if (pendingEvent && !groupedEvents['Today']) {
+    groupedEvents['Today'] = [];
+  }
+
+  // Put "Today" first when we have a pending event
+  const dayEntries = Object.entries(groupedEvents);
+  if (pendingEvent) {
+    const todayIdx = dayEntries.findIndex(([day]) => day === 'Today');
+    if (todayIdx > 0) {
+      const [todayEntry] = dayEntries.splice(todayIdx, 1);
+      dayEntries.unshift(todayEntry);
+    }
+  }
+
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
       <div className="px-5 py-4 border-b border-gray-200">
@@ -233,22 +318,58 @@ export function RecentEvents({ events, loading }: RecentEventsProps) {
           <div className="h-4 bg-gray-200 rounded w-3/4" />
           <div className="h-4 bg-gray-200 rounded w-1/2" />
         </div>
-      ) : events.length === 0 ? (
+      ) : events.length === 0 && !pendingEvent ? (
         <div className="px-5 py-4">
           <p className="text-sm text-gray-400">No events recorded yet.</p>
         </div>
       ) : (
         <div className="px-4 py-2.5 max-h-[600px] overflow-y-auto">
-          {Object.entries(groupedEvents).map(([day, dayEvents], dayIndex) => (
+          {dayEntries.map(([day, dayEvents], dayIndex) => (
             <div key={day}>
               {dayIndex > 0 && <div className="h-px bg-gray-200 my-2.5" />}
 
               <div className="text-xs font-medium text-gray-500 mb-1.5 px-1">{day}</div>
 
               <div>
+                {/* Pending event row — always first in "Today" */}
+                <AnimatePresence>
+                  {pendingEvent && day === 'Today' && (
+                    <motion.div
+                      key="pending-event"
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      transition={{ duration: 0.25 }}
+                      className="overflow-hidden"
+                    >
+                      <div className="event-item group relative flex items-start gap-2.5 py-1.5 px-1.5 rounded-md">
+                        <div className="relative flex-shrink-0 mt-px">
+                          <PendingEventIcon status={pendingEvent.status} />
+                          {dayEvents.length > 0 && (
+                            <div className="absolute top-7 left-1/2 -translate-x-px w-px h-2.5 bg-gray-200" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start justify-between gap-2 mb-px">
+                            <span className="text-sm font-medium text-gray-900">
+                              {PENDING_EVENT_LABELS[pendingEvent.action]}
+                            </span>
+                            <span className="text-xs text-gray-400">
+                              {pendingEvent.status === 'pending' ? 'Awaiting...' : 'Confirmed'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
                 {dayEvents.map((event, index) => {
                   const visual = EVENT_VISUALS[event.event_code] ?? DEFAULT_VISUAL;
                   const Icon = visual.icon;
+                  const adjustedIndex = pendingEvent && day === 'Today' ? index + 1 : index;
+                  const totalItems =
+                    dayEvents.length + (pendingEvent && day === 'Today' ? 1 : 0);
                   return (
                     <div
                       key={`${event.timestamp}-${event.event_code}-${index}`}
@@ -261,7 +382,7 @@ export function RecentEvents({ events, loading }: RecentEventsProps) {
                         >
                           <Icon className={`w-3 h-3 ${visual.color}`} />
                         </div>
-                        {index < dayEvents.length - 1 && (
+                        {adjustedIndex < totalItems - 1 && (
                           <div className="absolute top-7 left-1/2 -translate-x-px w-px h-2.5 bg-gray-200" />
                         )}
                       </div>

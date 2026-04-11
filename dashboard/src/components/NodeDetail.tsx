@@ -27,6 +27,7 @@ import {
 } from '../api/client';
 import { NodeType } from '../types';
 import CurtainControl from './CurtainControl';
+import type { CurtainAction } from './CurtainControl';
 import IrrigationControl from './IrrigationControl';
 import NodeNameEditor from './NodeNameEditor';
 import SensorChart from './SensorChart';
@@ -37,7 +38,15 @@ import SignalStrength from './SignalStrength';
 import HealthStatus from './HealthStatus';
 import BacklogStatus from './BacklogStatus';
 import { RecentEvents } from './RecentEvents';
+import type { PendingEvent } from './RecentEvents';
 import { REFRESH_INTERVAL_MS } from '../config';
+import { EventCode } from '../types';
+
+const ACTION_TO_EVENT_CODE: Record<CurtainAction, number> = {
+  open: EventCode.EVENT_CURTAIN_OPENED,
+  close: EventCode.EVENT_CURTAIN_CLOSED,
+  stop: EventCode.EVENT_CURTAIN_STOPPED,
+};
 
 interface NodeDetailProps {
   node: Node;
@@ -73,6 +82,8 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
   const [wakeIntervalStatus, setWakeIntervalStatus] = useState<string | null>(null);
   const [events, setEvents] = useState<NodeEvent[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(true);
+  const [pendingEvent, setPendingEvent] = useState<PendingEvent | null>(null);
+  const pendingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const hasSensorData = node.type === NodeType.SENSOR || node.type === NodeType.GREENHOUSE;
@@ -166,6 +177,40 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
     const interval = setInterval(fetchEvents, REFRESH_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [fetchEvents]);
+
+  // Match incoming events against the pending event
+  useEffect(() => {
+    if (!pendingEvent || pendingEvent.status !== 'pending') return;
+    const match = events.find(
+      (e) =>
+        e.event_code === pendingEvent.expectedEventCode &&
+        e.timestamp >= pendingEvent.createdAt - 5
+    );
+    if (match) {
+      setPendingEvent((prev) => (prev ? { ...prev, status: 'confirmed' } : null));
+      setTimeout(() => setPendingEvent(null), 3000);
+    }
+  }, [events, pendingEvent]);
+
+  const handleCommandQueued = useCallback(
+    (action: CurtainAction) => {
+      // Clear any previous safety timeout
+      if (pendingTimeoutRef.current) clearTimeout(pendingTimeoutRef.current);
+
+      setPendingEvent({
+        action,
+        expectedEventCode: ACTION_TO_EVENT_CODE[action],
+        createdAt: Math.floor(Date.now() / 1000),
+        status: 'pending',
+      });
+      fetchEvents();
+
+      // Safety timeout — clear after 60s if never confirmed
+      pendingTimeoutRef.current = setTimeout(() => setPendingEvent(null), 60000);
+    },
+    [fetchEvents]
+  );
+
 
   const handleMetadataUpdate = (metadata: NodeMetadata) => {
     onUpdate({
@@ -592,7 +637,7 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
         {/* Controls column — renders first on mobile */}
         <div className="lg:col-span-2 space-y-4 order-first lg:order-none">
           {node.type === NodeType.GREENHOUSE && (
-            <CurtainControl address={node.address} onEventTriggered={fetchEvents} />
+            <CurtainControl address={node.address} onCommandQueued={handleCommandQueued} />
           )}
 
           {node.type === NodeType.IRRIGATION && (
@@ -658,7 +703,11 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
             </div>
           )}
 
-          <RecentEvents events={events} loading={loadingEvents} />
+          <RecentEvents
+            events={events}
+            loading={loadingEvents}
+            pendingEvent={pendingEvent}
+          />
         </div>
       </div>
 
