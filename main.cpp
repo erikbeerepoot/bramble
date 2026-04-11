@@ -128,7 +128,7 @@ inline VariantInfo getVariantInfo()
 #elif HARDWARE_CONTROLLER
     return {NODE_TYPE_CONTROLLER, CAP_CONTROLLER | CAP_SCHEDULING, "Controller"};
 #elif HARDWARE_GREENHOUSE
-    return {NODE_TYPE_HYBRID, CAP_VALVE_CONTROL | CAP_TEMPERATURE | CAP_HUMIDITY, "Greenhouse Node"};
+    return {NODE_TYPE_ACTUATOR, CAP_VALVE_CONTROL | CAP_TEMPERATURE | CAP_HUMIDITY, "Greenhouse Node"};
 #else
     return {NODE_TYPE_SENSOR, 0, "Generic Node"};
 #endif
