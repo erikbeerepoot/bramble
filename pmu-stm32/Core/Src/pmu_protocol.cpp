@@ -125,7 +125,8 @@ WateringSchedule::WateringSchedule() : storage_(nullptr) {}
 
 ErrorCode WateringSchedule::addEntry(const ScheduleEntry &entry)
 {
-    if (!storage_) return ErrorCode::InvalidParam;
+    if (!storage_)
+        return ErrorCode::InvalidParam;
 
     if (!entry.isValid()) {
         return ErrorCode::InvalidParam;
@@ -153,7 +154,8 @@ ErrorCode WateringSchedule::addEntry(const ScheduleEntry &entry)
 
 ErrorCode WateringSchedule::removeEntry(uint8_t index)
 {
-    if (!storage_) return ErrorCode::InvalidParam;
+    if (!storage_)
+        return ErrorCode::InvalidParam;
 
     uint8_t count = getCount();
     if (index >= count) {
@@ -186,18 +188,21 @@ void WateringSchedule::clear()
 
 bool WateringSchedule::getEntry(uint8_t index, ScheduleEntry &out) const
 {
-    if (!storage_) return false;
+    if (!storage_)
+        return false;
 
     uint8_t count = getCount();
-    if (index >= count) return false;
+    if (index >= count)
+        return false;
 
     return storage_->loadScheduleEntry(index, out);
 }
 
-bool WateringSchedule::findNextEntry(uint8_t currentDay, uint8_t currentHour,
-                                     uint8_t currentMinute, ScheduleEntry &out) const
+bool WateringSchedule::findNextEntry(uint8_t currentDay, uint8_t currentHour, uint8_t currentMinute,
+                                     ScheduleEntry &out) const
 {
-    if (!storage_) return false;
+    if (!storage_)
+        return false;
 
     uint8_t count = getCount();
     bool found = false;
@@ -205,8 +210,10 @@ bool WateringSchedule::findNextEntry(uint8_t currentDay, uint8_t currentHour,
 
     for (uint8_t i = 0; i < count; i++) {
         ScheduleEntry entry;
-        if (!storage_->loadScheduleEntry(i, entry)) continue;
-        if (!entry.enabled) continue;
+        if (!storage_->loadScheduleEntry(i, entry))
+            continue;
+        if (!entry.enabled)
+            continue;
 
         uint32_t minutes = entry.minutesUntil(currentDay, currentHour, currentMinute);
         if (minutes < minMinutes) {
@@ -221,20 +228,24 @@ bool WateringSchedule::findNextEntry(uint8_t currentDay, uint8_t currentHour,
 
 uint8_t WateringSchedule::getCount() const
 {
-    if (!storage_) return 0;
+    if (!storage_)
+        return 0;
     return storage_->getScheduleCount();
 }
 
 bool WateringSchedule::hasOverlap(const ScheduleEntry &entry, uint8_t excludeIndex) const
 {
-    if (!storage_) return false;
+    if (!storage_)
+        return false;
 
     uint8_t count = getCount();
     for (uint8_t i = 0; i < count; i++) {
-        if (i == excludeIndex) continue;
+        if (i == excludeIndex)
+            continue;
 
         ScheduleEntry existing;
-        if (!storage_->loadScheduleEntry(i, existing)) continue;
+        if (!storage_->loadScheduleEntry(i, existing))
+            continue;
 
         if (entry.overlapsWith(existing)) {
             return true;
@@ -619,6 +630,20 @@ void Protocol::processReceivedByte(uint8_t byte)
                     sendAck();
                 }
                 break;
+            case Command::SaveBlob:
+                if (!isDuplicate) {
+                    handleSaveBlob(data, dataLen);
+                } else {
+                    sendAck();
+                }
+                break;
+            case Command::LoadBlob:
+                if (!isDuplicate) {
+                    handleLoadBlob(data, dataLen);
+                } else {
+                    sendAck();
+                }
+                break;
             default:
                 sendNack(ErrorCode::InvalidParam);
                 break;
@@ -676,8 +701,8 @@ void Protocol::sendScheduleComplete()
     sendMessage();
 }
 
-bool Protocol::getNextScheduledEntry(uint8_t currentDay, uint8_t currentHour,
-                                     uint8_t currentMinute, ScheduleEntry &out) const
+bool Protocol::getNextScheduledEntry(uint8_t currentDay, uint8_t currentHour, uint8_t currentMinute,
+                                     ScheduleEntry &out) const
 {
     return schedule_.findNextEntry(currentDay, currentHour, currentMinute, out);
 }
@@ -690,7 +715,8 @@ void Protocol::setStorage(PersistentStorage *storage)
 
 void Protocol::loadFromStorage()
 {
-    if (!storage_ || !storage_->isAvailable()) return;
+    if (!storage_ || !storage_->isAvailable())
+        return;
 
     // Load wake interval
     uint32_t interval = 0;
@@ -940,6 +966,118 @@ void Protocol::handleSetValveTimer(const uint8_t *data, uint8_t length)
 
     if (setValveTimer_) {
         setValveTimer_(durationSeconds, valveId);
+    }
+}
+
+void Protocol::handleSaveBlob(const uint8_t *data, uint8_t length)
+{
+    // Payload: {slot:1, total_length:2, offset:2, chunk_length:1, data[0-36]}
+    if (length < 6) {
+        sendNack(ErrorCode::InvalidParam);
+        return;
+    }
+
+    uint8_t slot = data[0];
+    uint16_t totalLength = data[1] | (data[2] << 8);
+    uint16_t offset = data[3] | (data[4] << 8);
+    uint8_t chunkLength = data[5];
+
+    if (chunkLength > length - 6) {
+        sendNack(ErrorCode::InvalidParam);
+        return;
+    }
+
+    if (!storage_) {
+        sendNack(ErrorCode::InvalidParam);
+        return;
+    }
+
+    // Clear operation
+    if (totalLength == 0) {
+        if (storage_->clearBlob(slot)) {
+            sendAck();
+        } else {
+            sendNack(ErrorCode::InvalidParam);
+        }
+        return;
+    }
+
+    // Set used_length on first chunk
+    if (offset == 0) {
+        if (!storage_->setBlobLength(slot, totalLength)) {
+            sendNack(ErrorCode::InvalidParam);
+            return;
+        }
+    }
+
+    // Write chunk data
+    if (chunkLength > 0) {
+        if (!storage_->saveBlobChunk(slot, offset, data + 6, chunkLength)) {
+            sendNack(ErrorCode::InvalidParam);
+            return;
+        }
+    }
+
+    sendAck();
+}
+
+void Protocol::handleLoadBlob(const uint8_t *data, uint8_t length)
+{
+    // Payload: {slot:1}
+    if (length < 1) {
+        sendNack(ErrorCode::InvalidParam);
+        return;
+    }
+
+    uint8_t slot = data[0];
+
+    if (!storage_) {
+        sendNack(ErrorCode::InvalidParam);
+        return;
+    }
+
+    // ACK the command first
+    sendAck();
+
+    uint16_t totalLength = storage_->getBlobLength(slot);
+
+    // Send chunked BlobData responses
+    uint16_t offset = 0;
+    do {
+        uint8_t chunkSize = MAX_BLOB_CHUNK_SIZE;
+        if (offset + chunkSize > totalLength) {
+            chunkSize = static_cast<uint8_t>(totalLength - offset);
+        }
+
+        // Read chunk from FRAM
+        uint8_t chunkData[MAX_BLOB_CHUNK_SIZE];
+        uint8_t bytesRead = 0;
+        if (chunkSize > 0) {
+            bytesRead = storage_->loadBlobChunk(slot, offset, chunkData, chunkSize);
+        }
+
+        // Build BlobData response: {slot:1, total_length:2, offset:2, chunk_length:1, data[]}
+        builder_.startMessage(getNextSeqNum(), static_cast<uint8_t>(Response::BlobData));
+        builder_.addByte(slot);
+        builder_.addUint16(totalLength);
+        builder_.addUint16(offset);
+        builder_.addByte(bytesRead);
+        for (uint8_t i = 0; i < bytesRead; i++) {
+            builder_.addByte(chunkData[i]);
+        }
+        sendMessage();
+
+        offset += bytesRead;
+    } while (offset < totalLength);
+
+    // If totalLength was 0, we still need to send one empty BlobData response
+    if (totalLength == 0) {
+        builder_.startMessage(getNextSeqNum(), static_cast<uint8_t>(Response::BlobData));
+        builder_.addByte(slot);
+        builder_.addUint16(0);
+        builder_.addUint16(0);
+        builder_.addByte(0);
+        sendMessage();
     }
 }
 
