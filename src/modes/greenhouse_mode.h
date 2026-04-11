@@ -1,8 +1,13 @@
 #pragma once
 
+#include <memory>
+
 #include "../config/curtain_config.h"
+#include "../hal/cht832x.h"
 #include "../hal/curtain_controller.h"
 #include "../hal/pmu_client.h"
+#include "../lora/batch_transmitter.h"
+#include "../storage/sensor_data_record.h"
 #include "../util/greenhouse_state_machine.h"
 #include "application_mode.h"
 
@@ -20,7 +25,14 @@ private:
     bool pmu_available_;
     GreenhouseStateMachine greenhouse_state_;
 
+    // Optional temperature/humidity sensor (auto-detected on I2C at startup)
+    std::unique_ptr<CHT832X> sensor_;
+    std::unique_ptr<BatchTransmitter> transmitter_;
+    SensorDataRecord current_reading_ = {};
+    bool sensor_available_ = false;
+
     void updateGreenhouseState();
+    void readAndTransmitSensorData(uint32_t current_time);
 
 public:
     using ApplicationMode::ApplicationMode;
