@@ -1,5 +1,7 @@
 #include "greenhouse_mode.h"
 
+#include <cstring>
+
 #include "pico/unique_id.h"
 
 #include "hardware/watchdog.h"
@@ -208,6 +210,38 @@ void GreenhouseMode::onLoop()
     updateGreenhouseState();
 }
 
+void GreenhouseMode::onModeSpecificUpdate(const UpdateAvailablePayload *payload,
+                                          uint8_t hub_sequence)
+{
+    UpdateType update_type = static_cast<UpdateType>(payload->update_type);
+
+    switch (update_type) {
+        case UpdateType::ACTUATOR_COMMAND: {
+            const uint8_t *data = payload->payload_data;
+            ActuatorPayload actuator;
+            actuator.actuator_type = data[0];
+            actuator.command = data[1];
+            actuator.param_length = data[2];
+            memset(actuator.params, 0, sizeof(actuator.params));
+            if (actuator.param_length > 0 && actuator.param_length <= sizeof(actuator.params)) {
+                memcpy(actuator.params, &data[3], actuator.param_length);
+            }
+
+            logger.info("  ACTUATOR_COMMAND: type=%u, cmd=%u, params=%u", actuator.actuator_type,
+                        actuator.command, actuator.param_length);
+
+            onActuatorCommand(&actuator);
+            onUpdateApplied(hub_sequence);
+            break;
+        }
+
+        default:
+            logger.error("Unknown update type %d", payload->update_type);
+            onUpdateFailed();
+            break;
+    }
+}
+
 void GreenhouseMode::onActuatorCommand(const ActuatorPayload *payload)
 {
     if (!payload) {
@@ -282,8 +316,12 @@ void GreenhouseMode::onHeartbeatResponse(const HeartbeatResponsePayload *payload
         });
     }
 
-    // Pull any pending updates (actuator commands, wake interval, schedules)
-    if (payload && payload->pending_update_flags != PENDING_FLAG_NONE) {
+    // Pull any pending data updates (actuator commands, wake interval, schedules).
+    // Only CHECK_UPDATES for flags that carry data — REREGISTER, REBOOT, and
+    // FACTORY_RESET are handled by their own protocol flows.
+    constexpr uint8_t DATA_FLAGS =
+        PENDING_FLAG_SCHEDULE | PENDING_FLAG_WAKE_INTERVAL | PENDING_FLAG_ACTUATOR;
+    if (payload && (payload->pending_update_flags & DATA_FLAGS)) {
         logger.info("Pending update flags: 0x%02X, sending CHECK_UPDATES",
                     payload->pending_update_flags);
         sendCheckUpdates();
