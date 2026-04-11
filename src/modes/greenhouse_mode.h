@@ -29,6 +29,7 @@ protected:
     void onStart() override;
     void onLoop() override;
     void onActuatorCommand(const ActuatorPayload *payload) override;
+    void onModeSpecificUpdate(const UpdateAvailablePayload *payload, uint8_t hub_sequence) override;
     void onHeartbeatResponse(const HeartbeatResponsePayload *payload) override;
     void onRebootRequested() override;
     void onFactoryResetRequested() override;

@@ -830,8 +830,15 @@ void HubMode::handleHeartbeat(uint16_t source_addr, const HeartbeatPayload *payl
         return;
     }
 
-    // Compute pending update flags for this node
+    // Compute pending update flags for this node.
+    // Also check the node's assigned address (via device_id lookup) because the node
+    // may be heartbeating from a stale or broadcast address while commands are queued
+    // against its registered address.
     uint8_t pending_flags = hub_router_->getPendingUpdateFlags(source_addr);
+    uint16_t assigned_addr = address_manager_->getDeviceAddress(payload->device_id);
+    if (assigned_addr != 0 && assigned_addr != source_addr) {
+        pending_flags |= hub_router_->getPendingUpdateFlags(assigned_addr);
+    }
 
     // Set REREGISTER flag if the node is unknown or device_id doesn't match
     const NodeInfo *node = address_manager_->getNodeInfo(source_addr);
