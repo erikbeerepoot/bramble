@@ -1,3 +1,5 @@
+import { useState, useRef } from 'react';
+import { format } from 'date-fns';
 import type { SensorReading } from '../types';
 
 interface SparklineProps {
@@ -7,6 +9,10 @@ interface SparklineProps {
   variant?: 'inline' | 'backdrop';
   /** Height in pixels (default: 40 for inline, 100% for backdrop) */
   height?: number;
+  /** Show hover dot + value tooltip on pointer move (inline only) */
+  interactive?: boolean;
+  /** Unit label for hover tooltip (e.g. "°C", "%") */
+  unit?: string;
 }
 
 /** Gap threshold in seconds — break the line if readings are >10 min apart */
@@ -67,34 +73,136 @@ function segmentToAreaPath(seg: PathSegment, height: number): string {
 }
 
 /** Inline sparkline: a small line chart rendered below the reading text */
-function InlineSparkline({ readings, dataKey, color = '#6366f1', height = 40 }: SparklineProps) {
+function InlineSparkline({
+  readings,
+  dataKey,
+  color = '#6366f1',
+  height = 40,
+  interactive = false,
+  unit = '',
+}: SparklineProps) {
   const width = 200;
-  const segments = buildSegments(readings, dataKey, width, height, 4);
+  const paddingY = 4;
+  const segments = buildSegments(readings, dataKey, width, height, paddingY);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
   if (segments.length === 0) return null;
 
+  // Sorted readings mirror buildSegments ordering so indices align for hover lookup
+  const sorted = [...readings].sort((a, b) => a.timestamp - b.timestamp);
+  const values = sorted.map((r) => r[dataKey]);
+  const valMin = Math.min(...values);
+  const valMax = Math.max(...values);
+  const valRange = valMax - valMin || 1;
+  const tMin = sorted[0].timestamp;
+  const tMax = sorted[sorted.length - 1].timestamp;
+  const tRange = tMax - tMin || 1;
+
+  const pointFor = (idx: number) => {
+    const x = ((sorted[idx].timestamp - tMin) / tRange) * width;
+    const y = height - paddingY - ((values[idx] - valMin) / valRange) * (height - paddingY * 2);
+    return { x, y };
+  };
+
+  const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!interactive || !containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const px = event.clientX - rect.left;
+    const hoverX = (px / rect.width) * width;
+    // Find nearest point by x
+    let nearest = 0;
+    let nearestDist = Infinity;
+    for (let i = 0; i < sorted.length; i++) {
+      const x = ((sorted[i].timestamp - tMin) / tRange) * width;
+      const dist = Math.abs(x - hoverX);
+      if (dist < nearestDist) {
+        nearestDist = dist;
+        nearest = i;
+      }
+    }
+    setHoverIdx(nearest);
+  };
+
+  const handlePointerLeave = () => setHoverIdx(null);
+
+  const hover = hoverIdx !== null ? pointFor(hoverIdx) : null;
+  const hoverReading = hoverIdx !== null ? sorted[hoverIdx] : null;
+  const hoverValue = hoverReading ? hoverReading[dataKey] : null;
+  // Position tooltip: flip to left edge if hover is in the right 40%
+  const tooltipLeftPct = hover ? (hover.x / width) * 100 : 0;
+  const tooltipAlignRight = tooltipLeftPct > 60;
+
   return (
-    <svg
-      viewBox={`0 0 ${width} ${height}`}
-      preserveAspectRatio="none"
-      className="w-full"
+    <div
+      ref={containerRef}
+      className="relative w-full"
       style={{ height }}
+      onPointerMove={interactive ? handlePointerMove : undefined}
+      onPointerLeave={interactive ? handlePointerLeave : undefined}
     >
-      {segments.map((seg, i) => (
-        <g key={i}>
-          <path d={segmentToAreaPath(seg, height)} fill={color} opacity={0.12} />
-          <path
-            d={segmentToLinePath(seg)}
-            fill="none"
-            stroke={color}
-            strokeWidth={1.5}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            vectorEffect="non-scaling-stroke"
-          />
-        </g>
-      ))}
-    </svg>
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        preserveAspectRatio="none"
+        className="w-full h-full block"
+      >
+        {segments.map((seg, i) => (
+          <g key={i}>
+            <path d={segmentToAreaPath(seg, height)} fill={color} opacity={0.12} />
+            <path
+              d={segmentToLinePath(seg)}
+              fill="none"
+              stroke={color}
+              strokeWidth={1.5}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              vectorEffect="non-scaling-stroke"
+            />
+          </g>
+        ))}
+        {interactive && hover && (
+          <>
+            <line
+              x1={hover.x}
+              x2={hover.x}
+              y1={0}
+              y2={height}
+              stroke={color}
+              strokeOpacity={0.3}
+              strokeWidth={1}
+              vectorEffect="non-scaling-stroke"
+            />
+            <circle
+              cx={hover.x}
+              cy={hover.y}
+              r={3}
+              fill="white"
+              stroke={color}
+              strokeWidth={2}
+              vectorEffect="non-scaling-stroke"
+            />
+          </>
+        )}
+      </svg>
+      {interactive && hover && hoverReading && hoverValue !== null && (
+        <div
+          className="pointer-events-none absolute top-0 z-10 bg-white/95 border border-gray-200 shadow-sm rounded px-2 py-1 text-xs whitespace-nowrap"
+          style={
+            tooltipAlignRight
+              ? { right: `${100 - tooltipLeftPct}%`, marginRight: 6 }
+              : { left: `${tooltipLeftPct}%`, marginLeft: 6 }
+          }
+        >
+          <div className="font-medium text-gray-900">
+            {hoverValue.toFixed(1)}
+            {unit}
+          </div>
+          <div className="text-gray-500">
+            {format(new Date(hoverReading.timestamp * 1000), 'MMM d, HH:mm')}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
