@@ -31,6 +31,7 @@ import type { CurtainAction } from './CurtainControl';
 import IrrigationControl from './IrrigationControl';
 import NodeNameEditor from './NodeNameEditor';
 import SensorChart from './SensorChart';
+import CompactSensorPanel from './CompactSensorPanel';
 import ErrorEventsTable from './ErrorEventsTable';
 import TimeRangeSelector from './TimeRangeSelector';
 import BatteryGauge from './BatteryGauge';
@@ -677,6 +678,7 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
                 </div>
               ) : (
                 <div className="space-y-6">
+                  <CompactSensorPanel readings={readings} statistics={statistics} />
                   <SensorChart
                     readings={readings}
                     dataKey="temperature_celsius"
