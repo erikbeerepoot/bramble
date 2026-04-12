@@ -1,16 +1,49 @@
-import { TrendingUp, TrendingDown } from 'lucide-react';
 import type { SensorReading, NodeStatistics } from '../types';
 import Sparkline from './Sparkline';
 
 type SensorDataKey = 'temperature_celsius' | 'humidity_percent';
+
+type Trend = 'Steady' | 'Increasing' | 'Decreasing' | 'Fluctuating';
+
+function computeTrend(readings: SensorReading[], dataKey: SensorDataKey): Trend | null {
+  if (readings.length < 3) return null;
+  const sorted = [...readings].sort((a, b) => a.timestamp - b.timestamp);
+  const values = sorted.map((r) => r[dataKey]);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min;
+  const mean = values.reduce((a, b) => a + b, 0) / values.length;
+
+  // "Steady" threshold — small range relative to mean
+  // For temp/humidity, ~0.5 absolute or ~1% relative counts as flat
+  const isSmallRange = range < 0.5 || (mean !== 0 && range / Math.abs(mean) < 0.01);
+  if (isSmallRange) return 'Steady';
+
+  // Linear fit: slope via least squares
+  const n = values.length;
+  const xs = values.map((_, i) => i);
+  const xMean = (n - 1) / 2;
+  let num = 0;
+  let den = 0;
+  for (let i = 0; i < n; i++) {
+    num += (xs[i] - xMean) * (values[i] - mean);
+    den += (xs[i] - xMean) ** 2;
+  }
+  const slope = den === 0 ? 0 : num / den;
+  const netChange = slope * (n - 1);
+
+  // If the net linear change accounts for >50% of the observed range, it's trending
+  if (Math.abs(netChange) > range * 0.5) {
+    return netChange > 0 ? 'Increasing' : 'Decreasing';
+  }
+  return 'Fluctuating';
+}
 
 interface CompactSensorCardProps {
   label: string;
   unit: string;
   dataKey: SensorDataKey;
   readings: SensorReading[];
-  min: number | null;
-  max: number | null;
   color: string;
   bgClassName: string;
   borderClassName: string;
@@ -22,8 +55,6 @@ function CompactSensorCard({
   unit,
   dataKey,
   readings,
-  min,
-  max,
   color,
   bgClassName,
   borderClassName,
@@ -31,48 +62,37 @@ function CompactSensorCard({
 }: CompactSensorCardProps) {
   const sorted = [...readings].sort((a, b) => a.timestamp - b.timestamp);
   const latest = sorted[sorted.length - 1]?.[dataKey];
-  const first = sorted[0]?.[dataKey];
-  const hasTrend = sorted.length >= 2 && typeof latest === 'number' && typeof first === 'number';
-  const delta = hasTrend ? latest - first : 0;
-  const trendUp = delta >= 0;
+  const trend = computeTrend(readings, dataKey);
 
   return (
-    <div className={`p-4 rounded-xl border ${bgClassName} ${borderClassName}`}>
+    <div
+      className={`p-4 rounded-xl border ${bgClassName} ${borderClassName} transition-shadow duration-150 hover:shadow-md`}
+    >
       <div className="flex items-start justify-between mb-2">
         <div>
           <div className="text-xs text-gray-600 mb-0.5">{label}</div>
-          <div className="flex items-baseline gap-2">
+          <div className="flex items-baseline gap-1">
             <span className="text-2xl font-semibold text-gray-900">
               {typeof latest === 'number' ? latest.toFixed(decimals) : '-'}
-              <span className="text-base font-normal text-gray-500 ml-0.5">{unit}</span>
             </span>
-            {hasTrend && (
-              <div
-                className={`flex items-center gap-0.5 ${
-                  trendUp ? 'text-green-600' : 'text-red-600'
-                }`}
-              >
-                {trendUp ? (
-                  <TrendingUp className="w-3 h-3" />
-                ) : (
-                  <TrendingDown className="w-3 h-3" />
-                )}
-                <span className="text-xs font-medium">
-                  {trendUp ? '+' : ''}
-                  {delta.toFixed(decimals)}
-                  {unit === '°C' ? '°' : unit}
-                </span>
-              </div>
-            )}
+            <span className="text-base text-gray-500">{unit}</span>
           </div>
         </div>
-        <div className="text-right text-xs text-gray-500 shrink-0">
-          <div>Min: {min !== null ? min.toFixed(decimals) : '-'}</div>
-          <div>Max: {max !== null ? max.toFixed(decimals) : '-'}</div>
-        </div>
+        {trend && (
+          <span className="text-xs text-gray-500 mt-0.5" style={{ color }}>
+            {trend}
+          </span>
+        )}
       </div>
-      <div className="h-16 -mx-1">
-        <Sparkline readings={readings} dataKey={dataKey} color={color} height={64} />
+      <div className="h-20 -mx-1">
+        <Sparkline
+          readings={readings}
+          dataKey={dataKey}
+          color={color}
+          height={80}
+          interactive
+          unit={unit}
+        />
       </div>
     </div>
   );
@@ -80,10 +100,11 @@ function CompactSensorCard({
 
 interface CompactSensorPanelProps {
   readings: SensorReading[];
-  statistics: NodeStatistics | null;
+  // Kept for API compatibility / future use (e.g. stats-based labels)
+  statistics?: NodeStatistics | null;
 }
 
-function CompactSensorPanel({ readings, statistics }: CompactSensorPanelProps) {
+function CompactSensorPanel({ readings }: CompactSensorPanelProps) {
   if (readings.length === 0) return null;
 
   return (
@@ -93,8 +114,6 @@ function CompactSensorPanel({ readings, statistics }: CompactSensorPanelProps) {
         unit="°C"
         dataKey="temperature_celsius"
         readings={readings}
-        min={statistics?.temperature.min_celsius ?? null}
-        max={statistics?.temperature.max_celsius ?? null}
         color="#f97316"
         bgClassName="bg-gradient-to-br from-orange-50 to-white"
         borderClassName="border-orange-100"
@@ -104,8 +123,6 @@ function CompactSensorPanel({ readings, statistics }: CompactSensorPanelProps) {
         unit="%"
         dataKey="humidity_percent"
         readings={readings}
-        min={statistics?.humidity.min_percent ?? null}
-        max={statistics?.humidity.max_percent ?? null}
         color="#3b82f6"
         bgClassName="bg-gradient-to-br from-blue-50 to-white"
         borderClassName="border-blue-100"
