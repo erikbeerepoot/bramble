@@ -1,6 +1,7 @@
 #include "hub_router.h"
 
 #include <cstring>
+#include <utility>
 
 #include "pico/stdlib.h"
 
@@ -451,6 +452,31 @@ void HubRouter::handleCheckUpdates(uint16_t node_addr, uint8_t node_sequence)
 {
     auto &state = node_updates_[node_addr];
     state.last_check_time = bramble::util::time::currentTimeMs();
+
+    // If the node's sequence is at or ahead of our counter, the hub was likely
+    // restarted (or we've never assigned a sequence to this node before). Bump
+    // our counter above the node's and re-sequence any pending updates so they
+    // land in the node's "not yet processed" window. Without this, newly queued
+    // updates have low sequence numbers that the node (and the pop loop below)
+    // will treat as already-processed, silently discarding them.
+    if (node_sequence >= state.next_sequence && !state.pending_updates.empty()) {
+        uint8_t new_seq = static_cast<uint8_t>(node_sequence + 1);
+        std::queue<PendingUpdate> requeued;
+        size_t count = state.pending_updates.size();
+        while (!state.pending_updates.empty()) {
+            PendingUpdate update = state.pending_updates.front();
+            state.pending_updates.pop();
+            update.sequence = new_seq++;
+            requeued.push(update);
+        }
+        state.pending_updates = std::move(requeued);
+        state.next_sequence = new_seq;
+        logger.info("Node 0x%04X: resequenced %zu pending updates above node_seq=%d", node_addr,
+                    count, node_sequence);
+    } else if (node_sequence >= state.next_sequence) {
+        // No queued updates; just advance our counter so future queues are safe.
+        state.next_sequence = static_cast<uint8_t>(node_sequence + 1);
+    }
 
     // Remove updates that the node has already processed
     // Node sequence indicates the last update the node successfully applied
