@@ -186,8 +186,8 @@ struct __attribute__((packed)) EventPayload {
 // Event code ranges (by category)
 // 0x0100-0x01FF: Curtain/greenhouse events
 enum EventCode {
-    EVENT_CURTAIN_OPENED = 0x0100,
-    EVENT_CURTAIN_CLOSED = 0x0101,
+    EVENT_CURTAIN_OPENING = 0x0100,
+    EVENT_CURTAIN_CLOSING = 0x0101,
     EVENT_CURTAIN_STOPPED = 0x0102,
     EVENT_MOTOR_ERROR = 0x0103,
     EVENT_CALIBRATION_COMPLETE = 0x0104,

@@ -43,8 +43,8 @@ import { REFRESH_INTERVAL_MS } from '../config';
 import { EventCode } from '../types';
 
 const ACTION_TO_EVENT_CODE: Record<CurtainAction, number> = {
-  open: EventCode.EVENT_CURTAIN_OPENED,
-  close: EventCode.EVENT_CURTAIN_CLOSED,
+  open: EventCode.EVENT_CURTAIN_OPENING,
+  close: EventCode.EVENT_CURTAIN_CLOSING,
   stop: EventCode.EVENT_CURTAIN_STOPPED,
 };
 
@@ -183,8 +183,7 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
     if (!pendingEvent || pendingEvent.status !== 'pending') return;
     const match = events.find(
       (e) =>
-        e.event_code === pendingEvent.expectedEventCode &&
-        e.timestamp >= pendingEvent.createdAt - 5
+        e.event_code === pendingEvent.expectedEventCode && e.timestamp >= pendingEvent.createdAt - 5
     );
     if (match) {
       setPendingEvent((prev) => (prev ? { ...prev, status: 'confirmed' } : null));
@@ -210,7 +209,6 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
     },
     [fetchEvents]
   );
-
 
   const handleMetadataUpdate = (metadata: NodeMetadata) => {
     onUpdate({
@@ -703,11 +701,7 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
             </div>
           )}
 
-          <RecentEvents
-            events={events}
-            loading={loadingEvents}
-            pendingEvent={pendingEvent}
-          />
+          <RecentEvents events={events} loading={loadingEvents} pendingEvent={pendingEvent} />
         </div>
       </div>
 

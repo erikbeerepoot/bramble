@@ -27,8 +27,8 @@ class EventType(IntEnum):
 
 
 class EventCode(IntEnum):
-    EVENT_CURTAIN_OPENED = 0x0100
-    EVENT_CURTAIN_CLOSED = 0x0101
+    EVENT_CURTAIN_OPENING = 0x0100
+    EVENT_CURTAIN_CLOSING = 0x0101
     EVENT_CURTAIN_STOPPED = 0x0102
     EVENT_MOTOR_ERROR = 0x0103
     EVENT_CALIBRATION_COMPLETE = 0x0104
@@ -55,8 +55,8 @@ EVENT_CODE_NAMES: dict[int, str] = {
     0x74: "Valve Timer Close",
     0x75: "Valve Open",
     0x76: "Valve Close",
-    0x0100: "Curtain Opened",
-    0x0101: "Curtain Closed",
+    0x0100: "Curtain Opening",
+    0x0101: "Curtain Closing",
     0x0102: "Curtain Stopped",
     0x0103: "Motor Error",
     0x0104: "Calibration Complete",

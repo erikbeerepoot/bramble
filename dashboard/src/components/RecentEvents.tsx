@@ -37,9 +37,9 @@ export interface PendingEvent {
 }
 
 const PENDING_EVENT_LABELS: Record<CurtainAction, string> = {
-  open: 'Curtain Opened',
-  close: 'Curtain Closed',
-  stop: 'Curtain Stopped',
+  open: 'Curtain Open',
+  close: 'Curtain Close',
+  stop: 'Curtain Stop',
 };
 
 interface RecentEventsProps {
@@ -163,12 +163,12 @@ const EVENT_VISUALS: Record<number, EventVisual> = {
     bgColor: 'bg-gray-50',
   },
   // Curtain
-  [EventCode.EVENT_CURTAIN_OPENED]: {
+  [EventCode.EVENT_CURTAIN_OPENING]: {
     icon: ArrowUpFromLine,
     color: 'text-emerald-600',
     bgColor: 'bg-emerald-50',
   },
-  [EventCode.EVENT_CURTAIN_CLOSED]: {
+  [EventCode.EVENT_CURTAIN_CLOSING]: {
     icon: ArrowDownFromLine,
     color: 'text-gray-600',
     bgColor: 'bg-gray-50',
@@ -232,10 +232,7 @@ function PendingEventIcon({ status }: { status: 'pending' | 'confirmed' }) {
           <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
         </motion.div>
       ) : (
-        <motion.div
-          key="confirmed"
-          className="relative w-6 h-6 flex items-center justify-center"
-        >
+        <motion.div key="confirmed" className="relative w-6 h-6 flex items-center justify-center">
           <motion.div
             initial={{ scale: 0, opacity: 0.6 }}
             animate={{ scale: 1.4, opacity: 0 }}
@@ -355,7 +352,7 @@ export function RecentEvents({ events, loading, pendingEvent }: RecentEventsProp
                               {PENDING_EVENT_LABELS[pendingEvent.action]}
                             </span>
                             <span className="text-xs text-gray-400">
-                              {pendingEvent.status === 'pending' ? 'Awaiting...' : 'Confirmed'}
+                              {pendingEvent.status === 'pending' ? 'Pending...' : 'Confirmed'}
                             </span>
                           </div>
                         </div>
@@ -368,8 +365,7 @@ export function RecentEvents({ events, loading, pendingEvent }: RecentEventsProp
                   const visual = EVENT_VISUALS[event.event_code] ?? DEFAULT_VISUAL;
                   const Icon = visual.icon;
                   const adjustedIndex = pendingEvent && day === 'Today' ? index + 1 : index;
-                  const totalItems =
-                    dayEvents.length + (pendingEvent && day === 'Today' ? 1 : 0);
+                  const totalItems = dayEvents.length + (pendingEvent && day === 'Today' ? 1 : 0);
                   return (
                     <div
                       key={`${event.timestamp}-${event.event_code}-${index}`}
