@@ -123,6 +123,7 @@ Each variant produces a uniquely-named executable (e.g., `bramble_sensor`, `bram
 * **Never commit directly to main/master** - always create a feature branch first
 * Branch naming: use descriptive names like `feature/add-logging`, `fix/valve-timing`, `refactor/cleanup-hal`
 * After completing work on a branch, create a pull request and merge it (no approval required)
+* **Always rebase, never merge** — use `git rebase` to integrate branches, keeping a linear history
 * Keep commits atomic and focused on a single logical change
 * The `VERSION` file is updated automatically by a commit hook — don't commit it separately
 
