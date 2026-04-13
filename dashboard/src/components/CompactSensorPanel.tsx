@@ -48,6 +48,8 @@ interface CompactSensorCardProps {
   bgClassName: string;
   borderClassName: string;
   decimals?: number;
+  startTime?: number;
+  endTime?: number;
 }
 
 function CompactSensorCard({
@@ -59,6 +61,8 @@ function CompactSensorCard({
   bgClassName,
   borderClassName,
   decimals = 1,
+  startTime,
+  endTime,
 }: CompactSensorCardProps) {
   const sorted = [...readings].sort((a, b) => a.timestamp - b.timestamp);
   const latest = sorted[sorted.length - 1]?.[dataKey];
@@ -92,6 +96,8 @@ function CompactSensorCard({
           height={80}
           interactive
           unit={unit}
+          startTime={startTime}
+          endTime={endTime}
         />
       </div>
     </div>
@@ -102,9 +108,11 @@ interface CompactSensorPanelProps {
   readings: SensorReading[];
   // Kept for API compatibility / future use (e.g. stats-based labels)
   statistics?: NodeStatistics | null;
+  startTime?: number;
+  endTime?: number;
 }
 
-function CompactSensorPanel({ readings }: CompactSensorPanelProps) {
+function CompactSensorPanel({ readings, startTime, endTime }: CompactSensorPanelProps) {
   if (readings.length === 0) return null;
 
   return (
@@ -117,6 +125,8 @@ function CompactSensorPanel({ readings }: CompactSensorPanelProps) {
         color="#f97316"
         bgClassName="bg-gradient-to-br from-orange-50 to-white"
         borderClassName="border-orange-100"
+        startTime={startTime}
+        endTime={endTime}
       />
       <CompactSensorCard
         label="Humidity"
@@ -126,6 +136,8 @@ function CompactSensorPanel({ readings }: CompactSensorPanelProps) {
         color="#3b82f6"
         bgClassName="bg-gradient-to-br from-blue-50 to-white"
         borderClassName="border-blue-100"
+        startTime={startTime}
+        endTime={endTime}
       />
     </div>
   );

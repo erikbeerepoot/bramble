@@ -13,6 +13,11 @@ interface SparklineProps {
   interactive?: boolean;
   /** Unit label for hover tooltip (e.g. "°C", "%") */
   unit?: string;
+  /** Optional fixed time window for x-axis scaling (unix seconds).
+   *  When provided, the chart x-axis spans this window instead of
+   *  the data's own min/max timestamps. */
+  startTime?: number;
+  endTime?: number;
 }
 
 /** Gap threshold in seconds — break the line if readings are >10 min apart */
@@ -27,7 +32,9 @@ function buildSegments(
   dataKey: 'temperature_celsius' | 'humidity_percent',
   width: number,
   height: number,
-  paddingY: number
+  paddingY: number,
+  tStart?: number,
+  tEnd?: number
 ): PathSegment[] {
   if (readings.length < 2) return [];
 
@@ -37,8 +44,8 @@ function buildSegments(
   const max = Math.max(...values);
   const range = max - min || 1;
 
-  const tMin = sorted[0].timestamp;
-  const tMax = sorted[sorted.length - 1].timestamp;
+  const tMin = tStart ?? sorted[0].timestamp;
+  const tMax = tEnd ?? sorted[sorted.length - 1].timestamp;
   const tRange = tMax - tMin || 1;
 
   const segments: PathSegment[] = [];
@@ -80,10 +87,12 @@ function InlineSparkline({
   height = 40,
   interactive = false,
   unit = '',
+  startTime,
+  endTime,
 }: SparklineProps) {
   const width = 200;
   const paddingY = 4;
-  const segments = buildSegments(readings, dataKey, width, height, paddingY);
+  const segments = buildSegments(readings, dataKey, width, height, paddingY, startTime, endTime);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
@@ -95,8 +104,8 @@ function InlineSparkline({
   const valMin = Math.min(...values);
   const valMax = Math.max(...values);
   const valRange = valMax - valMin || 1;
-  const tMin = sorted[0].timestamp;
-  const tMax = sorted[sorted.length - 1].timestamp;
+  const tMin = startTime ?? sorted[0].timestamp;
+  const tMax = endTime ?? sorted[sorted.length - 1].timestamp;
   const tRange = tMax - tMin || 1;
 
   const pointFor = (idx: number) => {
@@ -207,10 +216,16 @@ function InlineSparkline({
 }
 
 /** Backdrop sparkline: a semi-transparent area chart filling the card background */
-function BackdropSparkline({ readings, dataKey, color = '#6366f1' }: SparklineProps) {
+function BackdropSparkline({
+  readings,
+  dataKey,
+  color = '#6366f1',
+  startTime,
+  endTime,
+}: SparklineProps) {
   const width = 400;
   const height = 120;
-  const segments = buildSegments(readings, dataKey, width, height, 8);
+  const segments = buildSegments(readings, dataKey, width, height, 8, startTime, endTime);
 
   if (segments.length === 0) return null;
 

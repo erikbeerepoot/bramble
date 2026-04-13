@@ -34,6 +34,9 @@ function NodeCard({ node, zone, onClick }: NodeCardProps) {
   const health = getOverallNodeHealth(node);
   const [reading, setReading] = useState<SensorReading | null>(null);
   const [sparklineData, setSparklineData] = useState<SensorReading[]>([]);
+  const [sparklineWindow, setSparklineWindow] = useState<{ start: number; end: number } | null>(
+    null
+  );
 
   useEffect(() => {
     if (node.online && (node.type === NodeType.SENSOR || node.type === NodeType.GREENHOUSE)) {
@@ -41,6 +44,7 @@ function NodeCard({ node, zone, onClick }: NodeCardProps) {
 
       const now = Math.floor(Date.now() / 1000);
       const startTime = now - SPARKLINE_HOURS * 3600;
+      setSparklineWindow({ start: startTime, end: now });
       getNodeSensorData(node.device_id, {
         startTime,
         downsample: 120, // ~3 points per hour = ~18 points for 6h
@@ -82,6 +86,8 @@ function NodeCard({ node, zone, onClick }: NodeCardProps) {
           dataKey="temperature_celsius"
           variant="backdrop"
           color="#6366f1"
+          startTime={sparklineWindow?.start}
+          endTime={sparklineWindow?.end}
         />
       )}
 
