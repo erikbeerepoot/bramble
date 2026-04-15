@@ -72,7 +72,8 @@ const EVENT_VISUALS: Record<number, EventVisual> = {
     color: 'text-amber-600',
     bgColor: 'bg-amber-50',
   },
-  [EventType.SLEEP_ENTER]: { icon: Moon, color: 'text-gray-600', bgColor: 'bg-gray-50' },
+  [EventType.WAKE]: { icon: Moon, color: 'text-gray-500', bgColor: 'bg-gray-50' },
+  [EventType.SLEEP_ENTER]: { icon: Moon, color: 'text-gray-500', bgColor: 'bg-gray-50' },
   // Sensor
   [EventType.SENSOR_INIT_OK]: {
     icon: Activity,
@@ -256,6 +257,53 @@ function PendingEventIcon({ status }: { status: 'pending' | 'confirmed' }) {
   );
 }
 
+// Event codes that collapse into summary rows (per-wake-cycle noise).
+const WAKE_CYCLE_CODES = new Set<number>([EventType.WAKE, EventType.SLEEP_ENTER]);
+
+type RenderItem =
+  | { kind: 'event'; event: NodeEvent }
+  | {
+      kind: 'collapsed';
+      events: NodeEvent[]; // consecutive run of WAKE/SLEEP_ENTER
+    };
+
+function collapseWakeCycles(dayEvents: NodeEvent[]): RenderItem[] {
+  const items: RenderItem[] = [];
+  let run: NodeEvent[] = [];
+  const flush = () => {
+    if (run.length === 0) return;
+    if (run.length === 1) {
+      items.push({ kind: 'event', event: run[0] });
+    } else {
+      items.push({ kind: 'collapsed', events: run });
+    }
+    run = [];
+  };
+  for (const event of dayEvents) {
+    if (WAKE_CYCLE_CODES.has(event.event_code)) {
+      run.push(event);
+    } else {
+      flush();
+      items.push({ kind: 'event', event });
+    }
+  }
+  flush();
+  return items;
+}
+
+function formatCollapsedLabel(events: NodeEvent[]): string {
+  const wakes = events.filter((e) => e.event_code === EventType.WAKE).length;
+  const sleeps = events.filter((e) => e.event_code === EventType.SLEEP_ENTER).length;
+  const fullCycles = Math.min(wakes, sleeps);
+  const leftover = events.length - fullCycles * 2;
+  if (fullCycles === 0) {
+    // Only wakes or only sleeps — unusual; just show count.
+    return `${events.length} wake/sleep events`;
+  }
+  const cycleLabel = fullCycles === 1 ? '1 wake/sleep cycle' : `${fullCycles} wake/sleep cycles`;
+  return leftover > 0 ? `${cycleLabel} + ${leftover}` : cycleLabel;
+}
+
 export function RecentEvents({ events, loading, pendingEvent }: RecentEventsProps) {
   // Filter out the real event that matches the pending one to avoid duplicates
   const filteredEvents = pendingEvent
@@ -361,39 +409,93 @@ export function RecentEvents({ events, loading, pendingEvent }: RecentEventsProp
                   )}
                 </AnimatePresence>
 
-                {dayEvents.map((event, index) => {
-                  const visual = EVENT_VISUALS[event.event_code] ?? DEFAULT_VISUAL;
-                  const Icon = visual.icon;
-                  const adjustedIndex = pendingEvent && day === 'Today' ? index + 1 : index;
-                  const totalItems = dayEvents.length + (pendingEvent && day === 'Today' ? 1 : 0);
-                  return (
-                    <div
-                      key={`${event.timestamp}-${event.event_code}-${index}`}
-                      className="event-item group relative flex items-start gap-2.5 py-1.5 px-1.5 rounded-md hover:bg-gray-50 transition-colors"
-                      style={{ animationDelay: `${index * 30}ms` }}
-                    >
-                      <div className="relative flex-shrink-0 mt-px">
-                        <div
-                          className={`w-6 h-6 rounded-full ${visual.bgColor} flex items-center justify-center`}
-                        >
-                          <Icon className={`w-3 h-3 ${visual.color}`} />
-                        </div>
-                        {adjustedIndex < totalItems - 1 && (
-                          <div className="absolute top-7 left-1/2 -translate-x-px w-px h-2.5 bg-gray-200" />
-                        )}
-                      </div>
+                {(() => {
+                  const renderItems = collapseWakeCycles(dayEvents);
+                  return renderItems.map((item, index) => {
+                    const adjustedIndex =
+                      pendingEvent && day === 'Today' ? index + 1 : index;
+                    const totalItems =
+                      renderItems.length + (pendingEvent && day === 'Today' ? 1 : 0);
+                    const isLast = adjustedIndex >= totalItems - 1;
 
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between gap-2 mb-px">
-                          <span className="text-sm font-medium text-gray-900">
-                            {getEventName(event.event_code)}
-                          </span>
-                          <CopyableTimestamp timestamp={event.timestamp} />
+                    if (item.kind === 'collapsed') {
+                      // Use the most recent event's timestamp (events are typically reverse-chron).
+                      const first = item.events[0];
+                      const last = item.events[item.events.length - 1];
+                      // Times can be in either order; pick the older/newer by value.
+                      const olderTs = Math.min(first.timestamp, last.timestamp);
+                      const newerTs = Math.max(first.timestamp, last.timestamp);
+                      const visual = EVENT_VISUALS[EventType.WAKE] ?? DEFAULT_VISUAL;
+                      const Icon = visual.icon;
+                      return (
+                        <div
+                          key={`collapsed-${olderTs}-${newerTs}-${index}`}
+                          className="event-item group relative flex items-start gap-2.5 py-1.5 px-1.5 rounded-md hover:bg-gray-50 transition-colors"
+                          style={{ animationDelay: `${index * 30}ms` }}
+                        >
+                          <div className="relative flex-shrink-0 mt-px">
+                            <div
+                              className={`w-6 h-6 rounded-full ${visual.bgColor} flex items-center justify-center`}
+                            >
+                              <Icon className={`w-3 h-3 ${visual.color}`} />
+                            </div>
+                            {!isLast && (
+                              <div className="absolute top-7 left-1/2 -translate-x-px w-px h-2.5 bg-gray-200" />
+                            )}
+                          </div>
+
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-start justify-between gap-2 mb-px">
+                              <span className="text-sm font-medium text-gray-500">
+                                {formatCollapsedLabel(item.events)}
+                              </span>
+                              <span
+                                className="text-xs text-gray-400 font-mono"
+                                title={`${new Date(olderTs * 1000).toISOString()} – ${new Date(
+                                  newerTs * 1000
+                                ).toISOString()}`}
+                              >
+                                {format(new Date(olderTs * 1000), 'HH:mm')} –{' '}
+                                {format(new Date(newerTs * 1000), 'HH:mm')}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    const event = item.event;
+                    const visual = EVENT_VISUALS[event.event_code] ?? DEFAULT_VISUAL;
+                    const Icon = visual.icon;
+                    return (
+                      <div
+                        key={`${event.timestamp}-${event.event_code}-${index}`}
+                        className="event-item group relative flex items-start gap-2.5 py-1.5 px-1.5 rounded-md hover:bg-gray-50 transition-colors"
+                        style={{ animationDelay: `${index * 30}ms` }}
+                      >
+                        <div className="relative flex-shrink-0 mt-px">
+                          <div
+                            className={`w-6 h-6 rounded-full ${visual.bgColor} flex items-center justify-center`}
+                          >
+                            <Icon className={`w-3 h-3 ${visual.color}`} />
+                          </div>
+                          {!isLast && (
+                            <div className="absolute top-7 left-1/2 -translate-x-px w-px h-2.5 bg-gray-200" />
+                          )}
+                        </div>
+
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start justify-between gap-2 mb-px">
+                            <span className="text-sm font-medium text-gray-900">
+                              {getEventName(event.event_code)}
+                            </span>
+                            <CopyableTimestamp timestamp={event.timestamp} />
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  });
+                })()}
               </div>
             </div>
           ))}
