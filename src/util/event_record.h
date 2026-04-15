@@ -11,6 +11,7 @@ enum class EventType : uint8_t {
     // 0x1_ System
     BOOT_COLD = 0x10,
     BOOT_WATCHDOG = 0x11,
+    WAKE = 0x12,  // Warm boot from PMU sleep (RP2350 was power-cycled but PMU state restored)
 
     // 0x2_ Sensor
     SENSOR_INIT_OK = 0x20,

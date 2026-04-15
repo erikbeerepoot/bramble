@@ -116,6 +116,16 @@ protected:
     virtual void onStart() {}
 
     /**
+     * @brief Whether this mode defers the non-watchdog boot event to its own logic.
+     *
+     * Default: false — ApplicationMode::run() records BOOT_COLD for non-watchdog
+     * boots. PMU-using modes override to return true and record WAKE (warm boot
+     * from PMU sleep) or BOOT_COLD (no valid PMU state) themselves once state
+     * restore completes.
+     */
+    virtual bool defersBootEvent() const { return false; }
+
+    /**
      * @brief Called on each iteration of the main loop
      */
     virtual void onLoop() {}
