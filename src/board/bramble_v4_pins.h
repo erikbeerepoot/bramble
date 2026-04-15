@@ -125,7 +125,7 @@ constexpr uint8_t VALVE_PINS[NUM_VALVES] = {
 // --- Curtain motor pins (greenhouse variant, J7 header) ---
 // Relay-based motor reversing: one GPIO per direction
 // Silkscreen labels GPIO31/GPIO30 (v3 numbering); real RP2350B GPIOs are 39/38
-constexpr uint8_t PIN_CURTAIN_OPEN = J7::PIN_7;   // silkscreen GPIO31 → actual GPIO 39
-constexpr uint8_t PIN_CURTAIN_CLOSE = J7::PIN_8;  // silkscreen GPIO30 → actual GPIO 38
+constexpr uint8_t PIN_CURTAIN_OPEN = J7::PIN_6;   // J7 pin 6 → GPIO 40
+constexpr uint8_t PIN_CURTAIN_CLOSE = J7::PIN_8;  // J7 pin 8 → GPIO 38
 
 }  // namespace Board
