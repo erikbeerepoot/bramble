@@ -202,11 +202,15 @@ void IrrigationMode::onStateChange(IrrigationState state)
             // Set callback to advance SM when response arrives
             // Address is persisted via PMU state blob at sleep time (packState),
             // not flash — flash writes disrupt XIP cache on RP2350 and crash here.
+            // Do NOT clear the callback from within itself — that destroys the
+            // currently-executing std::function target, invalidating captured `this`
+            // and causing UAF on any subsequent member access. The state machine's
+            // state guard already rejects stale re-fires, and this callback is
+            // overwritten next time AWAITING_REGISTRATION is entered.
             messenger_.setRegistrationSuccessCallback([this](uint16_t new_address) {
                 logger.info("Re-registration assigned address 0x%04X", new_address);
                 // Reset update sequence — hub starts fresh for new address
                 update_state_.current_sequence = 0;
-                messenger_.setRegistrationSuccessCallback(nullptr);
                 irrigation_state_.reportReregistrationComplete();
             });
             break;
