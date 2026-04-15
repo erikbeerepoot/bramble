@@ -116,6 +116,7 @@ void IrrigationMode::onStart()
             if (!success) {
                 pmu_logger.error("ClearToSend failed: %d", static_cast<int>(error));
                 // Proceed without PMU state — close all valves to establish known state
+                event_log_.record(EventType::BOOT_COLD, 0, 0);
                 valve_controller_.closeAllValves();
                 irrigation_state_.markInitialized();
             } else {
@@ -125,6 +126,7 @@ void IrrigationMode::onStart()
                 wake_timeout_id_ = task_queue_.postDelayed(
                     [this](uint32_t) -> bool {
                         pmu_logger.warn("WakeNotification timeout - proceeding without PMU state");
+                        event_log_.record(EventType::BOOT_COLD, 0, 0);
                         valve_controller_.closeAllValves();
                         wake_timeout_id_ = 0;
                         irrigation_state_.markInitialized();
@@ -136,6 +138,7 @@ void IrrigationMode::onStart()
     } else {
         logger.warn("PMU client not available - running without power management");
         // No PMU — close all valves to establish known state
+        event_log_.record(EventType::BOOT_COLD, 0, 0);
         valve_controller_.closeAllValves();
         irrigation_state_.markInitialized();
     }
@@ -328,10 +331,12 @@ void IrrigationMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEn
 
     if (restored) {
         pmu_logger.info("State restored from PMU");
+        event_log_.record(EventType::WAKE, 0, 0);
         // Re-evaluate registration need based on restored address
         needs_registration_ = (messenger_.getNodeAddress() == ADDRESS_UNREGISTERED);
     } else {
         pmu_logger.info("Cold start - no persisted state");
+        event_log_.record(EventType::BOOT_COLD, 0, 0);
         valve_controller_.closeAllValves();
     }
 

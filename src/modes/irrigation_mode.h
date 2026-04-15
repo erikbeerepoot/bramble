@@ -110,6 +110,7 @@ public:
 protected:
     void onStart() override;
     void onLoop() override;
+    bool defersBootEvent() const override { return true; }
     void onActuatorCommand(const ActuatorPayload *payload) override;
     void onHeartbeatResponse(const HeartbeatResponsePayload *payload) override;
     void onReregistrationRequested() override;

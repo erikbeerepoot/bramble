@@ -3,6 +3,7 @@
 export const EventType = {
   BOOT_COLD: 0x10,
   BOOT_WATCHDOG: 0x11,
+  WAKE: 0x12,
   SENSOR_INIT_OK: 0x20,
   SENSOR_INIT_FAIL: 0x21,
   SENSOR_READ_OK: 0x22,
@@ -34,6 +35,7 @@ export const EventCode = {
 export const EVENT_CODE_NAMES: Record<number, string> = {
   0x10: 'Boot Cold',
   0x11: 'Boot Watchdog',
+  0x12: 'Wake',
   0x20: 'Sensor Init Ok',
   0x21: 'Sensor Init Fail',
   0x22: 'Sensor Read Ok',

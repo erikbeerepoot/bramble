@@ -26,7 +26,10 @@ void ApplicationMode::run()
     // Record boot event — watchdog_caused_reboot() is only valid before watchdog_enable()
     if (watchdog_caused_reboot()) {
         event_log_.record(EventType::BOOT_WATCHDOG, 1, 0);
-    } else {
+    } else if (!defersBootEvent()) {
+        // Modes that don't differentiate cold-vs-warm boot get BOOT_COLD here.
+        // PMU-using modes override defersBootEvent() and record WAKE/BOOT_COLD
+        // themselves once state-restore validity is known.
         event_log_.record(EventType::BOOT_COLD, 0, 0);
     }
 
