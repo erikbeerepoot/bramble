@@ -162,16 +162,65 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
     };
   }, [fetchData]);
 
+  const EVENT_WINDOW_SECONDS = 3600; // 1 hour per window
+  const [hasMoreEvents, setHasMoreEvents] = useState(true);
+  const [loadingMoreEvents, setLoadingMoreEvents] = useState(false);
+
+  const eventKey = (e: NodeEvent) => `${e.timestamp}-${e.event_code}-${e.data_hex ?? ''}`;
+
+  const mergeEvents = (fresh: NodeEvent[], prev: NodeEvent[]): NodeEvent[] => {
+    const seen = new Set<string>();
+    const merged: NodeEvent[] = [];
+    for (const e of fresh) {
+      const k = eventKey(e);
+      if (!seen.has(k)) { seen.add(k); merged.push(e); }
+    }
+    for (const e of prev) {
+      const k = eventKey(e);
+      if (!seen.has(k)) { seen.add(k); merged.push(e); }
+    }
+    merged.sort((a, b) => b.timestamp - a.timestamp);
+    return merged;
+  };
+
+  // Refresh: fetch the latest window and merge with any older loaded events.
   const fetchEvents = useCallback(async () => {
     try {
-      const response = await getNodeEvents(node.device_id, { limit: 200 });
-      setEvents(response.events);
+      const now = Math.floor(Date.now() / 1000);
+      const response = await getNodeEvents(node.device_id, {
+        startTime: now - EVENT_WINDOW_SECONDS,
+        limit: 1000,
+      });
+      setEvents((prev) => mergeEvents(response.events, prev));
     } catch {
       // Silently fail — events are informational
     } finally {
       setLoadingEvents(false);
     }
   }, [node.device_id]);
+
+  // Load older: extend backward by one window from the oldest loaded event.
+  const loadOlderEvents = useCallback(async () => {
+    if (loadingMoreEvents || !hasMoreEvents || events.length === 0) return;
+    setLoadingMoreEvents(true);
+    try {
+      const oldest = events[events.length - 1].timestamp;
+      const response = await getNodeEvents(node.device_id, {
+        startTime: oldest - EVENT_WINDOW_SECONDS,
+        endTime: oldest - 1,
+        limit: 1000,
+      });
+      if (response.events.length === 0) {
+        setHasMoreEvents(false);
+      } else {
+        setEvents((prev) => mergeEvents(response.events, prev));
+      }
+    } catch {
+      // Silently fail — events are informational
+    } finally {
+      setLoadingMoreEvents(false);
+    }
+  }, [node.device_id, events, hasMoreEvents, loadingMoreEvents]);
 
   useEffect(() => {
     fetchEvents();
@@ -708,7 +757,14 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
             </div>
           )}
 
-          <RecentEvents events={events} loading={loadingEvents} pendingEvent={pendingEvent} />
+          <RecentEvents
+            events={events}
+            loading={loadingEvents}
+            pendingEvent={pendingEvent}
+            onLoadMore={loadOlderEvents}
+            hasMore={hasMoreEvents}
+            loadingMore={loadingMoreEvents}
+          />
         </div>
       </div>
 
