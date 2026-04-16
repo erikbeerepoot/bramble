@@ -46,6 +46,9 @@ interface RecentEventsProps {
   events: NodeEvent[];
   loading: boolean;
   pendingEvent?: PendingEvent | null;
+  onLoadMore?: () => void;
+  hasMore?: boolean;
+  loadingMore?: boolean;
 }
 
 type IconComponent = typeof Calendar;
@@ -304,7 +307,14 @@ function formatCollapsedLabel(events: NodeEvent[]): string {
   return leftover > 0 ? `${cycleLabel} + ${leftover}` : cycleLabel;
 }
 
-export function RecentEvents({ events, loading, pendingEvent }: RecentEventsProps) {
+export function RecentEvents({
+  events,
+  loading,
+  pendingEvent,
+  onLoadMore,
+  hasMore,
+  loadingMore,
+}: RecentEventsProps) {
   const [expandedRuns, setExpandedRuns] = useState<Set<string>>(new Set());
   const toggleRun = (key: string) => {
     setExpandedRuns((prev) => {
@@ -563,6 +573,19 @@ export function RecentEvents({ events, loading, pendingEvent }: RecentEventsProp
               </div>
             </div>
           ))}
+
+          {onLoadMore && hasMore && (
+            <div className="pt-2 pb-1 flex justify-center">
+              <button
+                type="button"
+                onClick={onLoadMore}
+                disabled={loadingMore}
+                className="text-xs text-gray-600 hover:text-gray-900 disabled:opacity-50 px-3 py-1 rounded-md hover:bg-gray-100 transition-colors"
+              >
+                {loadingMore ? 'Loading…' : 'Load older'}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
