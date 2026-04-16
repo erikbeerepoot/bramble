@@ -164,7 +164,7 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
 
   const fetchEvents = useCallback(async () => {
     try {
-      const response = await getNodeEvents(node.device_id, { limit: 20 });
+      const response = await getNodeEvents(node.device_id, { limit: 200 });
       setEvents(response.events);
     } catch {
       // Silently fail — events are informational
