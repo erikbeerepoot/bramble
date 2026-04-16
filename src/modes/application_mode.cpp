@@ -56,9 +56,6 @@ void ApplicationMode::run()
     state_machine_.markInitialized();
     updateStateMachine();
 
-    // If using multicore, start the task manager on Core 1
-    task_manager_.start();
-
     // Add LED update task if pattern exists
     if (led_pattern_) {
         task_manager_.addTask([this](uint32_t time) { updateLED(time); },
@@ -73,7 +70,7 @@ void ApplicationMode::run()
         // Call mode-specific loop hook
         onLoop();
 
-        // Update tasks (only if not using multicore)
+        // Dispatch periodic tasks
         task_manager_.update(current_time);
 
         // Check for interrupts first (more efficient than polling)

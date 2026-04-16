@@ -7,6 +7,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <functional>
 
 #include "pico/stdlib.h"
 #include "pico/unique_id.h"
@@ -128,7 +129,8 @@ inline VariantInfo getVariantInfo()
 #elif HARDWARE_CONTROLLER
     return {NODE_TYPE_CONTROLLER, CAP_CONTROLLER | CAP_SCHEDULING, "Controller"};
 #elif HARDWARE_GREENHOUSE
-    return {NODE_TYPE_ACTUATOR, CAP_VALVE_CONTROL | CAP_TEMPERATURE | CAP_HUMIDITY, "Greenhouse Node"};
+    return {NODE_TYPE_ACTUATOR, CAP_VALVE_CONTROL | CAP_TEMPERATURE | CAP_HUMIDITY,
+            "Greenhouse Node"};
 #else
     return {NODE_TYPE_SENSOR, 0, "Generic Node"};
 #endif
@@ -139,6 +141,25 @@ bool initializeHardware(RadioInterface &lora, NeoPixel &led);
 uint64_t getDeviceId();
 bool attemptRegistration(ReliableMessenger &messenger, RadioInterface &lora,
                          NodeConfigManager &config_manager, uint64_t device_id);
+
+/**
+ * @brief Build the reregistration callback used by all modes.
+ *
+ * Resets the messenger to the unregistered address and resends a registration
+ * request to the hub. Invoked when the hub signals PENDING_FLAG_REREGISTER.
+ */
+inline std::function<void()> makeReregistrationCallback(ReliableMessenger &messenger,
+                                                        uint64_t device_id,
+                                                        const VariantInfo &variant)
+{
+    return [&messenger, device_id, variant]() {
+        printf("Re-registering with hub...\n");
+        messenger.setNodeAddress(ADDRESS_UNREGISTERED);
+        messenger.sendRegistrationRequest(ADDRESS_HUB, device_id, variant.node_type,
+                                          variant.capabilities, BRAMBLE_FIRMWARE_VERSION,
+                                          variant.variant_name);
+    };
+}
 
 /**
  * @brief Main entry point
@@ -278,15 +299,7 @@ int main()
             printf("Registered with address 0x%04X (stored in PMU RAM)\n", new_address);
         });
 
-        // Re-registration callback: hub doesn't recognize us, re-send registration
-        // Reset to unregistered address so we don't send from a stale address
-        auto reregistration_callback = [&messenger, device_id, variant]() {
-            printf("Re-registering with hub...\n");
-            messenger.setNodeAddress(ADDRESS_UNREGISTERED);
-            messenger.sendRegistrationRequest(ADDRESS_HUB, device_id, variant.node_type,
-                                              variant.capabilities, BRAMBLE_FIRMWARE_VERSION,
-                                              variant.variant_name);
-        };
+        auto reregistration_callback = makeReregistrationCallback(messenger, device_id, variant);
 
         // No registration attempt here - SensorMode handles it on cold start
         log.info("Starting SENSOR mode");
@@ -349,20 +362,12 @@ int main()
             log.info("Using saved address 0x%04X", current_address);
         }
 
-        // Re-registration callback: hub doesn't recognize us, re-send registration
-        // Reset to unregistered address so we don't send from a stale address
-        auto reregistration_callback = [&messenger, device_id, variant]() {
-            printf("Re-registering with hub...\n");
-            messenger.setNodeAddress(ADDRESS_UNREGISTERED);
-            messenger.sendRegistrationRequest(ADDRESS_HUB, device_id, variant.node_type,
-                                              variant.capabilities, BRAMBLE_FIRMWARE_VERSION,
-                                              variant.variant_name);
-        };
+        auto reregistration_callback = makeReregistrationCallback(messenger, device_id, variant);
 
 // Create appropriate node mode
 #ifdef HARDWARE_IRRIGATION
         log.info("Starting IRRIGATION mode");
-        IrrigationMode mode(messenger, lora, led, nullptr, nullptr, &network_stats, false);
+        IrrigationMode mode(messenger, lora, led, nullptr, nullptr, &network_stats);
         mode.setAddressSavedCallback([&config_manager, device_id](uint16_t new_address) {
             printf("Saving new address 0x%04X to flash\n", new_address);
             NodeConfiguration config;
@@ -377,7 +382,7 @@ int main()
         mode.run();
 #elif HARDWARE_GREENHOUSE
         log.info("Starting GREENHOUSE mode");
-        GreenhouseMode mode(messenger, lora, led, nullptr, nullptr, &network_stats, false);
+        GreenhouseMode mode(messenger, lora, led, nullptr, nullptr, &network_stats);
         mode.setReregistrationCallback(reregistration_callback);
         mode.run();
 #elif HARDWARE_CONTROLLER
