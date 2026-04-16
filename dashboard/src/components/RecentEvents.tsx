@@ -305,6 +305,19 @@ function formatCollapsedLabel(events: NodeEvent[]): string {
 }
 
 export function RecentEvents({ events, loading, pendingEvent }: RecentEventsProps) {
+  const [expandedRuns, setExpandedRuns] = useState<Set<string>>(new Set());
+  const toggleRun = (key: string) => {
+    setExpandedRuns((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
   // Filter out the real event that matches the pending one to avoid duplicates
   const filteredEvents = pendingEvent
     ? events.filter(
@@ -419,47 +432,98 @@ export function RecentEvents({ events, loading, pendingEvent }: RecentEventsProp
                     const isLast = adjustedIndex >= totalItems - 1;
 
                     if (item.kind === 'collapsed') {
-                      // Use the most recent event's timestamp (events are typically reverse-chron).
                       const first = item.events[0];
                       const last = item.events[item.events.length - 1];
-                      // Times can be in either order; pick the older/newer by value.
                       const olderTs = Math.min(first.timestamp, last.timestamp);
                       const newerTs = Math.max(first.timestamp, last.timestamp);
+                      const runKey = `collapsed-${olderTs}-${newerTs}-${index}`;
+                      const expanded = expandedRuns.has(runKey);
                       const visual = EVENT_VISUALS[EventType.WAKE] ?? DEFAULT_VISUAL;
                       const Icon = visual.icon;
                       return (
-                        <div
-                          key={`collapsed-${olderTs}-${newerTs}-${index}`}
-                          className="event-item group relative flex items-start gap-2.5 py-1.5 px-1.5 rounded-md hover:bg-gray-50 transition-colors"
-                          style={{ animationDelay: `${index * 30}ms` }}
-                        >
-                          <div className="relative flex-shrink-0 mt-px">
-                            <div
-                              className={`w-6 h-6 rounded-full ${visual.bgColor} flex items-center justify-center`}
-                            >
-                              <Icon className={`w-3 h-3 ${visual.color}`} />
-                            </div>
-                            {!isLast && (
-                              <div className="absolute top-7 left-1/2 -translate-x-px w-px h-2.5 bg-gray-200" />
-                            )}
-                          </div>
-
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-start justify-between gap-2 mb-px">
-                              <span className="text-sm font-medium text-gray-500">
-                                {formatCollapsedLabel(item.events)}
-                              </span>
-                              <span
-                                className="text-xs text-gray-400 font-mono"
-                                title={`${new Date(olderTs * 1000).toISOString()} – ${new Date(
-                                  newerTs * 1000
-                                ).toISOString()}`}
+                        <div key={runKey}>
+                          <button
+                            type="button"
+                            onClick={() => toggleRun(runKey)}
+                            className="event-item group relative flex items-start gap-2.5 py-1.5 px-1.5 rounded-md hover:bg-gray-50 transition-colors w-full text-left"
+                            style={{ animationDelay: `${index * 30}ms` }}
+                            aria-expanded={expanded}
+                          >
+                            <div className="relative flex-shrink-0 mt-px">
+                              <div
+                                className={`w-6 h-6 rounded-full ${visual.bgColor} flex items-center justify-center`}
                               >
-                                {format(new Date(olderTs * 1000), 'HH:mm')} –{' '}
-                                {format(new Date(newerTs * 1000), 'HH:mm')}
-                              </span>
+                                <Icon className={`w-3 h-3 ${visual.color}`} />
+                              </div>
+                              {!isLast && !expanded && (
+                                <div className="absolute top-7 left-1/2 -translate-x-px w-px h-2.5 bg-gray-200" />
+                              )}
                             </div>
-                          </div>
+
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-start justify-between gap-2 mb-px">
+                                <span className="text-sm font-medium text-gray-500 flex items-center gap-1">
+                                  {formatCollapsedLabel(item.events)}
+                                  <span className="text-xs text-gray-400">
+                                    {expanded ? '▾' : '▸'}
+                                  </span>
+                                </span>
+                                <span
+                                  className="text-xs text-gray-400 font-mono"
+                                  title={`${new Date(olderTs * 1000).toISOString()} – ${new Date(
+                                    newerTs * 1000
+                                  ).toISOString()}`}
+                                >
+                                  {format(new Date(olderTs * 1000), 'HH:mm')} –{' '}
+                                  {format(new Date(newerTs * 1000), 'HH:mm')}
+                                </span>
+                              </div>
+                            </div>
+                          </button>
+
+                          <AnimatePresence initial={false}>
+                            {expanded && (
+                              <motion.div
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: 'auto' }}
+                                exit={{ opacity: 0, height: 0 }}
+                                transition={{ duration: 0.18 }}
+                                className="overflow-hidden"
+                              >
+                                {item.events.map((event, subIndex) => {
+                                  const subVisual =
+                                    EVENT_VISUALS[event.event_code] ?? DEFAULT_VISUAL;
+                                  const SubIcon = subVisual.icon;
+                                  const isLastInRun = subIndex === item.events.length - 1;
+                                  return (
+                                    <div
+                                      key={`${runKey}-${event.timestamp}-${subIndex}`}
+                                      className="event-item group relative flex items-start gap-2.5 py-1 pl-7 pr-1.5 rounded-md hover:bg-gray-50 transition-colors"
+                                    >
+                                      <div className="relative flex-shrink-0 mt-px">
+                                        <div
+                                          className={`w-5 h-5 rounded-full ${subVisual.bgColor} flex items-center justify-center`}
+                                        >
+                                          <SubIcon className={`w-2.5 h-2.5 ${subVisual.color}`} />
+                                        </div>
+                                        {(!isLast || !isLastInRun) && (
+                                          <div className="absolute top-6 left-1/2 -translate-x-px w-px h-1.5 bg-gray-200" />
+                                        )}
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-start justify-between gap-2 mb-px">
+                                          <span className="text-xs text-gray-600">
+                                            {getEventName(event.event_code)}
+                                          </span>
+                                          <CopyableTimestamp timestamp={event.timestamp} />
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
                         </div>
                       );
                     }
