@@ -3,14 +3,12 @@
 #include <functional>
 #include <vector>
 
-#include "pico/multicore.h"
 #include "pico/sync.h"
 
 /**
  * @brief Manages periodic tasks with different intervals
  *
- * Can run on either core - if multicore is enabled, tasks run on Core 1
- * This keeps the main communication loop on Core 0 responsive
+ * Tasks are dispatched from the main loop on Core 0 via update().
  */
 class PeriodicTaskManager {
 public:
@@ -30,76 +28,10 @@ public:
 
 private:
     std::vector<Task> tasks_;
-    bool use_multicore_;
-    volatile bool running_;
     mutex_t task_mutex_;
 
-    /**
-     * @brief Core 1 entry point for multicore mode
-     */
-    static void core1_entry()
-    {
-        PeriodicTaskManager *manager = (PeriodicTaskManager *)multicore_fifo_pop_blocking();
-        manager->core1_loop();
-    }
-
-    /**
-     * @brief Core 1 main loop
-     */
-    void core1_loop()
-    {
-        while (running_) {
-            uint32_t current_time = to_ms_since_boot(get_absolute_time());
-
-            mutex_enter_blocking(&task_mutex_);
-            for (auto &task : tasks_) {
-                if (current_time - task.last_run >= task.interval_ms) {
-                    task.function(current_time);
-                    task.last_run = current_time;
-                }
-            }
-            mutex_exit(&task_mutex_);
-
-            // Sleep briefly to avoid hogging CPU
-            sleep_ms(10);
-        }
-    }
-
 public:
-    /**
-     * @brief Constructor
-     * @param use_multicore If true, run tasks on Core 1
-     */
-    explicit PeriodicTaskManager(bool use_multicore = false)
-        : use_multicore_(use_multicore), running_(false)
-    {
-        mutex_init(&task_mutex_);
-    }
-
-    ~PeriodicTaskManager() { stop(); }
-
-    /**
-     * @brief Start the task manager (launches Core 1 if multicore enabled)
-     */
-    void start()
-    {
-        if (use_multicore_ && !running_) {
-            running_ = true;
-            multicore_launch_core1(core1_entry);
-            multicore_fifo_push_blocking((uint32_t)this);
-        }
-    }
-
-    /**
-     * @brief Stop the task manager (stops Core 1 if multicore enabled)
-     */
-    void stop()
-    {
-        if (use_multicore_ && running_) {
-            running_ = false;
-            multicore_reset_core1();
-        }
-    }
+    PeriodicTaskManager() { mutex_init(&task_mutex_); }
 
     /**
      * @brief Add a periodic task
@@ -115,21 +47,19 @@ public:
     }
 
     /**
-     * @brief Update all tasks (only used in single-core mode)
+     * @brief Update all tasks — call from the main loop each iteration.
      * @param current_time Current system time in milliseconds
      */
     void update(uint32_t current_time)
     {
-        if (!use_multicore_) {
-            mutex_enter_blocking(&task_mutex_);
-            for (auto &task : tasks_) {
-                if (current_time - task.last_run >= task.interval_ms) {
-                    task.function(current_time);
-                    task.last_run = current_time;
-                }
+        mutex_enter_blocking(&task_mutex_);
+        for (auto &task : tasks_) {
+            if (current_time - task.last_run >= task.interval_ms) {
+                task.function(current_time);
+                task.last_run = current_time;
             }
-            mutex_exit(&task_mutex_);
         }
+        mutex_exit(&task_mutex_);
     }
 
     /**

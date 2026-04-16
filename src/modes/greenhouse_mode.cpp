@@ -2,10 +2,9 @@
 
 #include <cstring>
 
-#include "pico/unique_id.h"
-
 #include "hardware/watchdog.h"
 
+#include "../../main.h"
 #include "../board/board_pins.h"
 #include "../hal/flash.h"
 #include "../hal/logger.h"
@@ -17,17 +16,6 @@
 #include "../version.h"
 
 constexpr uint16_t HUB_ADDRESS = ADDRESS_HUB;
-
-static uint64_t getDeviceId()
-{
-    pico_unique_board_id_t board_id;
-    pico_get_unique_board_id(&board_id);
-    uint64_t id = 0;
-    for (int i = 0; i < 8; i++) {
-        id = (id << 8) | board_id.id[i];
-    }
-    return id;
-}
 constexpr uint32_t HEARTBEAT_INTERVAL_MS = 60000;  // 60 seconds
 
 static Logger logger("GREEN");

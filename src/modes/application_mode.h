@@ -52,9 +52,9 @@ public:
 
     ApplicationMode(ReliableMessenger &messenger, RadioInterface &lora, NeoPixel &led,
                     AddressManager *address_manager = nullptr, HubRouter *hub_router = nullptr,
-                    NetworkStats *network_stats = nullptr, bool use_multicore = false)
+                    NetworkStats *network_stats = nullptr)
         : messenger_(messenger), lora_(lora), led_(led), address_manager_(address_manager),
-          hub_router_(hub_router), network_stats_(network_stats), task_manager_(use_multicore)
+          hub_router_(hub_router), network_stats_(network_stats)
     {
     }
 

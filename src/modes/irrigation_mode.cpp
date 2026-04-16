@@ -3,10 +3,10 @@
 #include <cstring>
 
 #include "pico/stdlib.h"
-#include "pico/unique_id.h"
 
 #include "hardware/watchdog.h"
 
+#include "../../main.h"
 #include "../hal/logger.h"
 #include "../hal/rtc_compat.h"
 #include "../led_patterns.h"
@@ -50,13 +50,8 @@ void IrrigationMode::onStart()
     logger.info("- PMU power management integration");
     logger.info("- Orange LED blink (init) -> Blue short blink (operational)");
 
-    // Cache device ID for heartbeat identification (big-endian, matching main.cpp registration)
-    pico_unique_board_id_t board_id;
-    pico_get_unique_board_id(&board_id);
-    device_id_ = 0;
-    for (int i = 0; i < 8; i++) {
-        device_id_ = (device_id_ << 8) | board_id.id[i];
-    }
+    // Cache device ID for heartbeat identification
+    device_id_ = ::getDeviceId();
 
     // Check if we need to register (no saved address — may be overridden by PMU state restore)
     needs_registration_ = (messenger_.getNodeAddress() == ADDRESS_UNREGISTERED);
