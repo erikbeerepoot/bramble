@@ -70,8 +70,8 @@ void HubMode::onStart()
     logger.info("- Managing node registrations");
     logger.info("- Routing node-to-node messages");
     logger.info("- Blue LED indicates hub status");
-    logger.info("- API UART on pins %d/%d @ %d baud", Board::API_UART_TX_PIN, Board::API_UART_RX_PIN,
-                API_UART_BAUD);
+    logger.info("- API UART on pins %d/%d @ %d baud", Board::API_UART_TX_PIN,
+                Board::API_UART_RX_PIN, API_UART_BAUD);
 
     // Initialize serial input buffer
     serial_input_pos_ = 0;
