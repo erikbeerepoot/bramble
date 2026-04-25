@@ -108,6 +108,11 @@ constexpr int DEFAULT_UART = 0;
 constexpr int DEFAULT_UART_TX_PIN = J6::PIN_10;  // GPIO 28 (UART0 TX)
 constexpr int DEFAULT_UART_RX_PIN = J6::PIN_9;   // GPIO 29 (UART0 RX)
 
+// --- API UART (hub ↔ Raspberry Pi / CM5) — UART0 on J6 (stdio is on USB CDC) ---
+inline auto API_UART_PORT = uart0;
+constexpr uint API_UART_TX_PIN = J6::PIN_10;  // GPIO 28
+constexpr uint API_UART_RX_PIN = J6::PIN_9;   // GPIO 29
+
 // --- Valve / Motor pins (4 valves on v4, J7 header) ---
 // Valve connector plugs into J7 instead of J6 to free J6 for UART0
 constexpr uint8_t NUM_VALVES = 4;

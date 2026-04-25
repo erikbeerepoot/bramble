@@ -6,6 +6,7 @@
 
 #include "hardware/uart.h"
 
+#include "../board/board_pins.h"
 #include "hal/flash.h"
 #include "hal/logger.h"
 #include "hal/pmu_protocol.h"
@@ -17,12 +18,8 @@
 
 static Logger logger("HubMode");
 
-// UART configuration for Raspberry Pi communication
-// Uses UART1 on Feather RP2040 RFM9x module header (D24/D25)
-#define API_UART_ID uart1
-#define API_UART_TX_PIN 24  // D24 - TX1 on RFM module header
-#define API_UART_RX_PIN 25  // D25 - RX1 on RFM module header
-#define API_UART_BAUD 115200
+// API UART pins/port come from board_pins.h (Board::API_UART_*)
+constexpr uint32_t API_UART_BAUD = 115200;
 
 constexpr uint32_t STATS_INTERVAL_MS = 30000;             // 30 seconds
 constexpr uint32_t MAINTENANCE_INTERVAL_MS = 300000;      // 5 minutes
@@ -61,9 +58,9 @@ void HubMode::flushUartBuffer()
 {
     if (uart_tx_pos_ == 0)
         return;
-    uart_write_blocking(API_UART_ID, reinterpret_cast<const uint8_t *>(uart_tx_buffer_),
+    uart_write_blocking(Board::API_UART_PORT, reinterpret_cast<const uint8_t *>(uart_tx_buffer_),
                         uart_tx_pos_);
-    uart_tx_wait_blocking(API_UART_ID);
+    uart_tx_wait_blocking(Board::API_UART_PORT);
     uart_tx_pos_ = 0;
 }
 
@@ -73,7 +70,7 @@ void HubMode::onStart()
     logger.info("- Managing node registrations");
     logger.info("- Routing node-to-node messages");
     logger.info("- Blue LED indicates hub status");
-    logger.info("- API UART on pins %d/%d @ %d baud", API_UART_TX_PIN, API_UART_RX_PIN,
+    logger.info("- API UART on pins %d/%d @ %d baud", Board::API_UART_TX_PIN, Board::API_UART_RX_PIN,
                 API_UART_BAUD);
 
     // Initialize serial input buffer
@@ -83,14 +80,14 @@ void HubMode::onStart()
     memset(serial_input_buffer_, 0, sizeof(serial_input_buffer_));
 
     // Initialize UART for Raspberry Pi communication
-    uart_init(API_UART_ID, API_UART_BAUD);
-    gpio_set_function(API_UART_TX_PIN, GPIO_FUNC_UART);
-    gpio_set_function(API_UART_RX_PIN, GPIO_FUNC_UART);
-    uart_set_format(API_UART_ID, 8, 1, UART_PARITY_NONE);
-    uart_set_fifo_enabled(API_UART_ID, true);
+    uart_init(Board::API_UART_PORT, API_UART_BAUD);
+    gpio_set_function(Board::API_UART_TX_PIN, GPIO_FUNC_UART);
+    gpio_set_function(Board::API_UART_RX_PIN, GPIO_FUNC_UART);
+    uart_set_format(Board::API_UART_PORT, 8, 1, UART_PARITY_NONE);
+    uart_set_fifo_enabled(Board::API_UART_PORT, true);
 
     logger.info("API UART initialized successfully");
-    uart_puts(API_UART_ID, "HUB_READY\n");  // Send ready signal to RasPi
+    uart_puts(Board::API_UART_PORT, "HUB_READY\n");  // Send ready signal to RasPi
 
     // Initialize RTC
     rtc_init();
@@ -269,15 +266,15 @@ void HubMode::processSerialInput()
     static uint32_t last_uart_diag = 0;
     uint32_t now = to_ms_since_boot(get_absolute_time());
     if (now - last_uart_diag >= 5000) {
-        uart_hw_t *hw = uart_get_hw(API_UART_ID);
+        uart_hw_t *hw = uart_get_hw(Board::API_UART_PORT);
         logger.info("UART1_RX diag: FR=0x%03X DMACR=0x%X readable=%d buf_pos=%u", hw->fr & 0xFFF,
-                    hw->dmacr, uart_is_readable(API_UART_ID), (unsigned)serial_input_pos_);
+                    hw->dmacr, uart_is_readable(Board::API_UART_PORT), (unsigned)serial_input_pos_);
         last_uart_diag = now;
     }
 
     // Read available characters from UART
-    while (uart_is_readable(API_UART_ID)) {
-        char c = uart_getc(API_UART_ID);
+    while (uart_is_readable(Board::API_UART_PORT)) {
+        char c = uart_getc(Board::API_UART_PORT);
 
         if (c == '\n' || c == '\r') {
             if (serial_input_pos_ > 0) {

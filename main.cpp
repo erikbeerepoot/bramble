@@ -460,11 +460,7 @@ bool initializeHardware(RadioInterface &lora, NeoPixel &led)
 
     // Configure LoRa parameters
     lora.setFrequency(915000000);  // 915 MHz for US
-#if defined(DEFAULT_IS_HUB) && DEFAULT_IS_HUB
-    lora.setTxPower(15);  // Hub: reduced power (16+ dBm causes UART RX EMI on Feather)
-#else
-    lora.setTxPower(20);  // Sensor nodes: max power for range
-#endif
+    lora.setTxPower(20);  // Max power for range (hub now on carrier board, no Feather UART EMI)
     lora.setBandwidth(125000);  // 125 kHz
     lora.setSpreadingFactor(9);
     lora.setCodingRate(5);
