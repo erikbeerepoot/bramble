@@ -137,6 +137,16 @@ void ReliablePmuClient::retryCommand()
     if (!inFlight_)
         return;
 
+    if (inFlight_->attempts >= Reliability::MAX_ATTEMPTS) {
+        log.error("Max retries exceeded for seq %d, abandoning command", inFlight_->seqNum);
+        if (inFlight_->callback) {
+            inFlight_->callback(false, ErrorCode::Timeout);
+        }
+        inFlight_.reset();
+        sendNextQueued();
+        return;
+    }
+
     inFlight_->attempts++;
     inFlight_->sendTime = to_ms_since_boot(get_absolute_time());
 

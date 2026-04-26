@@ -47,7 +47,8 @@ enum class ErrorCode : uint8_t {
     ScheduleFull = 0x02,
     InvalidIndex = 0x03,
     Overlap = 0x04,
-    ChecksumError = 0x05
+    ChecksumError = 0x05,
+    Timeout = 0x06
 };
 
 // Wake reason codes

@@ -17,6 +17,7 @@ namespace Reliability {
 constexpr uint32_t BASE_TIMEOUT_MS = 500;
 constexpr uint32_t MAX_TIMEOUT_MS = 5000;
 constexpr float BACKOFF_MULTIPLIER = 2.0f;
+constexpr uint8_t MAX_ATTEMPTS = 5;
 constexpr size_t MAX_QUEUE_DEPTH = 8;
 constexpr size_t DEDUP_BUFFER_SIZE = 8;
 constexpr uint32_t DEDUP_WINDOW_MS = 5000;
