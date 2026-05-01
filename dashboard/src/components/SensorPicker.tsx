@@ -8,7 +8,7 @@ interface SensorPickerProps {
 }
 
 function SensorPicker({ nodes, selectedIds, onChange, colors }: SensorPickerProps) {
-  const sensorNodes = nodes.filter((n) => n.type === 'SENSOR');
+  const sensorNodes = nodes.filter((n) => n.type === 'SENSOR' || n.type === 'GREENHOUSE');
 
   const toggleNode = (deviceId: string) => {
     if (selectedIds.includes(deviceId)) {
