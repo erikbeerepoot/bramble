@@ -31,7 +31,6 @@ import type { CurtainAction } from './CurtainControl';
 import IrrigationControl from './IrrigationControl';
 import NodeNameEditor from './NodeNameEditor';
 import SensorChart from './SensorChart';
-import CompactSensorPanel from './CompactSensorPanel';
 import ErrorEventsTable from './ErrorEventsTable';
 import TimeRangeSelector from './TimeRangeSelector';
 import BatteryGauge from './BatteryGauge';
@@ -727,31 +726,25 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
                 </div>
               ) : (
                 <div className="space-y-6">
-                  {node.type === NodeType.SENSOR ? (
-                    <>
-                      <SensorChart
-                        readings={readings}
-                        dataKey="temperature_celsius"
-                        title="Temperature"
-                        yAxisLabel="Celsius"
-                        color="#f97316"
-                        startTime={timeBounds?.start}
-                        endTime={timeBounds?.end}
-                      />
-                      <SensorChart
-                        readings={readings}
-                        dataKey="humidity_percent"
-                        title="Humidity"
-                        yAxisLabel="Percent"
-                        color="#3b82f6"
-                        startTime={timeBounds?.start}
-                        endTime={timeBounds?.end}
-                      />
-                      <ErrorEventsTable readings={readings} />
-                    </>
-                  ) : (
-                    <CompactSensorPanel readings={readings} statistics={statistics} />
-                  )}
+                  <SensorChart
+                    readings={readings}
+                    dataKey="temperature_celsius"
+                    title="Temperature"
+                    yAxisLabel="Celsius"
+                    color="#f97316"
+                    startTime={timeBounds?.start}
+                    endTime={timeBounds?.end}
+                  />
+                  <SensorChart
+                    readings={readings}
+                    dataKey="humidity_percent"
+                    title="Humidity"
+                    yAxisLabel="Percent"
+                    color="#3b82f6"
+                    startTime={timeBounds?.start}
+                    endTime={timeBounds?.end}
+                  />
+                  <ErrorEventsTable readings={readings} />
                 </div>
               )}
             </div>
