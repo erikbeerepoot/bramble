@@ -98,10 +98,10 @@ constexpr uint PIN_I2C_SCL = J8::PIN_4;  // GPIO 27
 constexpr uint PIN_A0 = J8::PIN_3;  // GPIO 26
 constexpr uint PIN_A1 = J8::PIN_4;  // GPIO 27
 
-// --- PMU UART (UART1 on GPIO8/9) ---
+// --- PMU UART (UART1 on GPIO8/21 — GPIO9 RX broken, bodged to GPIO21 on J8 pin 10) ---
 inline auto PMU_UART_PORT = uart1;
 constexpr uint PMU_UART_TX_PIN = 8;
-constexpr uint PMU_UART_RX_PIN = 9;
+constexpr uint PMU_UART_RX_PIN = 21;
 
 // --- Default stdio UART (UART0 on J6 header — no conflict with PMU on UART1) ---
 constexpr int DEFAULT_UART = 0;

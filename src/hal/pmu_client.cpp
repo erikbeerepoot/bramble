@@ -1,8 +1,6 @@
 #include "pmu_client.h"
 
-#include "hal/logger.h"
-
-static Logger pmu_client_log("PMU_RX");
+#include "uart_rx.pio.h"
 
 // Static instance for IRQ callback
 PmuClient *PmuClient::instance_ = nullptr;
@@ -10,9 +8,8 @@ PmuClient *PmuClient::instance_ = nullptr;
 PmuClient::PmuClient(uart_inst_t *uart_inst, uint tx_pin, uint rx_pin, uint baudrate)
     : uart_(uart_inst), txPin_(tx_pin), rxPin_(rx_pin), baudrate_(baudrate), initialized_(false),
       protocol_([this](const uint8_t *data, uint8_t length) { this->uartSend(data, length); }),
-      rxHead_(0), rxTail_(0), lastErrorFlags_(0)
+      pioDev_(nullptr), pioSm_(0), pioOffset_(0), rxHead_(0), rxTail_(0)
 {
-    // Set static instance for IRQ handling
     instance_ = this;
 }
 
@@ -22,37 +19,28 @@ bool PmuClient::init()
         return true;
     }
 
-    // Initialize UART
+    // Hardware UART for TX only — RX uses PIO because the v4 bodge wire lands on
+    // GPIO21 which is not a valid UART1 RX pin (GPIO%4 mux rule). See bramble_v4_pins.h.
     uint actual_baudrate = uart_init(uart_, baudrate_);
-
     if (actual_baudrate == 0) {
         return false;
     }
-
-    // Set TX and RX pins
     gpio_set_function(txPin_, GPIO_FUNC_UART);
-    gpio_set_function(rxPin_, GPIO_FUNC_UART);
-
-    // Enable pull-up on RX pin for better signal integrity
-    // UART idle state is high, pull-up helps prevent noise
-    gpio_pull_up(rxPin_);
-
-    // Enable FIFO first
     uart_set_fifo_enabled(uart_, true);
-
-    // Set UART format: 8 data bits, 2 stop bits, no parity
-    // Must match STM32 LPUART configuration (set after FIFO to ensure it sticks)
     uart_set_format(uart_, 8, 2, UART_PARITY_NONE);
 
-    // Get the IRQ number for this UART
-    int uart_irq = uart_ == uart0 ? UART0_IRQ : UART1_IRQ;
+    // PIO RX on rxPin_. Use pio1 since pio0 SM0 is taken by the NeoPixel driver.
+    pioDev_ = pio1;
+    pioSm_ = pio_claim_unused_sm(pioDev_, true);
+    pioOffset_ = pio_add_program(pioDev_, &uart_rx_program);
+    uart_rx_program_init(pioDev_, pioSm_, pioOffset_, rxPin_, baudrate_);
 
-    // Set up RX interrupt
-    irq_set_exclusive_handler(uart_irq, onUartRxIrq);
-    irq_set_enabled(uart_irq, true);
-
-    // Enable UART RX interrupt
-    uart_set_irq_enables(uart_, true, false);  // RX enabled, TX disabled
+    // Route PIO0 of pioDev_ to NVIC and enable RX-FIFO-not-empty for our SM.
+    int pio_irq = (pioDev_ == pio0) ? PIO0_IRQ_0 : PIO1_IRQ_0;
+    irq_set_exclusive_handler(pio_irq, onUartRxIrq);
+    irq_set_enabled(pio_irq, true);
+    pio_set_irq0_source_enabled(
+        pioDev_, (pio_interrupt_source_t)(pis_sm0_rx_fifo_not_empty + pioSm_), true);
 
     initialized_ = true;
     return true;
@@ -96,15 +84,6 @@ void PmuClient::sendWakePreamble()
 
 void PmuClient::process()
 {
-    // Check for UART errors
-    if (lastErrorFlags_ != 0) {
-        pmu_client_log.warn("UART errors: FE=%d PE=%d BE=%d OE=%d", (lastErrorFlags_ & 1) ? 1 : 0,
-                            (lastErrorFlags_ & 2) ? 1 : 0, (lastErrorFlags_ & 4) ? 1 : 0,
-                            (lastErrorFlags_ & 8) ? 1 : 0);
-        lastErrorFlags_ = 0;
-    }
-
-    // Process all bytes from the ring buffer
     while (rxTail_ != rxHead_) {
         uint8_t byte = rxBuffer_[rxTail_];
         rxTail_ = (rxTail_ + 1) % RX_BUFFER_SIZE;
@@ -114,32 +93,20 @@ void PmuClient::process()
 
 void PmuClient::onUartRxIrq()
 {
-    if (!instance_ || !instance_->uart_) {
+    if (!instance_ || !instance_->pioDev_) {
         return;
     }
 
-    // Read all available bytes from FIFO and store in ring buffer
-    while (uart_is_readable(instance_->uart_)) {
-        // Check for framing/parity errors before reading
-        uint32_t dr = uart_get_hw(instance_->uart_)->dr;
-        uint8_t byte = dr & 0xFF;
-        bool frame_error = (dr & UART_UARTDR_FE_BITS) != 0;
-        bool parity_error = (dr & UART_UARTDR_PE_BITS) != 0;
-        bool break_error = (dr & UART_UARTDR_BE_BITS) != 0;
-        bool overrun_error = (dr & UART_UARTDR_OE_BITS) != 0;
-
-        // Log any errors (only in IRQ context, keep it brief)
-        if (frame_error || parity_error || break_error || overrun_error) {
-            // Set a flag to log later (can't log from IRQ)
-            instance_->lastErrorFlags_ = (frame_error ? 1 : 0) | (parity_error ? 2 : 0) |
-                                         (break_error ? 4 : 0) | (overrun_error ? 8 : 0);
-        }
+    // The uart_rx program autopushes 8 bits with shift-right, so the received
+    // byte sits in bits 31:24 of the 32-bit FIFO word.
+    while (!pio_sm_is_rx_fifo_empty(instance_->pioDev_, instance_->pioSm_)) {
+        uint32_t word = pio_sm_get(instance_->pioDev_, instance_->pioSm_);
+        uint8_t byte = (uint8_t)(word >> 24);
 
         size_t next_head = (instance_->rxHead_ + 1) % RX_BUFFER_SIZE;
         if (next_head != instance_->rxTail_) {
             instance_->rxBuffer_[instance_->rxHead_] = byte;
             instance_->rxHead_ = next_head;
         }
-        // If buffer full, drop the byte
     }
 }

@@ -401,6 +401,7 @@ if(NOT BUILD_TESTS)
 
         # Generate PIO headers
         pico_generate_pio_header(${TARGET_NAME} ${CMAKE_CURRENT_LIST_DIR}/src/hal/ws2812.pio)
+        pico_generate_pio_header(${TARGET_NAME} ${CMAKE_CURRENT_LIST_DIR}/src/hal/uart_rx.pio)
 
         pico_add_extra_outputs(${TARGET_NAME})
     endforeach()
