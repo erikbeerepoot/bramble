@@ -142,6 +142,10 @@ void ReliablePmuClient::retryCommand()
 
     log.debug("Retry seq %d, attempt %d", inFlight_->seqNum, inFlight_->attempts);
 
+    // The PMU likely returned to STOP mode after handling the prior command, so the
+    // start bit of a fresh command would be eaten by wake-up latency. Wake it first.
+    client_->sendWakePreamble();
+
     // Re-send the command
     sendCommand(*inFlight_);
 }

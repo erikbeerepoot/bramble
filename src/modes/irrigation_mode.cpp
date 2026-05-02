@@ -78,6 +78,9 @@ void IrrigationMode::onStart()
         // Allow UART to stabilize before first message
         sleep_ms(150);
 
+        // Wake preamble in case STM32 LPUART is in STOP mode after a periodic wake
+        pmu_client_->sendWakePreamble();
+
         pmu_logger.info("PMU client initialized successfully");
 
         // Register PMU with base class for generic update handling
@@ -684,8 +687,9 @@ void IrrigationMode::signalReadyForSleep()
                         pmu_logger.info("Ready for sleep acknowledged - halting");
                         sleep_pending_ = true;
                     } else {
-                        pmu_logger.error("Ready for sleep failed: error %d",
+                        pmu_logger.error("Ready for sleep failed: error %d — halting anyway",
                                          static_cast<int>(error));
+                        sleep_pending_ = true;
                     }
                 });
             return true;
