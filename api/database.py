@@ -237,7 +237,10 @@ class SensorDatabase:
         self._id_lock = threading.Lock()
         self._write_buffer: Optional[WriteBuffer] = None
         self._conn: Optional[duckdb.DuckDBPyConnection] = None
-        self._conn_lock = threading.Lock()
+        # Reentrant: _get_connection holds the lock and may call
+        # _open_connection, which re-acquires the same lock. A plain
+        # Lock would deadlock the read thread after a connection reset.
+        self._conn_lock = threading.RLock()
 
     def _ensure_directory(self):
         """Ensure the database directory exists."""
@@ -251,8 +254,17 @@ class SensorDatabase:
             return self._id_counter
 
     def _init_id_counter(self, conn: duckdb.DuckDBPyConnection):
-        """Initialize ID counter from existing data."""
-        result = conn.execute("SELECT MAX(id) FROM sensor_readings").fetchone()
+        """Initialize ID counter from existing data.
+
+        The counter is shared across sensor_readings and node_events, so
+        seed from the MAX(id) of both to avoid primary-key collisions.
+        """
+        result = conn.execute("""
+            SELECT GREATEST(
+                COALESCE((SELECT MAX(id) FROM sensor_readings), 0),
+                COALESCE((SELECT MAX(id) FROM node_events), 0)
+            )
+        """).fetchone()
         if result and result[0]:
             self._id_counter = result[0]
 
