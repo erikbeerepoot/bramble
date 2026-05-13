@@ -36,15 +36,34 @@ export function getApiUrl(): string {
 async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const baseUrl = getBaseUrl();
   const url = `${baseUrl}${endpoint}`;
+  const isReadOnly = !options?.method || options.method === 'GET';
 
-  const response = await fetch(url, {
-    ...options,
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...options?.headers,
-    },
-  });
+  const attempt = async (): Promise<Response> =>
+    fetch(url, {
+      ...options,
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        ...options?.headers,
+      },
+    });
+
+  let response: Response;
+  try {
+    response = await attempt();
+    // Retry once on gateway errors for read-only requests (e.g. container restart mid-request)
+    if (
+      isReadOnly &&
+      (response.status === 502 || response.status === 503 || response.status === 504)
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      response = await attempt();
+    }
+  } catch (networkError) {
+    if (!isReadOnly) throw networkError;
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    response = await attempt();
+  }
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Unknown error' }));
@@ -217,7 +236,7 @@ function shiftSchedule(
   hour: number,
   minute: number,
   days: number,
-  toUtc: boolean,
+  toUtc: boolean
 ): { hour: number; minute: number; days: number } {
   const date = new Date();
   if (toUtc) {
@@ -246,9 +265,7 @@ function shiftSchedule(
 export async function getIrrigationSchedules(
   deviceId: string
 ): Promise<IrrigationSchedulesResponse> {
-  const response = await fetchApi<IrrigationSchedulesResponse>(
-    `/api/nodes/${deviceId}/schedules`
-  );
+  const response = await fetchApi<IrrigationSchedulesResponse>(`/api/nodes/${deviceId}/schedules`);
   // Convert UTC → local for display
   response.schedules = response.schedules.map((s) => {
     const local = shiftSchedule(s.hour, s.minute, s.days, false);
