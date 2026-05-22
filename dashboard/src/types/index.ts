@@ -246,12 +246,41 @@ export interface NodeEventsResponse {
 
 // Event code display names are generated from C++ headers.
 // Regenerate with `python3 tools/gen_event_types.py`.
-import { EVENT_CODE_NAMES } from '../generated/eventTypes';
+import { EVENT_CODE_NAMES, EventType } from '../generated/eventTypes';
 export { EVENT_CODE_NAMES, EventType, EventCode } from '../generated/eventTypes';
 
 export function getEventName(code: number): string {
   return EVENT_CODE_NAMES[code] || `Event 0x${code.toString(16).padStart(4, '0')}`;
 }
+
+// Decode the `detail` byte of an event payload (lower 16 bits of data_hex,
+// after the severity byte). Returns null if data_hex is missing/malformed.
+export function parseEventDetail(dataHex: string | null | undefined): number | null {
+  if (!dataHex || dataHex.length < 6) return null;
+  const parsed = parseInt(dataHex.slice(2, 6), 16);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+// Human-readable suffix for the event row (e.g. "Valve 1", "#3").
+// Returns null when there's nothing useful to show.
+export function getEventDetail(code: number, dataHex: string | null | undefined): string | null {
+  const detail = parseEventDetail(dataHex);
+  if (detail === null) return null;
+  switch (code) {
+    case EventType.VALVE_OPEN:
+    case EventType.VALVE_CLOSE:
+    case EventType.VALVE_TIMER_SET:
+    case EventType.VALVE_TIMER_CLOSE:
+      return `Valve ${detail + 1}`;
+    case EventType.SCHEDULE_APPLIED:
+    case EventType.SCHEDULE_REMOVED:
+    case EventType.SCHEDULE_FAILED:
+      return `#${detail}`;
+    default:
+      return null;
+  }
+}
+
 
 // Irrigation schedule types
 export interface IrrigationSchedule {
