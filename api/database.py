@@ -226,7 +226,7 @@ class SensorDatabase:
     );
 
     -- Audit trail for ad-hoc dashboard commands (valve run/stop, curtain,
-    -- wake-interval). Schedules stay in their own table; this is the
+    -- wake-interval). Schedules stay in their own table — this is the
     -- equivalent lifecycle log for fire-and-forget commands so the user
     -- can see "pending" state during the dead zone between click and the
     -- node's confirming event.
@@ -337,8 +337,14 @@ class SensorDatabase:
         """Initialize database schema and open the persistent connection."""
         self._open_connection()
         with self._get_connection() as conn:
-            # Execute schema statements one at a time
-            for statement in self.SCHEMA.split(';'):
+            # Strip `-- ...` line comments before splitting so a `;` inside
+            # a comment doesn't break statement boundaries (it has). Block
+            # comments (/* ... */) are not used in this schema.
+            cleaned = '\n'.join(
+                line for line in self.SCHEMA.splitlines()
+                if not line.strip().startswith('--')
+            )
+            for statement in cleaned.split(';'):
                 statement = statement.strip()
                 if statement:
                     conn.execute(statement)
