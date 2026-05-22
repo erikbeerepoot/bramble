@@ -44,7 +44,9 @@ constexpr uint8_t STATE_VERSION = 4;
 constexpr uint8_t CYCLE_FAILURE_THRESHOLD = 3;
 
 // Board version identifier stored in persisted state
-#ifdef BOARD_V4
+#if defined(BOARD_V5)
+constexpr uint8_t PERSISTED_BOARD_VERSION = 5;
+#elif defined(BOARD_V4)
 constexpr uint8_t PERSISTED_BOARD_VERSION = 4;
 #else
 constexpr uint8_t PERSISTED_BOARD_VERSION = 3;

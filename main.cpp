@@ -65,11 +65,16 @@
 #include "modes/application_mode.h"
 #endif
 
-#ifdef BOARD_V4
+#if defined(BOARD_V4) || defined(BOARD_V5)
 #include "board/board_pins.h"
+#ifdef BOARD_V4
 #include "hal/bitbang_spi_device.h"
+#else
+#include "hal/spi_device.h"
+#endif
 
-// V4: LoRa on bit-bang SPI (MOSI/SCK swapped on PCB vs RP2350 pin mux)
+// V4/V5: shared RP2350B layout — pins come from Board:: namespace.
+// V4 uses bit-bang SPI (MOSI/SCK swapped on PCB); V5 uses hardware SPI1.
 constexpr uint PIN_MISO = Board::LORA_PIN_MISO;
 constexpr uint PIN_MOSI = Board::LORA_PIN_MOSI;
 constexpr uint PIN_SCK = Board::LORA_PIN_SCK;
@@ -102,7 +107,7 @@ constexpr uint PIN_NEOPIXEL = 4;
 // Controller input pins (Adafruit Feather RP2040)
 constexpr uint PIN_A0 = 26;  // A0 analog/digital input
 constexpr uint PIN_A1 = 27;  // A1 analog/digital input
-#endif  // BOARD_V4
+#endif  // BOARD_V4 / BOARD_V5
 
 // Demo mode configuration is set by CMake
 // Debug UART: printf goes to GPIO12 (VALVE_3) via CMakeLists.txt config
@@ -225,6 +230,9 @@ int main()
 #ifdef BOARD_V4
     // V4: bit-bang SPI (MOSI/SCK swapped on PCB)
     BitBangSPIDevice lora_spi(PIN_MOSI, PIN_MISO, PIN_SCK, PIN_CS);
+#elif defined(BOARD_V5)
+    // V5: hardware SPI1 (MOSI/SCK routing fixed in PCB)
+    SPIDevice lora_spi(Board::LORA_SPI_PORT, PIN_CS);
 #else
     // V3: hardware SPI
     SPIDevice lora_spi(SPI_PORT, PIN_CS);
@@ -409,8 +417,8 @@ bool initializeHardware(RadioInterface &lora, NeoPixel &led)
 {
     Logger log("Hardware");
 
-#ifdef BOARD_V4
-    // V4: LoRa uses bit-bang SPI (pins configured by BitBangSPIDevice constructor)
+#if defined(BOARD_V4) || defined(BOARD_V5)
+    // V4/V5: external flash on dedicated SPI0 (LoRa is on SPI1 / bit-bang)
 
     // Deselect external flash CS and deassert RST BEFORE SPI init.
     // CS can float low on power-up, causing the flash to respond to
@@ -428,6 +436,19 @@ bool initializeHardware(RadioInterface &lora, NeoPixel &led)
     gpio_set_function(Board::FLASH_PIN_MISO, GPIO_FUNC_SPI);
     gpio_set_function(Board::FLASH_PIN_SCK, GPIO_FUNC_SPI);
     gpio_set_function(Board::FLASH_PIN_MOSI, GPIO_FUNC_SPI);
+
+#ifdef BOARD_V5
+    // V5: LoRa on hardware SPI1 — pin mux MISO/SCK/MOSI here.
+    // CS is software-controlled (kept as SIO), driven high before any SPI traffic.
+    gpio_init(Board::LORA_PIN_CS);
+    gpio_put(Board::LORA_PIN_CS, 1);
+    gpio_set_dir(Board::LORA_PIN_CS, GPIO_OUT);
+
+    spi_init(Board::LORA_SPI_PORT, 1000 * 1000);
+    gpio_set_function(Board::LORA_PIN_MISO, GPIO_FUNC_SPI);
+    gpio_set_function(Board::LORA_PIN_SCK, GPIO_FUNC_SPI);
+    gpio_set_function(Board::LORA_PIN_MOSI, GPIO_FUNC_SPI);
+#endif
 #else
     // V3: SPI1 shared by LoRa + flash
     spi_init(SPI_PORT, 1000 * 1000);
