@@ -683,8 +683,23 @@ def add_schedule(device_id: int):
             valve=data['valve']
         )
 
-        # Queue command for delivery (uses address for hub routing)
-        from command_queue import queue_set_schedule
+        # Record in the node_commands audit log so the dashboard's Recent
+        # Activity shows a pending row immediately (mirrors valve_open flow).
+        from command_queue import queue_set_schedule, COMMAND_TTL_DEFAULTS
+
+        command_id = db.insert_command(
+            device_id=device_id,
+            command_type='schedule_set',
+            params={
+                'index': data['index'],
+                'hour': data['hour'],
+                'minute': data['minute'],
+                'duration': data['duration'],
+                'days': data['days'],
+                'valve': data['valve'],
+            },
+            ttl_seconds=COMMAND_TTL_DEFAULTS['schedule_set'],
+        )
 
         result = queue_set_schedule(
             node_address=address,
@@ -696,9 +711,13 @@ def add_schedule(device_id: int):
             valve=data['valve']
         )
 
+        if command_id is not None:
+            db.set_command_huey_task(command_id, result.id)
+
         return jsonify({
             'status': 'queued',
             'task_id': result.id,
+            'command_id': command_id,
             'device_id': str(device_id),  # String to preserve JS precision
             'address': address,
             'schedule': data,
@@ -734,14 +753,26 @@ def remove_schedule(device_id: int, index: int):
         # Remove from local schedule storage
         db.delete_schedule(device_id=device_id, index=index)
 
-        # Queue command for delivery (uses address for hub routing)
-        from command_queue import queue_remove_schedule
+        # Record in the node_commands audit log so the dashboard's Recent
+        # Activity shows a pending row immediately (mirrors valve_open flow).
+        from command_queue import queue_remove_schedule, COMMAND_TTL_DEFAULTS
+
+        command_id = db.insert_command(
+            device_id=device_id,
+            command_type='schedule_remove',
+            params={'index': index},
+            ttl_seconds=COMMAND_TTL_DEFAULTS['schedule_remove'],
+        )
 
         result = queue_remove_schedule(node_address=address, index=index)
+
+        if command_id is not None:
+            db.set_command_huey_task(command_id, result.id)
 
         return jsonify({
             'status': 'queued',
             'task_id': result.id,
+            'command_id': command_id,
             'device_id': str(device_id),  # String to preserve JS precision
             'address': address,
             'schedule_index': index,

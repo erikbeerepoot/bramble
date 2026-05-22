@@ -277,6 +277,8 @@ const COMMAND_VISUALS: Record<NodeCommandType, EventVisual> = {
   valve_close: EVENT_VISUALS[EventType.VALVE_CLOSE] ?? DEFAULT_VISUAL,
   curtain: { icon: ArrowUpFromLine, color: 'text-gray-600', bgColor: 'bg-gray-50' },
   wake_interval: { icon: Clock, color: 'text-gray-600', bgColor: 'bg-gray-50' },
+  schedule_set: EVENT_VISUALS[EventType.SCHEDULE_APPLIED] ?? DEFAULT_VISUAL,
+  schedule_remove: EVENT_VISUALS[EventType.SCHEDULE_REMOVED] ?? DEFAULT_VISUAL,
 };
 
 function curtainVisualForAction(action: string | undefined): EventVisual {
@@ -330,6 +332,20 @@ function commandLabel(command: NodeCommand): string {
         ? params.interval_seconds
         : null;
       return interval !== null ? `Wake Interval · ${interval}s` : 'Wake Interval';
+    }
+    case 'schedule_set': {
+      const index = typeof params.index === 'number' ? params.index : 0;
+      const hour = typeof params.hour === 'number' ? params.hour : 0;
+      const minute = typeof params.minute === 'number' ? params.minute : 0;
+      const duration = typeof params.duration === 'number' ? params.duration : null;
+      const time = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+      return duration !== null
+        ? `Schedule #${index} · ${time} · ${formatDuration(duration)}`
+        : `Schedule #${index} · ${time}`;
+    }
+    case 'schedule_remove': {
+      const index = typeof params.index === 'number' ? params.index : 0;
+      return `Remove Schedule #${index}`;
     }
   }
 }

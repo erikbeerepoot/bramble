@@ -30,6 +30,8 @@ COMMAND_TTL_DEFAULTS = {
     'valve_close': 1800,
     'curtain': 600,
     'wake_interval': 300,
+    'schedule_set': 1800,
+    'schedule_remove': 1800,
 }
 
 

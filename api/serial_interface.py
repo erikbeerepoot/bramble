@@ -526,6 +526,9 @@ class SerialInterface:
             # Match pending ad-hoc valve commands.
             self._reconcile_valve_event(device_id, event_type, detail, unix_ts)
 
+            # Match pending ad-hoc schedule commands.
+            self._reconcile_schedule_event(device_id, event_type, detail, unix_ts)
+
         except (ValueError, IndexError) as e:
             logger.error(f"Failed to parse EVENT_LOG: {e}")
 
@@ -555,6 +558,47 @@ class SerialInterface:
             logger.info(
                 f"Command confirmed: id={cmd['id']}, type={cmd_type}, "
                 f"valve={valve_id}, device_id={device_id}"
+            )
+
+    def _reconcile_schedule_event(self, device_id: int, event_type: int,
+                                  index: int, unix_ts: int):
+        """Confirm or fail pending schedule_set / schedule_remove commands."""
+        if event_type == EventType.SCHEDULE_APPLIED:
+            cmd_type = 'schedule_set'
+            status = 'confirmed'
+        elif event_type == EventType.SCHEDULE_REMOVED:
+            cmd_type = 'schedule_remove'
+            status = 'confirmed'
+        elif event_type == EventType.SCHEDULE_FAILED:
+            for candidate in ('schedule_set', 'schedule_remove'):
+                cmd = self.database.find_pending_command(
+                    device_id, candidate, param_filter={'index': index}
+                )
+                if cmd:
+                    self.database.update_command_status(
+                        cmd['id'], 'failed', unix_ts,
+                        event_code=event_type, event_detail=index,
+                    )
+                    logger.info(
+                        f"Command failed: id={cmd['id']}, type={candidate}, "
+                        f"index={index}, device_id={device_id}"
+                    )
+                    return
+            return
+        else:
+            return
+
+        cmd = self.database.find_pending_command(
+            device_id, cmd_type, param_filter={'index': index}
+        )
+        if cmd:
+            self.database.update_command_status(
+                cmd['id'], status, unix_ts,
+                event_code=event_type, event_detail=index,
+            )
+            logger.info(
+                f"Command confirmed: id={cmd['id']}, type={cmd_type}, "
+                f"index={index}, device_id={device_id}"
             )
 
     def _reconcile_curtain_event(self, device_id: int, event_code: int,

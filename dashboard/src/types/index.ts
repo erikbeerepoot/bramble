@@ -257,7 +257,9 @@ export type NodeCommandType =
   | 'valve_open'
   | 'valve_close'
   | 'curtain'
-  | 'wake_interval';
+  | 'wake_interval'
+  | 'schedule_set'
+  | 'schedule_remove';
 
 export interface NodeCommand {
   id: number;
