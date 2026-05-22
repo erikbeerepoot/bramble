@@ -744,12 +744,14 @@ bool IrrigationMode::unpackState(const IrrigationPersistedState *persisted)
     // Restore LoRa sequence number
     messenger_.setNextSeqNum(persisted->next_seq_num);
 
-    // Restore assigned address from PMU RAM — but don't overwrite a freshly registered address
-    // (main.cpp registration runs before onStart, so the messenger may already have a valid
-    // address)
-    uint16_t current_address = messenger_.getNodeAddress();
-    if (current_address == ADDRESS_UNREGISTERED &&
-        persisted->assigned_address != ADDRESS_UNREGISTERED) {
+    // Restore assigned address from PMU RAM. The PMU state is the
+    // authoritative record of the most recently re-registered address —
+    // packState saves it on every sleep, so a non-UNREGISTERED value here
+    // always reflects a more recent registration than what main.cpp loaded
+    // from flash. Prefer it unconditionally; otherwise, after a hub-side
+    // DELETE_NODE + re-register, the flash-loaded (stale) address would win
+    // and force a re-register on every wake.
+    if (persisted->assigned_address != ADDRESS_UNREGISTERED) {
         messenger_.setNodeAddress(persisted->assigned_address);
     }
 
