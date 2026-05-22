@@ -280,8 +280,13 @@ public:
     Protocol(UartSendCallback uartSend, SetWakeCallback setWake, KeepAwakeCallback keepAwake,
              ReadyForSleepCallback readyForSleep = nullptr, GetTickCallback getTick = nullptr);
 
-    // Process received byte from UART
+    // Process received byte from UART (call from ISR — keeps work minimal,
+    // stores completed frames in pending slot for main-loop dispatch).
     void processReceivedByte(uint8_t byte);
+
+    // Dispatch a pending received message — call from main loop, NOT from ISR.
+    // Runs the command handler and may block on UART TX while sending ACK/response.
+    void processPendingMessage();
 
     // Send wake notification to RP2040
     void sendWakeNotification(WakeReason reason);
@@ -347,6 +352,16 @@ private:
     // Clear-to-send flag - set from UART ISR, read from main loop
     volatile bool clearToSendReceived_;
 
+    // Pending received message slot — populated by processReceivedByte (ISR),
+    // consumed by processPendingMessage (main loop). Decouples blocking UART TX
+    // (Ack/response) from RX so incoming bytes aren't dropped during a reply.
+    volatile bool pendingMessageReady_;
+    uint8_t pendingSeqNum_;
+    Command pendingCommand_;
+    uint8_t pendingData_[MAX_MESSAGE_SIZE];
+    uint8_t pendingDataLen_;
+    volatile uint32_t pendingMessageDropCount_;  // diagnostic counter
+
     // Optional persistent storage (nullptr if FRAM not present)
     PersistentStorage *storage_;
 
@@ -362,7 +377,7 @@ private:
     void handleClearSchedule(const uint8_t *data, uint8_t length);
     void handleKeepAwake(const uint8_t *data, uint8_t length);
     void handleSetDateTime(const uint8_t *data, uint8_t length);
-    void handleReadyForSleep();
+    void handleReadyForSleep(const uint8_t *data, uint8_t length);
     void handleGetDateTime();
     void handleSetValveTimer(const uint8_t *data, uint8_t length);
     void handleSaveBlob(const uint8_t *data, uint8_t length);
