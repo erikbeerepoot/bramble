@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type {
   Node,
   NodeEvent,
-  NodeCommand,
   NodeStatistics,
   SensorReading,
   TimeRange,
@@ -23,13 +22,10 @@ import {
   getNodeStatistics,
   deleteNode,
   rebootNode,
-  setWakeInterval,
   getNodeEvents,
-  getNodeCommands,
 } from '../api/client';
 import { NodeType } from '../types';
 import CurtainControl from './CurtainControl';
-import type { CurtainAction } from './CurtainControl';
 import IrrigationControl from './IrrigationControl';
 import NodeNameEditor from './NodeNameEditor';
 import SensorChart from './SensorChart';
@@ -40,15 +36,8 @@ import SignalStrength from './SignalStrength';
 import HealthStatus from './HealthStatus';
 import BacklogStatus from './BacklogStatus';
 import { RecentEvents } from './RecentEvents';
-import type { PendingEvent } from './RecentEvents';
 import { REFRESH_INTERVAL_MS } from '../config';
-import { EventCode } from '../types';
-
-const ACTION_TO_EVENT_CODE: Record<CurtainAction, number> = {
-  open: EventCode.EVENT_CURTAIN_OPENING,
-  close: EventCode.EVENT_CURTAIN_CLOSING,
-  stop: EventCode.EVENT_CURTAIN_STOPPED,
-};
+import { useNodeCommands } from '../hooks/useNodeCommands';
 
 interface NodeDetailProps {
   node: Node;
@@ -84,9 +73,13 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
   const [wakeIntervalStatus, setWakeIntervalStatus] = useState<string | null>(null);
   const [events, setEvents] = useState<NodeEvent[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(true);
-  const [commands, setCommands] = useState<NodeCommand[]>([]);
-  const [pendingEvent, setPendingEvent] = useState<PendingEvent | null>(null);
-  const pendingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const {
+    commands,
+    issueRunValve,
+    issueStopValve,
+    issueCurtain,
+    issueSetWakeInterval,
+  } = useNodeCommands(node.device_id);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const hasSensorData = node.type === NodeType.SENSOR || node.type === NodeType.GREENHOUSE;
@@ -201,18 +194,6 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
     }
   }, [node.device_id]);
 
-  // Refresh the command audit log alongside events. Server response replaces
-  // local state outright — the row count is bounded by limit and the lifecycle
-  // status (pending/confirmed/...) may update in place server-side.
-  const fetchCommands = useCallback(async () => {
-    try {
-      const response = await getNodeCommands(node.device_id, { limit: 100 });
-      setCommands(response.commands);
-    } catch {
-      // Silently fail — commands log is informational
-    }
-  }, [node.device_id]);
-
   // Load older: extend backward by one window from the oldest loaded event.
   const loadOlderEvents = useCallback(async () => {
     if (loadingMoreEvents || !hasMoreEvents || events.length === 0) return;
@@ -238,46 +219,9 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
 
   useEffect(() => {
     fetchEvents();
-    fetchCommands();
-    const interval = setInterval(() => {
-      fetchEvents();
-      fetchCommands();
-    }, REFRESH_INTERVAL_MS);
+    const interval = setInterval(fetchEvents, REFRESH_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [fetchEvents, fetchCommands]);
-
-  // Match incoming events against the pending event
-  useEffect(() => {
-    if (!pendingEvent || pendingEvent.status !== 'pending') return;
-    const match = events.find(
-      (e) =>
-        e.event_code === pendingEvent.expectedEventCode && e.timestamp >= pendingEvent.createdAt - 5
-    );
-    if (match) {
-      setPendingEvent((prev) => (prev ? { ...prev, status: 'confirmed' } : null));
-      setTimeout(() => setPendingEvent(null), 3000);
-    }
-  }, [events, pendingEvent]);
-
-  const handleCommandQueued = useCallback(
-    (action: CurtainAction) => {
-      // Clear any previous safety timeout
-      if (pendingTimeoutRef.current) clearTimeout(pendingTimeoutRef.current);
-
-      setPendingEvent({
-        action,
-        expectedEventCode: ACTION_TO_EVENT_CODE[action],
-        createdAt: Math.floor(Date.now() / 1000),
-        status: 'pending',
-      });
-      fetchEvents();
-      fetchCommands();
-
-      // Safety timeout — clear after 60s if never confirmed
-      pendingTimeoutRef.current = setTimeout(() => setPendingEvent(null), 60000);
-    },
-    [fetchEvents, fetchCommands]
-  );
+  }, [fetchEvents]);
 
   const handleMetadataUpdate = (metadata: NodeMetadata) => {
     onUpdate({
@@ -321,7 +265,7 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
     setSettingWakeInterval(true);
     setWakeIntervalStatus(null);
     try {
-      await setWakeInterval(node.device_id, Math.round(minutes * 60));
+      await issueSetWakeInterval(Math.round(minutes * 60));
       setWakeIntervalStatus('Queued successfully');
     } catch (err) {
       setWakeIntervalStatus(err instanceof Error ? err.message : 'Failed to set wake interval');
@@ -704,16 +648,14 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
         {/* Controls column — renders first on mobile */}
         <div className="lg:col-span-2 space-y-4 order-first lg:order-none">
           {node.type === NodeType.GREENHOUSE && (
-            <CurtainControl address={node.address} onCommandQueued={handleCommandQueued} />
+            <CurtainControl address={node.address} issueCurtain={issueCurtain} />
           )}
 
           {node.type === NodeType.IRRIGATION && (
             <IrrigationControl
               deviceId={node.device_id}
-              onEventTriggered={() => {
-                fetchEvents();
-                fetchCommands();
-              }}
+              issueRunValve={issueRunValve}
+              issueStopValve={issueStopValve}
             />
           )}
 
@@ -780,7 +722,6 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
             events={events}
             commands={commands}
             loading={loadingEvents}
-            pendingEvent={pendingEvent}
             onLoadMore={loadOlderEvents}
             hasMore={hasMoreEvents}
             loadingMore={loadingMoreEvents}

@@ -2,8 +2,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { Zap, Play, Square, Check, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
-  runValve,
-  stopValve,
   getIrrigationSchedules,
   addIrrigationSchedule,
   deleteIrrigationSchedule,
@@ -23,7 +21,8 @@ interface ValveState {
 
 interface IrrigationControlProps {
   deviceId: string;
-  onEventTriggered?: () => void;
+  issueRunValve: (valve: number, durationSeconds: number) => Promise<void>;
+  issueStopValve: (valve: number) => Promise<void>;
 }
 
 // Non-linear notches: fine-grained at short durations, coarser for long runs
@@ -49,7 +48,7 @@ function formatDurationShort(minutes: number): string {
   return `${minutes}m`;
 }
 
-function IrrigationControl({ deviceId, onEventTriggered }: IrrigationControlProps) {
+function IrrigationControl({ deviceId, issueRunValve, issueStopValve }: IrrigationControlProps) {
   // Run-once state
   const [selectedDuration, setSelectedDuration] = useState<Record<number, number>>({
     0: 300,
@@ -100,11 +99,11 @@ function IrrigationControl({ deviceId, onEventTriggered }: IrrigationControlProp
     setValveState(valve, { state: 'sending', action: 'run' });
     try {
       const duration = selectedDuration[valve] || 300;
-      await runValve(deviceId, valve, duration);
+      await issueRunValve(valve, duration);
+      // The hook inserts an optimistic row in the activity log immediately;
+      // we just need the button-level "Queued" affordance to confirm to the
+      // user that the click landed.
       setValveState(valve, { state: 'queued', action: 'run' });
-      // Refresh events soon to pick up Valve Open / Valve Timer Set.
-      if (onEventTriggered) setTimeout(onEventTriggered, 3000);
-      // Return to idle after the Queued checkmark has been visible.
       setTimeout(() => {
         setValveStates((prev) =>
           prev[valve].state === 'queued' ? { ...prev, [valve]: { state: 'idle' } } : prev
@@ -122,9 +121,8 @@ function IrrigationControl({ deviceId, onEventTriggered }: IrrigationControlProp
   const handleStop = async (valve: number) => {
     setValveState(valve, { state: 'sending', action: 'stop' });
     try {
-      await stopValve(deviceId, valve);
+      await issueStopValve(valve);
       setValveState(valve, { state: 'idle' });
-      if (onEventTriggered) setTimeout(onEventTriggered, 3000);
     } catch (err) {
       setValveState(valve, {
         state: 'error',
