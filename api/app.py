@@ -820,10 +820,19 @@ def run_valve(device_id: int):
         if not 1 <= duration_seconds <= 7200:
             return jsonify({'error': 'duration_seconds must be 1-7200'}), 400
 
+        # Record the command in the audit log BEFORE queueing so the dashboard
+        # can surface "pending" state immediately on poll.
+        from command_queue import queue_send_actuator, COMMAND_TTL_DEFAULTS
+        db = get_database()
+        command_id = db.insert_command(
+            device_id=device_id,
+            command_type='valve_open',
+            params={'valve': valve, 'duration_seconds': duration_seconds},
+            ttl_seconds=COMMAND_TTL_DEFAULTS['valve_open'],
+        )
+
         # Send actuator ON command with duration — firmware sets RTC Alarm A
         # for auto-close after the specified duration (node sleeps in between)
-        from command_queue import queue_send_actuator
-
         actuator_type = 1  # ACTUATOR_VALVE
         command = 1  # CMD_TURN_ON
         result = queue_send_actuator(
@@ -834,9 +843,13 @@ def run_valve(device_id: int):
             duration_seconds=duration_seconds,
         )
 
+        if command_id is not None:
+            db.set_command_huey_task(command_id, result.id)
+
         return jsonify({
             'status': 'queued',
             'task_id': result.id,
+            'command_id': command_id,
             'device_id': str(device_id),
             'address': address,
             'valve': valve,
@@ -875,7 +888,14 @@ def stop_valve(device_id: int):
         if valve is None or valve not in (0, 1):
             return jsonify({'error': 'valve must be 0 or 1'}), 400
 
-        from command_queue import queue_send_actuator
+        from command_queue import queue_send_actuator, COMMAND_TTL_DEFAULTS
+        db = get_database()
+        command_id = db.insert_command(
+            device_id=device_id,
+            command_type='valve_close',
+            params={'valve': valve},
+            ttl_seconds=COMMAND_TTL_DEFAULTS['valve_close'],
+        )
 
         actuator_type = 1  # ACTUATOR_VALVE
         command = 0  # CMD_TURN_OFF
@@ -886,9 +906,13 @@ def stop_valve(device_id: int):
             param=valve,
         )
 
+        if command_id is not None:
+            db.set_command_huey_task(command_id, result.id)
+
         return jsonify({
             'status': 'queued',
             'task_id': result.id,
+            'command_id': command_id,
             'device_id': str(device_id),
             'address': address,
             'valve': valve,
@@ -933,13 +957,24 @@ def set_wake_interval(device_id: int):
             return jsonify({'error': 'interval_seconds must be 10-3600'}), 400
 
         # Queue command for delivery (uses address for hub routing)
-        from command_queue import queue_set_wake_interval
+        from command_queue import queue_set_wake_interval, COMMAND_TTL_DEFAULTS
+        db = get_database()
+        command_id = db.insert_command(
+            device_id=device_id,
+            command_type='wake_interval',
+            params={'interval_seconds': interval},
+            ttl_seconds=COMMAND_TTL_DEFAULTS['wake_interval'],
+        )
 
         result = queue_set_wake_interval(node_address=address, interval_seconds=interval)
+
+        if command_id is not None:
+            db.set_command_huey_task(command_id, result.id)
 
         return jsonify({
             'status': 'queued',
             'task_id': result.id,
+            'command_id': command_id,
             'device_id': str(device_id),  # String to preserve JS precision
             'address': address,
             'interval_seconds': interval,
@@ -1104,7 +1139,33 @@ def control_curtain(address: int):
         return jsonify({'error': f'Invalid action: {action}. Must be open, close, stop, or calibrate'}), 400
 
     try:
-        from command_queue import queue_send_actuator
+        from command_queue import queue_send_actuator, COMMAND_TTL_DEFAULTS
+
+        # Reverse-lookup device_id from address so we can write a row to the
+        # node_commands audit log. If lookup fails, skip the insert and warn
+        # — don't fail the POST itself.
+        db = get_database()
+        command_id = None
+        try:
+            with db._get_connection() as conn:
+                row = conn.execute(
+                    "SELECT device_id FROM nodes WHERE address = ?",
+                    (address,),
+                ).fetchone()
+            if row:
+                command_id = db.insert_command(
+                    device_id=int(row[0]),
+                    command_type='curtain',
+                    params={'action': action},
+                    ttl_seconds=COMMAND_TTL_DEFAULTS['curtain'],
+                )
+            else:
+                logger.warning(
+                    f"Curtain command: no device_id for address {address}, "
+                    "skipping audit-log insert"
+                )
+        except Exception as e:
+            logger.warning(f"Curtain command audit-log insert failed: {e}")
 
         actuator_type = 4  # ACTUATOR_CURTAIN
         command = action_map[action]
@@ -1114,9 +1175,13 @@ def control_curtain(address: int):
             command=command,
         )
 
+        if command_id is not None:
+            db.set_command_huey_task(command_id, result.id)
+
         return jsonify({
             'status': 'queued',
             'task_id': result.id,
+            'command_id': command_id,
             'node_address': address,
             'action': action,
             'message': f'Curtain {action} command queued for delivery'
@@ -1167,6 +1232,59 @@ def get_node_events(device_id: int):
 
     except Exception as e:
         logger.error(f"Error querying events for device {device_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/nodes/<int:device_id>/commands', methods=['GET'])
+def get_node_commands(device_id: int):
+    """Query the ad-hoc command audit log for a node.
+
+    Query parameters:
+        status: CSV of statuses to include (pending,confirmed,failed,expired,cancelled)
+        since: Earliest created_at to include (unix seconds). Defaults to now-86400.
+        limit: Maximum records (default 100, max 200)
+
+    Returns:
+        JSON object {device_id, count, commands: [...]}
+    """
+    try:
+        db = get_database()
+
+        # Sweep expired pending rows opportunistically so callers see fresh state
+        # without needing a background thread. Cheap indexed UPDATE.
+        try:
+            db.expire_stale_commands(int(time.time()))
+        except Exception as e:
+            logger.warning(f"Expire sweep failed: {e}")
+
+        status_csv = request.args.get('status')
+        status_list = (
+            [s.strip() for s in status_csv.split(',') if s.strip()]
+            if status_csv
+            else None
+        )
+        since = request.args.get('since', type=int)
+        if since is None:
+            since = int(time.time()) - 86400
+        limit = request.args.get('limit', default=100, type=int)
+        if limit < 1 or limit > 200:
+            return jsonify({'error': 'limit must be 1-200'}), 400
+
+        commands = db.query_commands(
+            device_id=device_id,
+            status=status_list,
+            since=since,
+            limit=limit,
+        )
+
+        return jsonify({
+            'device_id': str(device_id),
+            'count': len(commands),
+            'commands': commands,
+        })
+
+    except Exception as e:
+        logger.error(f"Error querying commands for device {device_id}: {e}")
         return jsonify({'error': str(e)}), 500
 
 

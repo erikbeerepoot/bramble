@@ -21,11 +21,13 @@ import {
   Copy,
   Check,
   Loader2,
+  XCircle,
+  Settings2,
 } from 'lucide-react';
 import { format, isToday, isYesterday } from 'date-fns';
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import type { NodeEvent } from '../types';
+import type { NodeEvent, NodeCommand, NodeCommandType } from '../types';
 import {
   getEventName,
   getEventDetail,
@@ -51,6 +53,7 @@ const PENDING_EVENT_LABELS: Record<CurtainAction, string> = {
 
 interface RecentEventsProps {
   events: NodeEvent[];
+  commands?: NodeCommand[];
   loading: boolean;
   pendingEvent?: PendingEvent | null;
   onLoadMore?: () => void;
@@ -267,6 +270,127 @@ function PendingEventIcon({ status }: { status: 'pending' | 'confirmed' }) {
   );
 }
 
+// Visual config per command type. Reuses event icons/colors so a "Valve Open"
+// command row looks consistent with the eventual "Valve Open" event row.
+const COMMAND_VISUALS: Record<NodeCommandType, EventVisual> = {
+  valve_open: EVENT_VISUALS[EventType.VALVE_OPEN] ?? DEFAULT_VISUAL,
+  valve_close: EVENT_VISUALS[EventType.VALVE_CLOSE] ?? DEFAULT_VISUAL,
+  curtain: { icon: ArrowUpFromLine, color: 'text-gray-600', bgColor: 'bg-gray-50' },
+  wake_interval: { icon: Clock, color: 'text-gray-600', bgColor: 'bg-gray-50' },
+};
+
+function curtainVisualForAction(action: string | undefined): EventVisual {
+  switch (action) {
+    case 'open':
+      return EVENT_VISUALS[EventCode.EVENT_CURTAIN_OPENING] ?? DEFAULT_VISUAL;
+    case 'close':
+      return EVENT_VISUALS[EventCode.EVENT_CURTAIN_CLOSING] ?? DEFAULT_VISUAL;
+    case 'stop':
+      return EVENT_VISUALS[EventCode.EVENT_CURTAIN_STOPPED] ?? DEFAULT_VISUAL;
+    case 'calibrate':
+      return { icon: Settings2, color: 'text-blue-600', bgColor: 'bg-blue-50' };
+    default:
+      return COMMAND_VISUALS.curtain;
+  }
+}
+
+// Human-readable label for the command row before the status suffix.
+function commandLabel(command: NodeCommand): string {
+  const params = command.params as Record<string, unknown>;
+  switch (command.command_type) {
+    case 'valve_open': {
+      const valve = typeof params.valve === 'number' ? params.valve : 0;
+      const dur = typeof params.duration_seconds === 'number'
+        ? params.duration_seconds
+        : null;
+      return dur !== null
+        ? `Valve ${valve + 1} Open · ${formatDuration(dur)}`
+        : `Valve ${valve + 1} Open`;
+    }
+    case 'valve_close': {
+      const valve = typeof params.valve === 'number' ? params.valve : 0;
+      return `Valve ${valve + 1} Close`;
+    }
+    case 'curtain': {
+      const action = typeof params.action === 'string' ? params.action : '';
+      const label =
+        action === 'open'
+          ? 'Curtain Open'
+          : action === 'close'
+            ? 'Curtain Close'
+            : action === 'stop'
+              ? 'Curtain Stop'
+              : action === 'calibrate'
+                ? 'Curtain Calibrate'
+                : `Curtain ${action}`;
+      return label;
+    }
+    case 'wake_interval': {
+      const interval = typeof params.interval_seconds === 'number'
+        ? params.interval_seconds
+        : null;
+      return interval !== null ? `Wake Interval · ${interval}s` : 'Wake Interval';
+    }
+  }
+}
+
+function commandVisual(command: NodeCommand): EventVisual {
+  if (command.command_type === 'curtain') {
+    return curtainVisualForAction(command.params.action as string | undefined);
+  }
+  return COMMAND_VISUALS[command.command_type];
+}
+
+// Suffix shown after the command label to indicate lifecycle status.
+function commandStatusSuffix(command: NodeCommand): string {
+  switch (command.status) {
+    case 'pending':
+      return ' · Pending';
+    case 'confirmed': {
+      if (command.confirmed_at) {
+        const delta = command.confirmed_at - command.created_at;
+        return delta > 0 ? ` · Confirmed · ${formatDuration(delta)}` : ' · Confirmed';
+      }
+      return ' · Confirmed';
+    }
+    case 'failed':
+      return ' · Failed';
+    case 'expired':
+      return command.command_type === 'wake_interval'
+        ? ' · Sent (no confirmation available)'
+        : ' · Expired (no response)';
+    case 'cancelled':
+      return ' · Cancelled';
+  }
+}
+
+// Status icon overlay rendered next to the row's event/command icon.
+function CommandStatusBadge({ status }: { status: NodeCommand['status'] }) {
+  if (status === 'pending') {
+    return (
+      <div className="w-6 h-6 rounded-full bg-blue-50 flex items-center justify-center">
+        <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
+      </div>
+    );
+  }
+  if (status === 'failed') {
+    return (
+      <div className="w-6 h-6 rounded-full bg-red-50 flex items-center justify-center">
+        <XCircle className="w-3.5 h-3.5 text-red-600" />
+      </div>
+    );
+  }
+  if (status === 'expired' || status === 'cancelled') {
+    return (
+      <div className="w-6 h-6 rounded-full bg-gray-50 flex items-center justify-center">
+        <Clock className="w-3.5 h-3.5 text-gray-400" />
+      </div>
+    );
+  }
+  // confirmed: use the existing animated check from PendingEventIcon.
+  return <PendingEventIcon status="confirmed" />;
+}
+
 // Event codes that collapse into summary rows (per-wake-cycle noise).
 const WAKE_CYCLE_CODES = new Set<number>([EventType.WAKE, EventType.SLEEP_ENTER]);
 
@@ -300,14 +424,32 @@ function annotateDurations(events: NodeEvent[]): Map<number, number> {
   return durationByOpenTs;
 }
 
+// One row of the timeline — events (single or collapsed run of WAKE/SLEEP_ENTER)
+// or commands. Commands use their created_at as the timeline timestamp so the
+// row stays in place across pending → confirmed transitions.
+type TimelineItem =
+  | { kind: 'event'; ts: number; event: NodeEvent }
+  | { kind: 'command'; ts: number; command: NodeCommand };
+
 type RenderItem =
   | { kind: 'event'; event: NodeEvent }
+  | { kind: 'command'; command: NodeCommand }
   | {
       kind: 'collapsed';
       events: NodeEvent[]; // consecutive run of WAKE/SLEEP_ENTER
     };
 
-function collapseWakeCycles(dayEvents: NodeEvent[]): RenderItem[] {
+function mergeTimeline(events: NodeEvent[], commands: NodeCommand[]): TimelineItem[] {
+  const items: TimelineItem[] = [];
+  for (const event of events) items.push({ kind: 'event', ts: event.timestamp, event });
+  for (const command of commands) {
+    items.push({ kind: 'command', ts: command.created_at, command });
+  }
+  items.sort((a, b) => b.ts - a.ts);
+  return items;
+}
+
+function collapseWakeCycles(dayItems: TimelineItem[]): RenderItem[] {
   const items: RenderItem[] = [];
   let run: NodeEvent[] = [];
   const flush = () => {
@@ -319,12 +461,15 @@ function collapseWakeCycles(dayEvents: NodeEvent[]): RenderItem[] {
     }
     run = [];
   };
-  for (const event of dayEvents) {
-    if (WAKE_CYCLE_CODES.has(event.event_code)) {
-      run.push(event);
+  for (const item of dayItems) {
+    if (item.kind === 'event' && WAKE_CYCLE_CODES.has(item.event.event_code)) {
+      run.push(item.event);
+    } else if (item.kind === 'event') {
+      flush();
+      items.push({ kind: 'event', event: item.event });
     } else {
       flush();
-      items.push({ kind: 'event', event });
+      items.push({ kind: 'command', command: item.command });
     }
   }
   flush();
@@ -362,6 +507,7 @@ function formatCollapsedLabel(events: NodeEvent[]): string {
 
 export function RecentEvents({
   events,
+  commands,
   loading,
   pendingEvent,
   onLoadMore,
@@ -395,9 +541,12 @@ export function RecentEvents({
   // Computed once over all events so pairs spanning day boundaries still resolve.
   const durationByOpenTs = annotateDurations(filteredEvents);
 
-  const groupedEvents = filteredEvents.reduce(
-    (acc, event) => {
-      const date = new Date(event.timestamp * 1000);
+  // Merge events + commands into a single timeline, then bucket by day.
+  const timeline = mergeTimeline(filteredEvents, commands ?? []);
+
+  const groupedItems = timeline.reduce(
+    (acc, item) => {
+      const date = new Date(item.ts * 1000);
       let dayLabel: string;
       if (isToday(date)) {
         dayLabel = 'Today';
@@ -409,19 +558,19 @@ export function RecentEvents({
       if (!acc[dayLabel]) {
         acc[dayLabel] = [];
       }
-      acc[dayLabel].push(event);
+      acc[dayLabel].push(item);
       return acc;
     },
-    {} as Record<string, NodeEvent[]>
+    {} as Record<string, TimelineItem[]>
   );
 
   // Ensure "Today" group exists if we have a pending event
-  if (pendingEvent && !groupedEvents['Today']) {
-    groupedEvents['Today'] = [];
+  if (pendingEvent && !groupedItems['Today']) {
+    groupedItems['Today'] = [];
   }
 
   // Put "Today" first when we have a pending event
-  const dayEntries = Object.entries(groupedEvents);
+  const dayEntries = Object.entries(groupedItems);
   if (pendingEvent) {
     const todayIdx = dayEntries.findIndex(([day]) => day === 'Today');
     if (todayIdx > 0) {
@@ -430,11 +579,13 @@ export function RecentEvents({
     }
   }
 
+  const totalRows = events.length + (commands?.length ?? 0);
+
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
       <div className="px-5 py-4 border-b border-gray-200">
-        <h2 className="font-semibold text-gray-900">Recent Events</h2>
-        <p className="text-xs text-gray-500 mt-0.5">{events.length} events logged</p>
+        <h2 className="font-semibold text-gray-900">Recent Activity</h2>
+        <p className="text-xs text-gray-500 mt-0.5">{totalRows} entries</p>
       </div>
 
       {loading ? (
@@ -442,13 +593,13 @@ export function RecentEvents({
           <div className="h-4 bg-gray-200 rounded w-3/4" />
           <div className="h-4 bg-gray-200 rounded w-1/2" />
         </div>
-      ) : events.length === 0 && !pendingEvent ? (
+      ) : totalRows === 0 && !pendingEvent ? (
         <div className="px-5 py-4">
-          <p className="text-sm text-gray-400">No events recorded yet.</p>
+          <p className="text-sm text-gray-400">No activity recorded yet.</p>
         </div>
       ) : (
         <div className="px-4 py-2.5 max-h-[600px] overflow-y-auto">
-          {dayEntries.map(([day, dayEvents], dayIndex) => (
+          {dayEntries.map(([day, dayItems], dayIndex) => (
             <div key={day}>
               {dayIndex > 0 && <div className="h-px bg-gray-200 my-2.5" />}
 
@@ -469,7 +620,7 @@ export function RecentEvents({
                       <div className="event-item group relative flex items-start gap-2.5 py-1.5 px-1.5 rounded-md">
                         <div className="relative flex-shrink-0 mt-px">
                           <PendingEventIcon status={pendingEvent.status} />
-                          {dayEvents.length > 0 && (
+                          {dayItems.length > 0 && (
                             <div className="absolute top-7 left-1/2 -translate-x-px w-px h-2.5 bg-gray-200" />
                           )}
                         </div>
@@ -489,13 +640,55 @@ export function RecentEvents({
                 </AnimatePresence>
 
                 {(() => {
-                  const renderItems = collapseWakeCycles(dayEvents);
+                  const renderItems = collapseWakeCycles(dayItems);
                   return renderItems.map((item, index) => {
                     const adjustedIndex =
                       pendingEvent && day === 'Today' ? index + 1 : index;
                     const totalItems =
                       renderItems.length + (pendingEvent && day === 'Today' ? 1 : 0);
                     const isLast = adjustedIndex >= totalItems - 1;
+
+                    if (item.kind === 'command') {
+                      const cmd = item.command;
+                      const visual = commandVisual(cmd);
+                      const Icon = visual.icon;
+                      return (
+                        <div
+                          key={`cmd-${cmd.id}`}
+                          className="event-item group relative flex items-start gap-2.5 py-1.5 px-1.5 rounded-md hover:bg-gray-50 transition-colors"
+                          style={{ animationDelay: `${index * 30}ms` }}
+                        >
+                          <div className="relative flex-shrink-0 mt-px">
+                            {cmd.status === 'pending' ||
+                            cmd.status === 'failed' ||
+                            cmd.status === 'expired' ||
+                            cmd.status === 'cancelled' ? (
+                              <CommandStatusBadge status={cmd.status} />
+                            ) : (
+                              <div
+                                className={`w-6 h-6 rounded-full ${visual.bgColor} flex items-center justify-center`}
+                              >
+                                <Icon className={`w-3 h-3 ${visual.color}`} />
+                              </div>
+                            )}
+                            {!isLast && (
+                              <div className="absolute top-7 left-1/2 -translate-x-px w-px h-2.5 bg-gray-200" />
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-start justify-between gap-2 mb-px">
+                              <span className="text-sm font-medium text-gray-900">
+                                {commandLabel(cmd)}
+                                <span className="text-gray-400">
+                                  {commandStatusSuffix(cmd)}
+                                </span>
+                              </span>
+                              <CopyableTimestamp timestamp={cmd.created_at} />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
 
                     if (item.kind === 'collapsed') {
                       const first = item.events[0];
