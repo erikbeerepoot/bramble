@@ -36,26 +36,11 @@ import {
   EventType,
   EventCode,
 } from '../types';
-import type { CurtainAction } from './CurtainControl';
-
-export interface PendingEvent {
-  action: CurtainAction;
-  expectedEventCode: number;
-  createdAt: number;
-  status: 'pending' | 'confirmed';
-}
-
-const PENDING_EVENT_LABELS: Record<CurtainAction, string> = {
-  open: 'Curtain Open',
-  close: 'Curtain Close',
-  stop: 'Curtain Stop',
-};
 
 interface RecentEventsProps {
   events: NodeEvent[];
   commands?: NodeCommand[];
   loading: boolean;
-  pendingEvent?: PendingEvent | null;
   onLoadMore?: () => void;
   hasMore?: boolean;
   loadingMore?: boolean;
@@ -509,7 +494,6 @@ export function RecentEvents({
   events,
   commands,
   loading,
-  pendingEvent,
   onLoadMore,
   hasMore,
   loadingMore,
@@ -527,22 +511,11 @@ export function RecentEvents({
     });
   };
 
-  // Filter out the real event that matches the pending one to avoid duplicates
-  const filteredEvents = pendingEvent
-    ? events.filter(
-        (e) =>
-          !(
-            e.event_code === pendingEvent.expectedEventCode &&
-            e.timestamp >= pendingEvent.createdAt - 5
-          )
-      )
-    : events;
-
   // Computed once over all events so pairs spanning day boundaries still resolve.
-  const durationByOpenTs = annotateDurations(filteredEvents);
+  const durationByOpenTs = annotateDurations(events);
 
   // Merge events + commands into a single timeline, then bucket by day.
-  const timeline = mergeTimeline(filteredEvents, commands ?? []);
+  const timeline = mergeTimeline(events, commands ?? []);
 
   const groupedItems = timeline.reduce(
     (acc, item) => {
@@ -564,21 +537,7 @@ export function RecentEvents({
     {} as Record<string, TimelineItem[]>
   );
 
-  // Ensure "Today" group exists if we have a pending event
-  if (pendingEvent && !groupedItems['Today']) {
-    groupedItems['Today'] = [];
-  }
-
-  // Put "Today" first when we have a pending event
   const dayEntries = Object.entries(groupedItems);
-  if (pendingEvent) {
-    const todayIdx = dayEntries.findIndex(([day]) => day === 'Today');
-    if (todayIdx > 0) {
-      const [todayEntry] = dayEntries.splice(todayIdx, 1);
-      dayEntries.unshift(todayEntry);
-    }
-  }
-
   const totalRows = events.length + (commands?.length ?? 0);
 
   return (
@@ -593,7 +552,7 @@ export function RecentEvents({
           <div className="h-4 bg-gray-200 rounded w-3/4" />
           <div className="h-4 bg-gray-200 rounded w-1/2" />
         </div>
-      ) : totalRows === 0 && !pendingEvent ? (
+      ) : totalRows === 0 ? (
         <div className="px-5 py-4">
           <p className="text-sm text-gray-400">No activity recorded yet.</p>
         </div>
@@ -606,47 +565,10 @@ export function RecentEvents({
               <div className="text-xs font-medium text-gray-500 mb-1.5 px-1">{day}</div>
 
               <div>
-                {/* Pending event row — always first in "Today" */}
-                <AnimatePresence>
-                  {pendingEvent && day === 'Today' && (
-                    <motion.div
-                      key="pending-event"
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      exit={{ opacity: 0, height: 0 }}
-                      transition={{ duration: 0.25 }}
-                      className="overflow-hidden"
-                    >
-                      <div className="event-item group relative flex items-start gap-2.5 py-1.5 px-1.5 rounded-md">
-                        <div className="relative flex-shrink-0 mt-px">
-                          <PendingEventIcon status={pendingEvent.status} />
-                          {dayItems.length > 0 && (
-                            <div className="absolute top-7 left-1/2 -translate-x-px w-px h-2.5 bg-gray-200" />
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-start justify-between gap-2 mb-px">
-                            <span className="text-sm font-medium text-gray-900">
-                              {PENDING_EVENT_LABELS[pendingEvent.action]}
-                            </span>
-                            <span className="text-xs text-gray-400">
-                              {pendingEvent.status === 'pending' ? 'Pending...' : 'Confirmed'}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-
                 {(() => {
                   const renderItems = collapseWakeCycles(dayItems);
                   return renderItems.map((item, index) => {
-                    const adjustedIndex =
-                      pendingEvent && day === 'Today' ? index + 1 : index;
-                    const totalItems =
-                      renderItems.length + (pendingEvent && day === 'Today' ? 1 : 0);
-                    const isLast = adjustedIndex >= totalItems - 1;
+                    const isLast = index >= renderItems.length - 1;
 
                     if (item.kind === 'command') {
                       const cmd = item.command;
