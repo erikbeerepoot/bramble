@@ -244,6 +244,41 @@ export interface NodeEventsResponse {
   events: NodeEvent[];
 }
 
+// Audit log entry for an ad-hoc dashboard command. Schedules are tracked in
+// the schedules table; this is for valve-run/stop, curtain, wake-interval.
+export type NodeCommandStatus =
+  | 'pending'
+  | 'confirmed'
+  | 'failed'
+  | 'expired'
+  | 'cancelled';
+
+export type NodeCommandType =
+  | 'valve_open'
+  | 'valve_close'
+  | 'curtain'
+  | 'wake_interval';
+
+export interface NodeCommand {
+  id: number;
+  device_id: string;
+  command_type: NodeCommandType;
+  params: Record<string, unknown>;
+  status: NodeCommandStatus;
+  created_at: number;
+  confirmed_at: number | null;
+  expires_at: number;
+  huey_task_id: string | null;
+  confirming_event_code: number | null;
+  confirming_event_detail: number | null;
+}
+
+export interface NodeCommandsResponse {
+  device_id: string;
+  count: number;
+  commands: NodeCommand[];
+}
+
 // Event code display names are generated from C++ headers.
 // Regenerate with `python3 tools/gen_event_types.py`.
 import { EVENT_CODE_NAMES, EventType } from '../generated/eventTypes';
