@@ -555,11 +555,12 @@ void IrrigationMode::onModeSpecificUpdate(const UpdateAvailablePayload *payload,
                     logger.info("  Schedule applied successfully");
                     event_log_.record(EventType::SCHEDULE_APPLIED, 0, index);
                 } else {
-                    // Treat failure as terminal — record SCHEDULE_FAILED event so the
-                    // dashboard sees it, then advance the sequence so the queue keeps
-                    // moving. The user can retry from the dashboard if needed.
+                    // Pack PMU error code into the high byte of the event detail
+                    // so the dashboard can surface why the apply failed.
                     logger.error("  Failed to apply schedule: error %d", static_cast<int>(error));
-                    event_log_.record(EventType::SCHEDULE_FAILED, 2, index);
+                    const uint16_t detail =
+                        (static_cast<uint16_t>(error) << 8) | index;
+                    event_log_.record(EventType::SCHEDULE_FAILED, 2, detail);
                 }
                 onUpdateApplied(hub_sequence);
             });
@@ -582,9 +583,12 @@ void IrrigationMode::onModeSpecificUpdate(const UpdateAvailablePayload *payload,
                     }
                     event_log_.record(EventType::SCHEDULE_REMOVED, 0, index);
                 } else {
-                    // Terminal failure — record event, advance queue.
+                    // Pack PMU error code into the high byte of the event detail
+                    // so the dashboard can surface why the remove failed.
                     logger.error("  Failed to remove schedule: error %d", static_cast<int>(error));
-                    event_log_.record(EventType::SCHEDULE_FAILED, 2, index);
+                    const uint16_t detail =
+                        (static_cast<uint16_t>(error) << 8) | index;
+                    event_log_.record(EventType::SCHEDULE_FAILED, 2, detail);
                 }
                 onUpdateApplied(hub_sequence);
             });

@@ -33,6 +33,7 @@ import {
   getEventDetail,
   parseEventDetail,
   formatDuration,
+  getPmuErrorName,
   EventType,
   EventCode,
 } from '../types';
@@ -369,8 +370,21 @@ function commandStatusSuffix(command: NodeCommand): string {
       }
       return ' · Confirmed';
     }
-    case 'failed':
+    case 'failed': {
+      // Schedule failures pack the PMU error code into the high byte of
+      // confirming_event_detail. Surface it so the user knows why.
+      if (
+        (command.command_type === 'schedule_set' ||
+          command.command_type === 'schedule_remove') &&
+        command.confirming_event_detail != null
+      ) {
+        const errorCode = (command.confirming_event_detail >> 8) & 0xFF;
+        if (errorCode !== 0) {
+          return ` · Failed · ${getPmuErrorName(errorCode)}`;
+        }
+      }
       return ' · Failed';
+    }
     case 'expired':
       return command.command_type === 'wake_interval'
         ? ' · Sent (no confirmation available)'

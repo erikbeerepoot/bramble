@@ -507,27 +507,43 @@ class SerialInterface:
             data_hex = f"{severity:02X}{detail:04X}"
             self.database.insert_event(device_id, unix_ts, event_type, data_hex)
 
+            # For schedule events the firmware packs the PMU error code into
+            # the high byte of `detail` and the schedule index into the low
+            # byte. APPLIED/REMOVED carry error_code=0, so detail==index for
+            # success; FAILED carries the actual ErrorCode.
+            schedule_index = detail & 0xFF
+            pmu_error_code = (detail >> 8) & 0xFF
+
             # Handle schedule confirmation events
             if event_type == EventType.SCHEDULE_APPLIED:
-                self.database.confirm_schedule(device_id, detail, unix_ts)
-                logger.info(f"Schedule confirmed: device_id={device_id}, index={detail}")
+                self.database.confirm_schedule(device_id, schedule_index, unix_ts)
+                logger.info(f"Schedule confirmed: device_id={device_id}, index={schedule_index}")
             elif event_type == EventType.SCHEDULE_REMOVED:
-                self.database.confirm_schedule_removed(device_id, detail, unix_ts)
-                logger.info(f"Schedule removal confirmed: device_id={device_id}, index={detail}")
+                self.database.confirm_schedule_removed(device_id, schedule_index, unix_ts)
+                logger.info(
+                    f"Schedule removal confirmed: device_id={device_id}, index={schedule_index}"
+                )
             elif event_type == EventType.SCHEDULE_FAILED:
-                self.database.fail_schedule(device_id, detail, unix_ts)
-                logger.info(f"Schedule failed: device_id={device_id}, index={detail}")
+                self.database.fail_schedule(device_id, schedule_index, unix_ts)
+                logger.warning(
+                    f"Schedule failed: device_id={device_id}, index={schedule_index}, "
+                    f"pmu_error=0x{pmu_error_code:02X}"
+                )
             else:
                 logger.debug(
                     f"Event log: device_id={device_id}, type=0x{event_type:02X}, "
                     f"severity={severity}, detail={detail}"
                 )
 
-            # Match pending ad-hoc valve commands.
+            # Match pending ad-hoc valve commands (still uses raw detail —
+            # valve events encode the valve id directly, not packed).
             self._reconcile_valve_event(device_id, event_type, detail, unix_ts)
 
-            # Match pending ad-hoc schedule commands.
-            self._reconcile_schedule_event(device_id, event_type, detail, unix_ts)
+            # Match pending ad-hoc schedule commands. Pass the raw `detail`
+            # so the failure path keeps the PMU error code in the audit row.
+            self._reconcile_schedule_event(
+                device_id, event_type, schedule_index, detail, unix_ts
+            )
 
         except (ValueError, IndexError) as e:
             logger.error(f"Failed to parse EVENT_LOG: {e}")
@@ -561,8 +577,13 @@ class SerialInterface:
             )
 
     def _reconcile_schedule_event(self, device_id: int, event_type: int,
-                                  index: int, unix_ts: int):
-        """Confirm or fail pending schedule_set / schedule_remove commands."""
+                                  index: int, raw_detail: int, unix_ts: int):
+        """Confirm or fail pending schedule_set / schedule_remove commands.
+
+        `raw_detail` is the full 16-bit event detail (PMU error code in the
+        high byte, schedule index in the low byte). Stored on failure so the
+        dashboard can show why the PMU rejected the schedule.
+        """
         if event_type == EventType.SCHEDULE_APPLIED:
             cmd_type = 'schedule_set'
             status = 'confirmed'
@@ -577,11 +598,12 @@ class SerialInterface:
                 if cmd:
                     self.database.update_command_status(
                         cmd['id'], 'failed', unix_ts,
-                        event_code=event_type, event_detail=index,
+                        event_code=event_type, event_detail=raw_detail,
                     )
                     logger.info(
                         f"Command failed: id={cmd['id']}, type={candidate}, "
-                        f"index={index}, device_id={device_id}"
+                        f"index={index}, pmu_error=0x{(raw_detail >> 8) & 0xFF:02X}, "
+                        f"device_id={device_id}"
                     )
                     return
             return
