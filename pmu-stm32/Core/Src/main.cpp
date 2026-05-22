@@ -54,7 +54,7 @@ TIM_HandleTypeDef htim21;
 I2C_HandleTypeDef hi2c1;
 
 /* USER CODE BEGIN PV */
-LED led(GPIOA, GPIO_PIN_4);
+LED led(GPIOA, GPIO_PIN_5);
 DCDC dcdc;
 
 // FRAM and persistent storage
@@ -253,6 +253,10 @@ int main(void)
             rtcWakeupFlag = false;
             pmuState.dispatch(PmuEvent::RTC_WAKEUP);
         }
+
+        // Dispatch any RX frame parsed by the UART ISR. Done in main-loop context
+        // so the (blocking) UART TX of the ACK/response doesn't starve RX.
+        protocol.processPendingMessage();
 
         if (protocol.isCtsReceived()) {
             pmuState.dispatch(PmuEvent::CTS_RECEIVED);
@@ -473,8 +477,9 @@ static void MX_GPIO_Init(void)
 
     /*Configure GPIO pin Output Level */
 #ifdef USE_WS2812
-    // PA4 is bodged to PA5 — configure PA4 as input (high-Z) so it doesn't
-    // fight PA5's TIM2_CH1 output on the shared line
+    // WS2812 LED on PA5 — driven by LED::init() (bit-bang). Configure as output
+    // here so it's quiet (low) until LED driver initializes it.
+    // PA4 is unused on v5; leave as input high-Z.
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1 | GPIO_PIN_5, GPIO_PIN_RESET);
 
     GPIO_InitStruct.Pin = GPIO_PIN_1 | GPIO_PIN_5;
@@ -736,8 +741,8 @@ static void configureValveCloseAlarm(uint16_t durationSeconds, uint8_t valveId)
 
     valveTimerActive = true;
 
-    // Disable periodic wake timer — only the alarm should wake us during watering
-    HAL_RTCEx_DeactivateWakeUpTimer(&hrtc);
+    // Leave the periodic wake timer running — node can still check in with the hub
+    // during a watering cycle (so commands like abort/override can interrupt).
 }
 
 /**
@@ -788,7 +793,14 @@ static void wakeupFromStopMode(void)
     // Resume SysTick
     HAL_ResumeTick();
 
-    // Re-enable UART RX interrupt if it was stopped
+    // Re-init LPUART against the post-wake clock. The baud-rate divisor was
+    // computed at boot when the clock came from MSI; after SystemClock_Config()
+    // the clock source/freq has changed, so the divisor needs recomputing or
+    // bytes arrive at the wrong baud and frame/dropped intermittently.
+    HAL_UART_DeInit(&hlpuart1);
+    MX_LPUART1_UART_Init();
+
+    // Re-arm UART RX interrupt
     HAL_UART_Receive_IT(&hlpuart1, &uartRxByte, 1);
 
     // Re-init I2C after wakeup

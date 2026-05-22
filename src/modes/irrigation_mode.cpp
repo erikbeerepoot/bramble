@@ -332,8 +332,12 @@ void IrrigationMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEn
     } else {
         pmu_logger.info("Cold start - no persisted state");
         event_log_.record(EventType::BOOT_COLD, 0, 0);
-        valve_controller_.closeAllValves();
     }
+
+    // SSR-driven valves do not hold state across power-down — force-close on every
+    // boot so firmware state matches physical reality. For DC latching valves this
+    // is a no-op when persisted state is already CLOSED.
+    valve_controller_.closeAllValves();
 
     // Handle valve timer wake — close the valve that was left open
     if (reason == PMU::WakeReason::ValveTimer) {

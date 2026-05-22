@@ -478,7 +478,9 @@ Protocol::Protocol(UartSendCallback uartSend, SetWakeCallback setWake, KeepAwake
                    ReadyForSleepCallback readyForSleep, GetTickCallback getTick)
     : wakeInterval_(60), nextSeqNum_(SEQ_STM32_MIN), currentSeqNum_(0), uartSend_(uartSend),
       setWake_(setWake), keepAwake_(keepAwake), readyForSleep_(readyForSleep), getTick_(getTick),
-      seenIndex_(0), nodeStateValid_(false), clearToSendReceived_(false), storage_(nullptr)
+      seenIndex_(0), nodeStateValid_(false), clearToSendReceived_(false),
+      pendingMessageReady_(false), pendingSeqNum_(0), pendingCommand_(static_cast<Command>(0)),
+      pendingDataLen_(0), pendingMessageDropCount_(0), storage_(nullptr)
 {
     // Initialize deduplication buffer
     for (auto &entry : seenBuffer_) {
@@ -517,21 +519,52 @@ void Protocol::markAsSeen(uint8_t seqNum)
 
 void Protocol::processReceivedByte(uint8_t byte)
 {
+    // Called from UART RX ISR — keep work minimal.
+    // Parse bytes; on complete frame, stash into pending slot for main-loop dispatch.
+    // Do NOT call handlers or sendAck here — they would block UART TX and cause
+    // OVERRUN on subsequent RX bytes during the long blocking transmit.
     if (parser_.processByte(byte)) {
-        // Complete message received
-        uint8_t seqNum = parser_.getSequenceNumber();
-        Command cmd = parser_.getCommand();
-        const uint8_t *data = parser_.getData();
-        uint8_t dataLen = parser_.getDataLength();
+        if (pendingMessageReady_) {
+            // Previous message hasn't been dispatched yet. Drop the new one;
+            // the RP2040 reliability layer will retry.
+            pendingMessageDropCount_++;
+        } else {
+            pendingSeqNum_ = parser_.getSequenceNumber();
+            pendingCommand_ = parser_.getCommand();
+            pendingDataLen_ = parser_.getDataLength();
+            const uint8_t *src = parser_.getData();
+            if (src && pendingDataLen_ > 0 && pendingDataLen_ <= sizeof(pendingData_)) {
+                for (uint8_t i = 0; i < pendingDataLen_; i++) {
+                    pendingData_[i] = src[i];
+                }
+            } else {
+                pendingDataLen_ = 0;
+            }
+            pendingMessageReady_ = true;
+        }
+        parser_.reset();
+    }
+}
 
-        // Store current sequence number for ACK/NACK responses
-        currentSeqNum_ = seqNum;
+void Protocol::processPendingMessage()
+{
+    if (!pendingMessageReady_) {
+        return;
+    }
 
-        // Check for duplicate (but always send ACK)
-        bool isDuplicate = wasRecentlySeen(seqNum);
+    uint8_t seqNum = pendingSeqNum_;
+    Command cmd = pendingCommand_;
+    const uint8_t *data = pendingData_;
+    uint8_t dataLen = pendingDataLen_;
 
-        // Always send response (ACK/NACK), but only execute if not duplicate
-        switch (cmd) {
+    // Store current sequence number for ACK/NACK responses
+    currentSeqNum_ = seqNum;
+
+    // Check for duplicate (but always send ACK)
+    bool isDuplicate = wasRecentlySeen(seqNum);
+
+    // Always send response (ACK/NACK), but only execute if not duplicate
+    switch (cmd) {
             case Command::SetWakeInterval:
                 if (!isDuplicate) {
                     handleSetWakeInterval(data, dataLen);
@@ -583,7 +616,7 @@ void Protocol::processReceivedByte(uint8_t byte)
                 break;
             case Command::ReadyForSleep:
                 if (!isDuplicate) {
-                    handleReadyForSleep();
+                    handleReadyForSleep(data, dataLen);
                 } else {
                     sendAck();
                 }
@@ -644,18 +677,18 @@ void Protocol::processReceivedByte(uint8_t byte)
                     sendAck();
                 }
                 break;
-            default:
-                sendNack(ErrorCode::InvalidParam);
-                break;
-        }
-
-        // Mark as seen after processing (only for valid commands)
-        if (cmd != static_cast<Command>(0)) {
-            markAsSeen(seqNum);
-        }
-
-        parser_.reset();
+        default:
+            sendNack(ErrorCode::InvalidParam);
+            break;
     }
+
+    // Mark as seen after processing (only for valid commands)
+    if (cmd != static_cast<Command>(0)) {
+        markAsSeen(seqNum);
+    }
+
+    // Release the pending slot so the next received frame can be queued
+    pendingMessageReady_ = false;
 }
 
 uint8_t Protocol::getNextSeqNum()
@@ -892,20 +925,14 @@ void Protocol::handleSetDateTime(const uint8_t *data, uint8_t length)
     sendAck();
 }
 
-void Protocol::handleReadyForSleep()
+void Protocol::handleReadyForSleep(const uint8_t *data, uint8_t length)
 {
-    // Extract state blob from payload if present (new protocol)
-    const uint8_t *data = parser_.getData();
-    uint8_t dataLen = parser_.getDataLength();
-
-    if (dataLen >= NODE_STATE_SIZE) {
-        // New protocol: state blob is included in payload
+    if (data && length >= NODE_STATE_SIZE) {
         for (uint8_t i = 0; i < NODE_STATE_SIZE; i++) {
             nodeState_[i] = data[i];
         }
         nodeStateValid_ = true;
 
-        // Persist node state to FRAM
         if (storage_) {
             storage_->saveNodeState(nodeState_, NODE_STATE_SIZE);
         }
