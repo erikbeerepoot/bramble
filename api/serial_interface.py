@@ -9,7 +9,7 @@ import logging
 
 from config import Config
 from database import SensorDatabase, SensorReading
-from event_types import EventType
+from event_types import EventType, EventCode
 
 
 logger = logging.getLogger(__name__)
@@ -470,6 +470,11 @@ class SerialInterface:
             else:
                 logger.debug(f"Duplicate event: device_id={device_id}, code=0x{event_code:04X}")
 
+            # Match pending curtain commands. EVENT_MOTOR_ERROR fails any
+            # pending curtain command; the directional/calibration events
+            # confirm the one whose action matches.
+            self._reconcile_curtain_event(device_id, event_code, timestamp)
+
         except (ValueError, IndexError) as e:
             logger.error(f"Failed to parse EVENT: {e}")
 
@@ -518,8 +523,79 @@ class SerialInterface:
                     f"severity={severity}, detail={detail}"
                 )
 
+            # Match pending ad-hoc valve commands.
+            self._reconcile_valve_event(device_id, event_type, detail, unix_ts)
+
         except (ValueError, IndexError) as e:
             logger.error(f"Failed to parse EVENT_LOG: {e}")
+
+    def _reconcile_valve_event(self, device_id: int, event_type: int,
+                               valve_id: int, unix_ts: int):
+        """Confirm pending valve commands when matching events arrive.
+
+        Matches oldest-pending-wins within (device_id, command_type, valve).
+        Ambiguous if two opens for the same valve are queued in rapid
+        succession — accepted limitation (see plan).
+        """
+        if event_type in (EventType.VALVE_OPEN, EventType.VALVE_TIMER_SET):
+            cmd_type = 'valve_open'
+        elif event_type in (EventType.VALVE_CLOSE, EventType.VALVE_TIMER_CLOSE):
+            cmd_type = 'valve_close'
+        else:
+            return
+
+        cmd = self.database.find_pending_command(
+            device_id, cmd_type, param_filter={'valve': valve_id}
+        )
+        if cmd:
+            self.database.update_command_status(
+                cmd['id'], 'confirmed', unix_ts,
+                event_code=event_type, event_detail=valve_id,
+            )
+            logger.info(
+                f"Command confirmed: id={cmd['id']}, type={cmd_type}, "
+                f"valve={valve_id}, device_id={device_id}"
+            )
+
+    def _reconcile_curtain_event(self, device_id: int, event_code: int,
+                                 unix_ts: int):
+        """Confirm or fail pending curtain commands."""
+        action_for_code = {
+            int(EventCode.EVENT_CURTAIN_OPENING): 'open',
+            int(EventCode.EVENT_CURTAIN_CLOSING): 'close',
+            int(EventCode.EVENT_CURTAIN_STOPPED): 'stop',
+            int(EventCode.EVENT_CALIBRATION_COMPLETE): 'calibrate',
+        }
+
+        if event_code == int(EventCode.EVENT_MOTOR_ERROR):
+            cmd = self.database.find_pending_command(device_id, 'curtain')
+            if cmd:
+                self.database.update_command_status(
+                    cmd['id'], 'failed', unix_ts,
+                    event_code=event_code,
+                )
+                logger.info(
+                    f"Curtain command failed (motor error): id={cmd['id']}, "
+                    f"device_id={device_id}"
+                )
+            return
+
+        action = action_for_code.get(event_code)
+        if not action:
+            return
+
+        cmd = self.database.find_pending_command(
+            device_id, 'curtain', param_filter={'action': action}
+        )
+        if cmd:
+            self.database.update_command_status(
+                cmd['id'], 'confirmed', unix_ts,
+                event_code=event_code,
+            )
+            logger.info(
+                f"Curtain command confirmed: id={cmd['id']}, action={action}, "
+                f"device_id={device_id}"
+            )
 
     def _handle_sensor_batch_start(self, line: str):
         """Handle start of sensor batch from hub.

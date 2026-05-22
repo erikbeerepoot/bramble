@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type {
   Node,
   NodeEvent,
+  NodeCommand,
   NodeStatistics,
   SensorReading,
   TimeRange,
@@ -24,6 +25,7 @@ import {
   rebootNode,
   setWakeInterval,
   getNodeEvents,
+  getNodeCommands,
 } from '../api/client';
 import { NodeType } from '../types';
 import CurtainControl from './CurtainControl';
@@ -82,6 +84,7 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
   const [wakeIntervalStatus, setWakeIntervalStatus] = useState<string | null>(null);
   const [events, setEvents] = useState<NodeEvent[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(true);
+  const [commands, setCommands] = useState<NodeCommand[]>([]);
   const [pendingEvent, setPendingEvent] = useState<PendingEvent | null>(null);
   const pendingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -198,6 +201,18 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
     }
   }, [node.device_id]);
 
+  // Refresh the command audit log alongside events. Server response replaces
+  // local state outright — the row count is bounded by limit and the lifecycle
+  // status (pending/confirmed/...) may update in place server-side.
+  const fetchCommands = useCallback(async () => {
+    try {
+      const response = await getNodeCommands(node.device_id, { limit: 100 });
+      setCommands(response.commands);
+    } catch {
+      // Silently fail — commands log is informational
+    }
+  }, [node.device_id]);
+
   // Load older: extend backward by one window from the oldest loaded event.
   const loadOlderEvents = useCallback(async () => {
     if (loadingMoreEvents || !hasMoreEvents || events.length === 0) return;
@@ -223,9 +238,13 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
 
   useEffect(() => {
     fetchEvents();
-    const interval = setInterval(fetchEvents, REFRESH_INTERVAL_MS);
+    fetchCommands();
+    const interval = setInterval(() => {
+      fetchEvents();
+      fetchCommands();
+    }, REFRESH_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [fetchEvents]);
+  }, [fetchEvents, fetchCommands]);
 
   // Match incoming events against the pending event
   useEffect(() => {
@@ -252,11 +271,12 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
         status: 'pending',
       });
       fetchEvents();
+      fetchCommands();
 
       // Safety timeout — clear after 60s if never confirmed
       pendingTimeoutRef.current = setTimeout(() => setPendingEvent(null), 60000);
     },
-    [fetchEvents]
+    [fetchEvents, fetchCommands]
   );
 
   const handleMetadataUpdate = (metadata: NodeMetadata) => {
@@ -688,7 +708,13 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
           )}
 
           {node.type === NodeType.IRRIGATION && (
-            <IrrigationControl deviceId={node.device_id} onEventTriggered={fetchEvents} />
+            <IrrigationControl
+              deviceId={node.device_id}
+              onEventTriggered={() => {
+                fetchEvents();
+                fetchCommands();
+              }}
+            />
           )}
 
           {hasSensorData && (
@@ -752,6 +778,7 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
 
           <RecentEvents
             events={events}
+            commands={commands}
             loading={loadingEvents}
             pendingEvent={pendingEvent}
             onLoadMore={loadOlderEvents}

@@ -8,6 +8,8 @@ import type {
   Zone,
   ZonesResponse,
   NodeEventsResponse,
+  NodeCommandsResponse,
+  NodeCommandStatus,
   IrrigationSchedulesResponse,
 } from '../types';
 
@@ -218,6 +220,24 @@ export async function getNodeEvents(
 
   const query = params.toString();
   return fetchApi<NodeEventsResponse>(`/api/nodes/${deviceId}/events${query ? `?${query}` : ''}`);
+}
+
+export async function getNodeCommands(
+  deviceId: string,
+  options?: {
+    status?: NodeCommandStatus[];
+    since?: number;
+    limit?: number;
+  }
+): Promise<NodeCommandsResponse> {
+  const params = new URLSearchParams();
+  if (options?.status?.length) params.set('status', options.status.join(','));
+  if (options?.since !== undefined) params.set('since', options.since.toString());
+  if (options?.limit !== undefined) params.set('limit', options.limit.toString());
+  const query = params.toString();
+  return fetchApi<NodeCommandsResponse>(
+    `/api/nodes/${deviceId}/commands${query ? `?${query}` : ''}`
+  );
 }
 
 // Irrigation API methods
