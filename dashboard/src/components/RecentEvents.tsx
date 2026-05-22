@@ -26,7 +26,14 @@ import { format, isToday, isYesterday } from 'date-fns';
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { NodeEvent } from '../types';
-import { getEventName, EventType, EventCode } from '../types';
+import {
+  getEventName,
+  getEventDetail,
+  parseEventDetail,
+  formatDuration,
+  EventType,
+  EventCode,
+} from '../types';
 import type { CurtainAction } from './CurtainControl';
 
 export interface PendingEvent {
@@ -211,7 +218,7 @@ function CopyableTimestamp({ timestamp }: { timestamp: number }) {
       className="group/ts flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 transition-colors font-mono"
       title={`Click to copy UTC: ${isoString}`}
     >
-      <span>{format(date, 'HH:mm')}</span>
+      <span>{format(date, 'HH:mm:ss')}</span>
       {copied ? (
         <Check className="w-3 h-3 text-green-600" />
       ) : (
@@ -263,6 +270,36 @@ function PendingEventIcon({ status }: { status: 'pending' | 'confirmed' }) {
 // Event codes that collapse into summary rows (per-wake-cycle noise).
 const WAKE_CYCLE_CODES = new Set<number>([EventType.WAKE, EventType.SLEEP_ENTER]);
 
+// Pair VALVE_OPEN events with the next matching VALVE_CLOSE / VALVE_TIMER_CLOSE
+// (same valve_id) to derive a duration. Events arrive newest-first.
+// Returns a map keyed by the OPEN event's timestamp -> duration in seconds.
+function annotateDurations(events: NodeEvent[]): Map<number, number> {
+  const durationByOpenTs = new Map<number, number>();
+  const openByValve = new Map<number, NodeEvent>();
+  // Walk oldest -> newest so opens come before closes.
+  for (let i = events.length - 1; i >= 0; i--) {
+    const event = events[i];
+    const valveId = parseEventDetail(event.data_hex);
+    if (valveId === null) continue;
+    if (event.event_code === EventType.VALVE_OPEN) {
+      openByValve.set(valveId, event);
+    } else if (
+      event.event_code === EventType.VALVE_CLOSE ||
+      event.event_code === EventType.VALVE_TIMER_CLOSE
+    ) {
+      const open = openByValve.get(valveId);
+      if (open) {
+        const duration = event.timestamp - open.timestamp;
+        if (duration > 0) {
+          durationByOpenTs.set(open.timestamp, duration);
+        }
+        openByValve.delete(valveId);
+      }
+    }
+  }
+  return durationByOpenTs;
+}
+
 type RenderItem =
   | { kind: 'event'; event: NodeEvent }
   | {
@@ -292,6 +329,22 @@ function collapseWakeCycles(dayEvents: NodeEvent[]): RenderItem[] {
   }
   flush();
   return items;
+}
+
+// Compose the trailing detail string for an event row — valve/schedule id and,
+// for an OPEN with a known matching close, the watering duration.
+function eventLabelSuffix(
+  event: NodeEvent,
+  durationByOpenTs: Map<number, number>
+): string {
+  const parts: string[] = [];
+  const detail = getEventDetail(event.event_code, event.data_hex);
+  if (detail) parts.push(detail);
+  if (event.event_code === EventType.VALVE_OPEN) {
+    const dur = durationByOpenTs.get(event.timestamp);
+    if (dur !== undefined) parts.push(formatDuration(dur));
+  }
+  return parts.length ? ` · ${parts.join(' · ')}` : '';
 }
 
 function formatCollapsedLabel(events: NodeEvent[]): string {
@@ -338,6 +391,9 @@ export function RecentEvents({
           )
       )
     : events;
+
+  // Computed once over all events so pairs spanning day boundaries still resolve.
+  const durationByOpenTs = annotateDurations(filteredEvents);
 
   const groupedEvents = filteredEvents.reduce(
     (acc, event) => {
@@ -484,8 +540,8 @@ export function RecentEvents({
                                     newerTs * 1000
                                   ).toISOString()}`}
                                 >
-                                  {format(new Date(olderTs * 1000), 'HH:mm')} –{' '}
-                                  {format(new Date(newerTs * 1000), 'HH:mm')}
+                                  {format(new Date(olderTs * 1000), 'HH:mm:ss')} –{' '}
+                                  {format(new Date(newerTs * 1000), 'HH:mm:ss')}
                                 </span>
                               </div>
                             </div>
@@ -524,6 +580,7 @@ export function RecentEvents({
                                         <div className="flex items-start justify-between gap-2 mb-px">
                                           <span className="text-xs text-gray-600">
                                             {getEventName(event.event_code)}
+                                            {eventLabelSuffix(event, durationByOpenTs)}
                                           </span>
                                           <CopyableTimestamp timestamp={event.timestamp} />
                                         </div>
@@ -562,6 +619,7 @@ export function RecentEvents({
                           <div className="flex items-start justify-between gap-2 mb-px">
                             <span className="text-sm font-medium text-gray-900">
                               {getEventName(event.event_code)}
+                              {eventLabelSuffix(event, durationByOpenTs)}
                             </span>
                             <CopyableTimestamp timestamp={event.timestamp} />
                           </div>
