@@ -85,12 +85,14 @@ public:
     bool setWakeInterval(uint32_t seconds, CommandCallback callback = nullptr);
 
     /**
-     * @brief Set a schedule entry
-     * @param entry Schedule entry to set
+     * @brief Write a schedule entry to a specific PMU slot
+     * @param index Slot index (0..MAX_SCHEDULE_ENTRIES-1) — stable across removes
+     * @param entry Schedule entry to write
      * @param callback Called when command completes (optional)
      * @return true if command queued successfully
      */
-    bool setSchedule(const ScheduleEntry &entry, CommandCallback callback = nullptr);
+    bool setSchedule(uint8_t index, const ScheduleEntry &entry,
+                     CommandCallback callback = nullptr);
 
     /**
      * @brief Set the RTC date/time
