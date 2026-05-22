@@ -1,5 +1,6 @@
 """DuckDB database for sensor data storage."""
 import duckdb
+import json
 import logging
 import time
 import threading
@@ -223,6 +224,31 @@ class SensorDatabase:
         confirmed_at INTEGER,
         PRIMARY KEY (device_id, schedule_index)
     );
+
+    -- Audit trail for ad-hoc dashboard commands (valve run/stop, curtain,
+    -- wake-interval). Schedules stay in their own table; this is the
+    -- equivalent lifecycle log for fire-and-forget commands so the user
+    -- can see "pending" state during the dead zone between click and the
+    -- node's confirming event.
+    CREATE TABLE IF NOT EXISTS node_commands (
+        id BIGINT PRIMARY KEY,
+        device_id UBIGINT NOT NULL,
+        command_type VARCHAR NOT NULL,
+        params VARCHAR NOT NULL,
+        status VARCHAR NOT NULL DEFAULT 'pending',
+        created_at INTEGER NOT NULL,
+        confirmed_at INTEGER,
+        expires_at INTEGER NOT NULL,
+        huey_task_id VARCHAR,
+        confirming_event_code INTEGER,
+        confirming_event_detail INTEGER
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_cmds_device_created
+        ON node_commands(device_id, created_at);
+
+    CREATE INDEX IF NOT EXISTS idx_cmds_pending_match
+        ON node_commands(device_id, status, command_type);
     """
 
     def __init__(self, db_path: str = Config.SENSOR_DB_PATH):
@@ -256,13 +282,15 @@ class SensorDatabase:
     def _init_id_counter(self, conn: duckdb.DuckDBPyConnection):
         """Initialize ID counter from existing data.
 
-        The counter is shared across sensor_readings and node_events, so
-        seed from the MAX(id) of both to avoid primary-key collisions.
+        The counter is shared across sensor_readings, node_events, and
+        node_commands, so seed from the MAX(id) of all three to avoid
+        primary-key collisions.
         """
         result = conn.execute("""
             SELECT GREATEST(
                 COALESCE((SELECT MAX(id) FROM sensor_readings), 0),
-                COALESCE((SELECT MAX(id) FROM node_events), 0)
+                COALESCE((SELECT MAX(id) FROM node_events), 0),
+                COALESCE((SELECT MAX(id) FROM node_commands), 0)
             )
         """).fetchone()
         if result and result[0]:
@@ -1433,6 +1461,220 @@ class SensorDatabase:
         except duckdb.Error as e:
             logger.error(f"Failed to query events: {e}")
             return []
+
+    # ------------------------------------------------------------------
+    # Node commands — audit trail for ad-hoc dashboard commands.
+    # ------------------------------------------------------------------
+
+    def insert_command(self, device_id: int, command_type: str,
+                       params: dict, ttl_seconds: int,
+                       huey_task_id: Optional[str] = None) -> Optional[int]:
+        """Record a dashboard-issued command and return its id.
+
+        Args:
+            device_id: Device identifier
+            command_type: 'valve_open' | 'valve_close' | 'curtain' | 'wake_interval'
+            params: Command-specific parameters, JSON-serialisable
+            ttl_seconds: How long to wait for confirmation before marking expired
+            huey_task_id: Huey task id once enqueued (may be set later)
+
+        Returns:
+            The new command's id, or None on failure.
+        """
+        new_id = self._next_id()
+        now = int(time.time())
+        params_json = json.dumps(params, sort_keys=True)
+        try:
+            with self._get_connection() as conn:
+                conn.execute("""
+                    INSERT INTO node_commands
+                    (id, device_id, command_type, params, status,
+                     created_at, expires_at, huey_task_id)
+                    VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)
+                """, (new_id, device_id, command_type, params_json,
+                      now, now + ttl_seconds, huey_task_id))
+                return new_id
+        except duckdb.Error as e:
+            logger.error(f"Failed to insert command: {e}")
+            return None
+
+    def set_command_huey_task(self, command_id: int, huey_task_id: str) -> bool:
+        """Backfill the huey task id after the command has been enqueued."""
+        try:
+            with self._get_connection() as conn:
+                conn.execute(
+                    "UPDATE node_commands SET huey_task_id = ? WHERE id = ?",
+                    (huey_task_id, command_id),
+                )
+            return True
+        except duckdb.Error as e:
+            logger.error(f"Failed to set huey_task_id on command {command_id}: {e}")
+            return False
+
+    def find_pending_command(self, device_id: int, command_type: str,
+                             param_filter: Optional[dict] = None) -> Optional[dict]:
+        """Find the oldest pending command for matching against a node event.
+
+        Args:
+            device_id: Device identifier
+            command_type: Command type to match
+            param_filter: Optional dict of param key→value pairs that must all
+                          match exactly. Used to distinguish e.g. valve 0 vs
+                          valve 1 commands, or curtain open vs close.
+
+        Returns:
+            Command dict (id, params, created_at, ...) or None.
+        """
+        try:
+            with self._get_connection() as conn:
+                result = conn.execute("""
+                    SELECT id, device_id, command_type, params,
+                           status, created_at, expires_at
+                    FROM node_commands
+                    WHERE device_id = ?
+                      AND command_type = ?
+                      AND status = 'pending'
+                    ORDER BY created_at ASC
+                """, (device_id, command_type))
+                for row in result.fetchall():
+                    try:
+                        row_params = json.loads(row[3])
+                    except (ValueError, TypeError):
+                        row_params = {}
+                    if param_filter:
+                        if not all(row_params.get(k) == v
+                                   for k, v in param_filter.items()):
+                            continue
+                    return {
+                        'id': row[0],
+                        'device_id': str(row[1]),
+                        'command_type': row[2],
+                        'params': row_params,
+                        'status': row[4],
+                        'created_at': row[5],
+                        'expires_at': row[6],
+                    }
+            return None
+        except duckdb.Error as e:
+            logger.error(f"Failed to find pending command: {e}")
+            return None
+
+    def update_command_status(self, command_id: int, status: str,
+                              timestamp: Optional[int] = None,
+                              event_code: Optional[int] = None,
+                              event_detail: Optional[int] = None) -> bool:
+        """Mark a command as confirmed/failed/expired/cancelled.
+
+        Args:
+            command_id: Command id
+            status: New status ('confirmed' | 'failed' | 'expired' | 'cancelled')
+            timestamp: When the transition happened (unix seconds). Defaults to
+                       now. Stored in confirmed_at for any terminal status.
+            event_code: Confirming/failing event code, for audit
+            event_detail: Confirming/failing event detail
+        """
+        ts = timestamp if timestamp is not None else int(time.time())
+        try:
+            with self._get_connection() as conn:
+                conn.execute("""
+                    UPDATE node_commands
+                    SET status = ?, confirmed_at = ?,
+                        confirming_event_code = ?,
+                        confirming_event_detail = ?
+                    WHERE id = ?
+                """, (status, ts, event_code, event_detail, command_id))
+            return True
+        except duckdb.Error as e:
+            logger.error(f"Failed to update command {command_id}: {e}")
+            return False
+
+    def query_commands(self, device_id: int,
+                       status: Optional[list[str]] = None,
+                       since: Optional[int] = None,
+                       limit: int = 100) -> list[dict]:
+        """Query commands for a device, newest first.
+
+        Args:
+            device_id: Device identifier
+            status: Optional list of statuses to include (default: all)
+            since: Earliest created_at to include (unix seconds)
+            limit: Maximum results, capped at 200
+
+        Returns:
+            List of command dicts.
+        """
+        try:
+            with self._get_connection() as conn:
+                conditions = ["device_id = ?"]
+                params: list = [device_id]
+                if status:
+                    placeholders = ", ".join("?" for _ in status)
+                    conditions.append(f"status IN ({placeholders})")
+                    params.extend(status)
+                if since is not None:
+                    conditions.append("created_at >= ?")
+                    params.append(since)
+                params.append(min(limit, 200))
+                where = " AND ".join(conditions)
+                result = conn.execute(f"""
+                    SELECT id, device_id, command_type, params, status,
+                           created_at, confirmed_at, expires_at,
+                           huey_task_id, confirming_event_code,
+                           confirming_event_detail
+                    FROM node_commands
+                    WHERE {where}
+                    ORDER BY created_at DESC
+                    LIMIT ?
+                """, params)
+                out = []
+                for row in result.fetchall():
+                    try:
+                        row_params = json.loads(row[3])
+                    except (ValueError, TypeError):
+                        row_params = {}
+                    out.append({
+                        'id': row[0],
+                        'device_id': str(row[1]),
+                        'command_type': row[2],
+                        'params': row_params,
+                        'status': row[4],
+                        'created_at': row[5],
+                        'confirmed_at': row[6],
+                        'expires_at': row[7],
+                        'huey_task_id': row[8],
+                        'confirming_event_code': row[9],
+                        'confirming_event_detail': row[10],
+                    })
+                return out
+        except duckdb.Error as e:
+            logger.error(f"Failed to query commands: {e}")
+            return []
+
+    def expire_stale_commands(self, now: Optional[int] = None) -> int:
+        """Mark any still-pending commands past their TTL as 'expired'.
+
+        Returns the number of rows updated.
+        """
+        ts = now if now is not None else int(time.time())
+        try:
+            with self._get_connection() as conn:
+                conn.execute("""
+                    UPDATE node_commands
+                    SET status = 'expired',
+                        confirmed_at = ?
+                    WHERE status = 'pending'
+                      AND expires_at < ?
+                """, (ts, ts))
+                # DuckDB doesn't expose rowcount on UPDATE reliably; query the
+                # count of just-expired rows instead.
+                result = conn.execute("""
+                    SELECT COUNT(*) FROM node_commands
+                    WHERE status = 'expired' AND confirmed_at = ?
+                """, (ts,)).fetchone()
+                return int(result[0]) if result else 0
+        except duckdb.Error as e:
+            logger.error(f"Failed to expire stale commands: {e}")
+            return 0
 
     def store_schedule(self, device_id: int, index: int, hour: int, minute: int,
                        duration: int, days: int, valve: int) -> bool:

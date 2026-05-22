@@ -20,6 +20,18 @@ huey = SqliteHuey(
 # The API service is reachable at http://api:5000 from within the Docker network
 API_BASE_URL = "http://api:5000"
 
+# Default TTLs for the node_commands audit table — how long we wait for a
+# confirming event from the node before marking the command 'expired'.
+# Tuned to typical wake intervals: valve commands tolerate up to 30 min of
+# node sleep; curtain nodes are usually mains-powered and react fast;
+# wake_interval has no confirming event today so it always expires by design.
+COMMAND_TTL_DEFAULTS = {
+    'valve_open': 1800,
+    'valve_close': 1800,
+    'curtain': 600,
+    'wake_interval': 300,
+}
+
 
 def _send_via_api(command: str, command_id: str) -> dict:
     """Send a hub command through the API's serial connection.
