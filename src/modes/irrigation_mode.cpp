@@ -112,9 +112,11 @@ void IrrigationMode::onStart()
         reliable_pmu_->clearToSend([this](bool success, PMU::ErrorCode error) {
             if (!success) {
                 pmu_logger.error("ClearToSend failed: %d", static_cast<int>(error));
-                // Proceed without PMU state — close all valves to establish known state
+                // Proceed without PMU state — force-close all valves so the
+                // physical state matches firmware's assumed CLOSED, even if
+                // the latching valves were left open before power loss.
                 event_log_.record(EventType::BOOT_COLD, 0, 0);
-                valve_controller_.closeAllValves();
+                valve_controller_.forceCloseAllValves();
                 irrigation_state_.markInitialized();
             } else {
                 pmu_logger.info("ClearToSend ACK received - waiting for WakeNotification");
@@ -124,7 +126,7 @@ void IrrigationMode::onStart()
                     [this](uint32_t) -> bool {
                         pmu_logger.warn("WakeNotification timeout - proceeding without PMU state");
                         event_log_.record(EventType::BOOT_COLD, 0, 0);
-                        valve_controller_.closeAllValves();
+                        valve_controller_.forceCloseAllValves();
                         wake_timeout_id_ = 0;
                         irrigation_state_.markInitialized();
                         return true;
@@ -134,9 +136,9 @@ void IrrigationMode::onStart()
         });
     } else {
         logger.warn("PMU client not available - running without power management");
-        // No PMU — close all valves to establish known state
+        // No PMU — force-close all valves to reconcile physical state.
         event_log_.record(EventType::BOOT_COLD, 0, 0);
-        valve_controller_.closeAllValves();
+        valve_controller_.forceCloseAllValves();
         irrigation_state_.markInitialized();
     }
 
@@ -336,10 +338,11 @@ void IrrigationMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEn
         event_log_.record(EventType::BOOT_COLD, 0, 0);
     }
 
-    // SSR-driven valves do not hold state across power-down — force-close on every
-    // boot so firmware state matches physical reality. For DC latching valves this
-    // is a no-op when persisted state is already CLOSED.
-    valve_controller_.closeAllValves();
+    // Force-close on every boot so firmware state matches physical reality.
+    // The PMU's persisted state can claim valves are CLOSED while the latching
+    // valves are mechanically OPEN (e.g. after a power loss mid-cycle), so
+    // we always re-issue the close pulse here rather than trust software state.
+    valve_controller_.forceCloseAllValves();
 
     // Handle valve timer wake — close the valve that was left open
     if (reason == PMU::WakeReason::ValveTimer) {

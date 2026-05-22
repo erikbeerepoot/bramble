@@ -82,6 +82,17 @@ void ValveController::closeAllValves()
     }
 }
 
+void ValveController::forceCloseAllValves()
+{
+    ensureInitialized();
+
+    log.info("Force-closing all valves...");
+
+    for (uint8_t i = 0; i < NUM_VALVES; i++) {
+        operateValve(i, false);
+    }
+}
+
 void ValveController::restoreValveState(uint8_t valve_id, ValveState state)
 {
     ensureInitialized();
