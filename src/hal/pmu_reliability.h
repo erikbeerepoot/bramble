@@ -91,8 +91,7 @@ public:
      * @param callback Called when command completes (optional)
      * @return true if command queued successfully
      */
-    bool setSchedule(uint8_t index, const ScheduleEntry &entry,
-                     CommandCallback callback = nullptr);
+    bool setSchedule(uint8_t index, const ScheduleEntry &entry, CommandCallback callback = nullptr);
 
     /**
      * @brief Set the RTC date/time
