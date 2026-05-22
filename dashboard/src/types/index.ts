@@ -298,6 +298,28 @@ export function parseEventDetail(dataHex: string | null | undefined): number | n
   return Number.isNaN(parsed) ? null : parsed;
 }
 
+// PMU error codes — must match enum class ErrorCode in src/hal/pmu_protocol.h
+// and pmu-stm32/Core/Inc/pmu_protocol.h.
+export const PMU_ERROR_NAMES: Record<number, string> = {
+  0x00: 'NoError',
+  0x01: 'InvalidParam',
+  0x02: 'ScheduleFull',
+  0x03: 'InvalidIndex',
+  0x04: 'Overlap',
+  0x05: 'ChecksumError',
+};
+
+export function getPmuErrorName(code: number): string {
+  return PMU_ERROR_NAMES[code] ?? `Error 0x${code.toString(16).padStart(2, '0')}`;
+}
+
+// Schedule events pack `(pmu_error_code << 8) | index` into the 16-bit detail.
+// For APPLIED/REMOVED, error_code is always 0; for FAILED it carries the
+// reason the PMU rejected the schedule.
+export function parseScheduleDetail(detail: number): { index: number; errorCode: number } {
+  return { index: detail & 0xFF, errorCode: (detail >> 8) & 0xFF };
+}
+
 // Human-readable suffix for the event row (e.g. "Valve 1", "#3").
 // Returns null when there's nothing useful to show.
 export function getEventDetail(code: number, dataHex: string | null | undefined): string | null {
@@ -311,8 +333,11 @@ export function getEventDetail(code: number, dataHex: string | null | undefined)
       return `Valve ${detail + 1}`;
     case EventType.SCHEDULE_APPLIED:
     case EventType.SCHEDULE_REMOVED:
-    case EventType.SCHEDULE_FAILED:
-      return `#${detail}`;
+      return `#${detail & 0xFF}`;
+    case EventType.SCHEDULE_FAILED: {
+      const { index, errorCode } = parseScheduleDetail(detail);
+      return errorCode !== 0 ? `#${index} · ${getPmuErrorName(errorCode)}` : `#${index}`;
+    }
     default:
       return null;
   }
