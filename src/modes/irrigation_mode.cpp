@@ -22,7 +22,9 @@ constexpr uint32_t HEARTBEAT_INTERVAL_MS = 60000;  // 60 seconds
 #include "../board/board_pins.h"
 
 // Board version identifier stored in persisted state
-#ifdef BOARD_V4
+#if defined(BOARD_V5)
+constexpr uint8_t IRRIGATION_BOARD_VERSION = 5;
+#elif defined(BOARD_V4)
 constexpr uint8_t IRRIGATION_BOARD_VERSION = 4;
 #else
 constexpr uint8_t IRRIGATION_BOARD_VERSION = 3;

@@ -8,7 +8,7 @@
 #include "hardware/i2c.h"
 #include "hardware/watchdog.h"
 
-#ifdef BOARD_V4
+#if defined(BOARD_V4) || defined(BOARD_V5)
 #include "../board/board_pins.h"
 #endif
 
@@ -44,9 +44,9 @@ void SensorMode::onStart()
     logger.debug("LED: orange=init, yellow=sync, green=ok, orange=degraded, red=error");
 
     // Initialize external flash for sensor data storage
-#ifdef BOARD_V4
-    ExternalFlashPins v4_flash_pins = {.cs = Board::FLASH_PIN_CS, .reset = Board::FLASH_PIN_RST};
-    external_flash_ = std::make_unique<ExternalFlash>(Board::FLASH_SPI_PORT, v4_flash_pins);
+#if defined(BOARD_V4) || defined(BOARD_V5)
+    ExternalFlashPins flash_pins = {.cs = Board::FLASH_PIN_CS, .reset = Board::FLASH_PIN_RST};
+    external_flash_ = std::make_unique<ExternalFlash>(Board::FLASH_SPI_PORT, flash_pins);
 #else
     external_flash_ = std::make_unique<ExternalFlash>();
 #endif

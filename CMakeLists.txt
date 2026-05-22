@@ -23,12 +23,18 @@ if (EXISTS ${picoVscode})
     include(${picoVscode})
 endif()
 # ====================================================================================
-# Board revision: V3 (RP2040, Adafruit Feather) or V4 (RP2350B, custom PCB)
-set(BOARD_VERSION "V3" CACHE STRING "Board revision: V3 (RP2040) or V4 (RP2350B)")
-set_property(CACHE BOARD_VERSION PROPERTY STRINGS V3 V4)
+# Board revision: V3 (RP2040, Adafruit Feather), V4 (RP2350B custom PCB), V5 (RP2350B revised)
+set(BOARD_VERSION "V3" CACHE STRING "Board revision: V3 (RP2040), V4 or V5 (RP2350B)")
+set_property(CACHE BOARD_VERSION PROPERTY STRINGS V3 V4 V5)
 string(TOUPPER "${BOARD_VERSION}" BOARD_VERSION)
 
-if(BOARD_VERSION STREQUAL "V4")
+if(BOARD_VERSION STREQUAL "V5")
+    set(PICO_BOARD bramble_v5 CACHE STRING "Board type" FORCE)
+    set(PICO_BOARD_HEADER_DIRS ${CMAKE_CURRENT_LIST_DIR}/boards CACHE STRING "" FORCE)
+    set(PICO_PLATFORM rp2350-arm-s CACHE STRING "Platform" FORCE)
+    unset(PICO_DEFAULT_BOOT_STAGE2_FILE CACHE)
+    message(STATUS "Board version: V5 (RP2350B)")
+elseif(BOARD_VERSION STREQUAL "V4")
     set(PICO_BOARD bramble_v4 CACHE STRING "Board type" FORCE)
     set(PICO_BOARD_HEADER_DIRS ${CMAKE_CURRENT_LIST_DIR}/boards CACHE STRING "" FORCE)
     set(PICO_PLATFORM rp2350-arm-s CACHE STRING "Platform" FORCE)
@@ -161,7 +167,9 @@ else()
     message(STATUS "Radio chip: ${RADIO_CHIP} (${RADIO_SOURCE})")
 
     # Board suffix for executable names (e.g. bramble_sensor_v4_sx1262)
-    if(BOARD_VERSION STREQUAL "V4")
+    if(BOARD_VERSION STREQUAL "V5")
+        set(BOARD_SUFFIX "_v5")
+    elseif(BOARD_VERSION STREQUAL "V4")
         set(BOARD_SUFFIX "_v4")
     else()
         set(BOARD_SUFFIX "")
@@ -335,7 +343,17 @@ if(NOT BUILD_TESTS)
         endif()
 
         # Board-specific configuration
-        if(BOARD_VERSION STREQUAL "V4")
+        if(BOARD_VERSION STREQUAL "V5")
+            # V5: SDK board header (bramble_v5.h) sets UART0/GPIO28/29 defaults
+            target_compile_definitions(${TARGET_NAME} PRIVATE
+                BOARD_V5=1
+                PICO_XOSC_STARTUP_DELAY_MULTIPLIER=64
+                PICO_STACK_SIZE=0x1000
+                BRAMBLE_VERSION_MAJOR=${BRAMBLE_VERSION_MAJOR}
+                BRAMBLE_VERSION_MINOR=${BRAMBLE_VERSION_MINOR}
+                BRAMBLE_VERSION_BUILD=${BRAMBLE_VERSION_BUILD}
+            )
+        elseif(BOARD_VERSION STREQUAL "V4")
             # V4: SDK board header (bramble_v4.h) sets UART0/GPIO28/29 defaults
             target_compile_definitions(${TARGET_NAME} PRIVATE
                 BOARD_V4=1
@@ -384,8 +402,8 @@ if(NOT BUILD_TESTS)
             pico_unique_id
         )
 
-        # RTC: RP2040 uses hardware_rtc, RP2350 uses pico_aon_timer
-        if(BOARD_VERSION STREQUAL "V4")
+        # RTC: RP2040 uses hardware_rtc, RP2350 (V4/V5) uses pico_aon_timer
+        if(BOARD_VERSION STREQUAL "V5" OR BOARD_VERSION STREQUAL "V4")
             target_link_libraries(${TARGET_NAME} pico_aon_timer)
         else()
             target_link_libraries(${TARGET_NAME} hardware_rtc)
