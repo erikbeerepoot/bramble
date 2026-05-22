@@ -1,7 +1,6 @@
 import { useState, useCallback } from 'react';
 import { Zap, ChevronUp, ChevronDown, Square, Check, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { controlCurtain } from '../api/client';
 
 export type CurtainAction = 'open' | 'close' | 'stop';
 type CurtainActionState = 'idle' | 'sending' | 'queued' | 'error';
@@ -14,10 +13,10 @@ interface ButtonState {
 
 interface CurtainControlProps {
   address: number;
-  onCommandQueued?: (action: CurtainAction) => void;
+  issueCurtain: (action: CurtainAction, address: number) => Promise<void>;
 }
 
-function CurtainControl({ address, onCommandQueued }: CurtainControlProps) {
+function CurtainControl({ address, issueCurtain }: CurtainControlProps) {
   const [buttonState, setButtonState] = useState<ButtonState>({ state: 'idle' });
 
   const dismissError = useCallback(() => {
@@ -27,11 +26,10 @@ function CurtainControl({ address, onCommandQueued }: CurtainControlProps) {
   const handleAction = async (action: CurtainAction) => {
     setButtonState({ state: 'sending', action });
     try {
-      await controlCurtain(address, action);
+      await issueCurtain(action, address);
       setButtonState({ state: 'queued', action });
       setTimeout(() => {
         setButtonState((prev) => (prev.state === 'queued' ? { state: 'idle' } : prev));
-        onCommandQueued?.(action);
       }, 2000);
     } catch (err) {
       setButtonState({
