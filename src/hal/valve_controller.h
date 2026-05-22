@@ -101,9 +101,21 @@ public:
     /**
      * @brief Close all valves
      *
-     * Useful for emergency shutoff or initialization
+     * Skips valves already known to be CLOSED. Use for runtime shutoff
+     * where the in-memory state is authoritative.
      */
     void closeAllValves();
+
+    /**
+     * @brief Force-close all valves regardless of cached state
+     *
+     * Pulses every valve's close coil unconditionally so the physical
+     * state is reconciled with the firmware's idea of CLOSED. Use at
+     * boot — the in-memory state may have been restored from PMU RAM
+     * (so closeAllValves would no-op) but the latching valves could
+     * still be mechanically open from a pre-power-loss command.
+     */
+    void forceCloseAllValves();
 
     /**
      * @brief Restore a valve's in-memory state without actuating hardware
