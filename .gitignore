@@ -2,6 +2,15 @@
 build/
 Build/
 BUILD/
+build_v*/
+
+# Node / dashboard
+node_modules/
+dashboard/.vite/
+dashboard/dist/
+
+# Claude Code workspace files
+.claude/worktrees/
 
 # CMake files
 CMakeCache.txt
