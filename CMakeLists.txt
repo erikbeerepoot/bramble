@@ -43,13 +43,18 @@ elseif(BOARD_VERSION STREQUAL "V4")
     message(STATUS "Board version: V4 (RP2350B)")
 else()
     set(PICO_BOARD adafruit_feather_rp2040 CACHE STRING "Board type" FORCE)
-    # Use W25Q boot2 - matches W25Q16JV flash chip
-    set(PICO_DEFAULT_BOOT_STAGE2_FILE ${PICO_SDK_PATH}/src/rp2040/boot_stage2/boot2_w25q080.S CACHE STRING "" FORCE)
     message(STATUS "Board version: V3 (RP2040)")
 endif()
 
-# Pull in Raspberry Pi Pico SDK (must be before project)
+# Pull in Raspberry Pi Pico SDK (must be before project).
+# This populates the PICO_SDK_PATH variable from the environment if set.
 include(pico_sdk_import.cmake)
+
+# V3 override: use W25Q boot2 - matches W25Q16JV flash chip. Must come AFTER
+# pico_sdk_import so ${PICO_SDK_PATH} is a real path, not an empty string.
+if(BOARD_VERSION STREQUAL "V3" OR NOT BOARD_VERSION)
+    set(PICO_DEFAULT_BOOT_STAGE2_FILE ${PICO_SDK_PATH}/src/rp2040/boot_stage2/boot2_w25q080.S CACHE STRING "" FORCE)
+endif()
 
 # Pull in Pico extras (if available)
 set(PICO_EXTRAS_PATH ${CMAKE_CURRENT_LIST_DIR}/pico-extras)
