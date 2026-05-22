@@ -558,8 +558,7 @@ void IrrigationMode::onModeSpecificUpdate(const UpdateAvailablePayload *payload,
                     // Pack PMU error code into the high byte of the event detail
                     // so the dashboard can surface why the apply failed.
                     logger.error("  Failed to apply schedule: error %d", static_cast<int>(error));
-                    const uint16_t detail =
-                        (static_cast<uint16_t>(error) << 8) | index;
+                    const uint16_t detail = (static_cast<uint16_t>(error) << 8) | index;
                     event_log_.record(EventType::SCHEDULE_FAILED, 2, detail);
                 }
                 onUpdateApplied(hub_sequence);
@@ -586,8 +585,7 @@ void IrrigationMode::onModeSpecificUpdate(const UpdateAvailablePayload *payload,
                     // Pack PMU error code into the high byte of the event detail
                     // so the dashboard can surface why the remove failed.
                     logger.error("  Failed to remove schedule: error %d", static_cast<int>(error));
-                    const uint16_t detail =
-                        (static_cast<uint16_t>(error) << 8) | index;
+                    const uint16_t detail = (static_cast<uint16_t>(error) << 8) | index;
                     event_log_.record(EventType::SCHEDULE_FAILED, 2, detail);
                 }
                 onUpdateApplied(hub_sequence);
