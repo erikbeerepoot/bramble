@@ -552,20 +552,21 @@ void IrrigationMode::onModeSpecificUpdate(const UpdateAvailablePayload *payload,
                         entry.hour, entry.minute, entry.valveId, entry.duration,
                         static_cast<uint8_t>(entry.daysMask));
 
-            reliable_pmu_->setSchedule(index, entry, [this, hub_sequence, index](bool success,
-                                                                                 PMU::ErrorCode error) {
-                if (success) {
-                    logger.info("  Schedule applied successfully");
-                    event_log_.record(EventType::SCHEDULE_APPLIED, 0, index);
-                } else {
-                    // Pack PMU error code into the high byte of the event detail
-                    // so the dashboard can surface why the apply failed.
-                    logger.error("  Failed to apply schedule: error %d", static_cast<int>(error));
-                    const uint16_t detail = (static_cast<uint16_t>(error) << 8) | index;
-                    event_log_.record(EventType::SCHEDULE_FAILED, 2, detail);
-                }
-                onUpdateApplied(hub_sequence);
-            });
+            reliable_pmu_->setSchedule(
+                index, entry, [this, hub_sequence, index](bool success, PMU::ErrorCode error) {
+                    if (success) {
+                        logger.info("  Schedule applied successfully");
+                        event_log_.record(EventType::SCHEDULE_APPLIED, 0, index);
+                    } else {
+                        // Pack PMU error code into the high byte of the event detail
+                        // so the dashboard can surface why the apply failed.
+                        logger.error("  Failed to apply schedule: error %d",
+                                     static_cast<int>(error));
+                        const uint16_t detail = (static_cast<uint16_t>(error) << 8) | index;
+                        event_log_.record(EventType::SCHEDULE_FAILED, 2, detail);
+                    }
+                    onUpdateApplied(hub_sequence);
+                });
             break;
         }
 
