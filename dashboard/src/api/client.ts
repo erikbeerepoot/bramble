@@ -327,11 +327,21 @@ export async function deleteIrrigationSchedule(
   });
 }
 
+// Command POST responses include `command_id` from the node_commands audit
+// log so the dashboard can correlate optimistic ghost rows with their
+// server-backed counterpart.
+interface CommandPostResponse {
+  status: string;
+  task_id: string;
+  message: string;
+  command_id: number | null;
+}
+
 export async function runValve(
   deviceId: string,
   valve: number,
   durationSeconds: number
-): Promise<{ status: string; task_id: string; message: string }> {
+): Promise<CommandPostResponse> {
   return fetchApi(`/api/nodes/${deviceId}/valve`, {
     method: 'POST',
     body: JSON.stringify({ valve, duration_seconds: durationSeconds }),
@@ -341,7 +351,7 @@ export async function runValve(
 export async function stopValve(
   deviceId: string,
   valve: number
-): Promise<{ status: string; task_id: string; message: string }> {
+): Promise<CommandPostResponse> {
   return fetchApi(`/api/nodes/${deviceId}/valve/stop`, {
     method: 'POST',
     body: JSON.stringify({ valve }),
@@ -351,7 +361,7 @@ export async function stopValve(
 export async function setWakeInterval(
   deviceId: string,
   intervalSeconds: number
-): Promise<{ status: string; task_id: string; message: string }> {
+): Promise<CommandPostResponse> {
   return fetchApi(`/api/nodes/${deviceId}/wake-interval`, {
     method: 'POST',
     body: JSON.stringify({ interval_seconds: intervalSeconds }),
@@ -361,7 +371,7 @@ export async function setWakeInterval(
 export async function controlCurtain(
   address: number,
   action: 'open' | 'close' | 'stop' | 'calibrate'
-): Promise<{ status: string; task_id: string; action: string; message: string }> {
+): Promise<CommandPostResponse & { action: string }> {
   return fetchApi(`/api/nodes/${address}/curtain`, {
     method: 'POST',
     body: JSON.stringify({ action }),
