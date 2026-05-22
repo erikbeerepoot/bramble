@@ -123,30 +123,52 @@ bool ScheduleEntry::timeRangesOverlap(uint8_t h1, uint8_t m1, uint16_t d1, uint8
 
 WateringSchedule::WateringSchedule() : storage_(nullptr) {}
 
-ErrorCode WateringSchedule::addEntry(const ScheduleEntry &entry)
+ErrorCode WateringSchedule::setEntry(uint8_t index, const ScheduleEntry &entry)
 {
     if (!storage_)
         return ErrorCode::InvalidParam;
+
+    if (index >= MAX_SCHEDULE_ENTRIES) {
+        return ErrorCode::InvalidIndex;
+    }
 
     if (!entry.isValid()) {
         return ErrorCode::InvalidParam;
     }
 
-    uint8_t count = getCount();
-    if (count >= MAX_SCHEDULE_ENTRIES) {
-        return ErrorCode::ScheduleFull;
-    }
-
-    if (hasOverlap(entry)) {
+    // Overlap check skips the destination slot itself — replacing a slot
+    // with a non-overlapping entry should succeed.
+    if (hasOverlap(entry, index)) {
         return ErrorCode::Overlap;
     }
 
-    // Write the new entry and update count
-    if (!storage_->saveScheduleEntry(count, entry)) {
+    // Count is a watermark (highest-used-slot + 1) so the existing
+    // `for i = 0; i < count` iteration covers all live slots. Disabled
+    // slots inside the watermark are skipped via the entry's enabled flag.
+    uint8_t count = getCount();
+
+    // When expanding the watermark, explicitly disable any gap slots so
+    // pre-existing FRAM data (left over from the old shift-on-remove
+    // model, or from an upgrade from earlier firmware) cannot show up as
+    // a phantom schedule.
+    if (index > count) {
+        ScheduleEntry empty;
+        empty.enabled = false;
+        for (uint8_t i = count; i < index; i++) {
+            if (!storage_->saveScheduleEntry(i, empty)) {
+                return ErrorCode::InvalidParam;
+            }
+        }
+    }
+
+    if (!storage_->saveScheduleEntry(index, entry)) {
         return ErrorCode::InvalidParam;
     }
-    if (!storage_->setScheduleCount(count + 1)) {
-        return ErrorCode::InvalidParam;
+
+    if (index + 1 > count) {
+        if (!storage_->setScheduleCount(index + 1)) {
+            return ErrorCode::InvalidParam;
+        }
     }
 
     return ErrorCode::NoError;
@@ -157,24 +179,41 @@ ErrorCode WateringSchedule::removeEntry(uint8_t index)
     if (!storage_)
         return ErrorCode::InvalidParam;
 
+    if (index >= MAX_SCHEDULE_ENTRIES) {
+        return ErrorCode::InvalidIndex;
+    }
+
     uint8_t count = getCount();
     if (index >= count) {
         return ErrorCode::InvalidIndex;
     }
 
-    // Shift entries down in FRAM
-    for (uint8_t i = index; i < count - 1; i++) {
-        ScheduleEntry entry;
-        if (!storage_->loadScheduleEntry(i + 1, entry)) {
-            return ErrorCode::InvalidParam;
-        }
-        if (!storage_->saveScheduleEntry(i, entry)) {
-            return ErrorCode::InvalidParam;
-        }
+    // Clear the slot's enabled flag in place — do NOT shift subsequent
+    // slots, so slot indices stay stable across removes.
+    ScheduleEntry entry;
+    if (!storage_->loadScheduleEntry(index, entry)) {
+        return ErrorCode::InvalidParam;
+    }
+    entry.enabled = false;
+    if (!storage_->saveScheduleEntry(index, entry)) {
+        return ErrorCode::InvalidParam;
     }
 
-    if (!storage_->setScheduleCount(count - 1)) {
-        return ErrorCode::InvalidParam;
+    // Trim trailing disabled slots from the watermark so iteration stays
+    // efficient when entries are removed from the end.
+    uint8_t newCount = count;
+    while (newCount > 0) {
+        ScheduleEntry trailing;
+        if (!storage_->loadScheduleEntry(newCount - 1, trailing))
+            break;
+        if (trailing.enabled)
+            break;
+        newCount--;
+    }
+    if (newCount != count) {
+        if (!storage_->setScheduleCount(newCount)) {
+            return ErrorCode::InvalidParam;
+        }
     }
     return ErrorCode::NoError;
 }
@@ -807,20 +846,23 @@ void Protocol::handleGetWakeInterval()
 
 void Protocol::handleSetSchedule(const uint8_t *data, uint8_t length)
 {
-    if (length != SCHEDULE_ENTRY_SIZE) {
+    // Payload is index byte followed by a 7-byte ScheduleEntry.
+    if (length != SCHEDULE_ENTRY_SIZE + 1) {
         sendNack(ErrorCode::InvalidParam);
         return;
     }
 
-    ScheduleEntry entry;
-    entry.hour = data[0];
-    entry.minute = data[1];
-    entry.duration = data[2] | (data[3] << 8);
-    entry.daysMask = static_cast<DayOfWeek>(data[4]);
-    entry.valveId = data[5];
-    entry.enabled = (data[6] != 0);
+    uint8_t index = data[0];
 
-    ErrorCode result = schedule_.addEntry(entry);
+    ScheduleEntry entry;
+    entry.hour = data[1];
+    entry.minute = data[2];
+    entry.duration = data[3] | (data[4] << 8);
+    entry.daysMask = static_cast<DayOfWeek>(data[5]);
+    entry.valveId = data[6];
+    entry.enabled = (data[7] != 0);
+
+    ErrorCode result = schedule_.setEntry(index, entry);
 
     if (result == ErrorCode::NoError) {
         sendAck();

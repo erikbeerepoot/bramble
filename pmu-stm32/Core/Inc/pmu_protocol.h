@@ -156,10 +156,14 @@ public:
     // Set the persistent storage backend. Must be called before use if FRAM is available.
     void setStorage(PersistentStorage *storage) { storage_ = storage; }
 
-    // Add a schedule entry at the next available slot
-    ErrorCode addEntry(const ScheduleEntry &entry);
+    // Write a schedule entry to a specific slot, replacing whatever was
+    // there. Slot indices are stable across removes (no shifting), so the
+    // hub's "schedule N" always maps to PMU slot N. Validates the entry,
+    // checks overlap against all OTHER enabled slots, then persists.
+    ErrorCode setEntry(uint8_t index, const ScheduleEntry &entry);
 
-    // Remove entry at index (shifts subsequent entries down)
+    // Remove entry at index by clearing its enabled flag. Does NOT shift
+    // subsequent entries — slot indices stay stable.
     ErrorCode removeEntry(uint8_t index);
 
     // Clear all entries

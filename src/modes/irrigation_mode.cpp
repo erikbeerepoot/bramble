@@ -549,8 +549,8 @@ void IrrigationMode::onModeSpecificUpdate(const UpdateAvailablePayload *payload,
                         entry.hour, entry.minute, entry.valveId, entry.duration,
                         static_cast<uint8_t>(entry.daysMask));
 
-            reliable_pmu_->setSchedule(entry, [this, hub_sequence, index](bool success,
-                                                                          PMU::ErrorCode error) {
+            reliable_pmu_->setSchedule(index, entry, [this, hub_sequence, index](bool success,
+                                                                                 PMU::ErrorCode error) {
                 if (success) {
                     logger.info("  Schedule applied successfully");
                     event_log_.record(EventType::SCHEDULE_APPLIED, 0, index);

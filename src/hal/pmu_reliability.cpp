@@ -236,17 +236,21 @@ bool ReliablePmuClient::setWakeInterval(uint32_t seconds, CommandCallback callba
     return queueCommand(Command::SetWakeInterval, data, 4, callback);
 }
 
-bool ReliablePmuClient::setSchedule(const ScheduleEntry &entry, CommandCallback callback)
+bool ReliablePmuClient::setSchedule(uint8_t index, const ScheduleEntry &entry,
+                                    CommandCallback callback)
 {
-    uint8_t data[SCHEDULE_ENTRY_SIZE];
-    data[0] = entry.hour;
-    data[1] = entry.minute;
-    data[2] = entry.duration & 0xFF;
-    data[3] = (entry.duration >> 8) & 0xFF;
-    data[4] = static_cast<uint8_t>(entry.daysMask);
-    data[5] = entry.valveId;
-    data[6] = entry.enabled ? 1 : 0;
-    return queueCommand(Command::SetSchedule, data, SCHEDULE_ENTRY_SIZE, callback);
+    // Payload: index byte followed by a 7-byte ScheduleEntry. The PMU
+    // writes to the specified slot (no shifting / append-only behavior).
+    uint8_t data[SCHEDULE_ENTRY_SIZE + 1];
+    data[0] = index;
+    data[1] = entry.hour;
+    data[2] = entry.minute;
+    data[3] = entry.duration & 0xFF;
+    data[4] = (entry.duration >> 8) & 0xFF;
+    data[5] = static_cast<uint8_t>(entry.daysMask);
+    data[6] = entry.valveId;
+    data[7] = entry.enabled ? 1 : 0;
+    return queueCommand(Command::SetSchedule, data, SCHEDULE_ENTRY_SIZE + 1, callback);
 }
 
 bool ReliablePmuClient::setDateTime(const DateTime &dateTime, CommandCallback callback)
