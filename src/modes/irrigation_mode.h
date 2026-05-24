@@ -17,24 +17,21 @@
  * On cold start (battery disconnect), state_valid=false.
  */
 struct __attribute__((packed)) IrrigationPersistedState {
-    uint8_t version;                  // Format version
-    uint8_t board_version;            // Board hardware version (3=V3, 4=V4)
-    uint8_t next_seq_num;             // LoRa sequence number
-    uint8_t update_sequence;          // Current update pull sequence number
-    uint16_t assigned_address;        // Node address (survives warm reboot)
-    uint8_t valve_states[4];          // ValveState per valve (CLOSED=0, OPEN=1, UNKNOWN=2)
-    uint8_t pending_valve_close;      // 0=no pending close, 1=pending valve close timer
-    uint8_t pending_close_valve_id;   // Which valve to close when timer fires
-    uint8_t valve_timer_armed;        // 0=PMU timer not armed yet, 1=armed (PMU will fire it)
-    uint16_t valve_duration_seconds;  // Duration the valve was opened for (used to arm timer)
-    uint8_t padding[17];              // Reserved (pad to 32 bytes)
+    uint8_t version;                       // Format version
+    uint8_t board_version;                 // Board hardware version (3=V3, 4=V4)
+    uint8_t next_seq_num;                  // LoRa sequence number
+    uint8_t update_sequence;               // Current update pull sequence number
+    uint16_t assigned_address;             // Node address (survives warm reboot)
+    uint8_t valve_states[4];               // ValveState per valve (CLOSED=0, OPEN=1, UNKNOWN=2)
+    uint32_t valve_close_deadlines[4];     // Unix-ts auto-close deadline per valve; 0 = none
+    uint8_t padding[6];                    // Reserved (pad to 32 bytes)
 };
 static_assert(sizeof(IrrigationPersistedState) == 32, "IrrigationPersistedState must be 32 bytes");
 
-// Bumped to 6: added valve_timer_armed and valve_duration_seconds.
-// Old state from version 5 will be rejected, triggering cold start (closes all valves)
+// Bumped to 7: per-valve deadline queue replaces single-timer fields.
+// Old state from version 6 will be rejected, triggering cold start (closes all valves)
 // which rescues any valve stuck open from a missed timer setup.
-constexpr uint8_t IRRIGATION_STATE_VERSION = 6;
+constexpr uint8_t IRRIGATION_STATE_VERSION = 7;
 
 /**
  * @brief Irrigation node mode for valve control
@@ -69,10 +66,11 @@ private:
     uint16_t keepawake_task_id_ = 0;
     uint16_t drain_task_id_ = 0;
     uint32_t drain_start_ms_ = 0;
-    bool pending_valve_close_ = false;
-    uint8_t pending_close_valve_id_ = 0;
-    uint16_t valve_duration_seconds_ = 0;
-    bool valve_timer_armed_ = false;  // True when PMU has accepted setValveTimer
+    // Per-valve auto-close deadlines as absolute unix timestamps.
+    // 0 = no pending close. Array index = valve_id. The PMU's single RTC
+    // Alarm A is re-armed for the soonest non-zero deadline on every
+    // relevant state change (open / manual close / wake).
+    uint32_t valve_close_deadlines_[ValveController::NUM_VALVES] = {0};
     AddressSavedCallback address_saved_callback_;
 
     /**
@@ -102,6 +100,16 @@ private:
     // State persistence
     void packState(IrrigationPersistedState &out) const;
     bool unpackState(const IrrigationPersistedState *persisted);
+
+    // Valve auto-close deadline queue helpers
+    /// Find the soonest non-zero deadline. Returns valve_id, or 0xFF if queue empty.
+    /// On return, out_deadline holds the matching deadline (undefined if 0xFF).
+    uint8_t soonestValveDeadline(uint32_t &out_deadline) const;
+    /// Re-arm the PMU's single RTC Alarm A for the soonest pending deadline.
+    /// No-op if the queue is empty. Records VALVE_TIMER_SET on successful arm.
+    void armNextValveTimer();
+    /// Close any valves whose deadlines have passed. Called from handlePmuWake.
+    void processExpiredValveDeadlines();
 
 public:
     using ApplicationMode::ApplicationMode;

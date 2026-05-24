@@ -225,27 +225,15 @@ void IrrigationMode::onStateChange(IrrigationState state)
             // Waiting for PMU callback - no action needed
             break;
 
-        case IrrigationState::VALVE_ACTIVE:
-            if (pending_valve_close_ && valve_duration_seconds_ > 0 && pmu_available_ &&
-                reliable_pmu_) {
-                // Timer-driven: set RTC Alarm A to wake us after duration, then sleep
-                logger.info("Setting valve timer: %u seconds for valve %u", valve_duration_seconds_,
-                            pending_close_valve_id_);
-                reliable_pmu_->setValveTimer(
-                    valve_duration_seconds_, pending_close_valve_id_,
-                    [this](bool success, PMU::ErrorCode error) {
-                        if (success) {
-                            valve_timer_armed_ = true;
-                            event_log_.record(EventType::VALVE_TIMER_SET, 0,
-                                              pending_close_valve_id_);
-                            irrigation_state_.reportValveTimerSet();
-                        } else {
-                            logger.error("Failed to set valve timer: %d", static_cast<int>(error));
-                            // Fall back to keepAlive behavior
-                            reliable_pmu_->keepAwake(KEEP_AWAKE_PROCESSING_SECONDS);
-                            scheduleKeepAwake();
-                        }
-                    });
+        case IrrigationState::VALVE_ACTIVE: {
+            // If anything in the deadline queue is pending, arm the PMU's
+            // RTC Alarm A for the soonest deadline. Otherwise fall back to
+            // keepAlive (legacy: valve opened with no duration).
+            uint32_t soonest_deadline = 0;
+            uint8_t soonest_valve = soonestValveDeadline(soonest_deadline);
+            if (soonest_valve != 0xFF && pmu_available_ && reliable_pmu_) {
+                armNextValveTimer();
+                irrigation_state_.reportValveTimerSet();
             } else {
                 // No duration — legacy keepAlive behavior
                 if (pmu_available_ && reliable_pmu_) {
@@ -254,6 +242,7 @@ void IrrigationMode::onStateChange(IrrigationState state)
                 }
             }
             break;
+        }
 
         case IrrigationState::TRANSMITTING_EVENTS: {
             // Enqueue any pending event log records into the messenger TX queue,
@@ -344,31 +333,23 @@ void IrrigationMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEn
     // we always re-issue the close pulse here rather than trust software state.
     valve_controller_.forceCloseAllValves();
 
-    // Handle valve timer wake — close the valve that was left open
-    if (reason == PMU::WakeReason::ValveTimer) {
-        logger.info("Valve timer wake - closing valve %d", pending_close_valve_id_);
-        if (pending_close_valve_id_ < ValveController::NUM_VALVES) {
-            valve_controller_.closeValve(pending_close_valve_id_);
-            event_log_.record(EventType::VALVE_TIMER_CLOSE, 0, pending_close_valve_id_);
-        }
-        pending_valve_close_ = false;
-        pending_close_valve_id_ = 0;
-        valve_duration_seconds_ = 0;
-        valve_timer_armed_ = false;
-    }
+    // Process the per-valve deadline queue: close every valve whose
+    // deadline has passed. This handles both ValveTimer wakes (the alarm
+    // we armed expired) and periodic wakes that happen to coincide with a
+    // deadline. The PMU's reported valve_id is ignored — the queue is the
+    // source of truth.
+    processExpiredValveDeadlines();
 
-    // For scheduled wakes, open the valve and set up timer-driven close
+    // For scheduled wakes, open the valve and add its deadline to the queue.
+    // VALVE_ACTIVE will then re-arm the PMU for the soonest pending close.
     if (reason == PMU::WakeReason::Scheduled && entry) {
         logger.info("Scheduled wake - valve %d for %d seconds", entry->valveId, entry->duration);
         if (entry->valveId < ValveController::NUM_VALVES) {
             valve_controller_.openValve(entry->valveId);
             event_log_.record(EventType::VALVE_OPEN, 0, entry->valveId);
-            // Set up timer-driven close (same path as ad-hoc commands)
             if (entry->duration > 0) {
-                pending_valve_close_ = true;
-                pending_close_valve_id_ = entry->valveId;
-                valve_duration_seconds_ = entry->duration;
-                valve_timer_armed_ = false;  // PMU timer not yet set; will arm in VALVE_ACTIVE
+                uint32_t now = getUnixTimestamp();
+                valve_close_deadlines_[entry->valveId] = now + entry->duration;
             }
         } else {
             logger.error("Invalid valve ID %d in schedule", entry->valveId);
@@ -440,15 +421,16 @@ void IrrigationMode::onActuatorCommand(const ActuatorPayload *payload)
         }
 
         if (payload->command == CMD_TURN_ON) {
-            // Extract duration if present: params = [valve_id, duration_lo, duration_hi]
+            // Extract duration if present: params = [valve_id, duration_lo, duration_hi].
+            // Each valve has its own deadline slot, so a second open does not
+            // clobber the first — both auto-close at their own times.
             if (payload->param_length >= 3) {
-                valve_duration_seconds_ = payload->params[1] | (payload->params[2] << 8);
-                pending_valve_close_ = true;
-                pending_close_valve_id_ = valve_id;
-                logger.info("Opening valve %d for %u seconds", valve_id, valve_duration_seconds_);
+                uint16_t duration = payload->params[1] | (payload->params[2] << 8);
+                uint32_t now = getUnixTimestamp();
+                valve_close_deadlines_[valve_id] = (duration > 0) ? (now + duration) : 0;
+                logger.info("Opening valve %d for %u seconds", valve_id, duration);
             } else {
-                valve_duration_seconds_ = 0;
-                pending_valve_close_ = false;
+                valve_close_deadlines_[valve_id] = 0;
                 logger.info("Opening valve %d (no duration)", valve_id);
             }
             valve_controller_.openValve(valve_id);
@@ -458,6 +440,11 @@ void IrrigationMode::onActuatorCommand(const ActuatorPayload *payload)
             logger.info("Closing valve %d", valve_id);
             valve_controller_.closeValve(valve_id);
             event_log_.record(EventType::VALVE_CLOSE, 0, valve_id);
+            // Cancel this valve's pending auto-close and re-arm the PMU for
+            // the next soonest deadline (or leave the existing alarm to fire
+            // harmlessly if this valve wasn't the soonest — see followups).
+            valve_close_deadlines_[valve_id] = 0;
+            armNextValveTimer();
             // Only report closed if no valves remain open
             if (valve_controller_.getActiveValveMask() == 0) {
                 if (keepawake_task_id_ != 0) {
@@ -642,14 +629,18 @@ void IrrigationMode::onUpdateFailed()
 
 void IrrigationMode::onUpdateReceived(bool has_updates)
 {
-    // If we just opened a valve via Scheduled wake but haven't armed the PMU
-    // close timer yet, detour through VALVE_ACTIVE to set it up before sleeping.
-    // (The cold-boot path in handlePmuWake doesn't go through VALVE_ACTIVE on
-    // its own — see reportWakeFromSleep is bypassed when state==INITIALIZING.)
-    if (!has_updates && pending_valve_close_ && !valve_timer_armed_) {
-        logger.info("Pending valve close needs PMU timer setup - entering VALVE_ACTIVE");
-        irrigation_state_.reportValveOpened();
-        return;
+    // If a scheduled wake opened a valve and added a deadline to the queue
+    // without yet arming the PMU, detour through VALVE_ACTIVE to arm it
+    // before sleeping. (Cold-boot path in handlePmuWake doesn't transition
+    // via VALVE_ACTIVE on its own — reportWakeFromSleep is bypassed when
+    // state==INITIALIZING.)
+    if (!has_updates) {
+        uint32_t deadline = 0;
+        if (soonestValveDeadline(deadline) != 0xFF) {
+            logger.info("Pending valve close needs PMU timer setup - entering VALVE_ACTIVE");
+            irrigation_state_.reportValveOpened();
+            return;
+        }
     }
     irrigation_state_.reportUpdateReceived(has_updates);
 }
@@ -715,10 +706,10 @@ void IrrigationMode::packState(IrrigationPersistedState &out) const
     for (uint8_t i = 0; i < ValveController::NUM_VALVES; i++) {
         out.valve_states[i] = static_cast<uint8_t>(valve_controller_.getValveState(i));
     }
-    out.pending_valve_close = pending_valve_close_ ? 1 : 0;
-    out.pending_close_valve_id = pending_close_valve_id_;
-    out.valve_timer_armed = valve_timer_armed_ ? 1 : 0;
-    out.valve_duration_seconds = valve_duration_seconds_;
+    // Persist the per-valve close-deadline queue verbatim.
+    static_assert(sizeof(out.valve_close_deadlines) >= sizeof(valve_close_deadlines_),
+                  "persisted deadline array smaller than runtime array");
+    memcpy(out.valve_close_deadlines, valve_close_deadlines_, sizeof(valve_close_deadlines_));
 }
 
 bool IrrigationMode::unpackState(const IrrigationPersistedState *persisted)
@@ -761,16 +752,20 @@ bool IrrigationMode::unpackState(const IrrigationPersistedState *persisted)
         valve_controller_.restoreValveState(i, static_cast<ValveState>(persisted->valve_states[i]));
     }
 
-    // Restore pending valve close state
-    pending_valve_close_ = (persisted->pending_valve_close != 0);
-    pending_close_valve_id_ = persisted->pending_close_valve_id;
-    valve_timer_armed_ = (persisted->valve_timer_armed != 0);
-    valve_duration_seconds_ = persisted->valve_duration_seconds;
+    // Restore the per-valve auto-close deadline queue.
+    memcpy(valve_close_deadlines_, persisted->valve_close_deadlines,
+           sizeof(valve_close_deadlines_));
 
+    uint8_t pending_mask = 0;
+    for (uint8_t i = 0; i < ValveController::NUM_VALVES; i++) {
+        if (valve_close_deadlines_[i] != 0) {
+            pending_mask |= (1u << i);
+        }
+    }
     pmu_logger.info(
-        "Restored state: seq=%u, addr=0x%04X, update_seq=%u, pending_close=%u, timer_armed=%u",
+        "Restored state: seq=%u, addr=0x%04X, update_seq=%u, pending_close_mask=0x%02X",
         persisted->next_seq_num, persisted->assigned_address, persisted->update_sequence,
-        persisted->pending_valve_close, persisted->valve_timer_armed);
+        pending_mask);
 
     return true;
 }
@@ -803,4 +798,85 @@ void IrrigationMode::onFactoryResetRequested()
         logger.warn("PMU not available - performing RP2040-only watchdog reboot");
     }
     watchdog_reboot(0, 0, 0);
+}
+
+// ============================================================================
+// Per-valve auto-close deadline queue
+// ============================================================================
+
+uint8_t IrrigationMode::soonestValveDeadline(uint32_t &out_deadline) const
+{
+    uint8_t best = 0xFF;
+    uint32_t best_deadline = UINT32_MAX;
+    for (uint8_t i = 0; i < ValveController::NUM_VALVES; i++) {
+        uint32_t d = valve_close_deadlines_[i];
+        if (d != 0 && d < best_deadline) {
+            best_deadline = d;
+            best = i;
+        }
+    }
+    if (best != 0xFF) {
+        out_deadline = best_deadline;
+    }
+    return best;
+}
+
+void IrrigationMode::armNextValveTimer()
+{
+    if (!pmu_available_ || !reliable_pmu_) {
+        return;
+    }
+
+    uint32_t deadline = 0;
+    uint8_t valve = soonestValveDeadline(deadline);
+    if (valve == 0xFF) {
+        // Queue empty. A previously-armed Alarm A (if any) will still fire,
+        // but the wake handler scans the queue and does nothing. Adding a
+        // PMU ClearValveTimer opcode to disarm Alarm A is a follow-up.
+        return;
+    }
+
+    uint32_t now = getUnixTimestamp();
+    uint32_t seconds;
+    if (now == 0 || deadline <= now) {
+        // No valid wall time, or deadline already past — fire ASAP so the
+        // queue processor on the next wake closes it.
+        seconds = 1;
+    } else {
+        uint32_t delta = deadline - now;
+        seconds = (delta > 0xFFFFu) ? 0xFFFFu : delta;
+    }
+
+    logger.info("Arming valve timer: valve=%u seconds=%lu", valve,
+                static_cast<unsigned long>(seconds));
+    reliable_pmu_->setValveTimer(
+        static_cast<uint16_t>(seconds), valve,
+        [this, valve](bool success, PMU::ErrorCode error) {
+            if (success) {
+                event_log_.record(EventType::VALVE_TIMER_SET, 0, valve);
+            } else {
+                logger.error("Failed to arm valve timer for valve %u: %d", valve,
+                             static_cast<int>(error));
+            }
+        });
+}
+
+void IrrigationMode::processExpiredValveDeadlines()
+{
+    uint32_t now = getUnixTimestamp();
+    if (now == 0) {
+        // No wall time yet; can't decide. The next wake after time sync
+        // will process the queue.
+        return;
+    }
+    for (uint8_t i = 0; i < ValveController::NUM_VALVES; i++) {
+        uint32_t d = valve_close_deadlines_[i];
+        if (d != 0 && d <= now) {
+            logger.info("Auto-close fired for valve %u (deadline %lu, now %lu)", i,
+                        static_cast<unsigned long>(d), static_cast<unsigned long>(now));
+            valve_controller_.closeValve(i);
+            event_log_.record(EventType::VALVE_TIMER_CLOSE, 0, i);
+            valve_close_deadlines_[i] = 0;
+        }
+    }
 }
