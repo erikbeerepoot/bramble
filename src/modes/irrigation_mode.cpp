@@ -765,10 +765,9 @@ bool IrrigationMode::unpackState(const IrrigationPersistedState *persisted)
             pending_mask |= (1u << i);
         }
     }
-    pmu_logger.info(
-        "Restored state: seq=%u, addr=0x%04X, update_seq=%u, pending_close_mask=0x%02X",
-        persisted->next_seq_num, persisted->assigned_address, persisted->update_sequence,
-        pending_mask);
+    pmu_logger.info("Restored state: seq=%u, addr=0x%04X, update_seq=%u, pending_close_mask=0x%02X",
+                    persisted->next_seq_num, persisted->assigned_address,
+                    persisted->update_sequence, pending_mask);
 
     return true;
 }
@@ -852,16 +851,15 @@ void IrrigationMode::armNextValveTimer()
 
     logger.info("Arming valve timer: valve=%u seconds=%lu", valve,
                 static_cast<unsigned long>(seconds));
-    reliable_pmu_->setValveTimer(
-        static_cast<uint16_t>(seconds), valve,
-        [this, valve](bool success, PMU::ErrorCode error) {
-            if (success) {
-                event_log_.record(EventType::VALVE_TIMER_SET, 0, valve);
-            } else {
-                logger.error("Failed to arm valve timer for valve %u: %d", valve,
-                             static_cast<int>(error));
-            }
-        });
+    reliable_pmu_->setValveTimer(static_cast<uint16_t>(seconds), valve,
+                                 [this, valve](bool success, PMU::ErrorCode error) {
+                                     if (success) {
+                                         event_log_.record(EventType::VALVE_TIMER_SET, 0, valve);
+                                     } else {
+                                         logger.error("Failed to arm valve timer for valve %u: %d",
+                                                      valve, static_cast<int>(error));
+                                     }
+                                 });
 }
 
 void IrrigationMode::processExpiredValveDeadlines()
