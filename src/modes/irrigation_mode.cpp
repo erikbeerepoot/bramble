@@ -829,6 +829,14 @@ void IrrigationMode::armNextValveTimer()
         return;
     }
 
+    // Process any expired deadlines first. handlePmuWake calls this too,
+    // but at boot it runs before time sync (getUnixTimestamp() == 0) and
+    // returns without clearing stale slots. By the time we get here we're
+    // past time sync, so re-running it closes any expired deadlines and
+    // empties their slots — preventing a 1-second re-arm loop on
+    // restored-but-already-elapsed deadlines.
+    processExpiredValveDeadlines();
+
     uint32_t deadline = 0;
     uint8_t valve = soonestValveDeadline(deadline);
     if (valve == 0xFF) {
@@ -842,7 +850,9 @@ void IrrigationMode::armNextValveTimer()
     uint32_t seconds;
     if (now == 0 || deadline <= now) {
         // No valid wall time, or deadline already past — fire ASAP so the
-        // queue processor on the next wake closes it.
+        // queue processor on the next wake closes it. (The processExpired
+        // call above will have closed it if time was valid, so this branch
+        // only triggers in the truly-no-time-yet case.)
         seconds = 1;
     } else {
         uint32_t delta = deadline - now;
