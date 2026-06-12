@@ -17,7 +17,8 @@ AddressManager::AddressManager() : next_available_address_(ADDRESS_MIN_NODE)
 }
 
 uint16_t AddressManager::registerNode(uint64_t device_id, uint8_t node_type, uint8_t capabilities,
-                                      uint32_t firmware_version, const char *device_name)
+                                      uint32_t firmware_version, const char *device_name,
+                                      uint8_t valve_count)
 {
     // Input validation
     if (device_id == 0) {
@@ -51,6 +52,7 @@ uint16_t AddressManager::registerNode(uint64_t device_id, uint8_t node_type, uin
         node->node_type = node_type;
         node->capabilities = capabilities;
         node->firmware_version = firmware_version;
+        node->valve_count = valve_count;
         if (device_name) {
             strncpy(node->device_name, device_name, sizeof(node->device_name) - 1);
             node->device_name[sizeof(node->device_name) - 1] = '\0';
@@ -84,6 +86,7 @@ uint16_t AddressManager::registerNode(uint64_t device_id, uint8_t node_type, uin
     new_node.node_type = node_type;
     new_node.capabilities = capabilities;
     new_node.firmware_version = firmware_version;
+    new_node.valve_count = valve_count;
     if (device_name) {
         strncpy(new_node.device_name, device_name, sizeof(new_node.device_name) - 1);
         new_node.device_name[sizeof(new_node.device_name) - 1] = '\0';
@@ -339,6 +342,7 @@ bool AddressManager::persist(Flash &flash)
         entry.node_type = node_info.node_type;
         entry.capabilities = node_info.capabilities;
         entry.firmware_version = node_info.firmware_version;
+        entry.valve_count = node_info.valve_count;
         entry.registration_time = 0;  // Keep field for compatibility but set to 0
         entry.last_seen_time = node_info.last_seen_time;
         entry.inactive_duration_ms =
@@ -396,6 +400,7 @@ bool AddressManager::load(Flash &flash)
         node_info.node_type = entry.node_type;
         node_info.capabilities = entry.capabilities;
         node_info.firmware_version = entry.firmware_version;
+        node_info.valve_count = entry.valve_count;
         node_info.last_seen_time = 0;  // Reset to 0 since boot time has changed
         node_info.last_check_time =
             bramble::util::time::currentTimeMs();  // Start checking from now

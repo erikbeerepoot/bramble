@@ -200,7 +200,8 @@ void IrrigationMode::onStateChange(IrrigationState state)
             messenger_.setNodeAddress(ADDRESS_UNREGISTERED);
             messenger_.sendRegistrationRequest(ADDRESS_HUB, device_id_, NODE_TYPE_HYBRID,
                                                CAP_VALVE_CONTROL | CAP_SOIL_MOISTURE,
-                                               BRAMBLE_FIRMWARE_VERSION, "Irrigation Node");
+                                               BRAMBLE_FIRMWARE_VERSION, "Irrigation Node",
+                                               ValveController::NUM_VALVES);
             // Set callback to advance SM when response arrives
             // Address is persisted via PMU state blob at sleep time (packState),
             // not flash — flash writes disrupt XIP cache on RP2350 and crash here.
@@ -660,7 +661,7 @@ void IrrigationMode::attemptDeferredRegistration()
 
     uint8_t registration_seq = messenger_.sendRegistrationRequest(
         ADDRESS_HUB, device_id_, NODE_TYPE_HYBRID, CAP_VALVE_CONTROL | CAP_SOIL_MOISTURE,
-        BRAMBLE_FIRMWARE_VERSION, "Irrigation Node");
+        BRAMBLE_FIRMWARE_VERSION, "Irrigation Node", ValveController::NUM_VALVES);
 
     if (registration_seq != 0) {
         logger.info("Registration request sent (seq=%d)", registration_seq);

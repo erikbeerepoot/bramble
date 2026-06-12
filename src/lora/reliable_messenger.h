@@ -182,11 +182,12 @@ public:
      * @param capabilities Bitmask of node capabilities
      * @param firmware_ver Firmware version
      * @param device_name Human-readable device name
+     * @param valve_count Number of valves on this node (0 if none)
      * @return Sequence number of sent message (0 on failure)
      */
     uint8_t sendRegistrationRequest(uint16_t dst_addr, uint64_t device_id, uint8_t node_type,
                                     uint8_t capabilities, uint32_t firmware_ver,
-                                    const char *device_name);
+                                    const char *device_name, uint8_t valve_count = 0);
 
     /**
      * @brief Send registration response to node
