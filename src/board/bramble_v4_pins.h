@@ -120,11 +120,17 @@ constexpr uint8_t PIN_MOTOR_HI_1 = J7::PIN_10;  // GPIO 36
 constexpr uint8_t PIN_MOTOR_HI_2 = J7::PIN_8;   // GPIO 38
 constexpr uint8_t PIN_MOTOR_LO_1 = J7::PIN_6;   // GPIO 40
 constexpr uint8_t PIN_MOTOR_LO_2 = J7::PIN_4;   // GPIO 42
+// IMPORTANT: these are *silicon* GPIO numbers (what gpio_put() drives), NOT the
+// schematic net labels. The RP2350B sheet names these nets "GPIO37/39/43/41",
+// but those nets physically land on pads GPIO29/31/41/43 — verified against the
+// pad column in rp2040.kicad_sch and on the bench. Using the net-label numbers
+// (the old J7 aliases) left VALVE_2 driving an unconnected pin, and swapped
+// VALVE_3/VALVE_4.
 constexpr uint8_t VALVE_PINS[NUM_VALVES] = {
-    J7::PIN_9,  // VALVE_1 = GPIO 37
-    J7::PIN_7,  // VALVE_2 = GPIO 39
-    J7::PIN_3,  // VALVE_3 = GPIO 43
-    J7::PIN_5,  // VALVE_4 = GPIO 41
+    29,  // VALVE_1 = silicon GPIO29
+    31,  // VALVE_2 = silicon GPIO31
+    41,  // VALVE_3 = silicon GPIO41
+    43,  // VALVE_4 = silicon GPIO43
 };
 
 // --- Curtain motor pins (greenhouse variant, J7 header) ---
