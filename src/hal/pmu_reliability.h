@@ -35,9 +35,11 @@ using CommandCallback = std::function<void(bool success, ErrorCode error)>;
  * @param entry Schedule entry if wake was scheduled (may be nullptr)
  * @param state_valid true if state blob is valid (false on cold start)
  * @param state 32-byte opaque state blob stored in PMU RAM across sleep cycles
+ * @param valve_reset one-shot flag set on the first wake after a PMU power-on or
+ *        NRST-button reset; when true, valves should be force-closed to a known state
  */
 using WakeCallback = std::function<void(WakeReason reason, const ScheduleEntry *entry,
-                                        bool state_valid, const uint8_t *state)>;
+                                        bool state_valid, const uint8_t *state, bool valve_reset)>;
 
 /**
  * @brief Reliable PMU client with automatic retry

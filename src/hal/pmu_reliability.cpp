@@ -41,9 +41,10 @@ bool ReliablePmuClient::init()
 
     // Forward event callbacks to protocol
     client_->getProtocol().onWakeNotification([this](WakeReason reason, const ScheduleEntry *entry,
-                                                     bool state_valid, const uint8_t *state) {
+                                                     bool state_valid, const uint8_t *state,
+                                                     bool valve_reset) {
         if (wakeCallback_) {
-            wakeCallback_(reason, entry, state_valid, state);
+            wakeCallback_(reason, entry, state_valid, state, valve_reset);
         }
     });
 

@@ -498,12 +498,13 @@ void Protocol::handleWakeNotification(const uint8_t *data, uint8_t length)
     WakeReason reason = static_cast<WakeReason>(data[0]);
     log.debug("WakeReason=%d", static_cast<int>(reason));
 
-    // New format: [reason, state_valid, state[32], optional schedule_entry...]
+    // New format: [reason, state_valid, state[32], valve_reset, optional schedule_entry...]
     // Old format fallback: [reason] or [reason, schedule_entry...]
-    // Minimum new format length: 1 (reason) + 1 (state_valid) + 32 (state) = 34 bytes
+    // Minimum state-blob length: 1 (reason) + 1 (state_valid) + 32 (state) = 34 bytes
     static constexpr uint8_t MIN_NEW_FORMAT_LEN = 1 + 1 + NODE_STATE_SIZE;
 
     bool state_valid = false;
+    bool valve_reset = false;
     static uint8_t state_blob[NODE_STATE_SIZE];
     memset(state_blob, 0, NODE_STATE_SIZE);
 
@@ -515,6 +516,14 @@ void Protocol::handleWakeNotification(const uint8_t *data, uint8_t length)
         memcpy(state_blob, &data[2], NODE_STATE_SIZE);
         schedule_offset = MIN_NEW_FORMAT_LEN;  // Schedule starts after state blob
         log.debug("State valid=%d", state_valid);
+
+        // valve_reset flag follows the blob (newer PMU firmware). Absent on older
+        // firmware, in which case it defaults to false.
+        if (length >= MIN_NEW_FORMAT_LEN + 1) {
+            valve_reset = (data[MIN_NEW_FORMAT_LEN] != 0);
+            schedule_offset = MIN_NEW_FORMAT_LEN + 1;
+            log.debug("Valve reset=%d", valve_reset);
+        }
     }
 
     // Parse schedule entry data (sent with scheduled wake events)
@@ -528,11 +537,11 @@ void Protocol::handleWakeNotification(const uint8_t *data, uint8_t length)
         entry.valveId = data[schedule_offset + 5];
         entry.enabled = (data[schedule_offset + 6] != 0);
         log.debug("ValveId=%d", entry.valveId);
-        wakeNotificationCallback_(reason, &entry, state_valid, state_blob);
+        wakeNotificationCallback_(reason, &entry, state_valid, state_blob, valve_reset);
         log.debug("Callback done");
     } else {
         // Periodic or external wake (no schedule data)
-        wakeNotificationCallback_(reason, nullptr, state_valid, state_blob);
+        wakeNotificationCallback_(reason, nullptr, state_valid, state_blob, valve_reset);
     }
 }
 

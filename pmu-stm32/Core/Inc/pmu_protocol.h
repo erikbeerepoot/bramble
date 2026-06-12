@@ -325,6 +325,12 @@ public:
     // Set callback for valve timer alarm configuration
     void setValveTimerCallback(SetValveTimerCallback callback) { setValveTimer_ = callback; }
 
+    // Flag that this PMU reset was a power-on (PORRSTF) or NRST-button press
+    // (PINRSTF). The flag is reported to the RP2040 in the wake notification so it
+    // force-closes valves to a known state, and is cleared once the node completes a
+    // wake cycle (ReadyForSleep). Set from main() right after reading RCC_CSR.
+    void setValveResetPending(bool pending) { valveResetPending_ = pending; }
+
     // Persistent storage integration
     void setStorage(PersistentStorage *storage);
     void loadFromStorage();
@@ -352,6 +358,11 @@ private:
     // state_valid_ is false after power-on reset (cold start detection)
     uint8_t nodeState_[NODE_STATE_SIZE];
     bool nodeStateValid_;
+
+    // One-shot: true when this PMU boot was a power-on / NRST-button reset. Reported
+    // in the wake notification so the RP2040 force-closes valves; cleared on the
+    // node's first successful ReadyForSleep.
+    bool valveResetPending_;
 
     // Clear-to-send flag - set from UART ISR, read from main loop
     volatile bool clearToSendReceived_;

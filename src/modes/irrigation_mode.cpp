@@ -101,8 +101,8 @@ void IrrigationMode::onStart()
 
         // Set up PMU callback handlers
         reliable_pmu_->onWake([this](PMU::WakeReason reason, const PMU::ScheduleEntry *entry,
-                                     bool state_valid, const uint8_t *state) {
-            this->handlePmuWake(reason, entry, state_valid, state);
+                                     bool state_valid, const uint8_t *state, bool valve_reset) {
+            this->handlePmuWake(reason, entry, state_valid, state, valve_reset);
         });
 
         reliable_pmu_->onScheduleComplete([this]() { this->handleScheduleComplete(); });
@@ -301,7 +301,7 @@ void IrrigationMode::scheduleKeepAwake()
 }
 
 void IrrigationMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry *entry,
-                                   bool state_valid, const uint8_t *state)
+                                   bool state_valid, const uint8_t *state, bool valve_reset)
 {
     // Cancel the wake notification timeout — PMU responded
     if (wake_timeout_id_ != 0) {
@@ -327,11 +327,19 @@ void IrrigationMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEn
         event_log_.record(EventType::BOOT_COLD, 0, 0);
     }
 
-    // Force-close on every boot so firmware state matches physical reality.
+    // Reset valves to a known-closed state only on a genuine cold start (no valid
+    // persisted state) or a deliberate reset (PMU power-on / NRST-button press,
+    // signalled by valve_reset). On a warm reboot (RP2040 reset, watchdog, crash,
+    // normal wake) we trust the restored state so in-progress irrigation survives.
     // The PMU's persisted state can claim valves are CLOSED while the latching
-    // valves are mechanically OPEN (e.g. after a power loss mid-cycle), so
-    // we always re-issue the close pulse here rather than trust software state.
-    valve_controller_.forceCloseAllValves();
+    // valves are mechanically OPEN (e.g. power loss mid-cycle); the deliberate
+    // reset path is how the operator forces physical reconciliation.
+    if (!restored || valve_reset) {
+        valve_controller_.forceCloseAllValves();
+        for (uint8_t i = 0; i < ValveController::NUM_VALVES; i++) {
+            valve_close_deadlines_[i] = 0;
+        }
+    }
 
     // Process the per-valve deadline queue: close every valve whose
     // deadline has passed. This handles both ValveTimer wakes (the alarm

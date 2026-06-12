@@ -151,6 +151,14 @@ int main(void)
     HAL_Init();
 
     /* USER CODE BEGIN Init */
+    // Capture why the PMU reset before anything else can clear the flags. A power-on
+    // (PORRSTF) or NRST-button press (PINRSTF) is treated as a deliberate request to
+    // force-close all valves to a known state; a software reset (reboot/factory cmd)
+    // or watchdog reset is a warm restart that preserves valve state. Note: a power-on
+    // also asserts PINRSTF, but both map to "reset valves" so the OR is fine.
+    bool valveResetFromReset = (__HAL_RCC_GET_FLAG(RCC_FLAG_PORRST) != RESET) ||
+                               (__HAL_RCC_GET_FLAG(RCC_FLAG_PINRST) != RESET);
+    __HAL_RCC_CLEAR_RESET_FLAGS();
 
     /* USER CODE END Init */
 
@@ -198,6 +206,10 @@ int main(void)
 
     // Load persisted state from FRAM (wake interval, schedules, node state)
     protocol.loadFromStorage();
+
+    // Tell the protocol whether this boot was a power-on / NRST-button reset, so the
+    // next wake notification asks the node to force-close valves (one-shot).
+    protocol.setValveResetPending(valveResetFromReset);
 
     // Initialize DC/DC converter
     dcdc.init();
