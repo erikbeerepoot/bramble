@@ -146,7 +146,8 @@ class SensorDatabase:
         node_type VARCHAR NOT NULL,
         first_seen_at INTEGER NOT NULL,
         last_seen_at INTEGER NOT NULL,
-        total_readings INTEGER DEFAULT 0
+        total_readings INTEGER DEFAULT 0,
+        valve_count INTEGER
     );
 
     CREATE INDEX IF NOT EXISTS idx_last_seen
@@ -375,6 +376,18 @@ class SensorDatabase:
                 logger.info("Migrated irrigation_schedules: added confirmed_at column")
         except Exception as e:
             logger.warning(f"Schema migration check failed: {e}")
+
+        # Add valve_count column to nodes if missing
+        try:
+            node_cols = conn.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name = 'nodes'"
+            ).fetchall()
+            if 'valve_count' not in {row[0] for row in node_cols}:
+                conn.execute("ALTER TABLE nodes ADD COLUMN valve_count INTEGER")
+                logger.info("Migrated nodes: added valve_count column")
+        except Exception as e:
+            logger.warning(f"Nodes schema migration check failed: {e}")
 
     def close(self):
         """Close the persistent database connection."""
@@ -1367,7 +1380,8 @@ class SensorDatabase:
         """
         with self._get_connection() as conn:
             result = conn.execute("""
-                SELECT device_id, address, node_type, first_seen_at, last_seen_at, total_readings
+                SELECT device_id, address, node_type, first_seen_at, last_seen_at,
+                       total_readings, valve_count
                 FROM nodes WHERE device_id = ?
             """, (device_id,))
             row = result.fetchone()
@@ -1381,8 +1395,39 @@ class SensorDatabase:
                 'node_type': row[2],
                 'first_seen_at': row[3],
                 'last_seen_at': row[4],
-                'total_readings': row[5]
+                'total_readings': row[5],
+                'valve_count': row[6]
             }
+
+    def set_node_valve_count(self, device_id: int, valve_count: int) -> None:
+        """Persist a node's valve count (upsert).
+
+        Called when the hub reports a valve_count for a node, so the DB-fallback
+        path can return it when the hub is unreachable. A node reporting a valve
+        count is necessarily a valve/irrigation node, so a row is created with that
+        type if one does not already exist.
+
+        Args:
+            device_id: Hardware device ID (primary key)
+            valve_count: Number of valves reported by the node
+        """
+        now = int(time.time())
+        with self._get_connection() as conn:
+            existing = conn.execute(
+                "SELECT device_id FROM nodes WHERE device_id = ?", (device_id,)
+            ).fetchone()
+            if existing:
+                conn.execute(
+                    "UPDATE nodes SET valve_count = ? WHERE device_id = ?",
+                    (valve_count, device_id)
+                )
+            else:
+                conn.execute("""
+                    INSERT INTO nodes
+                    (device_id, address, node_type, first_seen_at, last_seen_at,
+                     total_readings, valve_count)
+                    VALUES (?, NULL, 'IRRIGATION', ?, ?, 0, ?)
+                """, (device_id, now, now, valve_count))
 
     def insert_event(self, device_id: int, timestamp: int, event_code: int,
                      data_hex: str = "") -> bool:

@@ -24,13 +24,15 @@ class Node:
     online: bool
     last_seen_seconds: int
     firmware_version: Optional[str] = None
+    valve_count: Optional[int] = None  # Number of valves; None if unknown (old firmware)
 
     @classmethod
     def from_hub_response(cls, addr: int, device_id: int, node_type: str, online: str,
-                          last_seen: str, firmware_version_raw: Optional[int] = None):
+                          last_seen: str, firmware_version_raw: Optional[int] = None,
+                          valve_count: Optional[int] = None):
         """Create Node from hub LIST_NODES response line.
 
-        Format: NODE <addr> <device_id> <type> <online> <last_seen_sec> [<firmware_version>]
+        Format: NODE <addr> <device_id> <type> <online> <last_seen_sec> [<firmware_version>] [<valve_count>]
         """
         fw_version = None
         if firmware_version_raw is not None and firmware_version_raw != 0:
@@ -42,7 +44,8 @@ class Node:
             node_type=node_type,
             online=online == '1',
             last_seen_seconds=int(last_seen),
-            firmware_version=fw_version
+            firmware_version=fw_version,
+            valve_count=valve_count
         )
 
     def to_dict(self):
@@ -53,7 +56,8 @@ class Node:
             'type': self.node_type,
             'online': self.online,
             'last_seen_seconds': self.last_seen_seconds,
-            'firmware_version': self.firmware_version
+            'firmware_version': self.firmware_version,
+            'valve_count': self.valve_count
         }
 
 

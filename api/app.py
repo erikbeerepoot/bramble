@@ -241,16 +241,24 @@ def list_nodes():
                     # Skip nodes without device_id (shouldn't happen normally)
                     if device_id == 0:
                         continue
-                    # firmware_version is optional for backwards compatibility
+                    # firmware_version and valve_count are optional (backwards compatibility)
                     firmware_version_raw = int(parts[6]) if len(parts) >= 7 else None
+                    valve_count = int(parts[7]) if len(parts) >= 8 else None
                     node = Node(
                         device_id=device_id,
                         address=address,
                         node_type=parts[3],
                         online=parts[4] == '1',
                         last_seen_seconds=int(parts[5]),
-                        firmware_version=format_firmware_version(firmware_version_raw) if firmware_version_raw else None
+                        firmware_version=format_firmware_version(firmware_version_raw) if firmware_version_raw else None,
+                        valve_count=valve_count
                     )
+                    # Persist a known valve_count so the DB-fallback path can report it
+                    if valve_count is not None:
+                        try:
+                            get_database().set_node_valve_count(device_id, valve_count)
+                        except Exception as e:
+                            logger.warning(f"Could not persist valve_count for {device_id}: {e}")
                     node_dict = node.to_dict()
                     # Include metadata if available (keyed by device_id)
                     if device_id in all_metadata:
@@ -289,7 +297,7 @@ def get_node(device_id: int):
         responses = serial.send_command('LIST_NODES')
 
         # Parse and find the node by device_id
-        # Format: NODE <addr> <device_id> <type> <online> <last_seen_sec> [<firmware_version>]
+        # Format: NODE <addr> <device_id> <type> <online> <last_seen_sec> [<firmware_version>] [<valve_count>]
         if responses and responses[0].startswith('NODE_LIST'):
             for line in responses[1:]:
                 if line.startswith('NODE '):
@@ -297,14 +305,21 @@ def get_node(device_id: int):
                     if len(parts) >= 6 and int(parts[2]) == device_id:
                         address = int(parts[1])
                         firmware_version_raw = int(parts[6]) if len(parts) >= 7 else None
+                        valve_count = int(parts[7]) if len(parts) >= 8 else None
                         node = Node(
                             device_id=device_id,
                             address=address,
                             node_type=parts[3],
                             online=parts[4] == '1',
                             last_seen_seconds=int(parts[5]),
-                            firmware_version=format_firmware_version(firmware_version_raw) if firmware_version_raw else None
+                            firmware_version=format_firmware_version(firmware_version_raw) if firmware_version_raw else None,
+                            valve_count=valve_count
                         )
+                        if valve_count is not None:
+                            try:
+                                get_database().set_node_valve_count(device_id, valve_count)
+                            except Exception as e:
+                                logger.warning(f"Could not persist valve_count for {device_id}: {e}")
                         return jsonify(node.to_dict())
 
             return jsonify({'error': f'Node with device_id {device_id} not found'}), 404
@@ -331,9 +346,10 @@ def get_node(device_id: int):
         updated_at = status.get('updated_at', 0)
         last_seen_seconds = now - updated_at if updated_at else 0
 
-        # Look up node_type from nodes table
+        # Look up node_type and valve_count from nodes table
         node_info = db.get_node_by_device_id(device_id)
         node_type = node_info.get('node_type', 'SENSOR') if node_info else 'SENSOR'
+        valve_count = node_info.get('valve_count') if node_info else None
 
         node = Node(
             device_id=device_id,
@@ -341,7 +357,8 @@ def get_node(device_id: int):
             node_type=node_type,
             online=last_seen_seconds < 300,
             last_seen_seconds=last_seen_seconds,
-            firmware_version=None
+            firmware_version=None,
+            valve_count=valve_count
         )
         return jsonify(node.to_dict())
     except Exception as e:
