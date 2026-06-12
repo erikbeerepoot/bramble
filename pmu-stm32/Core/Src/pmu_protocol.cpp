@@ -517,7 +517,7 @@ Protocol::Protocol(UartSendCallback uartSend, SetWakeCallback setWake, KeepAwake
                    ReadyForSleepCallback readyForSleep, GetTickCallback getTick)
     : wakeInterval_(60), nextSeqNum_(SEQ_STM32_MIN), currentSeqNum_(0), uartSend_(uartSend),
       setWake_(setWake), keepAwake_(keepAwake), readyForSleep_(readyForSleep), getTick_(getTick),
-      seenIndex_(0), nodeStateValid_(false), clearToSendReceived_(false),
+      seenIndex_(0), nodeStateValid_(false), valveResetPending_(false), clearToSendReceived_(false),
       pendingMessageReady_(false), pendingSeqNum_(0), pendingCommand_(static_cast<Command>(0)),
       pendingDataLen_(0), pendingMessageDropCount_(0), storage_(nullptr)
 {
@@ -748,6 +748,8 @@ void Protocol::sendWakeNotification(WakeReason reason)
     for (uint8_t i = 0; i < NODE_STATE_SIZE; i++) {
         builder_.addByte(nodeState_[i]);
     }
+    // Valve-reset flag follows the state blob (force valves closed on power-on / NRST)
+    builder_.addByte(valveResetPending_ ? 0x01 : 0x00);
     sendMessage();
 }
 
@@ -760,7 +762,9 @@ void Protocol::sendWakeNotificationWithSchedule(WakeReason reason, const Schedul
     for (uint8_t i = 0; i < NODE_STATE_SIZE; i++) {
         builder_.addByte(nodeState_[i]);
     }
-    // Add schedule entry after state blob
+    // Valve-reset flag follows the state blob, before the schedule entry
+    builder_.addByte(valveResetPending_ ? 0x01 : 0x00);
+    // Add schedule entry after valve-reset flag
     if (entry) {
         builder_.addScheduleEntry(*entry);
     }
@@ -980,6 +984,10 @@ void Protocol::handleReadyForSleep(const uint8_t *data, uint8_t length)
         }
     }
     // If no state blob, keep previous state (backward compatibility)
+
+    // The node has received the wake notification and completed a full cycle, so a
+    // pending valve-reset has been delivered and acted on — clear the one-shot.
+    valveResetPending_ = false;
 
     // RP2040 signals it's done with work and ready for power down
     // Send ACK first, then call the callback

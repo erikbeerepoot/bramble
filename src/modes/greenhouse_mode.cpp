@@ -52,7 +52,7 @@ void GreenhouseMode::onStart()
 
         // Register wake notification callback (plumbing for future scheduled curtain operations)
         pmu_client_->getProtocol().onWakeNotification(
-            [](PMU::WakeReason reason, const PMU::ScheduleEntry *entry, bool, const uint8_t *) {
+            [](PMU::WakeReason reason, const PMU::ScheduleEntry *entry, bool, const uint8_t *, bool) {
                 if (reason == PMU::WakeReason::Scheduled && entry) {
                     pmu_logger.info("Scheduled wake: hour=%d min=%d duration=%ds", entry->hour,
                                     entry->minute, entry->duration);

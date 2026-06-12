@@ -54,9 +54,10 @@ bool SensorPmuManager::initialize(InitCallback init_callback)
     pmu_logger.info("PMU client initialized successfully");
 
     // Set up PMU callback handler - this receives state and completes initialization
-    reliable_pmu_->onWake(
-        [this](PMU::WakeReason reason, const PMU::ScheduleEntry *entry, bool state_valid,
-               const uint8_t *state) { this->handlePmuWake(reason, entry, state_valid, state); });
+    reliable_pmu_->onWake([this](PMU::WakeReason reason, const PMU::ScheduleEntry *entry,
+                                 bool state_valid, const uint8_t *state, bool /*valve_reset*/) {
+        this->handlePmuWake(reason, entry, state_valid, state);
+    });
 
     // Signal ready to receive wake info - PMU will respond with wake notification
     // containing persisted state (write_index, read_index, etc.)

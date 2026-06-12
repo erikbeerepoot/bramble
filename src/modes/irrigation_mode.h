@@ -82,7 +82,7 @@ private:
 
     // PMU callback handlers
     void handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry *entry, bool state_valid,
-                       const uint8_t *state);
+                       const uint8_t *state, bool valve_reset);
     void handleScheduleComplete();
 
     // Registration handling
