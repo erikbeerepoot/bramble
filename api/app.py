@@ -190,6 +190,41 @@ def _resolve_node_address(device_id: int) -> Optional[int]:
     return None
 
 
+# Legacy fallback when a node's valve count is unknown (old firmware that does not
+# report it). Matches the dashboard's fallback so validation and UI agree.
+LEGACY_VALVE_COUNT = 2
+
+
+def _node_valve_count(device_id: int) -> int:
+    """Resolve how many valves a node has (for valve-id range validation).
+
+    Queries the hub LIST_NODES first (live), falls back to the database, and
+    finally to LEGACY_VALVE_COUNT when the count is unknown.
+    """
+    try:
+        serial = get_serial()
+        responses = serial.send_command('LIST_NODES', timeout=2.0)
+        if responses and responses[0].startswith('NODE_LIST'):
+            for line in responses[1:]:
+                if line.startswith('NODE '):
+                    parts = line.split()
+                    if len(parts) >= 8 and int(parts[2]) == device_id:
+                        count = int(parts[7])
+                        if count > 0:
+                            return count
+    except Exception as e:
+        logger.warning(f"Hub valve-count lookup failed for device_id {device_id}: {e}")
+
+    try:
+        node_info = get_database().get_node_by_device_id(device_id)
+        if node_info and node_info.get('valve_count'):
+            return node_info['valve_count']
+    except Exception as e:
+        logger.warning(f"DB valve-count lookup failed for device_id {device_id}: {e}")
+
+    return LEGACY_VALVE_COUNT
+
+
 @app.route('/api/nodes', methods=['GET'])
 def list_nodes():
     """List all registered nodes.
@@ -862,8 +897,9 @@ def run_valve(device_id: int):
         if valve is None or duration_seconds is None:
             return jsonify({'error': 'Missing required fields: valve, duration_seconds'}), 400
 
-        if valve not in (0, 1):
-            return jsonify({'error': 'valve must be 0 or 1'}), 400
+        valve_count = _node_valve_count(device_id)
+        if not isinstance(valve, int) or not 0 <= valve < valve_count:
+            return jsonify({'error': f'valve must be 0..{valve_count - 1}'}), 400
 
         if not 1 <= duration_seconds <= 7200:
             return jsonify({'error': 'duration_seconds must be 1-7200'}), 400
@@ -933,8 +969,9 @@ def stop_valve(device_id: int):
             return jsonify({'error': 'Request body must be JSON'}), 400
 
         valve = data.get('valve')
-        if valve is None or valve not in (0, 1):
-            return jsonify({'error': 'valve must be 0 or 1'}), 400
+        valve_count = _node_valve_count(device_id)
+        if not isinstance(valve, int) or not 0 <= valve < valve_count:
+            return jsonify({'error': f'valve must be 0..{valve_count - 1}'}), 400
 
         from command_queue import queue_send_actuator, COMMAND_TTL_DEFAULTS
         db = get_database()
