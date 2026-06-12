@@ -48,6 +48,7 @@ export interface Node {
   online: boolean;
   last_seen_seconds: number;
   firmware_version: string | null;
+  valve_count?: number | null;  // Number of valves; absent/null if unknown (old firmware)
   metadata?: NodeMetadata;
   status?: NodeStatus;
   hub_queue_count?: number | null;
