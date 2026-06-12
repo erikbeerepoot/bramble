@@ -2,7 +2,12 @@
 # Produces a lightweight nginx image serving the built SPA
 
 # Stage 1: Build the React application
-FROM node:20-alpine AS build
+# Pin the build stage to the runner's NATIVE arch ($BUILDPLATFORM) so the Node/vite
+# compile runs natively instead of under QEMU emulation for each target platform. The
+# emitted dist/ is static and arch-independent, so only the nginx stage below needs to
+# be built per-target-arch. Without this, the emulated arm64 npm build hangs/crawls for
+# 30+ minutes on every deploy.
+FROM --platform=$BUILDPLATFORM node:20-alpine AS build
 
 WORKDIR /app
 
