@@ -227,9 +227,9 @@ using UartSendCallback = std::function<void(const uint8_t *data, uint8_t length)
 // valve_reset: one-shot flag set on the first wake after a PMU power-on (PORRSTF) or
 //   NRST-button reset (PINRSTF). When true, valves should be force-closed to a known
 //   state even if the state blob is otherwise valid.
-using WakeNotificationCallback = std::function<void(WakeReason reason, const ScheduleEntry *entry,
-                                                    bool state_valid, const uint8_t *state,
-                                                    bool valve_reset)>;
+using WakeNotificationCallback =
+    std::function<void(WakeReason reason, const ScheduleEntry *entry, bool state_valid,
+                       const uint8_t *state, bool valve_reset)>;
 using ScheduleCompleteCallback = std::function<void()>;
 using CommandResultCallback = std::function<void(bool success, ErrorCode error)>;
 using WakeIntervalCallback = std::function<void(uint32_t seconds)>;
