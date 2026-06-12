@@ -15,6 +15,7 @@ struct NodeInfo {
     uint8_t node_type;              // Node type (sensor/actuator/hybrid)
     uint8_t capabilities;           // Node capabilities flags
     uint32_t firmware_version;      // Firmware version
+    uint8_t valve_count;            // Number of valves on this node (0 = none/unknown)
     char device_name[16];           // Human readable name
     uint32_t last_seen_time;        // Last communication time (ms since boot)
     uint32_t last_check_time;       // Last time we checked/updated inactive duration
@@ -37,10 +38,12 @@ public:
      * @param capabilities Node capabilities
      * @param firmware_version Firmware version
      * @param device_name Device name
+     * @param valve_count Number of valves on this node (0 = none/unknown)
      * @return Assigned address (0x0000 if registration failed)
      */
     uint16_t registerNode(uint64_t device_id, uint8_t node_type, uint8_t capabilities,
-                          uint32_t firmware_version, const char *device_name);
+                          uint32_t firmware_version, const char *device_name,
+                          uint8_t valve_count = 0);
 
     /**
      * @brief Check if a device is already registered

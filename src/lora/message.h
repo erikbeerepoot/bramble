@@ -239,6 +239,9 @@ struct __attribute__((packed)) RegistrationPayload {
     uint8_t capabilities;   // Capability flags (what sensors/actuators available)
     uint32_t firmware_ver;  // Firmware version
     char device_name[16];   // Human readable device name
+    uint8_t valve_count;    // Number of valves on this node (0 = none/unknown). Trailing
+                            // field so older 30-byte payloads still decode their other
+                            // fields correctly; the hub length-guards this byte.
 };
 
 /**
@@ -449,7 +452,8 @@ public:
     static size_t createRegistrationMessage(uint16_t src_addr, uint16_t dst_addr, uint8_t seq_num,
                                             uint64_t device_id, uint8_t node_type,
                                             uint8_t capabilities, uint32_t firmware_ver,
-                                            const char *device_name, uint8_t *buffer);
+                                            const char *device_name, uint8_t valve_count,
+                                            uint8_t *buffer);
 
     /**
      * @brief Create a registration response message

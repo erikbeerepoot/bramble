@@ -631,10 +631,18 @@ void processIncomingMessage(uint8_t *rx_buffer, int rx_len, ReliableMessenger &m
         const RegistrationPayload *reg_payload =
             reinterpret_cast<const RegistrationPayload *>(msg->payload);
 
+        // valve_count is the trailing payload field; older firmware sends a shorter
+        // payload without it. Only read it when the full struct was received, else
+        // default to 0 (unknown) for backward compatibility.
+        uint8_t valve_count = 0;
+        if (rx_len >= static_cast<int>(sizeof(MessageHeader) + sizeof(RegistrationPayload))) {
+            valve_count = reg_payload->valve_count;
+        }
+
         // Register the node with AddressManager
         uint16_t assigned_addr = address_manager->registerNode(
             reg_payload->device_id, reg_payload->node_type, reg_payload->capabilities,
-            reg_payload->firmware_ver, reg_payload->device_name);
+            reg_payload->firmware_ver, reg_payload->device_name, valve_count);
 
         // Determine registration status
         uint8_t status = REG_SUCCESS;

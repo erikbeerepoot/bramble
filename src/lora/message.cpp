@@ -108,7 +108,7 @@ size_t MessageHandler::createRegistrationMessage(uint16_t src_addr, uint16_t dst
                                                  uint8_t seq_num, uint64_t device_id,
                                                  uint8_t node_type, uint8_t capabilities,
                                                  uint32_t firmware_ver, const char *device_name,
-                                                 uint8_t *buffer)
+                                                 uint8_t valve_count, uint8_t *buffer)
 {
     if (device_id == 0) {
         return 0;
@@ -132,6 +132,7 @@ size_t MessageHandler::createRegistrationMessage(uint16_t src_addr, uint16_t dst
     payload.node_type = node_type;
     payload.capabilities = capabilities;
     payload.firmware_ver = firmware_ver;
+    payload.valve_count = valve_count;
 
     // Copy device name, ensuring null termination
     if (device_name) {

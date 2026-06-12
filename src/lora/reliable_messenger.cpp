@@ -156,7 +156,8 @@ bool ReliableMessenger::sendHeartbeatResponse(uint16_t dst_addr, int16_t year, i
 
 uint8_t ReliableMessenger::sendRegistrationRequest(uint16_t dst_addr, uint64_t device_id,
                                                    uint8_t node_type, uint8_t capabilities,
-                                                   uint32_t firmware_ver, const char *device_name)
+                                                   uint32_t firmware_ver, const char *device_name,
+                                                   uint8_t valve_count)
 {
     device_id_ = device_id;
     uint8_t seq_num = getNextSequenceNumber();
@@ -167,9 +168,9 @@ uint8_t ReliableMessenger::sendRegistrationRequest(uint16_t dst_addr, uint64_t d
 
     bool success = sendWithBuilder(
         [=](uint8_t *buffer) {
-            return MessageHandler::createRegistrationMessage(node_addr_, dst_addr, seq_num,
-                                                             device_id, node_type, capabilities,
-                                                             firmware_ver, device_name, buffer);
+            return MessageHandler::createRegistrationMessage(
+                node_addr_, dst_addr, seq_num, device_id, node_type, capabilities, firmware_ver,
+                device_name, valve_count, buffer);
         },
         RELIABLE, "registration");
 

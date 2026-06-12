@@ -376,9 +376,9 @@ void HubMode::handleListNodes()
         // Send node info (include device_id and firmware version for identification)
         char device_id_str[21];
         uint64_to_str(node->device_id, device_id_str, sizeof(device_id_str));
-        int len = snprintf(response, sizeof(response), "NODE %u %s %s %d %lu %lu\n", addr,
+        int len = snprintf(response, sizeof(response), "NODE %u %s %s %d %lu %lu %u\n", addr,
                            device_id_str, type, node->is_active ? 1 : 0, last_seen_sec,
-                           (unsigned long)node->firmware_version);
+                           (unsigned long)node->firmware_version, (unsigned)node->valve_count);
         if (len >= (int)sizeof(response)) {
             response[sizeof(response) - 2] = '\n';
             response[sizeof(response) - 1] = '\0';

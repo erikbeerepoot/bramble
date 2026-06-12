@@ -28,7 +28,9 @@ struct __attribute__((packed)) RegistryNodeEntry {
     uint32_t inactive_duration_ms;  // Accumulated inactive time (survives reboots)
     char device_name[16];           // Device name
     uint8_t is_active;              // Active status
-    uint8_t reserved[1];            // Padding for alignment
+    uint8_t valve_count;            // Number of valves (0 = none/unknown). Reuses the former
+                                    // reserved padding byte — size unchanged, so no
+                                    // REGISTRY_VERSION bump; pre-existing entries read 0.
 };
 
 // Hub registry header
