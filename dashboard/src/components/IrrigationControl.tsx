@@ -23,6 +23,7 @@ interface ValveState {
 
 interface IrrigationControlProps {
   deviceId: string;
+  valveCount: number;
   onEventTriggered?: () => void;
 }
 
@@ -49,16 +50,17 @@ function formatDurationShort(minutes: number): string {
   return `${minutes}m`;
 }
 
-function IrrigationControl({ deviceId, onEventTriggered }: IrrigationControlProps) {
+function IrrigationControl({ deviceId, valveCount, onEventTriggered }: IrrigationControlProps) {
+  // Valve indices [0..valveCount-1], driving every valve-dependent UI section
+  const valveIndices = Array.from({ length: valveCount }, (_, i) => i);
+
   // Run-once state
-  const [selectedDuration, setSelectedDuration] = useState<Record<number, number>>({
-    0: 300,
-    1: 300,
-  });
-  const [valveStates, setValveStates] = useState<Record<number, ValveState>>({
-    0: { state: 'idle' },
-    1: { state: 'idle' },
-  });
+  const [selectedDuration, setSelectedDuration] = useState<Record<number, number>>(() =>
+    Object.fromEntries(valveIndices.map((v) => [v, 300]))
+  );
+  const [valveStates, setValveStates] = useState<Record<number, ValveState>>(() =>
+    Object.fromEntries(valveIndices.map((v) => [v, { state: 'idle' as const }]))
+  );
 
   const setValveState = useCallback((valve: number, next: ValveState) => {
     setValveStates((prev) => ({ ...prev, [valve]: next }));
@@ -332,9 +334,12 @@ function IrrigationControl({ deviceId, onEventTriggered }: IrrigationControlProp
           <h2 className="font-semibold text-gray-900">Run Once</h2>
         </div>
         <div className="space-y-5">
-          {renderValveRow(0)}
-          <div className="border-t border-gray-200" />
-          {renderValveRow(1)}
+          {valveIndices.map((v, i) => (
+            <div key={v}>
+              {i > 0 && <div className="border-t border-gray-200 mb-5" />}
+              {renderValveRow(v)}
+            </div>
+          ))}
         </div>
       </div>
 
@@ -362,7 +367,7 @@ function IrrigationControl({ deviceId, onEventTriggered }: IrrigationControlProp
               <div className="mb-6">
                 <label className="block text-sm font-medium text-gray-700 mb-2">Valve</label>
                 <div className="flex bg-gray-100 rounded-lg p-1">
-                  {[0, 1].map((v) => (
+                  {valveIndices.map((v) => (
                     <button
                       key={v}
                       onClick={() => setFormValve(v)}

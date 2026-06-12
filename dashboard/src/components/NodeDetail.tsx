@@ -710,6 +710,7 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
           {node.type === NodeType.IRRIGATION && (
             <IrrigationControl
               deviceId={node.device_id}
+              valveCount={node.valve_count ?? 2}
               onEventTriggered={() => {
                 fetchEvents();
                 fetchCommands();
