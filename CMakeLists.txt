@@ -236,6 +236,23 @@ else()
         message(STATUS "Building IRRIGATION variant")
     endif()
 
+    # Standalone valve sweep test (bench bring-up, no LoRa/PMU)
+    if(HARDWARE_VARIANT STREQUAL "VALVETEST")
+        add_executable(bramble_valvetest${BOARD_SUFFIX}${RADIO_SUFFIX}
+            valve_test.cpp
+            src/hal/valve_controller.cpp
+            src/hal/hbridge.cpp
+            src/hal/valve_indexer.cpp
+            ${COMMON_SOURCES}
+        )
+        target_compile_definitions(bramble_valvetest${BOARD_SUFFIX}${RADIO_SUFFIX} PRIVATE
+            HARDWARE_IRRIGATION=1
+            DEFAULT_IS_HUB=0
+        )
+        list(APPEND BUILD_TARGETS bramble_valvetest${BOARD_SUFFIX}${RADIO_SUFFIX})
+        message(STATUS "Building VALVETEST variant")
+    endif()
+
     if(HARDWARE_VARIANT STREQUAL "ALL" OR HARDWARE_VARIANT STREQUAL "CONTROLLER")
         add_executable(bramble_controller${BOARD_SUFFIX}${RADIO_SUFFIX}
             main.cpp
