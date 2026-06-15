@@ -7,8 +7,9 @@ import {
   getIrrigationSchedules,
   addIrrigationSchedule,
   deleteIrrigationSchedule,
+  getValveGroups,
 } from '../api/client';
-import type { IrrigationSchedule } from '../types';
+import type { IrrigationSchedule, ValveGroup } from '../types';
 import { DAY_LABELS } from '../types';
 import { REFRESH_INTERVAL_MS } from '../config';
 import { SchedulesList } from './SchedulesList';
@@ -26,6 +27,10 @@ interface IrrigationControlProps {
   valveCount: number;
   onEventTriggered?: () => void;
 }
+
+// On-node schedule slots (must match PMU MAX_SCHEDULE_ENTRIES). The top slot is
+// reserved for one-shot "run now"; persistent schedules use 0..MAX_SCHEDULE_SLOTS-2.
+const MAX_SCHEDULE_SLOTS = 100;
 
 // Non-linear notches: fine-grained at short durations, coarser for long runs
 const DURATION_NOTCHES = [1, 5, 10, 15, 20, 30, 45, 60, 90, 120]; // minutes
@@ -66,6 +71,9 @@ function IrrigationControl({ deviceId, valveCount, onEventTriggered }: Irrigatio
     setValveStates((prev) => ({ ...prev, [valve]: next }));
   }, []);
 
+  // Valve groups this node participates in (read-only badges)
+  const [valveGroups, setValveGroups] = useState<ValveGroup[]>([]);
+
   // Schedule state
   const [schedules, setSchedules] = useState<IrrigationSchedule[]>([]);
   const [loadingSchedules, setLoadingSchedules] = useState(true);
@@ -97,6 +105,40 @@ function IrrigationControl({ deviceId, valveCount, onEventTriggered }: Irrigatio
     const interval = setInterval(fetchSchedules, REFRESH_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [fetchSchedules]);
+
+  // Load valve groups once to annotate valves that participate in a group.
+  useEffect(() => {
+    let cancelled = false;
+    getValveGroups()
+      .then((response) => {
+        if (!cancelled) setValveGroups(response.groups);
+      })
+      .catch(() => {
+        // Badges are non-essential; ignore failures.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Returns a badge descriptor for a given valve on this node, or null if the
+  // valve isn't part of any group.
+  const valveGroupBadge = (
+    valve: number
+  ): { label: string; tone: 'master' | 'member' } | null => {
+    for (const group of valveGroups) {
+      if (group.master_device_id === deviceId && group.master_valve === valve) {
+        return { label: `Master · ${group.name}`, tone: 'master' };
+      }
+      const member = group.members.find(
+        (m) => m.zone_device_id === deviceId && m.zone_valve === valve
+      );
+      if (member) {
+        return { label: `In group: ${group.name}`, tone: 'member' };
+      }
+    }
+    return null;
+  };
 
   const handleRun = async (valve: number) => {
     setValveState(valve, { state: 'sending', action: 'run' });
@@ -147,15 +189,15 @@ function IrrigationControl({ deviceId, valveCount, onEventTriggered }: Irrigatio
       // Find next available index
       const usedIndices = new Set(schedules.map((s) => s.index));
       let nextIndex = -1;
-      for (let i = 0; i < 7; i++) {
-        // Reserve index 7 for run-once
+      // Reserve the top slot for run-once; persistent schedules use 0..MAX-2.
+      for (let i = 0; i < MAX_SCHEDULE_SLOTS - 1; i++) {
         if (!usedIndices.has(i)) {
           nextIndex = i;
           break;
         }
       }
       if (nextIndex === -1) {
-        setScheduleError('Maximum schedules reached (7)');
+        setScheduleError(`Maximum schedules reached (${MAX_SCHEDULE_SLOTS - 1})`);
         setSavingSchedule(false);
         return;
       }
@@ -209,10 +251,30 @@ function IrrigationControl({ deviceId, valveCount, onEventTriggered }: Irrigatio
     const isRunSending = valveState.state === 'sending' && valveState.action === 'run';
     const isStopSending = valveState.state === 'sending' && valveState.action === 'stop';
 
+    const groupBadge = valveGroupBadge(valve);
+
     return (
       <div key={valve} className="space-y-3">
         {/* Header */}
-        <h3 className="font-medium text-gray-900">Valve {valve + 1}</h3>
+        <div className="flex items-center gap-2 flex-wrap">
+          <h3 className="font-medium text-gray-900">Valve {valve + 1}</h3>
+          {groupBadge && (
+            <span
+              className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                groupBadge.tone === 'master'
+                  ? 'bg-amber-100 text-amber-800'
+                  : 'bg-blue-100 text-blue-800'
+              }`}
+              title={
+                groupBadge.tone === 'master'
+                  ? 'This valve is the master shutoff for a valve group.'
+                  : 'This valve is a zone member of a valve group.'
+              }
+            >
+              {groupBadge.label}
+            </span>
+          )}
+        </div>
 
         {/* Duration chips */}
         <div className="overflow-x-auto scrollbar-hide">
