@@ -2,6 +2,12 @@
 from dataclasses import dataclass
 from typing import Optional
 
+# Number of on-node schedule slots (must match the PMU firmware constant
+# MAX_SCHEDULE_ENTRIES in pmu-stm32/Core/Inc/pmu_protocol.h). The dashboard
+# reserves the top index for one-shot "run now" use; persistent schedules use
+# 0..MAX_SCHEDULE_SLOTS-2.
+MAX_SCHEDULE_SLOTS = 100
+
 
 def format_firmware_version(raw_version: int) -> str:
     """Format a raw uint32 firmware version as a human-readable string.
@@ -113,8 +119,8 @@ class Schedule:
         """Validate schedule parameters."""
         errors = []
 
-        if not 0 <= self.index <= 7:
-            errors.append("index must be 0-7")
+        if not 0 <= self.index < MAX_SCHEDULE_SLOTS:
+            errors.append(f"index must be 0-{MAX_SCHEDULE_SLOTS - 1}")
         if not 0 <= self.hour <= 23:
             errors.append("hour must be 0-23")
         if not 0 <= self.minute <= 59:

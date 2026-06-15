@@ -250,6 +250,44 @@ class SensorDatabase:
 
     CREATE INDEX IF NOT EXISTS idx_cmds_pending_match
         ON node_commands(device_id, status, command_type);
+
+    -- Valve groups (master valve). A group links N zone valves to one master
+    -- valve on a (usually different) node. The API mirrors each zone window
+    -- onto the master node as its own schedule; these tables are the source of
+    -- truth, valve_group_master_slots tracking which master slots the API owns.
+    CREATE TABLE IF NOT EXISTS valve_groups (
+        id INTEGER PRIMARY KEY,
+        name VARCHAR NOT NULL,
+        master_device_id UBIGINT NOT NULL,
+        master_valve INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        UNIQUE (master_device_id, master_valve)
+    );
+
+    CREATE TABLE IF NOT EXISTS valve_group_members (
+        group_id INTEGER NOT NULL,
+        zone_device_id UBIGINT NOT NULL,
+        zone_valve INTEGER NOT NULL,
+        PRIMARY KEY (zone_device_id, zone_valve)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_vgm_group
+        ON valve_group_members(group_id);
+
+    CREATE TABLE IF NOT EXISTS valve_group_master_slots (
+        group_id INTEGER NOT NULL,
+        master_device_id UBIGINT NOT NULL,
+        master_index INTEGER NOT NULL,
+        hour INTEGER NOT NULL,
+        minute INTEGER NOT NULL,
+        duration INTEGER NOT NULL,
+        days INTEGER NOT NULL,
+        PRIMARY KEY (master_device_id, master_index)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_vgms_group
+        ON valve_group_master_slots(group_id);
     """
 
     def __init__(self, db_path: str = Config.SENSOR_DB_PATH):
@@ -1120,6 +1158,172 @@ class SensorDatabase:
 
             return True
 
+    # --- Valve groups (master valve) ---
+
+    def _valve_group_row(self, conn, group_id: int) -> Optional[dict]:
+        """Build a valve-group dict (with members) from an open cursor."""
+        row = conn.execute("""
+            SELECT id, name, master_device_id, master_valve, created_at, updated_at
+            FROM valve_groups WHERE id = ?
+        """, (group_id,)).fetchone()
+        if not row:
+            return None
+        members = conn.execute("""
+            SELECT zone_device_id, zone_valve FROM valve_group_members
+            WHERE group_id = ? ORDER BY zone_device_id, zone_valve
+        """, (group_id,)).fetchall()
+        return {
+            'id': row[0],
+            'name': row[1],
+            'master_device_id': str(row[2]),  # String to preserve JS precision
+            'master_valve': row[3],
+            'created_at': row[4],
+            'updated_at': row[5],
+            'members': [
+                {'zone_device_id': str(m[0]), 'zone_valve': m[1]} for m in members
+            ],
+        }
+
+    def create_valve_group(self, name: str, master_device_id: int, master_valve: int,
+                           members: list[dict]) -> dict:
+        """Create a valve group with its zone members.
+
+        Args:
+            name: Human-readable group name
+            master_device_id: Device ID of the node holding the master valve
+            master_valve: Valve index of the master valve on that node
+            members: List of {'zone_device_id': int, 'zone_valve': int}
+
+        Returns:
+            Created group dict. Raises duckdb.Error on constraint violation
+            (master already in use, or a zone valve already in another group).
+        """
+        now = int(time.time())
+        with self._get_connection() as conn:
+            next_id = conn.execute(
+                "SELECT COALESCE(MAX(id), 0) + 1 FROM valve_groups"
+            ).fetchone()[0]
+            conn.execute("""
+                INSERT INTO valve_groups
+                    (id, name, master_device_id, master_valve, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (next_id, name, master_device_id, master_valve, now, now))
+            for member in members:
+                conn.execute("""
+                    INSERT INTO valve_group_members (group_id, zone_device_id, zone_valve)
+                    VALUES (?, ?, ?)
+                """, (next_id, int(member['zone_device_id']), int(member['zone_valve'])))
+            return self._valve_group_row(conn, next_id)
+
+    def get_valve_group(self, group_id: int) -> Optional[dict]:
+        """Get a valve group (with members) by ID, or None."""
+        with self._get_connection() as conn:
+            return self._valve_group_row(conn, group_id)
+
+    def get_all_valve_groups(self) -> list[dict]:
+        """Get all valve groups (with members)."""
+        with self._get_connection() as conn:
+            ids = conn.execute("SELECT id FROM valve_groups ORDER BY name").fetchall()
+            return [self._valve_group_row(conn, row[0]) for row in ids]
+
+    def update_valve_group(self, group_id: int, name: Optional[str] = None,
+                           master_device_id: Optional[int] = None,
+                           master_valve: Optional[int] = None,
+                           members: Optional[list[dict]] = None) -> Optional[dict]:
+        """Update a valve group. Pass members to replace the membership wholesale.
+
+        Returns the updated group dict, or None if it does not exist.
+        """
+        now = int(time.time())
+        with self._get_connection() as conn:
+            existing = conn.execute(
+                "SELECT name, master_device_id, master_valve FROM valve_groups WHERE id = ?",
+                (group_id,)
+            ).fetchone()
+            if not existing:
+                return None
+            new_name = name if name is not None else existing[0]
+            new_master_device = master_device_id if master_device_id is not None else existing[1]
+            new_master_valve = master_valve if master_valve is not None else existing[2]
+            conn.execute("""
+                UPDATE valve_groups
+                SET name = ?, master_device_id = ?, master_valve = ?, updated_at = ?
+                WHERE id = ?
+            """, (new_name, new_master_device, new_master_valve, now, group_id))
+            if members is not None:
+                conn.execute("DELETE FROM valve_group_members WHERE group_id = ?", (group_id,))
+                for member in members:
+                    conn.execute("""
+                        INSERT INTO valve_group_members (group_id, zone_device_id, zone_valve)
+                        VALUES (?, ?, ?)
+                    """, (group_id, int(member['zone_device_id']), int(member['zone_valve'])))
+            return self._valve_group_row(conn, group_id)
+
+    def delete_valve_group(self, group_id: int) -> bool:
+        """Delete a valve group and its members + owned master slots.
+
+        Returns True if the group existed. The caller is responsible for
+        queueing REMOVE_SCHEDULE for the master slots before calling this.
+        """
+        with self._get_connection() as conn:
+            existing = conn.execute(
+                "SELECT id FROM valve_groups WHERE id = ?", (group_id,)
+            ).fetchone()
+            if not existing:
+                return False
+            conn.execute("DELETE FROM valve_group_members WHERE group_id = ?", (group_id,))
+            conn.execute("DELETE FROM valve_group_master_slots WHERE group_id = ?", (group_id,))
+            conn.execute("DELETE FROM valve_groups WHERE id = ?", (group_id,))
+            return True
+
+    def get_group_for_zone_valve(self, zone_device_id: int,
+                                 zone_valve: int) -> Optional[dict]:
+        """Return the group (with members) a given zone valve belongs to, or None."""
+        with self._get_connection() as conn:
+            row = conn.execute("""
+                SELECT group_id FROM valve_group_members
+                WHERE zone_device_id = ? AND zone_valve = ?
+            """, (zone_device_id, zone_valve)).fetchone()
+            if not row:
+                return None
+            return self._valve_group_row(conn, row[0])
+
+    def list_master_slots(self, master_device_id: int) -> list[dict]:
+        """List the master schedule slots the API currently owns for a master node."""
+        with self._get_connection() as conn:
+            rows = conn.execute("""
+                SELECT group_id, master_index, hour, minute, duration, days
+                FROM valve_group_master_slots
+                WHERE master_device_id = ?
+                ORDER BY master_index
+            """, (master_device_id,)).fetchall()
+            return [{
+                'group_id': r[0],
+                'master_index': r[1],
+                'hour': r[2],
+                'minute': r[3],
+                'duration': r[4],
+                'days': r[5],
+            } for r in rows]
+
+    def replace_master_slots(self, group_id: int, master_device_id: int,
+                             slots: list[dict]) -> None:
+        """Replace the stored master slots for a group with the given set.
+
+        Each slot is {'master_index', 'hour', 'minute', 'duration', 'days'}.
+        Call AFTER computing the SET/REMOVE diff against the previous slots.
+        """
+        with self._get_connection() as conn:
+            conn.execute(
+                "DELETE FROM valve_group_master_slots WHERE group_id = ?", (group_id,))
+            for slot in slots:
+                conn.execute("""
+                    INSERT INTO valve_group_master_slots
+                        (group_id, master_device_id, master_index, hour, minute, duration, days)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (group_id, master_device_id, slot['master_index'], slot['hour'],
+                      slot['minute'], slot['duration'], slot['days']))
+
     def set_node_zone(self, device_id: int, zone_id: Optional[int]) -> Optional[dict]:
         """Set a node's zone.
 
@@ -1364,6 +1568,15 @@ class SensorDatabase:
             conn.execute("DELETE FROM node_status WHERE device_id = ?", (device_id,))
             conn.execute("DELETE FROM node_metadata WHERE device_id = ?", (device_id,))
             conn.execute("DELETE FROM irrigation_schedules WHERE device_id = ?", (device_id,))
+            # Valve groups: drop this node's zone memberships, and any group it
+            # was the master of (plus that group's members and owned slots).
+            conn.execute("DELETE FROM valve_group_members WHERE zone_device_id = ?", (device_id,))
+            conn.execute(
+                "DELETE FROM valve_group_members WHERE group_id IN "
+                "(SELECT id FROM valve_groups WHERE master_device_id = ?)", (device_id,))
+            conn.execute(
+                "DELETE FROM valve_group_master_slots WHERE master_device_id = ?", (device_id,))
+            conn.execute("DELETE FROM valve_groups WHERE master_device_id = ?", (device_id,))
             conn.execute("DELETE FROM nodes WHERE device_id = ?", (device_id,))
 
             logger.info(f"Deleted node with device_id {device_id} and all associated data")

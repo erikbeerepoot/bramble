@@ -9,7 +9,10 @@ from typing import Optional
 from config import Config
 from serial_interface import SerialInterface
 from database import SensorDatabase
-from models import Node, NodeMetadata, Schedule, QueuedUpdate, Zone, format_firmware_version
+from models import (Node, NodeMetadata, Schedule, QueuedUpdate, Zone,
+                    MAX_SCHEDULE_SLOTS, format_firmware_version)
+from valve_groups import (compute_master_windows, diff_master_slots,
+                          MasterSlotOverflow)
 
 
 # Setup logging
@@ -223,6 +226,134 @@ def _node_valve_count(device_id: int) -> int:
         logger.warning(f"DB valve-count lookup failed for device_id {device_id}: {e}")
 
     return LEGACY_VALVE_COUNT
+
+
+# --- Valve group (master valve) helpers ---
+
+def _gather_member_schedules(db, members, override=None):
+    """Collect zone schedules for all group members, filtered to each member's
+    valve.
+
+    `override` simulates a not-yet-persisted change for overflow pre-checks:
+    {'device_id': int, 'index': int, 'schedule': dict|None} where schedule None
+    means a deletion. A schedule is uniquely (device_id, index).
+    """
+    member_valves = {}
+    for member in members:
+        member_valves.setdefault(int(member['zone_device_id']), set()).add(
+            member['zone_valve'])
+    result = []
+    for device_id, valves in member_valves.items():
+        rows = {s['index']: s for s in db.get_schedules(device_id)}
+        if override and override['device_id'] == device_id:
+            if override['schedule'] is None:
+                rows.pop(override['index'], None)
+            else:
+                rows[override['index']] = override['schedule']
+        result.extend(s for s in rows.values() if s['valve'] in valves)
+    return result
+
+
+def _apply_master_diff(db, group, force=False):
+    """Recompute a group's master node schedules and queue the minimal diff.
+
+    Mirrors each zone window onto the master node. With force=True every owned
+    slot is re-sent regardless of the diff (used by /resync to recover from a
+    TTL-expired command). Returns a summary dict. Raises MasterSlotOverflow.
+    """
+    from command_queue import (queue_set_schedule, queue_remove_schedule,
+                               COMMAND_TTL_DEFAULTS)
+    master_device_id = int(group['master_device_id'])
+    master_valve = group['master_valve']
+    master_address = _resolve_node_address(master_device_id)
+
+    member_schedules = _gather_member_schedules(db, group['members'])
+    desired = compute_master_windows(member_schedules, master_valve)
+    stored = db.list_master_slots(master_device_id)
+    diff = diff_master_slots(desired, stored, group['id'])
+    if force:
+        diff['to_set'] = list(diff['slots'])
+
+    if master_address is None:
+        # Persist intent so a later /resync (once the master is reachable) syncs.
+        db.replace_master_slots(group['id'], master_device_id, diff['slots'])
+        logger.warning(f"Master device {master_device_id} address unknown; "
+                       f"stored slots but skipped queueing")
+        return {'set': 0, 'removed': 0, 'master_unreachable': True}
+
+    for slot in diff['to_set']:
+        cmd_id = db.insert_command(
+            device_id=master_device_id, command_type='schedule_set',
+            params={'index': slot['master_index'], 'hour': slot['hour'],
+                    'minute': slot['minute'], 'duration': slot['duration'],
+                    'days': slot['days'], 'valve': master_valve,
+                    'mirrored_from_group': group['id']},
+            ttl_seconds=COMMAND_TTL_DEFAULTS['schedule_set'])
+        result = queue_set_schedule(
+            node_address=master_address, index=slot['master_index'],
+            hour=slot['hour'], minute=slot['minute'], duration=slot['duration'],
+            days=slot['days'], valve=master_valve)
+        if cmd_id is not None:
+            db.set_command_huey_task(cmd_id, result.id)
+
+    for index in diff['to_remove']:
+        cmd_id = db.insert_command(
+            device_id=master_device_id, command_type='schedule_remove',
+            params={'index': index, 'mirrored_from_group': group['id']},
+            ttl_seconds=COMMAND_TTL_DEFAULTS['schedule_remove'])
+        result = queue_remove_schedule(node_address=master_address, index=index)
+        if cmd_id is not None:
+            db.set_command_huey_task(cmd_id, result.id)
+
+    db.replace_master_slots(group['id'], master_device_id, diff['slots'])
+    return {'set': len(diff['to_set']), 'removed': len(diff['to_remove']),
+            'master_unreachable': False}
+
+
+def _teardown_master_slots(db, group):
+    """Queue REMOVE_SCHEDULE for every master slot the API owns for this group
+    and clear them. Used before re-homing or deleting a group."""
+    from command_queue import queue_remove_schedule, COMMAND_TTL_DEFAULTS
+    master_device_id = int(group['master_device_id'])
+    master_address = _resolve_node_address(master_device_id)
+    owned = [s for s in db.list_master_slots(master_device_id)
+             if s['group_id'] == group['id']]
+    if master_address is not None:
+        for slot in owned:
+            cmd_id = db.insert_command(
+                device_id=master_device_id, command_type='schedule_remove',
+                params={'index': slot['master_index'],
+                        'mirrored_from_group': group['id']},
+                ttl_seconds=COMMAND_TTL_DEFAULTS['schedule_remove'])
+            result = queue_remove_schedule(node_address=master_address,
+                                           index=slot['master_index'])
+            if cmd_id is not None:
+                db.set_command_huey_task(cmd_id, result.id)
+    db.replace_master_slots(group['id'], master_device_id, [])
+
+
+def _queue_master_actuator(db, group, command, duration_seconds=0):
+    """Mirror a manual valve run/stop onto the group's master valve."""
+    from command_queue import queue_send_actuator, COMMAND_TTL_DEFAULTS
+    master_device_id = int(group['master_device_id'])
+    master_valve = group['master_valve']
+    master_address = _resolve_node_address(master_device_id)
+    if master_address is None:
+        logger.warning(f"Master device {master_device_id} address unknown; "
+                       f"skipping mirror actuator")
+        return
+    cmd_type = 'valve_open' if command == 1 else 'valve_close'
+    params = {'valve': master_valve, 'mirrored_from_group': group['id']}
+    if duration_seconds:
+        params['duration_seconds'] = duration_seconds
+    cmd_id = db.insert_command(device_id=master_device_id, command_type=cmd_type,
+                               params=params,
+                               ttl_seconds=COMMAND_TTL_DEFAULTS[cmd_type])
+    result = queue_send_actuator(node_address=master_address, actuator_type=1,
+                                 command=command, param=master_valve,
+                                 duration_seconds=duration_seconds)
+    if cmd_id is not None:
+        db.set_command_huey_task(cmd_id, result.id)
 
 
 @app.route('/api/nodes', methods=['GET'])
@@ -724,6 +855,23 @@ def add_schedule(device_id: int):
         if errors:
             return jsonify({'error': 'Validation failed', 'details': errors}), 400
 
+        # If this zone valve belongs to a master-valve group, confirm the
+        # resulting master schedule set still fits BEFORE persisting anything
+        # (atomic: a slot overflow rejects the request, nothing is stored).
+        group = db.get_group_for_zone_valve(device_id, data['valve'])
+        if group:
+            prospective = _gather_member_schedules(
+                db, group['members'],
+                override={'device_id': device_id, 'index': data['index'],
+                          'schedule': {'index': data['index'], 'hour': data['hour'],
+                                       'minute': data['minute'],
+                                       'duration': data['duration'],
+                                       'days': data['days'], 'valve': data['valve']}})
+            try:
+                compute_master_windows(prospective, group['master_valve'])
+            except MasterSlotOverflow as e:
+                return jsonify({'error': f'Master valve schedule full: {e}'}), 409
+
         # Persist schedule locally so GET /schedules returns intended state
         db.store_schedule(
             device_id=device_id,
@@ -766,6 +914,10 @@ def add_schedule(device_id: int):
         if command_id is not None:
             db.set_command_huey_task(command_id, result.id)
 
+        # Mirror the resulting window set onto the group's master valve.
+        if group:
+            _apply_master_diff(db, group)
+
         return jsonify({
             'status': 'queued',
             'task_id': result.id,
@@ -793,14 +945,19 @@ def remove_schedule(device_id: int, index: int):
         JSON response with task_id for tracking (202 Accepted)
     """
     try:
-        if not 0 <= index <= 7:
-            return jsonify({'error': 'Schedule index must be 0-7'}), 400
+        if not 0 <= index < MAX_SCHEDULE_SLOTS:
+            return jsonify({'error': f'Schedule index must be 0-{MAX_SCHEDULE_SLOTS - 1}'}), 400
 
         address = _resolve_node_address(device_id)
         if address is None:
             return jsonify({'error': f'Node with device_id {device_id} not found'}), 404
 
         db = get_database()
+
+        # Note which valve this schedule controlled so we can recompute the
+        # master mirror after deletion (removal can only shrink the master set).
+        existing = next((s for s in db.get_schedules(device_id)
+                         if s['index'] == index), None)
 
         # Remove from local schedule storage
         db.delete_schedule(device_id=device_id, index=index)
@@ -820,6 +977,12 @@ def remove_schedule(device_id: int, index: int):
 
         if command_id is not None:
             db.set_command_huey_task(command_id, result.id)
+
+        # Recompute the master mirror if this valve was in a group.
+        if existing:
+            group = db.get_group_for_zone_valve(device_id, existing['valve'])
+            if group:
+                _apply_master_diff(db, group)
 
         return jsonify({
             'status': 'queued',
@@ -930,6 +1093,13 @@ def run_valve(device_id: int):
         if command_id is not None:
             db.set_command_huey_task(command_id, result.id)
 
+        # Mirror the run onto the group's master valve (same duration so both
+        # auto-close together).
+        group = db.get_group_for_zone_valve(device_id, valve)
+        if group:
+            _queue_master_actuator(db, group, command=1,
+                                   duration_seconds=duration_seconds)
+
         return jsonify({
             'status': 'queued',
             'task_id': result.id,
@@ -994,6 +1164,11 @@ def stop_valve(device_id: int):
         if command_id is not None:
             db.set_command_huey_task(command_id, result.id)
 
+        # Mirror the stop onto the group's master valve.
+        group = db.get_group_for_zone_valve(device_id, valve)
+        if group:
+            _queue_master_actuator(db, group, command=0)
+
         return jsonify({
             'status': 'queued',
             'task_id': result.id,
@@ -1006,6 +1181,216 @@ def stop_valve(device_id: int):
 
     except Exception as e:
         logger.error(f"Error stopping valve for node {device_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+def _validate_group_fields(db, master_device_id, master_valve, members):
+    """Return an error string if master/members are invalid, else None."""
+    master_count = _node_valve_count(master_device_id)
+    if not isinstance(master_valve, int) or not 0 <= master_valve < master_count:
+        return f'master_valve must be 0..{master_count - 1}'
+    seen = set()
+    for member in members:
+        try:
+            zone_device_id = int(member['zone_device_id'])
+            zone_valve = int(member['zone_valve'])
+        except (KeyError, TypeError, ValueError):
+            return 'each member needs zone_device_id and zone_valve'
+        if (zone_device_id, zone_valve) == (master_device_id, master_valve):
+            return 'the master valve cannot also be a zone member'
+        if (zone_device_id, zone_valve) in seen:
+            return 'duplicate member'
+        seen.add((zone_device_id, zone_valve))
+        zone_count = _node_valve_count(zone_device_id)
+        if not 0 <= zone_valve < zone_count:
+            return (f'zone_valve {zone_valve} out of range for device '
+                    f'{zone_device_id} (0..{zone_count - 1})')
+    return None
+
+
+def _check_group_uniqueness(db, master_device_id, master_valve, members,
+                            exclude_group_id=None):
+    """Return a (message, status) tuple if a uniqueness rule is violated, else None.
+
+    A zone valve may belong to at most one group; a master valve backs at most
+    one group.
+    """
+    for group in db.get_all_valve_groups():
+        if group['id'] == exclude_group_id:
+            continue
+        if (int(group['master_device_id']) == master_device_id
+                and group['master_valve'] == master_valve):
+            return (f"master valve {master_valve} on device {master_device_id} "
+                    f"already backs group '{group['name']}'", 409)
+    for member in members:
+        existing = db.get_group_for_zone_valve(int(member['zone_device_id']),
+                                               int(member['zone_valve']))
+        if existing and existing['id'] != exclude_group_id:
+            return (f"zone valve {member['zone_valve']} on device "
+                    f"{member['zone_device_id']} is already in group "
+                    f"'{existing['name']}'", 409)
+    return None
+
+
+@app.route('/api/valve-groups', methods=['GET'])
+def list_valve_groups():
+    """List all valve groups."""
+    try:
+        db = get_database()
+        groups = db.get_all_valve_groups()
+        return jsonify({'count': len(groups), 'groups': groups})
+    except Exception as e:
+        logger.error(f"Error listing valve groups: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/valve-groups', methods=['POST'])
+def create_valve_group():
+    """Create a valve group and mirror members' existing schedules to the master.
+
+    Request body:
+        {
+            "name": "Front beds",
+            "master_device_id": "123...",
+            "master_valve": 3,
+            "members": [{"zone_device_id": "456...", "zone_valve": 0}, ...]
+        }
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Request body must be JSON'}), 400
+        name = data.get('name')
+        if not name:
+            return jsonify({'error': 'name is required'}), 400
+        if data.get('master_device_id') is None or data.get('master_valve') is None:
+            return jsonify({'error': 'master_device_id and master_valve are required'}), 400
+        master_device_id = int(data['master_device_id'])
+        master_valve = int(data['master_valve'])
+        members = data.get('members', []) or []
+
+        db = get_database()
+        err = _validate_group_fields(db, master_device_id, master_valve, members)
+        if err:
+            return jsonify({'error': err}), 400
+        conflict = _check_group_uniqueness(db, master_device_id, master_valve, members)
+        if conflict:
+            return jsonify({'error': conflict[0]}), conflict[1]
+
+        group = db.create_valve_group(name, master_device_id, master_valve, members)
+
+        # Backfill: mirror members' existing schedules onto the master valve.
+        try:
+            _apply_master_diff(db, group)
+        except MasterSlotOverflow as e:
+            db.delete_valve_group(group['id'])
+            return jsonify({'error': f'Master valve schedule full: {e}'}), 409
+
+        return jsonify(group), 201
+    except Exception as e:
+        logger.error(f"Error creating valve group: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/valve-groups/<int:group_id>', methods=['GET'])
+def get_valve_group(group_id: int):
+    """Get a valve group by ID."""
+    try:
+        db = get_database()
+        group = db.get_valve_group(group_id)
+        if group:
+            return jsonify(group)
+        return jsonify({'error': f'Valve group {group_id} not found'}), 404
+    except Exception as e:
+        logger.error(f"Error getting valve group {group_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/valve-groups/<int:group_id>', methods=['PUT'])
+def update_valve_group(group_id: int):
+    """Update a valve group's name, master valve, or membership."""
+    try:
+        db = get_database()
+        old = db.get_valve_group(group_id)
+        if not old:
+            return jsonify({'error': f'Valve group {group_id} not found'}), 404
+
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Request body must be JSON'}), 400
+
+        name = data.get('name')
+        master_device_id = (int(data['master_device_id'])
+                            if data.get('master_device_id') is not None
+                            else int(old['master_device_id']))
+        master_valve = (int(data['master_valve'])
+                        if data.get('master_valve') is not None
+                        else old['master_valve'])
+        members = data.get('members')
+        effective_members = members if members is not None else old['members']
+
+        err = _validate_group_fields(db, master_device_id, master_valve,
+                                     effective_members)
+        if err:
+            return jsonify({'error': err}), 400
+        conflict = _check_group_uniqueness(db, master_device_id, master_valve,
+                                           effective_members,
+                                           exclude_group_id=group_id)
+        if conflict:
+            return jsonify({'error': conflict[0]}), conflict[1]
+
+        # If the master valve/node moved, tear down the old master's slots first.
+        master_moved = (int(old['master_device_id']) != master_device_id
+                        or old['master_valve'] != master_valve)
+        if master_moved:
+            _teardown_master_slots(db, old)
+
+        updated = db.update_valve_group(
+            group_id, name=name, master_device_id=master_device_id,
+            master_valve=master_valve, members=members)
+
+        try:
+            _apply_master_diff(db, updated)
+        except MasterSlotOverflow as e:
+            return jsonify({'error': f'Master valve schedule full: {e}'}), 409
+
+        return jsonify(updated)
+    except Exception as e:
+        logger.error(f"Error updating valve group {group_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/valve-groups/<int:group_id>', methods=['DELETE'])
+def delete_valve_group(group_id: int):
+    """Delete a valve group; removes its mirrored master schedules."""
+    try:
+        db = get_database()
+        group = db.get_valve_group(group_id)
+        if not group:
+            return jsonify({'error': f'Valve group {group_id} not found'}), 404
+        _teardown_master_slots(db, group)
+        db.delete_valve_group(group_id)
+        return jsonify({'status': 'deleted', 'id': group_id})
+    except Exception as e:
+        logger.error(f"Error deleting valve group {group_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/valve-groups/<int:group_id>/resync', methods=['POST'])
+def resync_valve_group(group_id: int):
+    """Force re-push of the group's master schedules (recover from TTL expiry)."""
+    try:
+        db = get_database()
+        group = db.get_valve_group(group_id)
+        if not group:
+            return jsonify({'error': f'Valve group {group_id} not found'}), 404
+        try:
+            summary = _apply_master_diff(db, group, force=True)
+        except MasterSlotOverflow as e:
+            return jsonify({'error': f'Master valve schedule full: {e}'}), 409
+        return jsonify({'status': 'resynced', 'id': group_id, **summary})
+    except Exception as e:
+        logger.error(f"Error resyncing valve group {group_id}: {e}")
         return jsonify({'error': str(e)}), 500
 
 
