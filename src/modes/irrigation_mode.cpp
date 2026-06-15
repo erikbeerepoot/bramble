@@ -198,10 +198,9 @@ void IrrigationMode::onStateChange(IrrigationState state)
         case IrrigationState::AWAITING_REGISTRATION:
             // Send re-registration request (reset to unregistered so hub assigns a fresh address)
             messenger_.setNodeAddress(ADDRESS_UNREGISTERED);
-            messenger_.sendRegistrationRequest(ADDRESS_HUB, device_id_, NODE_TYPE_HYBRID,
-                                               CAP_VALVE_CONTROL | CAP_SOIL_MOISTURE,
-                                               BRAMBLE_FIRMWARE_VERSION, "Irrigation Node",
-                                               ValveController::NUM_VALVES);
+            messenger_.sendRegistrationRequest(
+                ADDRESS_HUB, device_id_, NODE_TYPE_HYBRID, CAP_VALVE_CONTROL | CAP_SOIL_MOISTURE,
+                BRAMBLE_FIRMWARE_VERSION, "Irrigation Node", ValveController::NUM_VALVES);
             // Set callback to advance SM when response arrives
             // Address is persisted via PMU state blob at sleep time (packState),
             // not flash — flash writes disrupt XIP cache on RP2350 and crash here.
