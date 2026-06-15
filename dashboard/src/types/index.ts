@@ -10,6 +10,26 @@ export interface ZonesResponse {
   zones: Zone[];
 }
 
+export interface ValveGroupMember {
+  zone_device_id: string;  // String to preserve 64-bit precision
+  zone_valve: number;
+}
+
+export interface ValveGroup {
+  id: number;
+  name: string;
+  master_device_id: string;  // String to preserve 64-bit precision
+  master_valve: number;
+  members: ValveGroupMember[];
+  created_at: number;
+  updated_at: number;
+}
+
+export interface ValveGroupsResponse {
+  count: number;
+  groups: ValveGroup[];
+}
+
 export interface NodeMetadata {
   device_id: string;  // String to preserve 64-bit precision
   name: string | null;

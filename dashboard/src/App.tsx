@@ -97,6 +97,7 @@ function App() {
 
   const isNodesActive = location.pathname === '/nodes' || location.pathname.startsWith('/nodes/');
   const isVisualizeActive = location.pathname === '/visualize';
+  const isValveGroupsActive = location.pathname === '/valve-groups';
   const isSettingsActive = location.pathname === '/settings';
 
   const contextValue: AppContextType = {
@@ -148,6 +149,14 @@ function App() {
                   }`}
                 >
                   Visualize
+                </Link>
+                <Link
+                  to="/valve-groups"
+                  className={`px-3 py-1.5 rounded text-sm font-medium transition-opacity ${
+                    isValveGroupsActive ? 'bg-white/15' : 'hover:bg-white/10 hover:opacity-80'
+                  }`}
+                >
+                  Valve Groups
                 </Link>
                 <Link
                   to="/settings"

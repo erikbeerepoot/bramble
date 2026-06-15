@@ -7,6 +7,9 @@ import type {
   NodeStatistics,
   Zone,
   ZonesResponse,
+  ValveGroup,
+  ValveGroupMember,
+  ValveGroupsResponse,
   NodeEventsResponse,
   NodeCommandsResponse,
   NodeCommandStatus,
@@ -187,6 +190,51 @@ export async function updateZone(
 export async function deleteZone(zoneId: number): Promise<void> {
   await fetchApi<{ message: string }>(`/api/zones/${zoneId}`, {
     method: 'DELETE',
+  });
+}
+
+export async function getValveGroups(): Promise<ValveGroupsResponse> {
+  return fetchApi<ValveGroupsResponse>('/api/valve-groups');
+}
+
+export async function createValveGroup(group: {
+  name: string;
+  master_device_id: string;
+  master_valve: number;
+  members: ValveGroupMember[];
+}): Promise<ValveGroup> {
+  return fetchApi<ValveGroup>('/api/valve-groups', {
+    method: 'POST',
+    body: JSON.stringify(group),
+  });
+}
+
+export async function updateValveGroup(
+  groupId: number,
+  updates: Partial<{
+    name: string;
+    master_device_id: string;
+    master_valve: number;
+    members: ValveGroupMember[];
+  }>
+): Promise<ValveGroup> {
+  return fetchApi<ValveGroup>(`/api/valve-groups/${groupId}`, {
+    method: 'PUT',
+    body: JSON.stringify(updates),
+  });
+}
+
+export async function deleteValveGroup(groupId: number): Promise<void> {
+  await fetchApi<{ status: string }>(`/api/valve-groups/${groupId}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function resyncValveGroup(
+  groupId: number
+): Promise<{ status: string; id: number; set: number; removed: number }> {
+  return fetchApi(`/api/valve-groups/${groupId}/resync`, {
+    method: 'POST',
   });
 }
 
