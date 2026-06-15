@@ -90,7 +90,7 @@ inline bool operator!(DayOfWeek a)
 // Protocol constants
 constexpr uint8_t START_BYTE = 0xAA;
 constexpr uint8_t END_BYTE = 0x55;
-constexpr uint8_t MAX_SCHEDULE_ENTRIES = 8;
+constexpr uint8_t MAX_SCHEDULE_ENTRIES = 100;
 constexpr uint8_t MAX_MESSAGE_SIZE = 48;  // Increased to accommodate state blob (was 32)
 constexpr uint8_t SCHEDULE_ENTRY_SIZE = 7;
 constexpr uint8_t NODE_STATE_SIZE = 32;      // Opaque state blob stored in PMU RAM
