@@ -515,7 +515,7 @@ uint8_t MessageBuilder::calculateChecksum() const
 
 Protocol::Protocol(UartSendCallback uartSend, SetWakeCallback setWake, KeepAwakeCallback keepAwake,
                    ReadyForSleepCallback readyForSleep, GetTickCallback getTick)
-    : wakeInterval_(60), nextSeqNum_(SEQ_STM32_MIN), currentSeqNum_(0), uartSend_(uartSend),
+    : wakeInterval_(300), nextSeqNum_(SEQ_STM32_MIN), currentSeqNum_(0), uartSend_(uartSend),
       setWake_(setWake), keepAwake_(keepAwake), readyForSleep_(readyForSleep), getTick_(getTick),
       seenIndex_(0), nodeStateValid_(false), valveResetPending_(false), clearToSendReceived_(false),
       pendingMessageReady_(false), pendingSeqNum_(0), pendingCommand_(static_cast<Command>(0)),
