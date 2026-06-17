@@ -72,8 +72,8 @@ bool PersistentStorage::formatStorage()
         return false;
     }
 
-    // Default wake interval: 60 seconds (matches Protocol constructor default)
-    uint32_t defaultInterval = 60;
+    // Default wake interval: 300 seconds / 5 minutes (matches Protocol constructor default)
+    uint32_t defaultInterval = 300;
     if (!fram_.write(OFFSET_WAKE_INTERVAL, reinterpret_cast<uint8_t *>(&defaultInterval),
                      sizeof(defaultInterval))) {
         return false;
