@@ -90,7 +90,7 @@ inline bool operator!(DayOfWeek a)
 constexpr uint8_t START_BYTE = 0xAA;
 constexpr uint8_t END_BYTE = 0x55;
 constexpr uint8_t MAX_MESSAGE_SIZE = 64;
-constexpr uint8_t SCHEDULE_ENTRY_SIZE = 7;
+constexpr uint8_t SCHEDULE_ENTRY_SIZE = 11;
 constexpr uint8_t NODE_STATE_SIZE = 32;      // Opaque state blob stored in PMU RAM
 constexpr uint8_t MAX_BLOB_CHUNK_SIZE = 36;  // Max data bytes per SaveBlob/BlobData message
 
@@ -124,17 +124,44 @@ struct DateTime {
 
 // Schedule entry structure
 struct ScheduleEntry {
-    uint8_t hour;       // 0-23
-    uint8_t minute;     // 0-59
-    uint16_t duration;  // Duration in seconds
+    uint8_t hour;       // window start hour (0-23)
+    uint8_t minute;     // window start minute (0-59)
+    uint16_t duration;  // run length per firing, in seconds
     DayOfWeek daysMask;
     uint8_t valveId;
     bool enabled;
+    // Interval (recurring) schedule support. periodMinutes == 0 means a legacy
+    // one-shot daily entry (fires once at hour:minute). periodMinutes > 0 fires
+    // every periodMinutes within [hour:minute, hour:minute + windowMinutes].
+    // See firesAt() for the exact rule (kept in sync with the PMU firmware).
+    uint16_t periodMinutes;
+    uint16_t windowMinutes;
 
     ScheduleEntry()
         : hour(0), minute(0), duration(0), daysMask(static_cast<DayOfWeek>(0)), valveId(0),
-          enabled(false)
+          enabled(false), periodMinutes(0), windowMinutes(0)
     {
+    }
+
+    /// True if a firing of this entry falls exactly on the given day-of-week and
+    /// minute-of-day. dayOfWeek: 0=Sunday. Mirrors the PMU firing rule.
+    bool firesAt(uint8_t dayOfWeek, uint8_t currentHour, uint8_t currentMinute) const
+    {
+        if (!enabled) {
+            return false;
+        }
+        if (((static_cast<uint8_t>(daysMask) >> dayOfWeek) & 0x01) == 0) {
+            return false;
+        }
+        uint16_t start = static_cast<uint16_t>(hour) * 60 + minute;
+        uint16_t now = static_cast<uint16_t>(currentHour) * 60 + currentMinute;
+        if (periodMinutes == 0) {
+            return now == start;  // legacy one-shot
+        }
+        if (now < start || now > start + windowMinutes) {
+            return false;  // outside the active window
+        }
+        return ((now - start) % periodMinutes) == 0;  // on a firing boundary
     }
 };
 

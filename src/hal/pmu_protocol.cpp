@@ -192,6 +192,8 @@ void MessageBuilder::addScheduleEntry(const ScheduleEntry &entry)
     addByte(static_cast<uint8_t>(entry.daysMask));
     addByte(entry.valveId);
     addByte(entry.enabled ? 1 : 0);
+    addUint16(entry.periodMinutes);
+    addUint16(entry.windowMinutes);
 }
 
 const uint8_t *MessageBuilder::finalize()
@@ -483,6 +485,8 @@ void Protocol::handleScheduleEntry(const uint8_t *data, uint8_t length)
         entry.daysMask = static_cast<DayOfWeek>(data[4]);
         entry.valveId = data[5];
         entry.enabled = (data[6] != 0);
+        entry.periodMinutes = data[7] | (data[8] << 8);
+        entry.windowMinutes = data[9] | (data[10] << 8);
 
         scheduleEntryCallback_(entry);
     }
@@ -536,6 +540,8 @@ void Protocol::handleWakeNotification(const uint8_t *data, uint8_t length)
         entry.daysMask = static_cast<DayOfWeek>(data[schedule_offset + 4]);
         entry.valveId = data[schedule_offset + 5];
         entry.enabled = (data[schedule_offset + 6] != 0);
+        entry.periodMinutes = data[schedule_offset + 7] | (data[schedule_offset + 8] << 8);
+        entry.windowMinutes = data[schedule_offset + 9] | (data[schedule_offset + 10] << 8);
         log.debug("ValveId=%d", entry.valveId);
         wakeNotificationCallback_(reason, &entry, state_valid, state_blob, valve_reset);
         log.debug("Callback done");

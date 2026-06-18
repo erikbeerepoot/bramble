@@ -141,6 +141,8 @@ bool PersistentStorage::loadScheduleEntry(uint8_t index, PMU::ScheduleEntry &ent
     entry.daysMask = static_cast<PMU::DayOfWeek>(raw[4]);
     entry.valveId = raw[5];
     entry.enabled = (raw[6] != 0);
+    entry.periodMinutes = raw[7] | (raw[8] << 8);
+    entry.windowMinutes = raw[9] | (raw[10] << 8);
     return true;
 }
 
@@ -157,6 +159,10 @@ bool PersistentStorage::saveScheduleEntry(uint8_t index, const PMU::ScheduleEntr
     raw[4] = static_cast<uint8_t>(entry.daysMask);
     raw[5] = entry.valveId;
     raw[6] = entry.enabled ? 1 : 0;
+    raw[7] = entry.periodMinutes & 0xFF;
+    raw[8] = (entry.periodMinutes >> 8) & 0xFF;
+    raw[9] = entry.windowMinutes & 0xFF;
+    raw[10] = (entry.windowMinutes >> 8) & 0xFF;
 
     return fram_.write(scheduleEntryOffset(index), raw, PMU::SCHEDULE_ENTRY_SIZE);
 }
