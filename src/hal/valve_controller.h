@@ -3,8 +3,9 @@
 #include <cstdint>
 #include <memory>
 
-#include "hardware/gpio.h"
 #include "pico/critical_section.h"
+
+#include "hardware/gpio.h"
 
 #include "../board/board_pins.h"
 #include "hbridge.h"
