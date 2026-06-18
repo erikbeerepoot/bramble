@@ -119,6 +119,7 @@ Environment variables:
 | `HOST` | `0.0.0.0` | API server host |
 | `PORT` | `5000` | API server port |
 | `DEBUG` | `False` | Enable debug logging |
+| `API_TOKEN` | `` (empty) | Bearer token required on mutating valve endpoints. Empty disables enforcement. See [docs/API.md](docs/API.md#authentication). |
 
 ## API Endpoints
 

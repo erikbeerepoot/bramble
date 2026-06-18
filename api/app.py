@@ -13,6 +13,7 @@ from models import (Node, NodeMetadata, Schedule, QueuedUpdate, Zone,
                     MAX_SCHEDULE_SLOTS, format_firmware_version)
 from valve_groups import (compute_master_windows, diff_master_slots,
                           MasterSlotOverflow)
+from auth import require_token
 
 
 # Setup logging
@@ -1027,6 +1028,7 @@ def get_schedules(device_id: int):
 
 
 @app.route('/api/nodes/<int:device_id>/valve', methods=['POST'])
+@require_token
 def run_valve(device_id: int):
     """Run a valve for a specified duration (run-once).
 
@@ -1117,6 +1119,7 @@ def run_valve(device_id: int):
 
 
 @app.route('/api/nodes/<int:device_id>/valve/stop', methods=['POST'])
+@require_token
 def stop_valve(device_id: int):
     """Stop a running valve immediately.
 

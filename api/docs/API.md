@@ -10,7 +10,29 @@ http://localhost:5000/api
 
 ## Authentication
 
-No authentication required (intended for local network use).
+By default no authentication is required (intended for local network use).
+
+When the `API_TOKEN` environment variable is set, **mutating valve endpoints**
+(`POST /api/nodes/{device_id}/valve` and `.../valve/stop`) require authorization.
+A request is accepted if either:
+
+- it carries `Authorization: Bearer <API_TOKEN>` (non-browser clients, e.g. the iOS widget), or
+- it carries Cloudflare Access's `Cf-Access-Jwt-Assertion` header (a dashboard user
+  already authenticated by Cloudflare Access at the edge).
+
+Otherwise the request is rejected with `401 Unauthorized`. Leaving `API_TOKEN`
+empty disables enforcement entirely.
+
+```bash
+curl -X POST https://api.bramble.ag/api/nodes/42/valve \
+  -H "Authorization: Bearer $API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"valve": 0, "duration_seconds": 900}'
+```
+
+**Cloudflare note:** for a non-browser client to reach the API behind Cloudflare
+Access, create a Cloudflare Access **service token** and policy for `api.bramble.ag`,
+then send `CF-Access-Client-Id` + `CF-Access-Client-Secret` alongside the bearer header.
 
 ---
 
