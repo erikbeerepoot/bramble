@@ -9,6 +9,11 @@ class Config:
     HOST = os.getenv('HOST', '0.0.0.0')
     PORT = int(os.getenv('PORT', '5000'))
 
+    # API authentication. When set, mutating endpoints require a matching
+    # `Authorization: Bearer <token>` header (used by non-browser clients such as
+    # the iOS widget). Empty disables enforcement — preserving local/dev access.
+    API_TOKEN = os.getenv('API_TOKEN', '')
+
     # Serial settings
     SERIAL_PORT = os.getenv('SERIAL_PORT', '/dev/ttyAMA0')
     SERIAL_BAUD = int(os.getenv('SERIAL_BAUD', '115200'))
