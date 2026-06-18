@@ -112,8 +112,16 @@ app only) — target iOS 17+.
 
 ## Phasing
 
-- **Phase 1 (this branch, backend):** config + `auth.py` + decorate valve routes + tests + docs.
-  Self-contained, testable with pytest, no iOS toolchain needed. ✅ ship first.
-- **Phase 2:** iOS shared layer + host app (settings, Keychain, valve config).
-- **Phase 3:** widget extension + App Intents + state display.
-- **Phase 4 (follow-up):** CF JWKS verification; `task_id` status polling; multi-node config UI.
+- **Phase 1 (backend):** ✅ **DONE.** config `API_TOKEN` + `auth.py` `require_token` +
+  decorated valve routes + `tests/test_auth.py` + docs (API.md/README/compose). Auth logic
+  verified (7/7 branches) in a throwaway Flask harness; full pytest suite to run in the
+  project's uv env.
+- **Phase 2 (iOS shared layer + host app):** ✅ **DONE (unbuilt).** `Shared/` (API client,
+  Keychain, settings, valve config, state store) + host app (settings screen). Shared layer
+  type-checks against the SDK.
+- **Phase 3 (widget extension):** ✅ **DONE (unbuilt).** WidgetKit widget + `Button(intent:)`
+  + `RunValveIntent`/`StopValveIntent` + optimistic state display. `project.yml`, Info.plist,
+  entitlements committed. **First build must happen in Xcode** (this env has CLT only — no
+  iOS SDK / xcodebuild). Source parses clean; expect minor SDK/signing fixups in Xcode.
+- **Phase 4 (follow-up):** CF JWKS signature verification; `task_id`/node-status polling for
+  authoritative widget state; richer multi-node config UI.
