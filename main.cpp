@@ -201,6 +201,8 @@ int main()
 
 #ifdef HARDWARE_CONTROLLER
     log.info("Hardware variant: CONTROLLER");
+#elif HARDWARE_IRRIGATION_AC
+    log.info("Hardware variant: IRRIGATION_AC (AC SSR valves)");
 #elif HARDWARE_IRRIGATION
     log.info("Hardware variant: IRRIGATION");
 #elif HARDWARE_SENSOR

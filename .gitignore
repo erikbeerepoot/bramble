@@ -2,7 +2,7 @@
 build/
 Build/
 BUILD/
-build_v*/
+build_*/
 
 # Node / dashboard
 node_modules/

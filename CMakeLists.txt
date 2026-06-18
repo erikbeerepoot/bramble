@@ -156,7 +156,8 @@ else()
     # Hardware variant selection (ALL builds every variant in parallel)
     set(HARDWARE_VARIANT "IRRIGATION" CACHE STRING "Hardware variant type")
     set_property(CACHE HARDWARE_VARIANT PROPERTY STRINGS
-        ALL GENERIC HUB CONTROLLER IRRIGATION SENSOR GREENHOUSE)
+        ALL GENERIC HUB CONTROLLER IRRIGATION IRRIGATION_AC SENSOR GREENHOUSE
+        VALVETEST VALVETEST_AC)
 
     # Radio chip selection (determines which driver is compiled)
     set(RADIO_CHIP "SX1262" CACHE STRING "Radio chip: SX1276 or SX1262")
@@ -236,6 +237,30 @@ else()
         message(STATUS "Building IRRIGATION variant")
     endif()
 
+    # AC valve node: mains-powered, always-awake, SSR-driven valves. Reuses the
+    # irrigation mode + valve controller; HARDWARE_IRRIGATION_AC selects the AC
+    # driver/pins and the never-sleep behavior.
+    if(HARDWARE_VARIANT STREQUAL "ALL" OR HARDWARE_VARIANT STREQUAL "IRRIGATION_AC")
+        add_executable(bramble_irrigation_ac${BOARD_SUFFIX}${RADIO_SUFFIX}
+            main.cpp
+            src/modes/irrigation_mode.cpp
+            src/hal/valve_controller.cpp
+            src/hal/hbridge.cpp
+            src/hal/valve_indexer.cpp
+            ${COMMON_SOURCES}
+        )
+        # Define HARDWARE_IRRIGATION too so the shared irrigation mode selection
+        # (main.cpp, variant info) works unchanged; HARDWARE_IRRIGATION_AC adds
+        # the AC driver/pins and never-sleep behavior on top.
+        target_compile_definitions(bramble_irrigation_ac${BOARD_SUFFIX}${RADIO_SUFFIX} PRIVATE
+            HARDWARE_IRRIGATION=1
+            HARDWARE_IRRIGATION_AC=1
+            DEFAULT_IS_HUB=0
+        )
+        list(APPEND BUILD_TARGETS bramble_irrigation_ac${BOARD_SUFFIX}${RADIO_SUFFIX})
+        message(STATUS "Building IRRIGATION_AC variant")
+    endif()
+
     # Standalone valve sweep test (bench bring-up, no LoRa/PMU)
     if(HARDWARE_VARIANT STREQUAL "VALVETEST")
         add_executable(bramble_valvetest${BOARD_SUFFIX}${RADIO_SUFFIX}
@@ -251,6 +276,26 @@ else()
         )
         list(APPEND BUILD_TARGETS bramble_valvetest${BOARD_SUFFIX}${RADIO_SUFFIX})
         message(STATUS "Building VALVETEST variant")
+    endif()
+
+    # Standalone AC valve sweep test (bench bring-up, no LoRa/PMU). Same sweep as
+    # VALVETEST but HARDWARE_IRRIGATION_AC selects the SSR-gate path (one GPIO per
+    # valve, no H-bridge/indexer).
+    if(HARDWARE_VARIANT STREQUAL "VALVETEST_AC")
+        add_executable(bramble_valvetest_ac${BOARD_SUFFIX}${RADIO_SUFFIX}
+            valve_test.cpp
+            src/hal/valve_controller.cpp
+            src/hal/hbridge.cpp
+            src/hal/valve_indexer.cpp
+            ${COMMON_SOURCES}
+        )
+        target_compile_definitions(bramble_valvetest_ac${BOARD_SUFFIX}${RADIO_SUFFIX} PRIVATE
+            HARDWARE_IRRIGATION=1
+            HARDWARE_IRRIGATION_AC=1
+            DEFAULT_IS_HUB=0
+        )
+        list(APPEND BUILD_TARGETS bramble_valvetest_ac${BOARD_SUFFIX}${RADIO_SUFFIX})
+        message(STATUS "Building VALVETEST_AC variant")
     endif()
 
     if(HARDWARE_VARIANT STREQUAL "ALL" OR HARDWARE_VARIANT STREQUAL "CONTROLLER")

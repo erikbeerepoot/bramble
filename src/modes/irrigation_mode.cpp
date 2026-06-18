@@ -18,6 +18,13 @@
 constexpr uint16_t HUB_ADDRESS = ADDRESS_HUB;
 constexpr uint32_t HEARTBEAT_INTERVAL_MS = 60000;  // 60 seconds
 
+#ifdef HARDWARE_IRRIGATION_AC
+// Always-awake AC node cadences.
+constexpr uint32_t AC_UPDATE_POLL_INTERVAL_MS = 15000;    // poll hub for commands/updates
+constexpr uint32_t AC_SCHEDULE_EVAL_INTERVAL_MS = 20000;  // evaluate schedules (< 60s)
+constexpr uint32_t AC_VALVE_CLOSE_INTERVAL_MS = 2000;     // auto-close granularity
+#endif
+
 // PMU UART configuration - selected by board version via board_pins.h
 #include "../board/board_pins.h"
 
@@ -169,10 +176,19 @@ void IrrigationMode::onStart()
                                      active_sensors, error_flags, 0, device_id_);
         },
         HEARTBEAT_INTERVAL_MS, "Heartbeat");
+
+#ifdef HARDWARE_IRRIGATION_AC
+    startAlwaysAwakeTasks();
+#endif
 }
 
 void IrrigationMode::onStateChange(IrrigationState state)
 {
+    // Re-arm (or clear) the per-state watchdog before running the state's side
+    // effects, so a state that never gets its expected response recovers instead
+    // of stranding the cycle.
+    armStateWatchdog(state);
+
     switch (state) {
         case IrrigationState::REGISTERING:
             if (needs_registration_) {
@@ -226,6 +242,17 @@ void IrrigationMode::onStateChange(IrrigationState state)
             break;
 
         case IrrigationState::VALVE_ACTIVE: {
+#ifdef HARDWARE_IRRIGATION_AC
+            // AC mains node: the valve GPIO is held because the node never
+            // sleeps. Don't arm the PMU close-alarm; the periodic auto-close
+            // task closes the valve at its deadline. Advance the SM out of
+            // VALVE_ACTIVE (signalReadyForSleep is a no-op for AC).
+            if (pmu_available_ && reliable_pmu_) {
+                reliable_pmu_->keepAwake(KEEP_AWAKE_PROCESSING_SECONDS);
+            }
+            irrigation_state_.reportValveTimerSet();
+            break;
+#endif
             // If anything in the deadline queue is pending, arm the PMU's
             // RTC Alarm A for the soonest deadline. Otherwise fall back to
             // keepAlive (legacy: valve opened with no duration).
@@ -299,6 +326,135 @@ void IrrigationMode::scheduleKeepAwake()
         },
         now, 5000, TaskPriority::High);
 }
+
+uint32_t IrrigationMode::stateWatchdogMs(IrrigationState state)
+{
+    // Budgets must exceed the messenger's full delivery window for the message
+    // each state waits on, or the watchdog aborts a cycle that would still have
+    // succeeded — and a late reply then lands out of state (the warning we're
+    // trying to remove). RELIABLE = 3 tries, backoff 2/4/8s, gives up ~16s.
+    switch (state) {
+        case IrrigationState::REGISTERING:
+        case IrrigationState::AWAITING_REGISTRATION:
+            return 18000;  // Registration request is RELIABLE (~16s give-up)
+        case IrrigationState::AWAITING_TIME:
+            return 3000;  // No I/O — transitions to SENDING_HEARTBEAT immediately
+        case IrrigationState::SENDING_HEARTBEAT:
+            return 5000;  // Heartbeat is BEST_EFFORT (one shot); 5s to see the response
+        case IrrigationState::CHECKING_UPDATES:
+            return 18000;  // CHECK_UPDATES is RELIABLE (~16s give-up, no failure callback)
+        case IrrigationState::APPLYING_UPDATE:
+            return 10000;  // Local PMU schedule/datetime write plus its callback
+        default:
+            // Parked or self-healing states get no watchdog:
+            // READY_FOR_SLEEP / VALVE_ACTIVE are intentionally long-lived, and
+            // TRANSMITTING_EVENTS already self-advances via its own drain timeout
+            // (reportWatchdogTimeout can't recover it — it targets that state).
+            return 0;
+    }
+}
+
+void IrrigationMode::armStateWatchdog(IrrigationState state)
+{
+    if (state_watchdog_id_ != 0) {
+        task_queue_.cancel(state_watchdog_id_);
+        state_watchdog_id_ = 0;
+    }
+    const uint32_t watchdog_ms = stateWatchdogMs(state);
+    if (watchdog_ms == 0) {
+        return;
+    }
+    uint32_t now = to_ms_since_boot(get_absolute_time());
+    state_watchdog_id_ = task_queue_.postDelayed(
+        [this](uint32_t) -> bool {
+            state_watchdog_id_ = 0;
+            irrigation_state_.reportWatchdogTimeout();
+            return true;
+        },
+        now, watchdog_ms, TaskPriority::High);
+}
+
+#ifdef HARDWARE_IRRIGATION_AC
+void IrrigationMode::startAlwaysAwakeTasks()
+{
+    logger.info("AC node: starting always-awake tasks (keepalive/poll/schedule/close)");
+
+    // Keep the PMU powered so it never cuts the main rail (which would drop an
+    // open SSR valve). KEEP_AWAKE is 10s; renew well inside that.
+    task_manager_.addTask(
+        [this](uint32_t) {
+            if (pmu_available_ && reliable_pmu_) {
+                reliable_pmu_->keepAwake(KEEP_AWAKE_PROCESSING_SECONDS);
+            }
+        },
+        5000, "ACKeepalive");
+
+    // Poll the hub for queued commands/updates (manual run/stop, schedule
+    // changes, group-mirrored master opens) — low latency since we never sleep.
+    // Drive the state machine through a full service cycle (heartbeat ->
+    // CHECKING_UPDATES -> apply -> sleep) rather than calling sendCheckUpdates()
+    // behind its back: that lets the SM own state and process updates in the
+    // CHECKING_UPDATES/APPLYING_UPDATE states the rest of the code expects.
+    // reportServiceTick() is a no-op unless the SM is parked, so it never
+    // interrupts an open valve or an in-flight update. Skip until registered
+    // and time-synced.
+    task_manager_.addTask(
+        [this](uint32_t) {
+            if (messenger_.getNodeAddress() != ADDRESS_UNREGISTERED && getUnixTimestamp() != 0) {
+                irrigation_state_.reportServiceTick();
+            }
+        },
+        AC_UPDATE_POLL_INTERVAL_MS, "ACPoll");
+
+    // Fire due schedules locally — the PMU only fires schedules by cold-waking a
+    // sleeping node, which never happens here.
+    task_manager_.addTask([this](uint32_t) { evaluateLocalSchedules(); },
+                          AC_SCHEDULE_EVAL_INTERVAL_MS, "ACSchedule");
+
+    // Auto-close valves whose deadlines have passed (no PMU RTC alarm involved).
+    task_manager_.addTask([this](uint32_t) { processExpiredValveDeadlines(); },
+                          AC_VALVE_CLOSE_INTERVAL_MS, "ACClose");
+}
+
+void IrrigationMode::evaluateLocalSchedules()
+{
+    uint32_t now = getUnixTimestamp();
+    if (now == 0) {
+        return;  // no wall-clock yet
+    }
+
+    const uint32_t now_min = now / 60;
+    const uint8_t hour = (now % 86400) / 3600;
+    const uint8_t minute = (now % 3600) / 60;
+    // Unix epoch (1970-01-01) was a Thursday; day-of-week bit 0 = Sunday.
+    const uint8_t dow = static_cast<uint8_t>(((now / 86400) + 4) % 7);
+
+    for (uint8_t i = 0; i < AC_SCHEDULE_CACHE; i++) {
+        if (!ac_schedule_valid_[i]) {
+            continue;
+        }
+        const PMU::ScheduleEntry &s = ac_schedule_[i];
+        if (!s.enabled || s.hour != hour || s.minute != minute) {
+            continue;
+        }
+        if (((static_cast<uint8_t>(s.daysMask) >> dow) & 0x01) == 0) {
+            continue;  // not scheduled today
+        }
+        if (ac_schedule_last_fired_min_[i] == now_min) {
+            continue;  // already fired this occurrence
+        }
+        if (s.valveId >= ValveController::NUM_VALVES) {
+            continue;
+        }
+
+        ac_schedule_last_fired_min_[i] = now_min;
+        logger.info("AC schedule[%u] fire: valve %u for %us", i, s.valveId, s.duration);
+        valve_controller_.openValve(s.valveId);
+        event_log_.record(EventType::VALVE_OPEN, 0, s.valveId);
+        valve_close_deadlines_[s.valveId] = (s.duration > 0) ? (now + s.duration) : 0;
+    }
+}
+#endif  // HARDWARE_IRRIGATION_AC
 
 void IrrigationMode::handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry *entry,
                                    bool state_valid, const uint8_t *state, bool valve_reset)
@@ -547,6 +703,19 @@ void IrrigationMode::onModeSpecificUpdate(const UpdateAvailablePayload *payload,
                         entry.hour, entry.minute, entry.valveId, entry.duration,
                         static_cast<uint8_t>(entry.daysMask));
 
+#ifdef HARDWARE_IRRIGATION_AC
+            // Cache locally so the always-awake node can fire it itself (the PMU
+            // only fires schedules by cold-waking a sleeping node).
+            if (index < AC_SCHEDULE_CACHE) {
+                ac_schedule_[index] = entry;
+                ac_schedule_valid_[index] = true;
+                ac_schedule_last_fired_min_[index] = 0;
+            } else {
+                logger.warn("  Schedule index %d exceeds AC local cache (%d)", index,
+                            AC_SCHEDULE_CACHE);
+            }
+#endif
+
             reliable_pmu_->setSchedule(
                 index, entry, [this, hub_sequence, index](bool success, PMU::ErrorCode error) {
                     if (success) {
@@ -568,6 +737,12 @@ void IrrigationMode::onModeSpecificUpdate(const UpdateAvailablePayload *payload,
         case UpdateType::REMOVE_SCHEDULE: {
             uint8_t index = payload->payload_data[0];
             logger.info("  REMOVE_SCHEDULE[%d]", index);
+
+#ifdef HARDWARE_IRRIGATION_AC
+            if (index < AC_SCHEDULE_CACHE) {
+                ac_schedule_valid_[index] = false;
+            }
+#endif
 
             reliable_pmu_->clearSchedule(index, [this, hub_sequence, index](bool success,
                                                                             PMU::ErrorCode error) {
@@ -678,6 +853,15 @@ void IrrigationMode::signalReadyForSleep()
         logger.debug("PMU not available, skipping ready for sleep signal");
         return;
     }
+
+#ifdef HARDWARE_IRRIGATION_AC
+    // Mains AC node: never sleep (deep sleep would drop the SSR GPIO and close
+    // an open valve). Keep the PMU powered; the periodic always-awake tasks keep
+    // the node serviced. The state machine parks here harmlessly until the next
+    // valve/command event.
+    reliable_pmu_->keepAwake(KEEP_AWAKE_PROCESSING_SECONDS);
+    return;
+#endif
 
     task_queue_.post(
         [this](uint32_t) -> bool {

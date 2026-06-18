@@ -9,7 +9,11 @@
  * Intended for probing the valve drive path with a DMM — no LoRa, PMU, or
  * hub registration so it never blocks on the bench.
  *
- * Build:  cmake -B build -DHARDWARE_VARIANT=VALVETEST -DBOARD_VERSION=V4
+ * DC build:  cmake -B build -DHARDWARE_VARIANT=VALVETEST -DBOARD_VERSION=V4
+ * AC build:  cmake -B build -DHARDWARE_VARIANT=VALVETEST_AC -DBOARD_VERSION=V5
+ *
+ * The AC build (HARDWARE_IRRIGATION_AC) drives one SSR gate per valve directly;
+ * there is no H-bridge or indexer, but the open-5s-close sweep is identical.
  */
 #include "pico/stdlib.h"
 
@@ -34,7 +38,14 @@ int main()
                 static_cast<unsigned long>(VALVE_ON_DURATION_MS));
 
     // Print the full pin map so the bench observation can be correlated to silicon
-    // GPIOs. Each valve id selects one VALVE_PINS line; the shared H-bridge then
+    // GPIOs.
+#ifdef HARDWARE_IRRIGATION_AC
+    // AC: each valve id drives its own SSR gate GPIO high (open) / low (close).
+    for (uint8_t i = 0; i < ValveController::NUM_VALVES; i++) {
+        logger.info("  id %u -> SSR gate GPIO %u (high=open)", i, Board::VALVE_PINS[i]);
+    }
+#else
+    // DC: each valve id selects one VALVE_PINS line; the shared H-bridge then
     // pulses FORWARD (open) or REVERSE (close).
     logger.info("H-bridge: HI_1=%u LO_1=%u HI_2=%u LO_2=%u (FORWARD=HI_1+LO_2, REVERSE=HI_2+LO_1)",
                 Board::PIN_MOTOR_HI_1, Board::PIN_MOTOR_LO_1, Board::PIN_MOTOR_HI_2,
@@ -42,6 +53,7 @@ int main()
     for (uint8_t i = 0; i < ValveController::NUM_VALVES; i++) {
         logger.info("  id %u -> select GPIO %u", i, Board::VALVE_PINS[i]);
     }
+#endif
 
     ValveController valve_controller;
     valve_controller.initialize();
