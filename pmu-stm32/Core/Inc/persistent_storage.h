@@ -124,7 +124,7 @@ private:
     static_assert(TOTAL_USED <= FRAM::CAPACITY, "Persistent storage layout exceeds FRAM capacity");
 
     static constexpr uint32_t MAGIC = 0x4652414D;  // "FRAM" in ASCII
-    static constexpr uint32_t FORMAT_VERSION = 3;  // Bumped: MAX_SCHEDULE_ENTRIES 8->100 shifts layout
+    static constexpr uint32_t FORMAT_VERSION = 4;  // Bumped: ScheduleEntry 7->11 bytes (interval fields)
 
     uint16_t scheduleEntryOffset(uint8_t index) const
     {

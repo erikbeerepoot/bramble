@@ -92,7 +92,7 @@ constexpr uint8_t START_BYTE = 0xAA;
 constexpr uint8_t END_BYTE = 0x55;
 constexpr uint8_t MAX_SCHEDULE_ENTRIES = 100;
 constexpr uint8_t MAX_MESSAGE_SIZE = 48;  // Increased to accommodate state blob (was 32)
-constexpr uint8_t SCHEDULE_ENTRY_SIZE = 7;
+constexpr uint8_t SCHEDULE_ENTRY_SIZE = 11;
 constexpr uint8_t NODE_STATE_SIZE = 32;      // Opaque state blob stored in PMU RAM
 constexpr uint8_t MAX_BLOB_CHUNK_SIZE = 36;  // Max data bytes per SaveBlob/BlobData message
 
@@ -113,12 +113,21 @@ constexpr uint32_t TIME_VALID_MAGIC = 0xBEEF2025;
 // Schedule entry structure
 class ScheduleEntry {
 public:
-    uint8_t hour;
-    uint8_t minute;
-    uint16_t duration;  // Duration in seconds
+    uint8_t hour;       // window start hour (0-23)
+    uint8_t minute;     // window start minute (0-59)
+    uint16_t duration;  // run length per firing, in seconds
     DayOfWeek daysMask;
     uint8_t valveId;
     bool enabled;
+    // Interval (recurring) schedule support.
+    //   periodMinutes == 0  -> legacy one-shot: fires once daily at hour:minute.
+    //   periodMinutes  > 0  -> fires every periodMinutes within an active window
+    //                          [hour:minute, hour:minute + windowMinutes], i.e. at
+    //                          each offset where (offset % periodMinutes) == 0.
+    // Example "every 2h for 15min, 6am-6pm": hour=6 minute=0 duration=900
+    //                          periodMinutes=120 windowMinutes=720.
+    uint16_t periodMinutes;
+    uint16_t windowMinutes;
 
     ScheduleEntry();
 
@@ -132,18 +141,19 @@ public:
     // Returns 0xFFFFFFFF if entry doesn't match the given day
     uint32_t minutesUntil(uint8_t currentDay, uint8_t currentHour, uint8_t currentMinute) const;
 
-    // Check if current time is within this schedule entry's time window
-    // windowMinutes: how many minutes past the scheduled time to still consider "active"
+    // Check if a firing of this entry is "active" near the current time.
+    // toleranceMinutes: how many minutes around a scheduled firing to still
+    // consider active (absorbs RTC wakes that don't land exactly on the minute).
+    // For interval entries, fires near any in-window boundary, not just the start.
     bool isWithinWindow(uint8_t currentDay, uint8_t currentHour, uint8_t currentMinute,
-                        uint32_t windowMinutes) const;
+                        uint32_t toleranceMinutes) const;
 
     // Check if entry matches a specific day
     bool matchesDay(uint8_t dayOfWeek) const;
 
-private:
-    // Helper: check if time ranges overlap
-    bool timeRangesOverlap(uint8_t h1, uint8_t m1, uint16_t d1, uint8_t h2, uint8_t m2,
-                           uint16_t d2) const;
+    // Minutes of the day this entry occupies for overlap purposes: the active
+    // window for an interval entry, or the single run length for a one-shot.
+    uint32_t occupiedMinutes() const;
 };
 
 // Watering schedule manager.

@@ -16,7 +16,7 @@ namespace PMU {
 
 ScheduleEntry::ScheduleEntry()
     : hour(0), minute(0), duration(0), daysMask(static_cast<DayOfWeek>(0)), valveId(0),
-      enabled(false)
+      enabled(false), periodMinutes(0), windowMinutes(0)
 {
 }
 
@@ -32,6 +32,14 @@ bool ScheduleEntry::isValid() const
         return false;
     if (static_cast<uint8_t>(daysMask) == 0)
         return false;
+    if (periodMinutes > 0) {
+        // Interval schedule: need a non-empty active window, and each run must
+        // finish before the next firing so occurrences can't overlap.
+        if (windowMinutes == 0)
+            return false;
+        if (duration > static_cast<uint32_t>(periodMinutes) * 60)
+            return false;
+    }
     return true;
 }
 
@@ -45,8 +53,23 @@ bool ScheduleEntry::overlapsWith(const ScheduleEntry &other) const
     if (!commonDays)
         return false;  // No common days, no overlap
 
-    // Check if time ranges overlap
-    return timeRangesOverlap(hour, minute, duration, other.hour, other.minute, other.duration);
+    // An interval entry occupies its whole active window; a one-shot entry only
+    // occupies a single run. Compare the [start, start+span) ranges in minutes.
+    uint32_t start1 = hour * 60 + minute;
+    uint32_t end1 = start1 + occupiedMinutes();
+    uint32_t start2 = other.hour * 60 + other.minute;
+    uint32_t end2 = start2 + other.occupiedMinutes();
+
+    // They overlap if: start1 < end2 AND start2 < end1
+    return (start1 < end2) && (start2 < end1);
+}
+
+uint32_t ScheduleEntry::occupiedMinutes() const
+{
+    if (periodMinutes > 0) {
+        return windowMinutes;  // interval: the whole active window
+    }
+    return (duration + 59) / 60;  // one-shot: run length in minutes (ceiling)
 }
 
 uint32_t ScheduleEntry::minutesUntil(uint8_t currentDay, uint8_t currentHour,
@@ -60,15 +83,36 @@ uint32_t ScheduleEntry::minutesUntil(uint8_t currentDay, uint8_t currentHour,
     uint32_t currentMinutes = currentHour * 60 + currentMinute;
     uint32_t scheduleMinutes = hour * 60 + minute;
 
-    if (scheduleMinutes >= currentMinutes) {
-        return scheduleMinutes - currentMinutes;
+    if (periodMinutes == 0) {
+        // Legacy one-shot: fires once at the scheduled time.
+        if (scheduleMinutes >= currentMinutes) {
+            return scheduleMinutes - currentMinutes;
+        }
+        return 0xFFFFFFFF;  // Time has passed today
     }
 
-    return 0xFFFFFFFF;  // Time has passed today
+    // Interval schedule: firings at start + k*periodMinutes within the window.
+    if (currentMinutes < scheduleMinutes) {
+        return scheduleMinutes - currentMinutes;  // window hasn't started yet
+    }
+    uint32_t windowEnd = scheduleMinutes + windowMinutes;
+    if (currentMinutes > windowEnd) {
+        return 0xFFFFFFFF;  // window is over for today
+    }
+    uint32_t offset = currentMinutes - scheduleMinutes;
+    uint32_t sinceBoundary = offset % periodMinutes;
+    if (sinceBoundary == 0) {
+        return 0;  // a firing is due right now
+    }
+    uint32_t untilNext = periodMinutes - sinceBoundary;
+    if (scheduleMinutes + offset + untilNext <= windowEnd) {
+        return untilNext;
+    }
+    return 0xFFFFFFFF;  // no more firings within the window today
 }
 
 bool ScheduleEntry::isWithinWindow(uint8_t currentDay, uint8_t currentHour, uint8_t currentMinute,
-                                   uint32_t windowMinutes) const
+                                   uint32_t toleranceMinutes) const
 {
     if (!enabled)
         return false;
@@ -78,20 +122,31 @@ bool ScheduleEntry::isWithinWindow(uint8_t currentDay, uint8_t currentHour, uint
     uint32_t currentMinutes = currentHour * 60 + currentMinute;
     uint32_t scheduleMinutes = hour * 60 + minute;
 
-    // Check if we're at or past the scheduled time, but within the window
-    if (currentMinutes >= scheduleMinutes) {
-        uint32_t minutesPast = currentMinutes - scheduleMinutes;
-        return minutesPast <= windowMinutes;
+    if (periodMinutes == 0) {
+        // Legacy one-shot: active within tolerance of the single scheduled time,
+        // whether we woke slightly early or slightly late.
+        uint32_t diff = (currentMinutes >= scheduleMinutes) ? (currentMinutes - scheduleMinutes)
+                                                            : (scheduleMinutes - currentMinutes);
+        return diff <= toleranceMinutes;
     }
 
-    // Also check if we're slightly before (within the window)
-    // This handles the case where we wake slightly early
-    if (scheduleMinutes > currentMinutes) {
-        uint32_t minutesUntil = scheduleMinutes - currentMinutes;
-        return minutesUntil <= windowMinutes;
+    // Interval schedule: active if we are within tolerance of any firing boundary
+    // that itself lies inside the active window.
+    if (currentMinutes + toleranceMinutes < scheduleMinutes) {
+        return false;  // window hasn't started (beyond an early-wake tolerance)
     }
-
-    return false;
+    uint32_t windowEnd = scheduleMinutes + windowMinutes;
+    if (currentMinutes > windowEnd + toleranceMinutes) {
+        return false;  // window is over (beyond a late-wake tolerance)
+    }
+    // Distance to the nearest firing boundary (boundaries at start + k*period).
+    uint32_t offset =
+        (currentMinutes >= scheduleMinutes) ? (currentMinutes - scheduleMinutes) : 0;
+    uint32_t sinceBoundary = offset % periodMinutes;
+    uint32_t distance = sinceBoundary < (periodMinutes - sinceBoundary)
+                            ? sinceBoundary
+                            : (periodMinutes - sinceBoundary);
+    return distance <= toleranceMinutes;
 }
 
 bool ScheduleEntry::matchesDay(uint8_t dayOfWeek) const
@@ -100,21 +155,6 @@ bool ScheduleEntry::matchesDay(uint8_t dayOfWeek) const
         return false;  // Invalid day
     uint8_t dayBit = 1 << dayOfWeek;
     return (static_cast<uint8_t>(daysMask) & dayBit) != 0;
-}
-
-bool ScheduleEntry::timeRangesOverlap(uint8_t h1, uint8_t m1, uint16_t d1, uint8_t h2, uint8_t m2,
-                                      uint16_t d2) const
-{
-    // Convert to minutes since midnight
-    uint32_t start1 = h1 * 60 + m1;
-    uint32_t end1 = start1 + (d1 + 59) / 60;  // duration in seconds -> minutes (ceiling)
-
-    uint32_t start2 = h2 * 60 + m2;
-    uint32_t end2 = start2 + (d2 + 59) / 60;
-
-    // Check if ranges overlap
-    // They overlap if: start1 < end2 AND start2 < end1
-    return (start1 < end2) && (start2 < end1);
 }
 
 // ============================================================================
@@ -478,6 +518,8 @@ void MessageBuilder::addScheduleEntry(const ScheduleEntry &entry)
     addByte(static_cast<uint8_t>(entry.daysMask));
     addByte(entry.valveId);
     addByte(entry.enabled ? 1 : 0);
+    addUint16(entry.periodMinutes);
+    addUint16(entry.windowMinutes);
 }
 
 const uint8_t *MessageBuilder::finalize()
@@ -850,7 +892,7 @@ void Protocol::handleGetWakeInterval()
 
 void Protocol::handleSetSchedule(const uint8_t *data, uint8_t length)
 {
-    // Payload is index byte followed by a 7-byte ScheduleEntry.
+    // Payload is index byte followed by an 11-byte ScheduleEntry.
     if (length != SCHEDULE_ENTRY_SIZE + 1) {
         sendNack(ErrorCode::InvalidParam);
         return;
@@ -865,6 +907,8 @@ void Protocol::handleSetSchedule(const uint8_t *data, uint8_t length)
     entry.daysMask = static_cast<DayOfWeek>(data[5]);
     entry.valveId = data[6];
     entry.enabled = (data[7] != 0);
+    entry.periodMinutes = data[8] | (data[9] << 8);
+    entry.windowMinutes = data[10] | (data[11] << 8);
 
     ErrorCode result = schedule_.setEntry(index, entry);
 

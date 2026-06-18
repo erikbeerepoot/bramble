@@ -434,14 +434,13 @@ void IrrigationMode::evaluateLocalSchedules()
             continue;
         }
         const PMU::ScheduleEntry &s = ac_schedule_[i];
-        if (!s.enabled || s.hour != hour || s.minute != minute) {
+        // firesAt() handles both legacy one-shot (fires at hour:minute) and
+        // interval entries (fires at each period boundary within the window).
+        if (!s.firesAt(dow, hour, minute)) {
             continue;
         }
-        if (((static_cast<uint8_t>(s.daysMask) >> dow) & 0x01) == 0) {
-            continue;  // not scheduled today
-        }
         if (ac_schedule_last_fired_min_[i] == now_min) {
-            continue;  // already fired this occurrence
+            continue;  // already fired this occurrence (this minute)
         }
         if (s.valveId >= ValveController::NUM_VALVES) {
             continue;
