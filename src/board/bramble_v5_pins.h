@@ -109,12 +109,24 @@ inline auto API_UART_PORT = uart0;
 constexpr uint API_UART_TX_PIN = J6::PIN_10;  // GPIO 28
 constexpr uint API_UART_RX_PIN = J6::PIN_9;   // GPIO 29
 
-// --- Valve / Motor pins (4 valves, J7 header) ---
-constexpr uint8_t NUM_VALVES = 4;
+// --- Valve / Motor pins (J7 header) ---
+// H-bridge pins are always defined (used by the DC latching path; unused in an
+// AC build, where GPIO36/38 instead drive the two AC SSR gates directly).
 constexpr uint8_t PIN_MOTOR_HI_1 = J7::PIN_10;  // GPIO 36
 constexpr uint8_t PIN_MOTOR_HI_2 = J7::PIN_8;   // GPIO 38
 constexpr uint8_t PIN_MOTOR_LO_1 = J7::PIN_6;   // GPIO 40
 constexpr uint8_t PIN_MOTOR_LO_2 = J7::PIN_4;   // GPIO 42
+
+#ifdef HARDWARE_IRRIGATION_AC
+// AC variant: two AC valves switched by SSRs on GPIO36/38 (the H-bridge HI
+// pins, repurposed as direct SSR gates). No indexer.
+constexpr uint8_t NUM_VALVES = 2;
+constexpr uint8_t VALVE_PINS[NUM_VALVES] = {
+    36,  // VALVE_1 = SSR gate, silicon GPIO36
+    38,  // VALVE_2 = SSR gate, silicon GPIO38
+};
+#else
+constexpr uint8_t NUM_VALVES = 4;
 // IMPORTANT: these are *silicon* GPIO numbers (what gpio_put() drives), NOT the
 // schematic net labels. The RP2350B sheet names these nets "GPIO37/39/43/41",
 // but those nets physically land on pads GPIO29/31/41/43 — verified against the
@@ -127,6 +139,7 @@ constexpr uint8_t VALVE_PINS[NUM_VALVES] = {
     41,  // VALVE_3 = silicon GPIO41
     43,  // VALVE_4 = silicon GPIO43
 };
+#endif
 
 // --- Curtain motor pins (greenhouse variant, J7 header) ---
 constexpr uint8_t PIN_CURTAIN_OPEN = J7::PIN_6;   // GPIO 40

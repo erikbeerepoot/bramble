@@ -65,6 +65,7 @@ private:
     uint16_t wake_timeout_id_ = 0;
     uint16_t keepawake_task_id_ = 0;
     uint16_t drain_task_id_ = 0;
+    uint16_t state_watchdog_id_ = 0;
     uint32_t drain_start_ms_ = 0;
     // Per-valve auto-close deadlines as absolute unix timestamps.
     // 0 = no pending close. Array index = valve_id. The PMU's single RTC
@@ -79,6 +80,14 @@ private:
     void onStateChange(IrrigationState state);
 
     void scheduleKeepAwake();
+
+    /// Per-state safety net: re-arm a one-shot timer on entering a transient
+    /// state so a silent hub can't strand the cycle. Cancels any prior timer;
+    /// parked/long-lived states (READY_FOR_SLEEP, VALVE_ACTIVE) arm nothing.
+    /// On expiry, reportWatchdogTimeout() forces the cycle back to sleep.
+    void armStateWatchdog(IrrigationState state);
+    /// Watchdog budget per state in ms; 0 means "no watchdog for this state".
+    static uint32_t stateWatchdogMs(IrrigationState state);
 
     // PMU callback handlers
     void handlePmuWake(PMU::WakeReason reason, const PMU::ScheduleEntry *entry, bool state_valid,
@@ -110,6 +119,25 @@ private:
     void armNextValveTimer();
     /// Close any valves whose deadlines have passed. Called from handlePmuWake.
     void processExpiredValveDeadlines();
+
+#ifdef HARDWARE_IRRIGATION_AC
+    // --- AC valve node: mains-powered, always-awake ---
+    // AC SSR valves need continuous power, so the node never deep-sleeps (deep
+    // sleep would drop the SSR GPIO and close the valve). Instead it keeps the
+    // PMU powered, polls for commands/updates, fires schedules locally, and
+    // auto-closes valves on a local timer — all via periodic task_manager tasks.
+    static constexpr uint8_t AC_SCHEDULE_CACHE = 32;
+    PMU::ScheduleEntry ac_schedule_[AC_SCHEDULE_CACHE];
+    bool ac_schedule_valid_[AC_SCHEDULE_CACHE] = {false};
+    uint32_t ac_schedule_last_fired_min_[AC_SCHEDULE_CACHE] = {0};
+
+    /// Register the always-awake periodic tasks (keepalive, update poll,
+    /// schedule evaluation, auto-close). Called from onStart for the AC build.
+    void startAlwaysAwakeTasks();
+    /// Fire any schedules in the local cache whose time matches now (fire-once
+    /// per occurrence), opening the valve for its duration.
+    void evaluateLocalSchedules();
+#endif
 
 public:
     using ApplicationMode::ApplicationMode;

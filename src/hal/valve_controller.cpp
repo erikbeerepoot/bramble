@@ -13,6 +13,21 @@ void ValveController::initialize()
 
     log.info("Initializing...");
 
+#ifdef HARDWARE_IRRIGATION_AC
+    // AC SSR valves: one GPIO per valve, driven continuously while open.
+    // No H-bridge or indexer — each SSR is independent.
+    for (uint8_t i = 0; i < NUM_VALVES; i++) {
+        gpio_init(Board::VALVE_PINS[i]);
+        gpio_set_dir(Board::VALVE_PINS[i], GPIO_OUT);
+        gpio_put(Board::VALVE_PINS[i], 0);  // start closed (SSR off)
+        drivers_[i] = std::make_unique<ACValveDriver>(Board::VALVE_PINS[i]);
+        valve_states_[i] = ValveState::UNKNOWN;
+    }
+
+    initialized_ = true;
+
+    log.info("Initialized with %d AC SSR valves", NUM_VALVES);
+#else
     // Initialize H-bridge with board-specific pin mapping
     // For FORWARD: HI_1 + LO_2 active (current flows 1->2)
     // For REVERSE: HI_2 + LO_1 active (current flows 2->1)
@@ -31,6 +46,7 @@ void ValveController::initialize()
     initialized_ = true;
 
     log.info("Initialized with %d valves", NUM_VALVES);
+#endif
 }
 
 void ValveController::openValve(uint8_t valve_id)
@@ -153,15 +169,22 @@ void ValveController::operateValve(uint8_t valve_id, bool open)
 {
     log.info("Operating valve %d: %s", valve_id, open ? "OPEN" : "CLOSE");
 
-    // First ensure ALL valves are deselected to prevent crosstalk
-    indexer_.deselectAll();
-    sleep_us(500);  // Give time for any gate charge to dissipate
+    // AC SSR valves are independent GPIOs (continuous power) — no indexer
+    // select/deselect/pulse sequencing. DC latching valves are multiplexed
+    // through the indexer and pulsed via the H-bridge.
+    const bool continuous = drivers_[valve_id]->requiresContinuousPower();
 
-    // Select the valve
-    indexer_.selectValve(valve_id);
+    if (!continuous) {
+        // First ensure ALL valves are deselected to prevent crosstalk
+        indexer_.deselectAll();
+        sleep_us(500);  // Give time for any gate charge to dissipate
 
-    // Longer delay to ensure MOSFET is fully on and stable
-    sleep_us(1000);  // 1ms for gate to fully charge
+        // Select the valve
+        indexer_.selectValve(valve_id);
+
+        // Longer delay to ensure MOSFET is fully on and stable
+        sleep_us(1000);  // 1ms for gate to fully charge
+    }
 
     // Operate the valve through its driver
     if (open) {
@@ -172,9 +195,11 @@ void ValveController::operateValve(uint8_t valve_id, bool open)
         valve_states_[valve_id] = ValveState::CLOSED;
     }
 
-    // Small delay before deselecting to ensure operation completes
-    sleep_us(500);
+    if (!continuous) {
+        // Small delay before deselecting to ensure operation completes
+        sleep_us(500);
 
-    // Deselect all valves for safety
-    indexer_.deselectAll();
+        // Deselect all valves for safety
+        indexer_.deselectAll();
+    }
 }

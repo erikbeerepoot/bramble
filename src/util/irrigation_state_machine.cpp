@@ -174,6 +174,16 @@ void IrrigationStateMachine::reportWakeFromSleep(PMU::WakeReason reason)
     }
 }
 
+void IrrigationStateMachine::reportServiceTick()
+{
+    if (state_ != IrrigationState::READY_FOR_SLEEP) {
+        logger.debug("Service tick ignored - cycle already active (state: %s)", stateName(state_));
+        return;
+    }
+    logger.info("Service tick - starting heartbeat/update cycle");
+    transitionTo(IrrigationState::AWAITING_TIME);
+}
+
 void IrrigationStateMachine::reportWatchdogTimeout()
 {
     logger.warn("State watchdog timeout in %s - forcing sleep", stateName(state_));

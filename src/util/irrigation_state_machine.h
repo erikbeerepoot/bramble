@@ -223,6 +223,19 @@ public:
     void reportWakeFromSleep(PMU::WakeReason reason);
 
     /**
+     * @brief Begin a servicing cycle on an always-awake (AC) node.
+     *
+     * AC nodes never sleep, so they have no PMU wake to drive the heartbeat/
+     * update cycle. Instead a periodic timer calls this to re-enter the cycle
+     * from its parked state, driving the same path a wake would:
+     * READY_FOR_SLEEP -> AWAITING_TIME (-> heartbeat -> CHECKING_UPDATES -> ...).
+     *
+     * No-op (logged at debug) in any other state, so it never interrupts an
+     * in-flight update or an open valve.
+     */
+    void reportServiceTick();
+
+    /**
      * @brief Report that a per-state watchdog fired (generic timeout)
      *
      * Forces transition to READY_FOR_SLEEP from any state.

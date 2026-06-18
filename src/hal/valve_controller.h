@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <memory>
 
+#include "hardware/gpio.h"
 #include "pico/critical_section.h"
 
 #include "../board/board_pins.h"
@@ -61,6 +62,28 @@ public:
 private:
     HBridge *hbridge_;
     uint32_t pulse_duration_ms_;
+};
+
+/**
+ * @brief AC solenoid valve driver (SSR-switched)
+ *
+ * One GPIO per valve drives a solid-state relay: high = SSR on = valve open.
+ * The valve stays open only while the GPIO is driven, so these valves require
+ * continuous power (the node must not sleep while one is open). No H-bridge or
+ * valve indexer — each SSR is independent and several may be on simultaneously.
+ */
+class ACValveDriver : public ValveDriver {
+public:
+    explicit ACValveDriver(uint8_t gpio_pin) : pin_(gpio_pin) {}
+
+    void open() override { gpio_put(pin_, 1); }
+    void close() override { gpio_put(pin_, 0); }
+
+    bool requiresContinuousPower() override { return true; }
+    ValveType getType() override { return ValveType::AC_SOLENOID; }
+
+private:
+    uint8_t pin_;
 };
 
 /**
@@ -141,6 +164,18 @@ public:
      * @return Bitmask where bit N is 1 if valve N is open
      */
     uint8_t getActiveValveMask() const;
+
+    /**
+     * @brief Whether this controller's valves require continuous power
+     *
+     * True for AC SSR valves (the node must stay awake while any valve is
+     * open), false for DC latching valves. A node is pure-AC or pure-DC, so
+     * valve 0's driver is representative.
+     */
+    bool usesContinuousPower() const
+    {
+        return initialized_ && drivers_[0] && drivers_[0]->requiresContinuousPower();
+    }
 
     /**
      * @brief Set valve type (for future AC valve support)
