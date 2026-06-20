@@ -94,6 +94,9 @@ struct ValveEditor: View {
             Stepper(
                 "Duration: \(valve.defaultDurationSeconds / 60) min",
                 value: $valve.defaultDurationSeconds, in: 60...7200, step: 60)
+            Toggle(isOn: $valve.isPrimary) {
+                Label("Show on Lock Screen", systemImage: "lock")
+            }
         }
         .padding(.vertical, 4)
     }

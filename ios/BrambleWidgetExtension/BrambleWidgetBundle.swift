@@ -5,5 +5,6 @@ import SwiftUI
 struct BrambleWidgetBundle: WidgetBundle {
     var body: some Widget {
         ValveWidget()
+        ValveLockScreenWidget()
     }
 }

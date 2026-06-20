@@ -111,7 +111,7 @@ struct ValveWidget: Widget {
 
 enum ValveWidgetPreview {
     static let sampleValves: [ValveConfig] = [
-        ValveConfig(label: "Greenhouse 1", deviceId: "1311768467463790320", valve: 0),
+        ValveConfig(label: "Greenhouse 1", deviceId: "1311768467463790320", valve: 0, isPrimary: true),
         ValveConfig(label: "Greenhouse 2", deviceId: "1311768467463790320", valve: 1),
     ]
 }

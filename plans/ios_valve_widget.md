@@ -8,6 +8,19 @@ valves directly from a button tap, by calling the existing Bramble REST API
 tap a valve button in the widget → valve runs for a preset duration; tap stop → valve
 closes.
 
+## North star: time to task
+
+The guiding metric is **time to task** — minimizing the time from intent to starting/
+managing a watering task. Automation's value is not doing the task yourself, but you still
+have to *start and manage* it, so that step must be near-instant. This is why the primary
+surfaces are widgets (no app launch), with Control Center / Action Button / Siri as future
+accelerators, and why the host app must launch fast and stay minimal.
+
+**Surfaces, ranked by time-to-task:** Action Button (1 press) > Control Center control
+(swipe+tap) > Lock Screen widget/control (tap, no unlock) > Home Screen widget (multi-valve
+grid) > Siri/App Shortcuts > the app itself. Deployment target is **iOS 18** to keep the
+Controls API (Control Center / Action Button) available for a later phase.
+
 ## Current state
 
 - **No Apple code exists.** Only client is the React/Vite dashboard (`dashboard/`).
@@ -119,9 +132,17 @@ app only) — target iOS 17+.
 - **Phase 2 (iOS shared layer + host app):** ✅ **DONE (unbuilt).** `Shared/` (API client,
   Keychain, settings, valve config, state store) + host app (settings screen). Shared layer
   type-checks against the SDK.
-- **Phase 3 (widget extension):** ✅ **DONE (unbuilt).** WidgetKit widget + `Button(intent:)`
+- **Phase 3 (Home Screen widget):** ✅ **DONE (unbuilt).** WidgetKit widget + `Button(intent:)`
   + `RunValveIntent`/`StopValveIntent` + optimistic state display. `project.yml`, Info.plist,
   entitlements committed. **First build must happen in Xcode** (this env has CLT only — no
   iOS SDK / xcodebuild). Source parses clean; expect minor SDK/signing fixups in Xcode.
-- **Phase 4 (follow-up):** CF JWKS signature verification; `task_id`/node-status polling for
+- **Phase 3b (Lock Screen widget + primary-valve model):** ✅ **DONE (unbuilt).** Deployment
+  target bumped to iOS 18. `ValveConfig.isPrimary` (+ backward-compatible decoding) and
+  `AppSettings.primaryValves`; settings toggle to mark primaries. `ValveLockScreenWidget`
+  supports `.accessoryCircular` / `.accessoryRectangular` / `.accessoryInline`, driven by a
+  single-button `ToggleValveIntent` (run-if-idle / stop-if-running) for tiny surfaces.
+- **Phase 4 (next time-to-task surfaces):** Control Center + Action Button (`ControlWidget`,
+  iOS 18) for the primary valve; Siri / App Shortcuts (`AppShortcutsProvider`) over the
+  existing intents.
+- **Phase 5 (follow-up):** CF JWKS signature verification; `task_id`/node-status polling for
   authoritative widget state; richer multi-node config UI.

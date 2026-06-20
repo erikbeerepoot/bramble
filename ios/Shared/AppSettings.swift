@@ -37,4 +37,10 @@ struct AppSettings {
             defaults.set(data, forKey: valvesKey)
         }
     }
+
+    /// Valves marked primary, in configured order — shown on single-action surfaces
+    /// (Lock Screen accessory widgets, later Control Center / Action Button).
+    static var primaryValves: [ValveConfig] {
+        valves.filter(\.isPrimary)
+    }
 }
