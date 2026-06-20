@@ -1,10 +1,14 @@
 # Bramble Valve Widget (iOS)
 
-An iOS 17+ Home/Lock Screen **widget** to start and stop irrigation valves via the
+An iOS 18+ Home/Lock Screen **widget** to start and stop irrigation valves via the
 Bramble REST API. Each valve gets a Run and a Stop button; tapping one fires an
 **App Intent** that POSTs to the API directly from the widget process.
 
-See [`../plans/ios_valve_widget.md`](../plans/ios_valve_widget.md) for the full design.
+The north star is **time to task** — minimize the steps from intent to starting a
+watering task. The Home Screen widget shows all configured valves (Run/Stop each); the
+Lock Screen accessory widget shows your **primary** valves with a single toggle (tap to
+run, tap to stop) for the fewest possible taps. See
+[`../plans/ios_valve_widget.md`](../plans/ios_valve_widget.md) for the full design.
 
 > **Status:** source + project definition are committed and the shared networking/
 > storage layer type-checks against the SDK, but the project has **not been built**
@@ -27,7 +31,10 @@ ios/
     BrambleWidgetApp.swift, SettingsView.swift
     BrambleWidget.entitlements
   BrambleWidgetExtension/           widget extension
-    BrambleWidgetBundle.swift, ValveWidget.swift, ValveControlIntents.swift
+    BrambleWidgetBundle.swift       registers both widgets
+    ValveWidget.swift               Home Screen widget (all valves, Run/Stop)
+    ValveLockScreenWidget.swift     Lock Screen accessory widget (primary valves, toggle)
+    ValveControlIntents.swift       RunValveIntent / StopValveIntent / ToggleValveIntent
     Info.plist, BrambleWidgetExtension.entitlements
 ```
 
@@ -76,9 +83,13 @@ in the app's settings screen — it is sent as `Authorization: Bearer <token>`.
 1. Launch the app, fill in **Base URL** (`https://api.bramble.ag`), the **API token**,
    and the **CF-Access** client id/secret. Tap **Test Connection** (hits `/api/health`).
 2. Add one or more **valves**: a label, the node's `device_id` (64-bit hardware id),
-   the 0-based valve index, and a default run duration. Tap **Save**.
-3. Add the **Valves** widget to your Home or Lock Screen. Tap a valve's drop icon to run
-   it for its default duration, or the stop icon to close it.
+   the 0-based valve index, and a default run duration. Toggle **Show on Lock Screen**
+   for the one or two valves you reach for most. Tap **Save**.
+3. Add the **Valves** widget to your Home Screen — tap a valve's drop icon to run it for
+   its default duration, or the stop icon to close it.
+4. Add the **Valves (Lock Screen)** accessory widget to your Lock Screen — it shows your
+   primary valves; one tap runs an idle valve, another stops it. Circular fits one valve,
+   rectangular up to two, inline shows a running-count summary.
 
 ## Known limitations / follow-ups
 
