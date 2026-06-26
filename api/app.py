@@ -60,23 +60,44 @@ def get_serial() -> SerialInterface:
     return serial_interface
 
 
-@app.route('/api/health', methods=['GET'])
-def health():
-    """Health check endpoint."""
+def _link_status() -> dict:
+    """Best-effort serial link status; never raises.
+
+    Reads the existing interface without forcing a connect, so it is safe to
+    call from health checks and the nodes endpoint.
+    """
+    down = {'connected': False, 'last_rx_age_seconds': None, 'healthy': False}
     try:
-        serial = get_serial()
-        connected = serial.serial and serial.serial.is_open
-        return jsonify({
-            'status': 'healthy' if connected else 'degraded',
-            'serial_connected': connected,
-            'serial_port': Config.SERIAL_PORT
-        })
-    except Exception as e:
-        logger.error(f"Health check failed: {e}")
-        return jsonify({
-            'status': 'unhealthy',
-            'error': str(e)
-        }), 503
+        if serial_interface is None:
+            return down
+        return serial_interface.link_status()
+    except Exception:
+        return down
+
+
+@app.route('/api/health', methods=['GET'])
+@app.route('/healthz', methods=['GET'])
+def health():
+    """Fail-loud health check.
+
+    Returns 503 (not 200) when the serial link to the hub is down or stale, so
+    a dead link surfaces instead of being masked behind stale data.
+    """
+    link = _link_status()
+    if link['healthy']:
+        status = 'healthy'
+    elif link['connected']:
+        status = 'degraded'
+    else:
+        status = 'down'
+    payload = {
+        'status': status,
+        'serial_connected': link['connected'],
+        'serial_link_up': link['healthy'],
+        'last_sync_age_seconds': link['last_rx_age_seconds'],
+        'serial_port': Config.SERIAL_PORT,
+    }
+    return jsonify(payload), (200 if link['healthy'] else 503)
 
 
 @app.route('/api/system/time', methods=['GET'])
@@ -158,10 +179,13 @@ def _build_nodes_from_database():
         node_dict['status'] = status
         nodes.append(node_dict)
 
+    link = _link_status()
     return jsonify({
         'count': len(nodes),
         'nodes': nodes,
-        'source': 'database'
+        'source': 'database',
+        'link_up': link['healthy'],
+        'last_sync_age_seconds': link['last_rx_age_seconds'],
     })
 
 
@@ -438,10 +462,13 @@ def list_nodes():
                         node_dict['hub_queue_count'] = _get_hub_queue_count(serial, address)
                     nodes.append(node_dict)
 
+        link = _link_status()
         return jsonify({
             'count': count,
             'nodes': nodes,
-            'source': 'hub'
+            'source': 'hub',
+            'link_up': link['healthy'],
+            'last_sync_age_seconds': link['last_rx_age_seconds'],
         })
 
     except Exception as e:

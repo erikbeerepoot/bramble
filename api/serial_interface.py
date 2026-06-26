@@ -43,6 +43,10 @@ class SerialInterface:
         self.database = database
         self._batch_state: Optional[dict] = None  # Tracks in-progress batch
 
+        # Liveness: wall-clock time of the last line received from the hub.
+        # Used by link_status() for fail-loud health checks.
+        self.last_hub_rx_time: Optional[float] = None
+
     def connect(self):
         """Open serial connection to hub."""
         try:
@@ -131,12 +135,36 @@ class SerialInterface:
         "EVENT_LOG ", "EVENT ",
     ]
 
+    def link_status(self) -> dict:
+        """Report serial link liveness for fail-loud health checks.
+
+        'healthy' means the port is open AND a line was received from the hub
+        within Config.LINK_STALE_SECONDS. Because the hub streams GET_DATETIME
+        and heartbeats continuously, a longer silence means the link is
+        effectively down even when the OS still reports the port as open.
+
+        Returns:
+            dict with 'connected', 'last_rx_age_seconds' (None if never), and
+            'healthy'.
+        """
+        connected = bool(self.serial and self.serial.is_open and self.running)
+        last_rx = self.last_hub_rx_time
+        age = (time.time() - last_rx) if last_rx is not None else None
+        healthy = connected and age is not None and age <= Config.LINK_STALE_SECONDS
+        return {
+            'connected': connected,
+            'last_rx_age_seconds': round(age, 1) if age is not None else None,
+            'healthy': healthy,
+        }
+
     def _handle_line(self, line: str):
         """Process a line received from the hub.
 
         Args:
             line: Complete line from hub
         """
+        # Any line from the hub proves the link is alive (liveness signal).
+        self.last_hub_rx_time = time.time()
         logger.debug(f"Hub: {line}")
 
         # Check if line contains an embedded message (corruption recovery).
