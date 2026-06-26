@@ -14,14 +14,22 @@ class Config:
     # the iOS widget). Empty disables enforcement — preserving local/dev access.
     API_TOKEN = os.getenv('API_TOKEN', '')
 
-    # Serial settings
-    SERIAL_PORT = os.getenv('SERIAL_PORT', '/dev/ttyAMA0')
+    # Serial settings. The port is addressed via a stable udev symlink
+    # (/dev/bramble-hub) so kernel UART renumbering can't break it; see the
+    # 99-bramble-hub.rules udev rule on the hub.
+    SERIAL_PORT = os.getenv('SERIAL_PORT', '/dev/bramble-hub')
     SERIAL_BAUD = int(os.getenv('SERIAL_BAUD', '115200'))
     SERIAL_TIMEOUT = float(os.getenv('SERIAL_TIMEOUT', '1.0'))
 
     # Hub communication settings
     COMMAND_TIMEOUT = float(os.getenv('COMMAND_TIMEOUT', '5.0'))
     MAX_RETRIES = int(os.getenv('MAX_RETRIES', '3'))
+
+    # Serial link is considered stale (effectively down) if no line has been
+    # received from the hub within this many seconds. The hub emits GET_DATETIME
+    # and heartbeats continuously, so a gap this long means the link is dead even
+    # if the OS still reports the port as open.
+    LINK_STALE_SECONDS = float(os.getenv('LINK_STALE_SECONDS', '60'))
 
     # Database settings
     SENSOR_DB_PATH = os.getenv('SENSOR_DB_PATH', '/data/sensor_data.duckdb')
