@@ -1667,8 +1667,8 @@ def get_node_events(device_id: int):
     """Query events for a node.
 
     Query parameters:
-        start_time: Start timestamp (optional)
-        end_time: End timestamp (optional)
+        start_time: Start timestamp in unix milliseconds (optional)
+        end_time: End timestamp in unix milliseconds (optional)
         limit: Maximum records (default 100, max 1000)
 
     Args:

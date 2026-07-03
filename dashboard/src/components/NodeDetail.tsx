@@ -164,7 +164,7 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
     };
   }, [fetchData]);
 
-  const EVENT_WINDOW_SECONDS = 3600; // 1 hour per window
+  const EVENT_WINDOW_MS = 3600 * 1000; // 1 hour per window
   const [hasMoreEvents, setHasMoreEvents] = useState(true);
   const [loadingMoreEvents, setLoadingMoreEvents] = useState(false);
 
@@ -175,11 +175,17 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
     const merged: NodeEvent[] = [];
     for (const e of fresh) {
       const k = eventKey(e);
-      if (!seen.has(k)) { seen.add(k); merged.push(e); }
+      if (!seen.has(k)) {
+        seen.add(k);
+        merged.push(e);
+      }
     }
     for (const e of prev) {
       const k = eventKey(e);
-      if (!seen.has(k)) { seen.add(k); merged.push(e); }
+      if (!seen.has(k)) {
+        seen.add(k);
+        merged.push(e);
+      }
     }
     merged.sort((a, b) => b.timestamp - a.timestamp);
     return merged;
@@ -188,9 +194,9 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
   // Refresh: fetch the latest window and merge with any older loaded events.
   const fetchEvents = useCallback(async () => {
     try {
-      const now = Math.floor(Date.now() / 1000);
+      const now = Date.now();
       const response = await getNodeEvents(node.device_id, {
-        startTime: now - EVENT_WINDOW_SECONDS,
+        startTime: now - EVENT_WINDOW_MS,
         limit: 1000,
       });
       setEvents((prev) => mergeEvents(response.events, prev));
@@ -220,7 +226,7 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
     try {
       const oldest = events[events.length - 1].timestamp;
       const response = await getNodeEvents(node.device_id, {
-        startTime: oldest - EVENT_WINDOW_SECONDS,
+        startTime: oldest - EVENT_WINDOW_MS,
         endTime: oldest - 1,
         limit: 1000,
       });
@@ -251,7 +257,8 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
     if (!pendingEvent || pendingEvent.status !== 'pending') return;
     const match = events.find(
       (e) =>
-        e.event_code === pendingEvent.expectedEventCode && e.timestamp >= pendingEvent.createdAt - 5
+        e.event_code === pendingEvent.expectedEventCode &&
+        e.timestamp >= pendingEvent.createdAt - 5000
     );
     if (match) {
       setPendingEvent((prev) => (prev ? { ...prev, status: 'confirmed' } : null));
@@ -267,7 +274,7 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
       setPendingEvent({
         action,
         expectedEventCode: ACTION_TO_EVENT_CODE[action],
-        createdAt: Math.floor(Date.now() / 1000),
+        createdAt: Date.now(),
         status: 'pending',
       });
       fetchEvents();

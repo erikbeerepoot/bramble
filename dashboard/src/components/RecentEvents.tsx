@@ -205,9 +205,10 @@ const EVENT_VISUALS: Record<number, EventVisual> = {
   },
 };
 
+// timestamp is unix milliseconds.
 function CopyableTimestamp({ timestamp }: { timestamp: number }) {
   const [copied, setCopied] = useState(false);
-  const date = new Date(timestamp * 1000);
+  const date = new Date(timestamp);
   const isoString = date.toISOString();
 
   const handleCopy = async () => {
@@ -303,9 +304,7 @@ function commandLabel(command: NodeCommand): string {
   switch (command.command_type) {
     case 'valve_open': {
       const valve = typeof params.valve === 'number' ? params.valve : 0;
-      const dur = typeof params.duration_seconds === 'number'
-        ? params.duration_seconds
-        : null;
+      const dur = typeof params.duration_seconds === 'number' ? params.duration_seconds : null;
       return dur !== null
         ? `Valve ${valve + 1} Open · ${formatDuration(dur)}`
         : `Valve ${valve + 1} Open`;
@@ -329,9 +328,7 @@ function commandLabel(command: NodeCommand): string {
       return label;
     }
     case 'wake_interval': {
-      const interval = typeof params.interval_seconds === 'number'
-        ? params.interval_seconds
-        : null;
+      const interval = typeof params.interval_seconds === 'number' ? params.interval_seconds : null;
       return interval !== null ? `Wake Interval · ${interval}s` : 'Wake Interval';
     }
     case 'schedule_set': {
@@ -374,11 +371,10 @@ function commandStatusSuffix(command: NodeCommand): string {
       // Schedule failures pack the PMU error code into the high byte of
       // confirming_event_detail. Surface it so the user knows why.
       if (
-        (command.command_type === 'schedule_set' ||
-          command.command_type === 'schedule_remove') &&
+        (command.command_type === 'schedule_set' || command.command_type === 'schedule_remove') &&
         command.confirming_event_detail != null
       ) {
-        const errorCode = (command.confirming_event_detail >> 8) & 0xFF;
+        const errorCode = (command.confirming_event_detail >> 8) & 0xff;
         if (errorCode !== 0) {
           return ` · Failed · ${getPmuErrorName(errorCode)}`;
         }
@@ -443,7 +439,8 @@ function annotateDurations(events: NodeEvent[]): Map<number, number> {
     ) {
       const open = openByValve.get(valveId);
       if (open) {
-        const duration = event.timestamp - open.timestamp;
+        // event.timestamp is unix milliseconds; formatDuration expects seconds.
+        const duration = Math.round((event.timestamp - open.timestamp) / 1000);
         if (duration > 0) {
           durationByOpenTs.set(open.timestamp, duration);
         }
@@ -473,7 +470,10 @@ function mergeTimeline(events: NodeEvent[], commands: NodeCommand[]): TimelineIt
   const items: TimelineItem[] = [];
   for (const event of events) items.push({ kind: 'event', ts: event.timestamp, event });
   for (const command of commands) {
-    items.push({ kind: 'command', ts: command.created_at, command });
+    // event.timestamp is unix milliseconds; command.created_at is still unix
+    // seconds (command bookkeeping, unrelated to the firmware event log) —
+    // scale up so the merged/sorted `ts` field is comparable across both.
+    items.push({ kind: 'command', ts: command.created_at * 1000, command });
   }
   items.sort((a, b) => b.ts - a.ts);
   return items;
@@ -508,10 +508,7 @@ function collapseWakeCycles(dayItems: TimelineItem[]): RenderItem[] {
 
 // Compose the trailing detail string for an event row — valve/schedule id and,
 // for an OPEN with a known matching close, the watering duration.
-function eventLabelSuffix(
-  event: NodeEvent,
-  durationByOpenTs: Map<number, number>
-): string {
+function eventLabelSuffix(event: NodeEvent, durationByOpenTs: Map<number, number>): string {
   const parts: string[] = [];
   const detail = getEventDetail(event.event_code, event.data_hex);
   if (detail) parts.push(detail);
@@ -563,7 +560,7 @@ export function RecentEvents({
         (e) =>
           !(
             e.event_code === pendingEvent.expectedEventCode &&
-            e.timestamp >= pendingEvent.createdAt - 5
+            e.timestamp >= pendingEvent.createdAt - 5000
           )
       )
     : events;
@@ -576,7 +573,7 @@ export function RecentEvents({
 
   const groupedItems = timeline.reduce(
     (acc, item) => {
-      const date = new Date(item.ts * 1000);
+      const date = new Date(item.ts);
       let dayLabel: string;
       if (isToday(date)) {
         dayLabel = 'Today';
@@ -672,8 +669,7 @@ export function RecentEvents({
                 {(() => {
                   const renderItems = collapseWakeCycles(dayItems);
                   return renderItems.map((item, index) => {
-                    const adjustedIndex =
-                      pendingEvent && day === 'Today' ? index + 1 : index;
+                    const adjustedIndex = pendingEvent && day === 'Today' ? index + 1 : index;
                     const totalItems =
                       renderItems.length + (pendingEvent && day === 'Today' ? 1 : 0);
                     const isLast = adjustedIndex >= totalItems - 1;
@@ -709,11 +705,9 @@ export function RecentEvents({
                             <div className="flex items-start justify-between gap-2 mb-px">
                               <span className="text-sm font-medium text-gray-900">
                                 {commandLabel(cmd)}
-                                <span className="text-gray-400">
-                                  {commandStatusSuffix(cmd)}
-                                </span>
+                                <span className="text-gray-400">{commandStatusSuffix(cmd)}</span>
                               </span>
-                              <CopyableTimestamp timestamp={cmd.created_at} />
+                              <CopyableTimestamp timestamp={cmd.created_at * 1000} />
                             </div>
                           </div>
                         </div>
@@ -759,12 +753,12 @@ export function RecentEvents({
                                 </span>
                                 <span
                                   className="text-xs text-gray-400 font-mono"
-                                  title={`${new Date(olderTs * 1000).toISOString()} – ${new Date(
-                                    newerTs * 1000
+                                  title={`${new Date(olderTs).toISOString()} – ${new Date(
+                                    newerTs
                                   ).toISOString()}`}
                                 >
-                                  {format(new Date(olderTs * 1000), 'HH:mm:ss')} –{' '}
-                                  {format(new Date(newerTs * 1000), 'HH:mm:ss')}
+                                  {format(new Date(olderTs), 'HH:mm:ss')} –{' '}
+                                  {format(new Date(newerTs), 'HH:mm:ss')}
                                 </span>
                               </div>
                             </div>
