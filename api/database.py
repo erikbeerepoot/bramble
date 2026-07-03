@@ -206,7 +206,7 @@ class SensorDatabase:
         event_code INTEGER NOT NULL,
         data_hex VARCHAR,
         received_at INTEGER NOT NULL,
-        UNIQUE(device_id, timestamp, event_code)
+        UNIQUE(device_id, timestamp, event_code, data_hex)
     );
 
     CREATE INDEX IF NOT EXISTS idx_events_device_time
@@ -426,6 +426,39 @@ class SensorDatabase:
                 logger.info("Migrated nodes: added valve_count column")
         except Exception as e:
             logger.warning(f"Nodes schema migration check failed: {e}")
+
+        # Widen node_events' UNIQUE constraint to include data_hex — the old
+        # constraint (device_id, timestamp, event_code) silently dropped
+        # distinct same-second, same-type events (e.g. VALVE_OPEN on two
+        # different valves) as "duplicates".
+        try:
+            constraint_rows = conn.execute(
+                "SELECT constraint_column_names FROM duckdb_constraints() "
+                "WHERE table_name = 'node_events' AND constraint_type = 'UNIQUE'"
+            ).fetchall()
+            unique_cols = constraint_rows[0][0] if constraint_rows else []
+            if 'data_hex' not in unique_cols:
+                conn.execute("""
+                    CREATE TABLE node_events_new (
+                        id INTEGER PRIMARY KEY,
+                        device_id UBIGINT NOT NULL,
+                        timestamp INTEGER NOT NULL,
+                        event_code INTEGER NOT NULL,
+                        data_hex VARCHAR,
+                        received_at INTEGER NOT NULL,
+                        UNIQUE(device_id, timestamp, event_code, data_hex)
+                    )
+                """)
+                conn.execute("INSERT INTO node_events_new SELECT * FROM node_events")
+                conn.execute("DROP TABLE node_events")
+                conn.execute("ALTER TABLE node_events_new RENAME TO node_events")
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_events_device_time "
+                    "ON node_events(device_id, timestamp)"
+                )
+                logger.info("Migrated node_events: widened UNIQUE constraint to include data_hex")
+        except Exception as e:
+            logger.warning(f"node_events schema migration check failed: {e}")
 
     def close(self):
         """Close the persistent database connection."""
@@ -1664,7 +1697,7 @@ class SensorDatabase:
                     INSERT INTO node_events
                     (id, device_id, timestamp, event_code, data_hex, received_at)
                     VALUES (?, ?, ?, ?, ?, ?)
-                    ON CONFLICT (device_id, timestamp, event_code) DO NOTHING
+                    ON CONFLICT (device_id, timestamp, event_code, data_hex) DO NOTHING
                 """, (new_id, device_id, timestamp, event_code, data_hex, received_at))
 
                 count = conn.execute(
