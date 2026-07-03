@@ -11,14 +11,14 @@ export interface ZonesResponse {
 }
 
 export interface ValveGroupMember {
-  zone_device_id: string;  // String to preserve 64-bit precision
+  zone_device_id: string; // String to preserve 64-bit precision
   zone_valve: number;
 }
 
 export interface ValveGroup {
   id: number;
   name: string;
-  master_device_id: string;  // String to preserve 64-bit precision
+  master_device_id: string; // String to preserve 64-bit precision
   master_valve: number;
   members: ValveGroupMember[];
   created_at: number;
@@ -31,7 +31,7 @@ export interface ValveGroupsResponse {
 }
 
 export interface NodeMetadata {
-  device_id: string;  // String to preserve 64-bit precision
+  device_id: string; // String to preserve 64-bit precision
   name: string | null;
   notes: string | null;
   zone_id: number | null;
@@ -39,7 +39,7 @@ export interface NodeMetadata {
 }
 
 export interface NodeStatus {
-  device_id: string;  // String to preserve 64-bit precision
+  device_id: string; // String to preserve 64-bit precision
   address: number | null;
   battery_level: number | null;
   error_flags: number | null;
@@ -59,48 +59,50 @@ export const NodeType = {
   GENERIC: 'GENERIC',
 } as const;
 
-export type NodeTypeValue = typeof NodeType[keyof typeof NodeType];
+export type NodeTypeValue = (typeof NodeType)[keyof typeof NodeType];
 
 export interface Node {
-  device_id: string;  // Primary identifier (string to preserve 64-bit precision)
-  address: number;    // LoRa address (for routing)
+  device_id: string; // Primary identifier (string to preserve 64-bit precision)
+  address: number; // LoRa address (for routing)
   type: NodeTypeValue;
   online: boolean;
   last_seen_seconds: number;
   firmware_version: string | null;
-  valve_count?: number | null;  // Number of valves; absent/null if unknown (old firmware)
+  valve_count?: number | null; // Number of valves; absent/null if unknown (old firmware)
   metadata?: NodeMetadata;
   status?: NodeStatus;
   hub_queue_count?: number | null;
 }
 
 // Error flag constants (match firmware ERR_FLAG_* in message.h)
-export const ERR_FLAG_NONE              = 0x00;
-export const ERR_FLAG_SENSOR_FAILURE    = 0x01;
-export const ERR_FLAG_FLASH_FAILURE     = 0x02;
-export const ERR_FLAG_FLASH_FULL        = 0x04;
-export const ERR_FLAG_PMU_FAILURE       = 0x08;
-export const ERR_FLAG_BATTERY_LOW       = 0x10;
-export const ERR_FLAG_BATTERY_CRITICAL  = 0x20;
-export const ERR_FLAG_RTC_NOT_SYNCED    = 0x40;
-export const ERR_FLAG_RADIO_ISSUE       = 0x80;
+export const ERR_FLAG_NONE = 0x00;
+export const ERR_FLAG_SENSOR_FAILURE = 0x01;
+export const ERR_FLAG_FLASH_FAILURE = 0x02;
+export const ERR_FLAG_FLASH_FULL = 0x04;
+export const ERR_FLAG_PMU_FAILURE = 0x08;
+export const ERR_FLAG_BATTERY_LOW = 0x10;
+export const ERR_FLAG_BATTERY_CRITICAL = 0x20;
+export const ERR_FLAG_RTC_NOT_SYNCED = 0x40;
+export const ERR_FLAG_RADIO_ISSUE = 0x80;
 
 // Error flag descriptions for display
 export const ERROR_FLAG_INFO: Record<number, { label: string; severity: 'warning' | 'error' }> = {
-  [ERR_FLAG_SENSOR_FAILURE]:   { label: 'Sensor Failure',   severity: 'error' },
-  [ERR_FLAG_FLASH_FAILURE]:    { label: 'Flash Failure',    severity: 'error' },
-  [ERR_FLAG_FLASH_FULL]:       { label: 'Flash Full',       severity: 'warning' },
-  [ERR_FLAG_PMU_FAILURE]:      { label: 'PMU Failure',      severity: 'error' },
-  [ERR_FLAG_BATTERY_LOW]:      { label: 'Low Battery',      severity: 'warning' },
+  [ERR_FLAG_SENSOR_FAILURE]: { label: 'Sensor Failure', severity: 'error' },
+  [ERR_FLAG_FLASH_FAILURE]: { label: 'Flash Failure', severity: 'error' },
+  [ERR_FLAG_FLASH_FULL]: { label: 'Flash Full', severity: 'warning' },
+  [ERR_FLAG_PMU_FAILURE]: { label: 'PMU Failure', severity: 'error' },
+  [ERR_FLAG_BATTERY_LOW]: { label: 'Low Battery', severity: 'warning' },
   [ERR_FLAG_BATTERY_CRITICAL]: { label: 'Critical Battery', severity: 'error' },
-  [ERR_FLAG_RTC_NOT_SYNCED]:   { label: 'RTC Not Synced',   severity: 'warning' },
-  [ERR_FLAG_RADIO_ISSUE]:      { label: 'Radio Issue',      severity: 'warning' },
+  [ERR_FLAG_RTC_NOT_SYNCED]: { label: 'RTC Not Synced', severity: 'warning' },
+  [ERR_FLAG_RADIO_ISSUE]: { label: 'Radio Issue', severity: 'warning' },
 };
 
 /**
  * Parse error flags into an array of active errors
  */
-export function parseErrorFlags(flags: number | null): Array<{ flag: number; label: string; severity: 'warning' | 'error' }> {
+export function parseErrorFlags(
+  flags: number | null
+): Array<{ flag: number; label: string; severity: 'warning' | 'error' }> {
   if (flags === null || flags === 0) return [];
 
   const errors: Array<{ flag: number; label: string; severity: 'warning' | 'error' }> = [];
@@ -122,8 +124,8 @@ export function getHealthStatus(flags: number | null): 'healthy' | 'warning' | '
   if (flags === null || flags === 0) return 'healthy';
 
   const errors = parseErrorFlags(flags);
-  if (errors.some(e => e.severity === 'error')) return 'error';
-  if (errors.some(e => e.severity === 'warning')) return 'warning';
+  if (errors.some((e) => e.severity === 'error')) return 'error';
+  if (errors.some((e) => e.severity === 'warning')) return 'warning';
   return 'healthy';
 }
 
@@ -144,7 +146,7 @@ const RSSI_EXCELLENT = -65;
 const RSSI_GOOD = -85;
 const RSSI_FAIR = -100;
 
-const SNR_USE_RSSI_THRESHOLD = 7;  // Above this, RSSI is more meaningful
+const SNR_USE_RSSI_THRESHOLD = 7; // Above this, RSSI is more meaningful
 const SNR_GOOD = 0;
 const SNR_FAIR = -10;
 
@@ -181,7 +183,11 @@ export function getSignalQuality(
 /**
  * Get battery status from level
  */
-export function getBatteryStatus(level: number | null): { label: string; color: string; isExternal: boolean } {
+export function getBatteryStatus(level: number | null): {
+  label: string;
+  color: string;
+  isExternal: boolean;
+} {
   if (level === null) return { label: 'Unknown', color: 'gray', isExternal: false };
   if (level === 255) return { label: 'External', color: 'blue', isExternal: true };
   if (level > 60) return { label: `${level}%`, color: 'green', isExternal: false };
@@ -214,30 +220,30 @@ export interface SensorReading {
   temperature_celsius: number;
   humidity_percent: number;
   // Optional fields (not included in compact/downsampled responses)
-  device_id?: string;  // String to preserve 64-bit precision
+  device_id?: string; // String to preserve 64-bit precision
   address?: number | null;
   temperature_raw?: number;
   humidity_raw?: number;
   flags?: number;
   received_at?: number;
-  sample_count?: number;  // Present in downsampled responses
+  sample_count?: number; // Present in downsampled responses
 }
 
 export interface SensorDataResponse {
-  device_id: string;  // String to preserve 64-bit precision
+  device_id: string; // String to preserve 64-bit precision
   count: number;
   downsampled?: boolean;
   readings: SensorReading[];
 }
 
 export interface NodeStatistics {
-  device_id: string;  // String to preserve 64-bit precision
+  device_id: string; // String to preserve 64-bit precision
   address: number | null;
   node_type: string;
   first_seen_at: number;
   last_seen_at: number;
   total_readings: number;
-  reading_count?: number;  // Count of readings in the queried time range
+  reading_count?: number; // Count of readings in the queried time range
   temperature: {
     min_celsius: number | null;
     max_celsius: number | null;
@@ -253,7 +259,7 @@ export interface NodeStatistics {
 // Node event types
 export interface NodeEvent {
   device_id: string;
-  timestamp: number;
+  timestamp: number; // unix milliseconds
   event_code: number;
   data_hex: string;
   received_at: number;
@@ -267,12 +273,7 @@ export interface NodeEventsResponse {
 
 // Audit log entry for an ad-hoc dashboard command. Schedules are tracked in
 // the schedules table; this is for valve-run/stop, curtain, wake-interval.
-export type NodeCommandStatus =
-  | 'pending'
-  | 'confirmed'
-  | 'failed'
-  | 'expired'
-  | 'cancelled';
+export type NodeCommandStatus = 'pending' | 'confirmed' | 'failed' | 'expired' | 'cancelled';
 
 export type NodeCommandType =
   | 'valve_open'
@@ -338,7 +339,7 @@ export function getPmuErrorName(code: number): string {
 // For APPLIED/REMOVED, error_code is always 0; for FAILED it carries the
 // reason the PMU rejected the schedule.
 export function parseScheduleDetail(detail: number): { index: number; errorCode: number } {
-  return { index: detail & 0xFF, errorCode: (detail >> 8) & 0xFF };
+  return { index: detail & 0xff, errorCode: (detail >> 8) & 0xff };
 }
 
 // Human-readable suffix for the event row (e.g. "Valve 1", "#3").
@@ -354,7 +355,7 @@ export function getEventDetail(code: number, dataHex: string | null | undefined)
       return `Valve ${detail + 1}`;
     case EventType.SCHEDULE_APPLIED:
     case EventType.SCHEDULE_REMOVED:
-      return `#${detail & 0xFF}`;
+      return `#${detail & 0xff}`;
     case EventType.SCHEDULE_FAILED: {
       const { index, errorCode } = parseScheduleDetail(detail);
       return errorCode !== 0 ? `#${index} · ${getPmuErrorName(errorCode)}` : `#${index}`;
@@ -364,14 +365,13 @@ export function getEventDetail(code: number, dataHex: string | null | undefined)
   }
 }
 
-
 // Irrigation schedule types
 export interface IrrigationSchedule {
   index: number;
   hour: number;
   minute: number;
-  duration: number;  // seconds
-  days: number;      // bitmask (127 = all days)
+  duration: number; // seconds
+  days: number; // bitmask (127 = all days)
   valve: number;
   created_at: number;
   status?: 'pending' | 'confirmed' | 'failed';
@@ -429,7 +429,10 @@ export const TIME_RANGES: Record<Exclude<TimeRange, 'custom'>, TimeRangeConfig> 
 /**
  * Get backlog status color based on count
  */
-export function getBacklogStatus(count: number | null | undefined): { color: string; label: string } {
+export function getBacklogStatus(count: number | null | undefined): {
+  color: string;
+  label: string;
+} {
   if (count === null || count === undefined) return { color: 'gray', label: 'Unknown' };
   if (count === 0) return { color: 'green', label: 'Clear' };
   if (count < 50) return { color: 'yellow', label: 'Pending' };

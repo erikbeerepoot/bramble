@@ -28,16 +28,13 @@ public:
     void record(EventType type, uint8_t severity, uint16_t detail)
     {
         uint32_t now_ms = to_ms_since_boot(get_absolute_time());
-        uint32_t offset_s = 0;
+        uint32_t offset_ms = 0;
         if (now_ms >= time_ref_uptime_ms_) {
-            offset_s = (now_ms - time_ref_uptime_ms_) / 1000;
-        }
-        if (offset_s > 65535) {
-            offset_s = 65535;
+            offset_ms = now_ms - time_ref_uptime_ms_;
         }
 
         EventRecord &rec = records_[write_index_];
-        rec.uptime_offset = static_cast<uint16_t>(offset_s);
+        rec.uptime_offset = offset_ms;
         rec.event_type = static_cast<uint8_t>(type);
         rec.severity = severity;
         rec.detail = detail;

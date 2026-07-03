@@ -799,19 +799,20 @@ void HubMode::handleEventLogBatch(uint16_t source_addr, const EventLogBatchPaylo
     uint64_to_str(device_id, device_id_str, sizeof(device_id_str));
 
     // Forward each event record as a separate line to Raspberry Pi
-    // Format: EVENT_LOG <addr> <device_id> <unix_ts> <event_type> <severity> <detail>
+    // Format: EVENT_LOG <addr> <device_id> <unix_ts_ms> <event_type> <severity> <detail>
     for (uint8_t i = 0; i < batch->record_count; i++) {
         const EventRecord &rec = batch->records[i];
 
-        // Reconstruct unix timestamp from time reference + offset
-        uint32_t unix_ts = 0;
+        // Reconstruct unix millisecond timestamp from time reference + offset
+        uint64_t unix_ts_ms = 0;
         if (batch->time_ref_unix > 0) {
-            unix_ts = batch->time_ref_unix + rec.uptime_offset;
+            unix_ts_ms = static_cast<uint64_t>(batch->time_ref_unix) * 1000 + rec.uptime_offset;
         }
 
         char line[128];
-        snprintf(line, sizeof(line), "EVENT_LOG %u %s %lu %u %u %u\n", source_addr, device_id_str,
-                 static_cast<unsigned long>(unix_ts), rec.event_type, rec.severity, rec.detail);
+        snprintf(line, sizeof(line), "EVENT_LOG %u %s %llu %u %u %u\n", source_addr, device_id_str,
+                 static_cast<unsigned long long>(unix_ts_ms), rec.event_type, rec.severity,
+                 rec.detail);
         uartSend(line);
     }
 

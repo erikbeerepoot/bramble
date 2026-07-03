@@ -327,21 +327,21 @@ struct __attribute__((packed)) BatchAckPayload {
 };
 
 // Event log batch constants
-// Max records: (247 payload - 9 batch header) / 6 bytes per record = 39
-// Use 32 as a practical limit
-constexpr size_t MAX_EVENT_BATCH_RECORDS = 32;
+// Max records: (247 payload - 9 batch header) / 8 bytes per record = 29
+constexpr size_t MAX_EVENT_BATCH_RECORDS = 29;
 
 /**
  * @brief Event log batch payload (Node → Hub)
  *
  * Transmits multiple event records in a single BEST_EFFORT message.
- * Hub reconstructs unix timestamps from the time reference and per-record offsets.
+ * Hub reconstructs unix millisecond timestamps from the time reference and
+ * per-record millisecond offsets.
  */
 struct __attribute__((packed)) EventLogBatchPayload {
     uint32_t time_ref_unix;                        // Unix timestamp at reference point
     uint32_t time_ref_uptime;                      // Uptime (ms) at reference point
-    uint8_t record_count;                          // Number of records (1-32)
-    EventRecord records[MAX_EVENT_BATCH_RECORDS];  // 6 bytes each
+    uint8_t record_count;                          // Number of records (1-29)
+    EventRecord records[MAX_EVENT_BATCH_RECORDS];  // 8 bytes each
 };
 
 /**
