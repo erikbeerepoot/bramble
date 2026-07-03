@@ -487,13 +487,18 @@ class SerialInterface:
             device_id = int(parts[2])
             event_code = int(parts[3])
             data_hex = parts[4] if len(parts) >= 5 else ""
+            # This notification carries no firmware timestamp (unlike
+            # EVENT_LOG's offset scheme) — stamped on receipt. node_events
+            # stores milliseconds; command reconciliation still expects
+            # seconds, so keep both.
             timestamp = int(time.time())
+            timestamp_ms = timestamp * 1000
 
             if device_id == 0:
                 logger.warning(f"Event from node {parts[1]} has no device_id, skipping")
                 return
 
-            if self.database.insert_event(device_id, timestamp, event_code, data_hex):
+            if self.database.insert_event(device_id, timestamp_ms, event_code, data_hex):
                 logger.info(f"Stored event: device_id={device_id}, code=0x{event_code:04X}, data={data_hex}")
             else:
                 logger.debug(f"Duplicate event: device_id={device_id}, code=0x{event_code:04X}")
@@ -509,7 +514,14 @@ class SerialInterface:
     def _handle_event_log(self, line: str):
         """Handle event log record from hub.
 
-        Format: EVENT_LOG <node_addr> <device_id> <unix_ts> <event_type> <severity> <detail>
+        Format: EVENT_LOG <node_addr> <device_id> <unix_ts_ms> <event_type> <severity> <detail>
+
+        The hub now sends a millisecond-precision unix timestamp (previously
+        seconds) so distinct same-second events (e.g. WAKE/SLEEP_ENTER on a
+        sub-second wake cycle) are distinguishable. node_events stores the
+        full millisecond value; other tables (schedule/command confirmation)
+        still expect second-precision, so `unix_ts` is floored back to
+        seconds before being passed to them.
         """
         if not self.database:
             logger.warning("Received event log but no database configured")
@@ -522,7 +534,8 @@ class SerialInterface:
                 return
 
             device_id = int(parts[2])
-            unix_ts = int(parts[3])
+            unix_ts_ms = int(parts[3])
+            unix_ts = unix_ts_ms // 1000
             event_type = int(parts[4])
             severity = int(parts[5])
             detail = int(parts[6])
@@ -533,7 +546,7 @@ class SerialInterface:
 
             # Store as a node event (event_code = event_type, data_hex = severity:detail)
             data_hex = f"{severity:02X}{detail:04X}"
-            self.database.insert_event(device_id, unix_ts, event_type, data_hex)
+            self.database.insert_event(device_id, unix_ts_ms, event_type, data_hex)
 
             # For schedule events the firmware packs the PMU error code into
             # the high byte of `detail` and the schedule index into the low

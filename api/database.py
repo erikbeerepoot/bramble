@@ -202,7 +202,7 @@ class SensorDatabase:
     CREATE TABLE IF NOT EXISTS node_events (
         id INTEGER PRIMARY KEY,
         device_id UBIGINT NOT NULL,
-        timestamp INTEGER NOT NULL,
+        timestamp BIGINT NOT NULL,
         event_code INTEGER NOT NULL,
         data_hex VARCHAR,
         received_at INTEGER NOT NULL,
@@ -459,6 +459,45 @@ class SensorDatabase:
                 logger.info("Migrated node_events: widened UNIQUE constraint to include data_hex")
         except Exception as e:
             logger.warning(f"node_events schema migration check failed: {e}")
+
+        # Widen node_events.timestamp from INTEGER (unix seconds) to BIGINT
+        # (unix milliseconds) — firmware/hub now send millisecond-precision
+        # event timestamps. Existing rows are second-precision, so multiply
+        # by 1000 to keep them on the same millisecond scale as new rows.
+        try:
+            ts_cols = conn.execute(
+                "SELECT data_type FROM information_schema.columns "
+                "WHERE table_name = 'node_events' AND column_name = 'timestamp'"
+            ).fetchall()
+            if ts_cols and ts_cols[0][0] != 'BIGINT':
+                conn.execute("""
+                    CREATE TABLE node_events_new (
+                        id INTEGER PRIMARY KEY,
+                        device_id UBIGINT NOT NULL,
+                        timestamp BIGINT NOT NULL,
+                        event_code INTEGER NOT NULL,
+                        data_hex VARCHAR,
+                        received_at INTEGER NOT NULL,
+                        UNIQUE(device_id, timestamp, event_code, data_hex)
+                    )
+                """)
+                conn.execute("""
+                    INSERT INTO node_events_new
+                    SELECT id, device_id, timestamp * 1000, event_code, data_hex, received_at
+                    FROM node_events
+                """)
+                conn.execute("DROP TABLE node_events")
+                conn.execute("ALTER TABLE node_events_new RENAME TO node_events")
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_events_device_time "
+                    "ON node_events(device_id, timestamp)"
+                )
+                logger.info(
+                    "Migrated node_events: timestamp widened to BIGINT milliseconds "
+                    "(existing rows scaled x1000)"
+                )
+        except Exception as e:
+            logger.warning(f"node_events timestamp migration check failed: {e}")
 
     def close(self):
         """Close the persistent database connection."""
@@ -1681,7 +1720,7 @@ class SensorDatabase:
 
         Args:
             device_id: Device identifier
-            timestamp: Event timestamp (unix seconds)
+            timestamp: Event timestamp (unix milliseconds)
             event_code: Event type code
             data_hex: Hex-encoded event detail data
 

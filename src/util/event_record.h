@@ -41,12 +41,12 @@ enum class EventType : uint8_t {
 };
 
 /**
- * @brief Compact 6-byte event record for logging notable node events
+ * @brief Compact 8-byte event record for logging notable node events
  */
 struct __attribute__((packed)) EventRecord {
-    uint16_t uptime_offset;  // Seconds since time reference (wraps at 65535)
+    uint32_t uptime_offset;  // Milliseconds since time reference
     uint8_t event_type;      // EventType enum value
     uint8_t severity;        // 0=info, 1=warn, 2=error
     uint16_t detail;         // Event-specific detail value
 };
-static_assert(sizeof(EventRecord) == 6, "EventRecord must be 6 bytes");
+static_assert(sizeof(EventRecord) == 8, "EventRecord must be 8 bytes");
