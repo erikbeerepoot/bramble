@@ -229,7 +229,8 @@ void HubMode::processIncomingMessage(uint8_t *rx_buffer, int rx_len, uint32_t cu
             // Forward batched event log records to Raspberry Pi
             const EventLogBatchPayload *batch =
                 reinterpret_cast<const EventLogBatchPayload *>(rx_buffer + sizeof(MessageHeader));
-            handleEventLogBatch(header->src_addr, batch);
+            size_t payload_length = static_cast<size_t>(rx_len) - sizeof(MessageHeader);
+            handleEventLogBatch(header->src_addr, batch, payload_length);
             // Fall through to base class (BEST_EFFORT, no ACK needed)
         } else if (header->type == MSG_TYPE_SENSOR_DATA_BATCH) {
             // Forward batch sensor data to Raspberry Pi
@@ -782,9 +783,44 @@ void HubMode::handleEvent(uint16_t source_addr, const EventPayload *payload)
                  payload->event_code, payload->data_length);
 }
 
-void HubMode::handleEventLogBatch(uint16_t source_addr, const EventLogBatchPayload *batch)
+void HubMode::handleEventLogBatch(uint16_t source_addr, const EventLogBatchPayload *batch,
+                                  size_t payload_length)
 {
-    if (!batch || batch->record_count == 0 || batch->record_count > MAX_EVENT_BATCH_RECORDS) {
+    if (!batch || payload_length < 9) {
+        return;
+    }
+
+    uint8_t record_count = batch->record_count;
+    if (record_count == 0 || record_count > MAX_LEGACY_EVENT_BATCH_RECORDS) {
+        return;
+    }
+
+    // Distinguish the current (8-byte EventRecord, millisecond offset) wire
+    // format from the legacy one (6-byte EventRecordV1, whole-second offset,
+    // sent by nodes still on pre-ms-precision firmware). Both share the same
+    // 9-byte header (time_ref_unix, time_ref_uptime, record_count) — only the
+    // actual received length disambiguates which record stride was used, since
+    // record_count * 6 == record_count * 8 only when record_count is 0.
+    // TODO(remove-after-fleet-upgrade): see EventRecordV1 in event_record.h —
+    // once no node in the fleet sends this format anymore, delete the
+    // is_legacy branch below along with EventRecordV1.
+    //
+    // Deliberately NOT using NodeInfo::firmware_version to decide the format:
+    // BRAMBLE_VERSION_BUILD auto-increments on every `cmake configure`
+    // (CMakeLists.txt), not on meaningful releases, so it can't reliably be
+    // compared against a hardcoded cutoff. The length arithmetic below is
+    // exact and needs no version guessing. firmware_version is still logged
+    // below (informational only) to help identify which physical node needs
+    // reflashing.
+    size_t expected_current = 9 + static_cast<size_t>(record_count) * sizeof(EventRecord);
+    size_t expected_legacy = 9 + static_cast<size_t>(record_count) * sizeof(EventRecordV1);
+
+    bool is_current = payload_length == expected_current && record_count <= MAX_EVENT_BATCH_RECORDS;
+    bool is_legacy = !is_current && payload_length == expected_legacy;
+
+    if (!is_current && !is_legacy) {
+        logger.warn("Malformed EVENT_LOG batch from node %u (len=%zu, count=%u)", source_addr,
+                    payload_length, record_count);
         return;
     }
 
@@ -800,23 +836,49 @@ void HubMode::handleEventLogBatch(uint16_t source_addr, const EventLogBatchPaylo
 
     // Forward each event record as a separate line to Raspberry Pi
     // Format: EVENT_LOG <addr> <device_id> <unix_ts_ms> <event_type> <severity> <detail>
-    for (uint8_t i = 0; i < batch->record_count; i++) {
-        const EventRecord &rec = batch->records[i];
+    if (is_current) {
+        for (uint8_t i = 0; i < record_count; i++) {
+            const EventRecord &rec = batch->records[i];
 
-        // Reconstruct unix millisecond timestamp from time reference + offset
-        uint64_t unix_ts_ms = 0;
-        if (batch->time_ref_unix > 0) {
-            unix_ts_ms = static_cast<uint64_t>(batch->time_ref_unix) * 1000 + rec.uptime_offset;
+            // Reconstruct unix millisecond timestamp from time reference + offset
+            uint64_t unix_ts_ms = 0;
+            if (batch->time_ref_unix > 0) {
+                unix_ts_ms = static_cast<uint64_t>(batch->time_ref_unix) * 1000 + rec.uptime_offset;
+            }
+
+            char line[128];
+            snprintf(line, sizeof(line), "EVENT_LOG %u %s %llu %u %u %u\n", source_addr,
+                     device_id_str, static_cast<unsigned long long>(unix_ts_ms), rec.event_type,
+                     rec.severity, rec.detail);
+            uartSend(line);
         }
+    } else {
+        // Legacy node: whole-second offset. Reconstruct in seconds (as the
+        // old code did), then scale to milliseconds so node_events stays
+        // uniformly millisecond-based regardless of which firmware sent it.
+        const EventRecordV1 *legacy_records =
+            reinterpret_cast<const EventRecordV1 *>(batch->records);
+        for (uint8_t i = 0; i < record_count; i++) {
+            const EventRecordV1 &rec = legacy_records[i];
 
-        char line[128];
-        snprintf(line, sizeof(line), "EVENT_LOG %u %s %llu %u %u %u\n", source_addr, device_id_str,
-                 static_cast<unsigned long long>(unix_ts_ms), rec.event_type, rec.severity,
-                 rec.detail);
-        uartSend(line);
+            uint64_t unix_ts_ms = 0;
+            if (batch->time_ref_unix > 0) {
+                unix_ts_ms =
+                    (static_cast<uint64_t>(batch->time_ref_unix) + rec.uptime_offset) * 1000;
+            }
+
+            char line[128];
+            snprintf(line, sizeof(line), "EVENT_LOG %u %s %llu %u %u %u\n", source_addr,
+                     device_id_str, static_cast<unsigned long long>(unix_ts_ms), rec.event_type,
+                     rec.severity, rec.detail);
+            uartSend(line);
+        }
+        logger.info("Node %u (device_id=%s, firmware=0x%08lX) sent legacy-format event log batch — "
+                    "needs reflashing to get millisecond-precision events",
+                    source_addr, device_id_str, node ? (unsigned long)node->firmware_version : 0UL);
     }
 
-    logger.debug("Forwarded %u event log records from node %u", batch->record_count, source_addr);
+    logger.debug("Forwarded %u event log records from node %u", record_count, source_addr);
 }
 
 void HubMode::handleHeartbeat(uint16_t source_addr, const HeartbeatPayload *payload, int16_t rssi)

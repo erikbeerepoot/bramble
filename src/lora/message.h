@@ -329,6 +329,9 @@ struct __attribute__((packed)) BatchAckPayload {
 // Event log batch constants
 // Max records: (247 payload - 9 batch header) / 8 bytes per record = 29
 constexpr size_t MAX_EVENT_BATCH_RECORDS = 29;
+// Cap for the legacy 6-byte-record wire format (pre-ms-precision firmware),
+// used only by the hub to bound-check batches from not-yet-updated nodes.
+constexpr size_t MAX_LEGACY_EVENT_BATCH_RECORDS = 32;
 
 /**
  * @brief Event log batch payload (Node → Hub)
