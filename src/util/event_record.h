@@ -50,3 +50,23 @@ struct __attribute__((packed)) EventRecord {
     uint16_t detail;         // Event-specific detail value
 };
 static_assert(sizeof(EventRecord) == 8, "EventRecord must be 8 bytes");
+
+/**
+ * @brief Legacy 6-byte wire format, used only by hub_mode.cpp to parse
+ * EVENT_LOG batches from nodes still running pre-ms-precision firmware.
+ * Not used for new records — do not construct this on the TX side.
+ *
+ * TODO(remove-after-fleet-upgrade): once every deployed node has been
+ * reflashed past the ms-precision change (this struct's introduction),
+ * delete this struct and the legacy-format branch in
+ * HubMode::handleEventLogBatch (src/modes/hub_mode.cpp). Check for
+ * "sent legacy-format event log batch" in hub logs across the fleet to
+ * confirm no node is still sending this format before removing it.
+ */
+struct __attribute__((packed)) EventRecordV1 {
+    uint16_t uptime_offset;  // Seconds since time reference (wraps at 65535)
+    uint8_t event_type;      // EventType enum value
+    uint8_t severity;        // 0=info, 1=warn, 2=error
+    uint16_t detail;         // Event-specific detail value
+};
+static_assert(sizeof(EventRecordV1) == 6, "EventRecordV1 must be 6 bytes");

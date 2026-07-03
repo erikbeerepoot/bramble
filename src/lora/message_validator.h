@@ -128,7 +128,9 @@ public:
                                                2);
 
             case MSG_TYPE_EVENT_LOG:
-                // Batch header (9 bytes) + variable records (6 bytes each)
+                // Batch header (9 bytes) + variable records (6 bytes each, legacy
+                // firmware, or 8 bytes each, current firmware — hub_mode.cpp
+                // disambiguates the two using record_count vs actual length)
                 return payload_length >= 9 && payload_length <= sizeof(EventLogBatchPayload);
 
             default:
