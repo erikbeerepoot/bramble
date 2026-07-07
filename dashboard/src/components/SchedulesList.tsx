@@ -8,6 +8,7 @@ interface SchedulesListProps {
   deletingIndex: number | null;
   onDelete: (index: number) => void;
   onAdd: () => void;
+  valveLabel?: (valve: number) => string;  // Friendly name for a valve index
 }
 
 function formatTime(hour: number, minute: number): string {
@@ -58,6 +59,7 @@ export function SchedulesList({
   deletingIndex,
   onDelete,
   onAdd,
+  valveLabel,
 }: SchedulesListProps) {
   const groupedSchedules = schedules.reduce(
     (acc, schedule) => {
@@ -102,7 +104,7 @@ export function SchedulesList({
             .map(([valve, valveSchedules]) => (
               <div key={valve}>
                 <div className="text-xs font-medium text-gray-500 mb-1.5 px-1">
-                  Valve {Number(valve) + 1}
+                  {valveLabel ? valveLabel(Number(valve)) : `Valve ${Number(valve) + 1}`}
                 </div>
                 <div className="space-y-1">
                   {valveSchedules.map((schedule) => {

@@ -2,6 +2,7 @@ import type {
   Node,
   NodesResponse,
   NodeMetadata,
+  ValveMetadata,
   SensorReading,
   SensorDataResponse,
   NodeStatistics,
@@ -103,6 +104,17 @@ export async function updateNodeMetadata(
   return fetchApi<NodeMetadata>(`/api/nodes/${deviceId}/metadata`, {
     method: 'PUT',
     body: JSON.stringify(metadata),
+  });
+}
+
+export async function updateValveMetadata(
+  deviceId: string,
+  valveIndex: number,
+  name: string
+): Promise<ValveMetadata> {
+  return fetchApi<ValveMetadata>(`/api/nodes/${deviceId}/valves/${valveIndex}/metadata`, {
+    method: 'PUT',
+    body: JSON.stringify({ name }),
   });
 }
 
