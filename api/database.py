@@ -171,6 +171,17 @@ class SensorDatabase:
         description VARCHAR
     );
 
+    -- Friendly names for individual valves on a node (0-based valve_index).
+    -- A node can have several valves; this is the per-valve analogue of
+    -- node_metadata. Server is the source of truth for the dashboard + iOS.
+    CREATE TABLE IF NOT EXISTS valve_metadata (
+        device_id UBIGINT NOT NULL,
+        valve_index INTEGER NOT NULL,
+        name VARCHAR,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (device_id, valve_index)
+    );
+
     CREATE TABLE IF NOT EXISTS node_status (
         device_id UBIGINT PRIMARY KEY,
         address INTEGER,
@@ -977,6 +988,94 @@ class SensorDatabase:
                 """, (device_id, name, notes, actual_zone_id, updated_at))
 
         return self.get_node_metadata(device_id)
+
+    def get_valve_metadata(self, device_id: int, valve_index: int) -> Optional[dict]:
+        """Get the friendly name for a single valve.
+
+        Args:
+            device_id: Device ID
+            valve_index: 0-based valve index on the node
+
+        Returns:
+            Dictionary with valve metadata or None if unset
+        """
+        with self._get_connection() as conn:
+            row = conn.execute("""
+                SELECT device_id, valve_index, name, updated_at
+                FROM valve_metadata WHERE device_id = ? AND valve_index = ?
+            """, (device_id, valve_index)).fetchone()
+
+            if not row:
+                return None
+
+            return {
+                'device_id': str(row[0]),  # String to preserve JS precision
+                'valve': row[1],
+                'name': row[2],
+                'updated_at': row[3],
+            }
+
+    def get_all_valve_metadata(self) -> dict[int, dict[int, dict]]:
+        """Get valve names for every node in one query.
+
+        Returns:
+            Nested dict: {device_id: {valve_index: metadata_dict}}. Used to
+            embed valve names in the /api/nodes response without a query per node.
+        """
+        with self._get_connection() as conn:
+            rows = conn.execute("""
+                SELECT device_id, valve_index, name, updated_at
+                FROM valve_metadata
+            """).fetchall()
+
+        result: dict[int, dict[int, dict]] = {}
+        for row in rows:
+            result.setdefault(row[0], {})[row[1]] = {
+                'device_id': str(row[0]),
+                'valve': row[1],
+                'name': row[2],
+                'updated_at': row[3],
+            }
+        return result
+
+    def update_valve_metadata(
+        self,
+        device_id: int,
+        valve_index: int,
+        name: Optional[str] = None,
+    ) -> dict:
+        """Upsert the friendly name for a single valve.
+
+        Args:
+            device_id: Device ID
+            valve_index: 0-based valve index on the node
+            name: Friendly name for the valve
+
+        Returns:
+            Updated valve metadata dictionary
+        """
+        updated_at = int(time.time())
+
+        with self._get_connection() as conn:
+            existing = conn.execute(
+                "SELECT name FROM valve_metadata WHERE device_id = ? AND valve_index = ?",
+                (device_id, valve_index)
+            ).fetchone()
+
+            if existing:
+                current_name = name if name is not None else existing[0]
+                conn.execute("""
+                    UPDATE valve_metadata
+                    SET name = ?, updated_at = ?
+                    WHERE device_id = ? AND valve_index = ?
+                """, (current_name, updated_at, device_id, valve_index))
+            else:
+                conn.execute("""
+                    INSERT INTO valve_metadata (device_id, valve_index, name, updated_at)
+                    VALUES (?, ?, ?, ?)
+                """, (device_id, valve_index, name, updated_at))
+
+        return self.get_valve_metadata(device_id, valve_index)
 
     def sync_to_s3(
         self,

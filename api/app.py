@@ -115,6 +115,19 @@ def _get_hub_queue_count(serial: SerialInterface, address: int) -> Optional[int]
     return None
 
 
+def _valve_names_map(all_valve_metadata: dict, device_id: int) -> dict:
+    """Build a {"<valve_index>": name} map for one node.
+
+    Takes the result of database.get_all_valve_metadata() so callers fetch valve
+    names once and index per node. Only named valves are included.
+    """
+    return {
+        str(valve_index): meta['name']
+        for valve_index, meta in all_valve_metadata.get(device_id, {}).items()
+        if meta.get('name')
+    }
+
+
 def _build_nodes_from_database():
     """Build node list from database when hub UART is unavailable.
 
@@ -125,6 +138,7 @@ def _build_nodes_from_database():
     db = get_database()
     all_metadata = db.get_all_node_metadata()
     all_status = db.get_all_node_status()
+    all_valve_metadata = db.get_all_valve_metadata()
 
     now = int(time.time())
     nodes = []
@@ -156,6 +170,7 @@ def _build_nodes_from_database():
         if device_id in all_metadata:
             node_dict['metadata'] = all_metadata[device_id]
         node_dict['status'] = status
+        node_dict['valves'] = _valve_names_map(all_valve_metadata, device_id)
         nodes.append(node_dict)
 
     return jsonify({
@@ -394,6 +409,7 @@ def list_nodes():
         db = get_database()
         all_metadata = db.get_all_node_metadata()
         all_status = db.get_all_node_status()
+        all_valve_metadata = db.get_all_valve_metadata()
 
         # Check if we should include queue counts
         include_queue = request.args.get('include_queue', '').lower() == 'true'
@@ -433,6 +449,8 @@ def list_nodes():
                     # Include status if available (keyed by device_id)
                     if device_id in all_status:
                         node_dict['status'] = all_status[device_id]
+                    # Include per-valve friendly names ({"<index>": name})
+                    node_dict['valves'] = _valve_names_map(all_valve_metadata, device_id)
                     # Include hub queue count if requested (uses address for hub routing)
                     if include_queue:
                         node_dict['hub_queue_count'] = _get_hub_queue_count(serial, address)
@@ -749,6 +767,62 @@ def update_node_metadata(device_id: int):
 
     except Exception as e:
         logger.error(f"Error updating metadata for node {device_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/nodes/<int:device_id>/valves/<int:valve_id>/metadata', methods=['GET'])
+def get_valve_metadata(device_id: int, valve_id: int):
+    """Get the friendly name for a single valve (0-based valve_id).
+
+    Returns an empty structure when the valve has no name set.
+    """
+    try:
+        metadata = get_database().get_valve_metadata(device_id, valve_id)
+        if metadata:
+            return jsonify(metadata)
+        return jsonify({
+            'device_id': str(device_id),  # String to preserve JS precision
+            'valve': valve_id,
+            'name': None,
+            'updated_at': None,
+        })
+    except Exception as e:
+        logger.error(f"Error getting valve metadata for node {device_id} valve {valve_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/nodes/<int:device_id>/valves/<int:valve_id>/metadata', methods=['PUT'])
+def update_valve_metadata(device_id: int, valve_id: int):
+    """Set the friendly name for a single valve.
+
+    Args:
+        device_id: Device ID (64-bit hardware unique ID)
+        valve_id: 0-based valve index on the node
+
+    Request body:
+        { "name": "North Bed" }
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Request body must be JSON'}), 400
+
+        # Validate the valve index against the node's valve count (live from the
+        # hub, falling back to the DB) so names can't be set for valves that
+        # don't exist.
+        valve_count = _node_valve_count(device_id)
+        if not (0 <= valve_id < valve_count):
+            return jsonify({'error': f'valve must be in range 0..{valve_count - 1}'}), 400
+
+        metadata = get_database().update_valve_metadata(
+            device_id=device_id,
+            valve_index=valve_id,
+            name=data.get('name'),
+        )
+        return jsonify(metadata)
+
+    except Exception as e:
+        logger.error(f"Error updating valve metadata for node {device_id} valve {valve_id}: {e}")
         return jsonify({'error': str(e)}), 500
 
 
