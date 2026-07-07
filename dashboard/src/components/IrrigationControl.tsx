@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Zap, Play, Square, Check, X } from 'lucide-react';
+import { Zap, Play, Square, Check, X, Pencil } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   runValve,
@@ -8,6 +8,7 @@ import {
   addIrrigationSchedule,
   deleteIrrigationSchedule,
   getValveGroups,
+  updateValveMetadata,
 } from '../api/client';
 import type { IrrigationSchedule, ValveGroup } from '../types';
 import { DAY_LABELS } from '../types';
@@ -25,6 +26,7 @@ interface ValveState {
 interface IrrigationControlProps {
   deviceId: string;
   valveCount: number;
+  valveNames?: Record<string, string>;  // Friendly names keyed by valve index
   onEventTriggered?: () => void;
 }
 
@@ -55,9 +57,51 @@ function formatDurationShort(minutes: number): string {
   return `${minutes}m`;
 }
 
-function IrrigationControl({ deviceId, valveCount, onEventTriggered }: IrrigationControlProps) {
+function IrrigationControl({ deviceId, valveCount, valveNames, onEventTriggered }: IrrigationControlProps) {
   // Valve indices [0..valveCount-1], driving every valve-dependent UI section
   const valveIndices = Array.from({ length: valveCount }, (_, i) => i);
+
+  // Per-valve friendly names: server values (valveNames prop) with local
+  // optimistic overrides applied after a rename so the UI updates immediately.
+  const [valveNameOverrides, setValveNameOverrides] = useState<Record<string, string>>({});
+  const [editingValve, setEditingValve] = useState<number | null>(null);
+  const [editingName, setEditingName] = useState('');
+  const [savingValveName, setSavingValveName] = useState(false);
+
+  const valveLabel = useCallback(
+    (valve: number): string => {
+      const name = valveNameOverrides[String(valve)] ?? valveNames?.[String(valve)];
+      return name && name.trim() ? name : `Valve ${valve + 1}`;
+    },
+    [valveNameOverrides, valveNames]
+  );
+
+  const startEditingValve = useCallback(
+    (valve: number) => {
+      const current = valveLabel(valve);
+      // Prefill the custom name only; leave blank when it's the default label.
+      setEditingName(current === `Valve ${valve + 1}` ? '' : current);
+      setEditingValve(valve);
+    },
+    [valveLabel]
+  );
+
+  const handleSaveValveName = useCallback(
+    async (valve: number) => {
+      const name = editingName.trim();
+      setSavingValveName(true);
+      try {
+        await updateValveMetadata(deviceId, valve, name);
+        setValveNameOverrides((prev) => ({ ...prev, [String(valve)]: name }));
+        setEditingValve(null);
+      } catch {
+        // Leave the editor open so the user can retry.
+      } finally {
+        setSavingValveName(false);
+      }
+    },
+    [deviceId, editingName]
+  );
 
   // Run-once state
   const [selectedDuration, setSelectedDuration] = useState<Record<number, number>>(() =>
@@ -257,7 +301,48 @@ function IrrigationControl({ deviceId, valveCount, onEventTriggered }: Irrigatio
       <div key={valve} className="space-y-3">
         {/* Header */}
         <div className="flex items-center gap-2 flex-wrap">
-          <h3 className="font-medium text-gray-900">Valve {valve + 1}</h3>
+          {editingValve === valve ? (
+            <div className="flex items-center gap-1.5">
+              <input
+                autoFocus
+                value={editingName}
+                onChange={(e) => setEditingName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSaveValveName(valve);
+                  if (e.key === 'Escape') setEditingValve(null);
+                }}
+                maxLength={40}
+                placeholder={`Valve ${valve + 1}`}
+                className="px-2 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <button
+                onClick={() => handleSaveValveName(valve)}
+                disabled={savingValveName}
+                className="p-1 text-green-600 hover:bg-green-50 rounded disabled:opacity-50"
+                title="Save name"
+              >
+                <Check className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setEditingValve(null)}
+                className="p-1 text-gray-400 hover:bg-gray-100 rounded"
+                title="Cancel"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          ) : (
+            <>
+              <h3 className="font-medium text-gray-900">{valveLabel(valve)}</h3>
+              <button
+                onClick={() => startEditingValve(valve)}
+                className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+                title="Rename valve"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
+            </>
+          )}
           {groupBadge && (
             <span
               className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
@@ -413,6 +498,7 @@ function IrrigationControl({ deviceId, valveCount, onEventTriggered }: Irrigatio
           deletingIndex={deletingIndex}
           onDelete={handleDeleteSchedule}
           onAdd={() => setShowAddForm(true)}
+          valveLabel={valveLabel}
         />
         {scheduleError && <p className="text-sm text-red-600 mt-2 px-1">{scheduleError}</p>}
       </div>
@@ -437,7 +523,7 @@ function IrrigationControl({ deviceId, valveCount, onEventTriggered }: Irrigatio
                         formValve === v ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600'
                       }`}
                     >
-                      Valve {v + 1}
+                      {valveLabel(v)}
                     </button>
                   ))}
                 </div>

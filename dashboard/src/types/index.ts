@@ -72,6 +72,15 @@ export interface Node {
   metadata?: NodeMetadata;
   status?: NodeStatus;
   hub_queue_count?: number | null;
+  valves?: Record<string, string>;  // Friendly names keyed by valve index, e.g. { "0": "North Bed" }
+}
+
+// Per-valve friendly name (server is the source of truth).
+export interface ValveMetadata {
+  device_id: string;
+  valve: number;
+  name: string | null;
+  updated_at: number | null;
 }
 
 // Error flag constants (match firmware ERR_FLAG_* in message.h)
