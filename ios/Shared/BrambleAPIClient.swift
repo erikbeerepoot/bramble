@@ -34,6 +34,11 @@ struct ValveCommandResponse: Decodable {
     }
 }
 
+/// Response body from GET /api/nodes/{id}/valves/{valve}/metadata.
+struct ValveMetadataResponse: Decodable {
+    let name: String?
+}
+
 /// Thin client over the Bramble REST API, mirroring the dashboard's `runValve` /
 /// `stopValve` calls. Reads its base URL from `AppSettings` and its credentials from
 /// `KeychainStore`, so both the host app and the widget extension share configuration.
@@ -60,6 +65,34 @@ struct BrambleAPIClient {
             path: "/api/nodes/\(deviceId)/valve/stop",
             body: ["valve": valve]
         )
+    }
+
+    /// Fetch the server-side friendly name for a valve (server is the source of
+    /// truth). Best-effort: returns nil on any error so callers can fall back to
+    /// the locally stored label.
+    /// GET /api/nodes/{deviceId}/valves/{valve}/metadata
+    func fetchValveName(deviceId: String, valve: Int) async -> String? {
+        guard let url = URL(string: AppSettings.baseUrl + "/api/nodes/\(deviceId)/valves/\(valve)/metadata") else {
+            return nil
+        }
+        var request = URLRequest(url: url)
+        applyAuthHeaders(to: &request)
+        guard let data = try? await send(request) else { return nil }
+        return (try? JSONDecoder().decode(ValveMetadataResponse.self, from: data))?.name
+    }
+
+    /// Set the server-side friendly name for a valve.
+    /// PUT /api/nodes/{deviceId}/valves/{valve}/metadata
+    func updateValveName(deviceId: String, valve: Int, name: String) async throws {
+        guard let url = URL(string: AppSettings.baseUrl + "/api/nodes/\(deviceId)/valves/\(valve)/metadata") else {
+            throw BrambleAPIError.badURL
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["name": name])
+        applyAuthHeaders(to: &request)
+        try await send(request)
     }
 
     /// Lightweight connectivity check: GET /api/health
