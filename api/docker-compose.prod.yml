@@ -5,12 +5,15 @@ services:
     ports:
       - "5000:5000"
     devices:
-      - "/dev/ttyAMA0:/dev/ttyAMA0"
+      # Stable udev symlink for the hub UART (see 99-bramble-hub.rules); HUB_SERIAL
+      # is set in .env. Defaults keep this working on a fresh checkout. Addressing
+      # the raw ttyAMAn node instead is fragile — a kernel update renumbers it.
+      - "${HUB_SERIAL:-/dev/bramble-hub}:${HUB_SERIAL:-/dev/bramble-hub}"
     volumes:
       - bramble-data:/data
     environment:
       - DEBUG=False
-      - SERIAL_PORT=/dev/ttyAMA0
+      - SERIAL_PORT=${HUB_SERIAL:-/dev/bramble-hub}
       - SERIAL_BAUD=115200
       - HOST=0.0.0.0
       - PORT=5000
@@ -61,6 +64,10 @@ services:
       - ~/.docker/config.json:/config.json:ro
     environment:
       - DOCKER_CONFIG=/
+      # containrrr/watchtower's bundled Docker client defaults to API 1.25, which
+      # the upgraded daemon rejects (min 1.44), silently stopping all auto-updates.
+      # Pin a supported version so watchtower can talk to the daemon again.
+      - DOCKER_API_VERSION=1.44
       - WATCHTOWER_CLEANUP=true
       - WATCHTOWER_POLL_INTERVAL=300  # Check every 5 minutes
     restart: unless-stopped
