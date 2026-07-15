@@ -100,6 +100,74 @@ def send_hub_command(command: str, command_id: str) -> dict:
         raise
 
 
+def _set_schedule_command(node_address: int, index: int, hour: int, minute: int,
+                          duration: int, days: int, valve: int) -> tuple:
+    """Build the (command, command_id) pair for a SET_SCHEDULE. Single source of
+    the on-wire format, shared by the single-op and ordered-batch paths."""
+    return (
+        f"SET_SCHEDULE {node_address} {index} {hour}:{minute} {duration} {days} {valve}",
+        f"schedule-{node_address}-{index}",
+    )
+
+
+def _remove_schedule_command(node_address: int, index: int) -> tuple:
+    """Build the (command, command_id) pair for a REMOVE_SCHEDULE."""
+    return (
+        f"REMOVE_SCHEDULE {node_address} {index}",
+        f"remove-schedule-{node_address}-{index}",
+    )
+
+
+@huey.task(retries=3, retry_delay=30)
+def send_hub_commands_ordered(commands: list) -> dict:
+    """Send a sequence of (command, command_id) pairs to the hub in order, one at
+    a time, from a single task.
+
+    Used for schedule replaces: a new slot can transiently overlap the old slot
+    it is meant to replace, and the PMU rejects overlaps. Sending every REMOVE
+    before the SETs — sequentially, in ONE task — guarantees the removes reach
+    the PMU first. N independent tasks can't guarantee this: huey runs them
+    across multiple worker threads, so a SET may hit the PMU before its REMOVE.
+
+    Whole-batch retry on timeout is safe: on the PMU, re-removing an absent slot
+    and re-setting an existing slot are both idempotent.
+    """
+    results = []
+    for command, command_id in commands:
+        logger.info(f"[{command_id}] Sending (ordered): {command}")
+        try:
+            result = _send_via_api(command, command_id)
+        except TimeoutError:
+            logger.error(f"[{command_id}] Hub timeout - will retry batch")
+            raise
+        responses = result.get('responses', [])
+        if not (responses and responses[0].startswith('QUEUED')):
+            logger.warning(f"[{command_id}] Unexpected response: {responses}")
+        results.append({'command_id': command_id, 'response': responses})
+    return {'status': 'success', 'results': results}
+
+
+def queue_schedule_diff(node_address: int, removes: list, sets: list):
+    """Queue an ordered schedule replace as a single task: all REMOVEs, then all
+    SETs. Prevents transient-overlap rejections during a replace.
+
+    Args:
+        node_address: target node LoRa address
+        removes: slot indices to remove
+        sets: dicts with index, hour, minute, duration, days, valve
+
+    Returns:
+        huey TaskResultWrapper for the batch
+    """
+    commands = [_remove_schedule_command(node_address, i) for i in removes]
+    commands += [
+        _set_schedule_command(node_address, s['index'], s['hour'], s['minute'],
+                              s['duration'], s['days'], s['valve'])
+        for s in sets
+    ]
+    return send_hub_commands_ordered(commands)
+
+
 def queue_set_schedule(node_address: int, index: int, hour: int, minute: int,
                        duration: int, days: int, valve: int):
     """Queue a SET_SCHEDULE command.
@@ -107,8 +175,8 @@ def queue_set_schedule(node_address: int, index: int, hour: int, minute: int,
     Returns:
         huey TaskResultWrapper for tracking status
     """
-    command = f"SET_SCHEDULE {node_address} {index} {hour}:{minute} {duration} {days} {valve}"
-    command_id = f"schedule-{node_address}-{index}"
+    command, command_id = _set_schedule_command(
+        node_address, index, hour, minute, duration, days, valve)
     return send_hub_command(command, command_id)
 
 
@@ -118,8 +186,7 @@ def queue_remove_schedule(node_address: int, index: int):
     Returns:
         huey TaskResultWrapper for tracking status
     """
-    command = f"REMOVE_SCHEDULE {node_address} {index}"
-    command_id = f"remove-schedule-{node_address}-{index}"
+    command, command_id = _remove_schedule_command(node_address, index)
     return send_hub_command(command, command_id)
 
 
