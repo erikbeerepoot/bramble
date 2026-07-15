@@ -301,8 +301,7 @@ def _apply_master_diff(db, group, force=False):
     slot is re-sent regardless of the diff (used by /resync to recover from a
     TTL-expired command). Returns a summary dict. Raises MasterSlotOverflow.
     """
-    from command_queue import (queue_set_schedule, queue_remove_schedule,
-                               COMMAND_TTL_DEFAULTS)
+    from command_queue import queue_schedule_diff, COMMAND_TTL_DEFAULTS
     master_device_id = int(group['master_device_id'])
     master_valve = group['master_valve']
     master_address = _resolve_node_address(master_device_id)
@@ -321,29 +320,36 @@ def _apply_master_diff(db, group, force=False):
                        f"stored slots but skipped queueing")
         return {'set': 0, 'removed': 0, 'master_unreachable': True}
 
+    # Audit rows for every op. The apply below sends all REMOVEs before any SET
+    # (as one ordered task), so a new slot never transiently overlaps the old
+    # slot it replaces — which the PMU would reject as an Overlap. Insert the
+    # audit rows in that same remove-then-set order for a readable timeline.
+    cmd_ids = []
+    for index in diff['to_remove']:
+        cmd_ids.append(db.insert_command(
+            device_id=master_device_id, command_type='schedule_remove',
+            params={'index': index, 'mirrored_from_group': group['id']},
+            ttl_seconds=COMMAND_TTL_DEFAULTS['schedule_remove']))
     for slot in diff['to_set']:
-        cmd_id = db.insert_command(
+        cmd_ids.append(db.insert_command(
             device_id=master_device_id, command_type='schedule_set',
             params={'index': slot['master_index'], 'hour': slot['hour'],
                     'minute': slot['minute'], 'duration': slot['duration'],
                     'days': slot['days'], 'valve': master_valve,
                     'mirrored_from_group': group['id']},
-            ttl_seconds=COMMAND_TTL_DEFAULTS['schedule_set'])
-        result = queue_set_schedule(
-            node_address=master_address, index=slot['master_index'],
-            hour=slot['hour'], minute=slot['minute'], duration=slot['duration'],
-            days=slot['days'], valve=master_valve)
-        if cmd_id is not None:
-            db.set_command_huey_task(cmd_id, result.id)
+            ttl_seconds=COMMAND_TTL_DEFAULTS['schedule_set']))
 
-    for index in diff['to_remove']:
-        cmd_id = db.insert_command(
-            device_id=master_device_id, command_type='schedule_remove',
-            params={'index': index, 'mirrored_from_group': group['id']},
-            ttl_seconds=COMMAND_TTL_DEFAULTS['schedule_remove'])
-        result = queue_remove_schedule(node_address=master_address, index=index)
-        if cmd_id is not None:
-            db.set_command_huey_task(cmd_id, result.id)
+    if diff['to_remove'] or diff['to_set']:
+        sets_payload = [
+            {'index': slot['master_index'], 'hour': slot['hour'],
+             'minute': slot['minute'], 'duration': slot['duration'],
+             'days': slot['days'], 'valve': master_valve}
+            for slot in diff['to_set']]
+        result = queue_schedule_diff(master_address, diff['to_remove'], sets_payload)
+        # All ops ride one batch task, so they share its huey id.
+        for cmd_id in cmd_ids:
+            if cmd_id is not None:
+                db.set_command_huey_task(cmd_id, result.id)
 
     db.replace_master_slots(group['id'], master_device_id, diff['slots'])
     return {'set': len(diff['to_set']), 'removed': len(diff['to_remove']),
