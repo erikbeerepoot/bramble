@@ -2,7 +2,7 @@
 import serial
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Callable
 from queue import Queue, Empty
 import logging
@@ -234,8 +234,14 @@ class SerialInterface:
         self.response_queue.put(line)
 
     def _handle_datetime_query(self):
-        """Respond to hub's GET_DATETIME query with current system time."""
-        now = datetime.now()
+        """Respond to hub's GET_DATETIME query with the current time in UTC.
+
+        The node RTC must be UTC: the schedule pipeline stores and sends schedule
+        times in UTC (the dashboard converts local<->UTC at its own boundary), so
+        a local-time RTC fired schedules off by the local UTC offset. Sending UTC
+        here makes the RTC match that assumption (and sidesteps DST entirely).
+        """
+        now = datetime.now(timezone.utc)
         weekday = now.weekday()  # 0=Monday in Python
         # Convert to hub format: 0=Sunday, 1=Monday, ..., 6=Saturday
         hub_weekday = (weekday + 1) % 7
