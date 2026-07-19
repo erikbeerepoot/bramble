@@ -1777,9 +1777,10 @@ def get_node_events(device_id: int):
     """Query events for a node.
 
     Query parameters:
-        start_time: Start timestamp in unix milliseconds (optional)
-        end_time: End timestamp in unix milliseconds (optional)
+        start_time: Start timestamp filter, same unit as event timestamps (optional)
+        end_time: End timestamp filter, same unit as event timestamps (optional)
         limit: Maximum records (default 100, max 1000)
+        exclude_codes: CSV of event codes to omit (e.g. WAKE/SLEEP heartbeats)
 
     Args:
         device_id: Device ID
@@ -1797,11 +1798,21 @@ def get_node_events(device_id: int):
         if limit < 1 or limit > 1000:
             return jsonify({'error': 'limit must be 1-1000'}), 400
 
+        exclude_codes_csv = request.args.get('exclude_codes')
+        try:
+            exclude_codes = (
+                [int(c) for c in exclude_codes_csv.split(',') if c.strip()]
+                if exclude_codes_csv else None
+            )
+        except ValueError:
+            return jsonify({'error': 'exclude_codes must be comma-separated integers'}), 400
+
         events = db.query_events(
             device_id=device_id,
             start_time=start_time,
             end_time=end_time,
             limit=limit,
+            exclude_codes=exclude_codes,
         )
 
         return jsonify({
