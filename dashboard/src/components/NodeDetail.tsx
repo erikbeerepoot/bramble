@@ -17,6 +17,7 @@ import {
   getSignalQuality,
   getBatteryStatus,
   getHealthStatus,
+  EventType,
 } from '../types';
 import {
   getNodeSensorData,
@@ -164,9 +165,20 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
     };
   }, [fetchData]);
 
-  const EVENT_WINDOW_MS = 3600 * 1000; // 1 hour per window
+  // Recent Activity shows the last two weeks by default, extended a window at a
+  // time via "Load older". WAKE/SLEEP are the duty-cycle heartbeats (a pair every
+  // ~225s) — excluded server-side so they don't eat the fetch limit and hide the
+  // meaningful valve/schedule activity we actually care about.
+  const ACTIVITY_WINDOW_SECONDS = 14 * 24 * 3600; // 2 weeks
+  const HIDDEN_EVENT_CODES = [EventType.WAKE, EventType.SLEEP_ENTER];
   const [hasMoreEvents, setHasMoreEvents] = useState(true);
   const [loadingMoreEvents, setLoadingMoreEvents] = useState(false);
+
+  // node_events.timestamp is unix seconds today (the ms-precision rollout is
+  // mid-flight, so tolerate either); RecentEvents renders timestamps as ms.
+  const toEventMs = (ts: number): number => (ts < 1e12 ? ts * 1000 : ts);
+  const normalizeEvents = (evs: NodeEvent[]): NodeEvent[] =>
+    evs.map((e) => ({ ...e, timestamp: toEventMs(e.timestamp) }));
 
   const eventKey = (e: NodeEvent) => `${e.timestamp}-${e.event_code}-${e.data_hex ?? ''}`;
 
@@ -194,12 +206,13 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
   // Refresh: fetch the latest window and merge with any older loaded events.
   const fetchEvents = useCallback(async () => {
     try {
-      const now = Date.now();
+      const nowSeconds = Math.floor(Date.now() / 1000);
       const response = await getNodeEvents(node.device_id, {
-        startTime: now - EVENT_WINDOW_MS,
+        startTime: nowSeconds - ACTIVITY_WINDOW_SECONDS,
         limit: 1000,
+        excludeCodes: HIDDEN_EVENT_CODES,
       });
-      setEvents((prev) => mergeEvents(response.events, prev));
+      setEvents((prev) => mergeEvents(normalizeEvents(response.events), prev));
     } catch {
       // Silently fail — events are informational
     } finally {
@@ -212,7 +225,11 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
   // status (pending/confirmed/...) may update in place server-side.
   const fetchCommands = useCallback(async () => {
     try {
-      const response = await getNodeCommands(node.device_id, { limit: 100 });
+      const sinceSeconds = Math.floor(Date.now() / 1000) - ACTIVITY_WINDOW_SECONDS;
+      const response = await getNodeCommands(node.device_id, {
+        since: sinceSeconds,
+        limit: 200,
+      });
       setCommands(response.commands);
     } catch {
       // Silently fail — commands log is informational
@@ -224,16 +241,18 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
     if (loadingMoreEvents || !hasMoreEvents || events.length === 0) return;
     setLoadingMoreEvents(true);
     try {
-      const oldest = events[events.length - 1].timestamp;
+      // Loaded events are normalized to ms; the query window is in seconds.
+      const oldestSeconds = Math.floor(events[events.length - 1].timestamp / 1000);
       const response = await getNodeEvents(node.device_id, {
-        startTime: oldest - EVENT_WINDOW_MS,
-        endTime: oldest - 1,
+        startTime: oldestSeconds - ACTIVITY_WINDOW_SECONDS,
+        endTime: oldestSeconds - 1,
         limit: 1000,
+        excludeCodes: HIDDEN_EVENT_CODES,
       });
       if (response.events.length === 0) {
         setHasMoreEvents(false);
       } else {
-        setEvents((prev) => mergeEvents(response.events, prev));
+        setEvents((prev) => mergeEvents(normalizeEvents(response.events), prev));
       }
     } catch {
       // Silently fail — events are informational

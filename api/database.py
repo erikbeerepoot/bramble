@@ -1849,7 +1849,8 @@ class SensorDatabase:
             return False
 
     def query_events(self, device_id: int, start_time: int = None,
-                     end_time: int = None, limit: int = 100) -> list[dict]:
+                     end_time: int = None, limit: int = 100,
+                     exclude_codes: list[int] = None) -> list[dict]:
         """Query events for a device.
 
         Args:
@@ -1857,6 +1858,8 @@ class SensorDatabase:
             start_time: Start timestamp filter (optional)
             end_time: End timestamp filter (optional)
             limit: Maximum results (default 100)
+            exclude_codes: Event codes to omit (e.g. the WAKE/SLEEP duty-cycle
+                heartbeats that would otherwise crowd out meaningful activity)
 
         Returns:
             List of event dicts
@@ -1872,6 +1875,10 @@ class SensorDatabase:
                 if end_time is not None:
                     conditions.append("timestamp <= ?")
                     params.append(end_time)
+                if exclude_codes:
+                    placeholders = ",".join("?" for _ in exclude_codes)
+                    conditions.append(f"event_code NOT IN ({placeholders})")
+                    params.extend(exclude_codes)
 
                 where_clause = " AND ".join(conditions)
                 params.append(min(limit, 1000))

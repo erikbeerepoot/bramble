@@ -271,12 +271,15 @@ export async function getNodeEvents(
     startTime?: number;
     endTime?: number;
     limit?: number;
+    excludeCodes?: number[];
   }
 ): Promise<NodeEventsResponse> {
   const params = new URLSearchParams();
   if (options?.startTime) params.set('start_time', options.startTime.toString());
   if (options?.endTime) params.set('end_time', options.endTime.toString());
   if (options?.limit) params.set('limit', options.limit.toString());
+  if (options?.excludeCodes?.length)
+    params.set('exclude_codes', options.excludeCodes.join(','));
 
   const query = params.toString();
   return fetchApi<NodeEventsResponse>(`/api/nodes/${deviceId}/events${query ? `?${query}` : ''}`);
