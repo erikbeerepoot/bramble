@@ -812,6 +812,7 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
             onLoadMore={loadOlderEvents}
             hasMore={hasMoreEvents}
             loadingMore={loadingMoreEvents}
+            valveNames={node.valves}
           />
         </div>
       </div>

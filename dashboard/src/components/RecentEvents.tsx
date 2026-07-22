@@ -60,7 +60,20 @@ interface RecentEventsProps {
   onLoadMore?: () => void;
   hasMore?: boolean;
   loadingMore?: boolean;
+  valveNames?: Record<string, string>; // friendly names keyed by 0-based valve index
 }
+
+// Friendly valve name if one is set, else the 1-based "Valve N" fallback.
+function valveLabel(index: number, valveNames?: Record<string, string>): string {
+  return valveNames?.[String(index)] ?? `Valve ${index + 1}`;
+}
+
+const VALVE_EVENT_CODES = new Set<number>([
+  EventType.VALVE_OPEN,
+  EventType.VALVE_CLOSE,
+  EventType.VALVE_TIMER_SET,
+  EventType.VALVE_TIMER_CLOSE,
+]);
 
 type IconComponent = typeof Calendar;
 
@@ -299,19 +312,19 @@ function curtainVisualForAction(action: string | undefined): EventVisual {
 }
 
 // Human-readable label for the command row before the status suffix.
-function commandLabel(command: NodeCommand): string {
+function commandLabel(command: NodeCommand, valveNames?: Record<string, string>): string {
   const params = command.params as Record<string, unknown>;
   switch (command.command_type) {
     case 'valve_open': {
       const valve = typeof params.valve === 'number' ? params.valve : 0;
       const dur = typeof params.duration_seconds === 'number' ? params.duration_seconds : null;
       return dur !== null
-        ? `Valve ${valve + 1} Open · ${formatDuration(dur)}`
-        : `Valve ${valve + 1} Open`;
+        ? `${valveLabel(valve, valveNames)} Open · ${formatDuration(dur)}`
+        : `${valveLabel(valve, valveNames)} Open`;
     }
     case 'valve_close': {
       const valve = typeof params.valve === 'number' ? params.valve : 0;
-      return `Valve ${valve + 1} Close`;
+      return `${valveLabel(valve, valveNames)} Close`;
     }
     case 'curtain': {
       const action = typeof params.action === 'string' ? params.action : '';
@@ -508,10 +521,20 @@ function collapseWakeCycles(dayItems: TimelineItem[]): RenderItem[] {
 
 // Compose the trailing detail string for an event row — valve/schedule id and,
 // for an OPEN with a known matching close, the watering duration.
-function eventLabelSuffix(event: NodeEvent, durationByOpenTs: Map<number, number>): string {
+function eventLabelSuffix(
+  event: NodeEvent,
+  durationByOpenTs: Map<number, number>,
+  valveNames?: Record<string, string>
+): string {
   const parts: string[] = [];
-  const detail = getEventDetail(event.event_code, event.data_hex);
-  if (detail) parts.push(detail);
+  if (VALVE_EVENT_CODES.has(event.event_code)) {
+    // Prefer the friendly valve name over getEventDetail's "Valve N".
+    const index = parseEventDetail(event.data_hex);
+    if (index !== null) parts.push(valveLabel(index, valveNames));
+  } else {
+    const detail = getEventDetail(event.event_code, event.data_hex);
+    if (detail) parts.push(detail);
+  }
   if (event.event_code === EventType.VALVE_OPEN) {
     const dur = durationByOpenTs.get(event.timestamp);
     if (dur !== undefined) parts.push(formatDuration(dur));
@@ -540,6 +563,7 @@ export function RecentEvents({
   onLoadMore,
   hasMore,
   loadingMore,
+  valveNames,
 }: RecentEventsProps) {
   const [expandedRuns, setExpandedRuns] = useState<Set<string>>(new Set());
   const toggleRun = (key: string) => {
@@ -704,7 +728,7 @@ export function RecentEvents({
                           <div className="flex-1 min-w-0">
                             <div className="flex items-start justify-between gap-2 mb-px">
                               <span className="text-sm font-medium text-gray-900">
-                                {commandLabel(cmd)}
+                                {commandLabel(cmd, valveNames)}
                                 <span className="text-gray-400">{commandStatusSuffix(cmd)}</span>
                               </span>
                               <CopyableTimestamp timestamp={cmd.created_at * 1000} />
@@ -797,7 +821,7 @@ export function RecentEvents({
                                         <div className="flex items-start justify-between gap-2 mb-px">
                                           <span className="text-xs text-gray-600">
                                             {getEventName(event.event_code)}
-                                            {eventLabelSuffix(event, durationByOpenTs)}
+                                            {eventLabelSuffix(event, durationByOpenTs, valveNames)}
                                           </span>
                                           <CopyableTimestamp timestamp={event.timestamp} />
                                         </div>
@@ -836,7 +860,7 @@ export function RecentEvents({
                           <div className="flex items-start justify-between gap-2 mb-px">
                             <span className="text-sm font-medium text-gray-900">
                               {getEventName(event.event_code)}
-                              {eventLabelSuffix(event, durationByOpenTs)}
+                              {eventLabelSuffix(event, durationByOpenTs, valveNames)}
                             </span>
                             <CopyableTimestamp timestamp={event.timestamp} />
                           </div>

@@ -39,6 +39,19 @@ export function getApiUrl(): string {
   return getBaseUrl();
 }
 
+// The dashboard sits behind Cloudflare Access (cookie session). When that
+// session expires, the API responds with a 302 to the Access login on a
+// different origin — which in-app fetch cannot read or follow usefully. Only a
+// full document reload re-runs the Access SSO to mint a fresh cookie. We detect
+// the redirect (redirect: 'manual' surfaces it as an opaqueredirect response)
+// and reload once, so the user never has to hard-refresh by hand.
+let reloadingForAuth = false;
+function handleSessionExpired(): void {
+  if (reloadingForAuth) return;
+  reloadingForAuth = true;
+  window.location.reload();
+}
+
 async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const baseUrl = getBaseUrl();
   const url = `${baseUrl}${endpoint}`;
@@ -48,6 +61,7 @@ async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> 
     fetch(url, {
       ...options,
       credentials: 'include',
+      redirect: 'manual',
       headers: {
         'Content-Type': 'application/json',
         ...options?.headers,
@@ -69,6 +83,13 @@ async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> 
     if (!isReadOnly) throw networkError;
     await new Promise((resolve) => setTimeout(resolve, 800));
     response = await attempt();
+  }
+
+  // Expired Cloudflare Access session — reload to re-authenticate. Stall the
+  // returned promise so callers don't flash an error while the page reloads.
+  if (response.type === 'opaqueredirect') {
+    handleSessionExpired();
+    return new Promise<T>(() => {});
   }
 
   if (!response.ok) {
