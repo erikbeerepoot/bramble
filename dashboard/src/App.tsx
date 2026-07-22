@@ -92,7 +92,23 @@ function App() {
       fetchNodes();
     }, REFRESH_INTERVAL_MS);
 
-    return () => clearInterval(interval);
+    // Refetch immediately when the tab regains focus or the network returns,
+    // rather than waiting up to REFRESH_INTERVAL_MS. This also promptly trips
+    // the expired-session detection (and auto-reload) after a long absence.
+    const refreshIfVisible = () => {
+      if (document.visibilityState === 'visible') {
+        fetchNodes();
+        checkConnection();
+      }
+    };
+    document.addEventListener('visibilitychange', refreshIfVisible);
+    window.addEventListener('online', refreshIfVisible);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', refreshIfVisible);
+      window.removeEventListener('online', refreshIfVisible);
+    };
   }, [fetchNodes, fetchZones, checkConnection]);
 
   const isNodesActive = location.pathname === '/nodes' || location.pathname.startsWith('/nodes/');
