@@ -792,6 +792,8 @@ void Protocol::sendWakeNotification(WakeReason reason)
     }
     // Valve-reset flag follows the state blob (force valves closed on power-on / NRST)
     builder_.addByte(valveResetPending_ ? 0x01 : 0x00);
+    // Current time (7 bytes) appended last so the RP2040 can set its RTC on wake
+    appendCurrentDateTime();
     sendMessage();
 }
 
@@ -810,7 +812,36 @@ void Protocol::sendWakeNotificationWithSchedule(WakeReason reason, const Schedul
     if (entry) {
         builder_.addScheduleEntry(*entry);
     }
+    // Current time (7 bytes) appended after the schedule entry — the RP2040
+    // parses it by remaining length, so ordering stays backward-compatible.
+    appendCurrentDateTime();
     sendMessage();
+}
+
+void Protocol::appendCurrentDateTime()
+{
+    // Only append when the RTC has been synced; otherwise append nothing so an
+    // un-synced PMU sends the legacy payload and the node falls back to LoRa
+    // time sync. (Presence of the 7 bytes therefore implies a valid time.)
+    if (HAL_RTCEx_BKUPRead(&::hrtc, RTC_BKP_DR0) != TIME_VALID_MAGIC)
+        return;
+
+    RTC_TimeTypeDef time;
+    RTC_DateTypeDef date;
+    // Read time before date — the STM32 HAL locks the shadow date register until
+    // the date is read, so this order keeps them coherent.
+    if (HAL_RTC_GetTime(&::hrtc, &time, RTC_FORMAT_BIN) != HAL_OK ||
+        HAL_RTC_GetDate(&::hrtc, &date, RTC_FORMAT_BIN) != HAL_OK) {
+        return;
+    }
+
+    builder_.addByte(date.Year);  // years since 2000
+    builder_.addByte(date.Month);
+    builder_.addByte(date.Date);
+    builder_.addByte(date.WeekDay);
+    builder_.addByte(time.Hours);
+    builder_.addByte(time.Minutes);
+    builder_.addByte(time.Seconds);
 }
 
 void Protocol::sendScheduleComplete()

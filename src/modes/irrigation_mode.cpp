@@ -107,6 +107,35 @@ void IrrigationMode::onStart()
         }
 
         // Set up PMU callback handlers
+        //
+        // Fires BEFORE onWake when the PMU includes its current time in the wake
+        // notification. On a duty-cycled node the RP2040 RTC is reset every wake,
+        // so without this the wake handler runs with no wall time — and a valve
+        // opened by a scheduled wake would get an auto-close deadline of
+        // (0 + duration), i.e. 1970, which the next reconcile treats as already
+        // expired and closes immediately. Setting the RTC here first makes
+        // getUnixTimestamp() valid before any valve logic runs.
+        reliable_pmu_->onWakeDateTime([this](bool valid, const PMU::DateTime &dt) {
+            if (!valid || dt.month < 1 || dt.month > 12)
+                return;
+            datetime_t rtc_dt;
+            rtc_dt.year = 2000 + dt.year;  // PMU year is years-since-2000
+            rtc_dt.month = dt.month;
+            rtc_dt.day = dt.day;
+            rtc_dt.dotw = dt.weekday;
+            rtc_dt.hour = dt.hour;
+            rtc_dt.min = dt.minute;
+            rtc_dt.sec = dt.second;
+            if (rtc_set_datetime(&rtc_dt)) {
+                sleep_us(64);  // let the RTC registers propagate before reads
+                Logger::syncSubsecondCounter();
+                uint32_t unix_ts = getUnixTimestamp();
+                if (unix_ts > 0) {
+                    event_log_.setTimeReference(to_ms_since_boot(get_absolute_time()), unix_ts);
+                }
+            }
+        });
+
         reliable_pmu_->onWake([this](PMU::WakeReason reason, const PMU::ScheduleEntry *entry,
                                      bool state_valid, const uint8_t *state, bool valve_reset) {
             this->handlePmuWake(reason, entry, state_valid, state, valve_reset);
@@ -1071,9 +1100,25 @@ void IrrigationMode::processExpiredValveDeadlines()
         // will process the queue.
         return;
     }
+    // Deadlines below this are not real wall-clock times: they were computed as
+    // (0 + duration) because the RTC was still unset when the valve opened (the
+    // scheduled/manual-open paths). Treat such a value as a relative duration and
+    // rebase it to an absolute deadline now that we have wall time, instead of
+    // closing the valve as if it had already expired. (With a PMU that sends the
+    // time on wake, opens see valid time and deadlines are always absolute, so
+    // this rebase never triggers — it's the fallback for older PMU firmware.)
+    static constexpr uint32_t MIN_PLAUSIBLE_UNIX = 1000000000u;  // 2001-09-09
     for (uint8_t i = 0; i < ValveController::NUM_VALVES; i++) {
         uint32_t d = valve_close_deadlines_[i];
-        if (d != 0 && d <= now) {
+        if (d == 0)
+            continue;
+        if (d < MIN_PLAUSIBLE_UNIX) {
+            valve_close_deadlines_[i] = now + d;
+            logger.info("Rebased relative valve deadline: valve=%u duration=%lu now=%lu", i,
+                        static_cast<unsigned long>(d), static_cast<unsigned long>(now));
+            continue;
+        }
+        if (d <= now) {
             logger.info("Auto-close fired for valve %u (deadline %lu, now %lu)", i,
                         static_cast<unsigned long>(d), static_cast<unsigned long>(now));
             valve_controller_.closeValve(i);

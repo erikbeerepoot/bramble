@@ -305,6 +305,10 @@ public:
     void onWakeInterval(WakeIntervalCallback callback);
     void onScheduleEntry(ScheduleEntryCallback callback);
     void onDateTime(DateTimeCallback callback);
+    // Fired (before the wake-notification callback) when a wake notification
+    // carries the PMU's current datetime, so the node can set its RTC before
+    // any wake-time logic runs. Absent from older PMU firmware.
+    void onWakeDateTime(DateTimeCallback callback);
     void onBlobData(BlobDataCallback callback);
 
     // Get next sequence number for legacy API
@@ -318,6 +322,7 @@ private:
 
     // Response callbacks for unsolicited messages
     WakeNotificationCallback wakeNotificationCallback_;
+    DateTimeCallback wakeDateTimeCallback_;
     ScheduleCompleteCallback scheduleCompleteCallback_;
     WakeIntervalCallback wakeIntervalCallback_;
     ScheduleEntryCallback scheduleEntryCallback_;

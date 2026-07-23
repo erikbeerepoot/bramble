@@ -249,6 +249,13 @@ public:
     void onWake(WakeCallback callback);
 
     /**
+     * @brief Set callback for the datetime carried by a wake notification
+     * @param callback Called (before the wake callback) with the PMU's current
+     *        time when newer PMU firmware includes it in the wake notification.
+     */
+    void onWakeDateTime(DateTimeCallback callback);
+
+    /**
      * @brief Set callback for schedule complete notifications
      * @param callback Called when scheduled operation completes
      */
