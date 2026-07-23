@@ -416,6 +416,11 @@ private:
     void sendDateTimeResponse(bool valid, uint8_t year, uint8_t month, uint8_t day, uint8_t weekday,
                               uint8_t hour, uint8_t minute, uint8_t second);
 
+    // Append the current RTC datetime (7 bytes) to the message being built, but
+    // only when the RTC is valid. Used by the wake-notification senders so the
+    // RP2040 can set its RTC on wake before any wake-time logic runs.
+    void appendCurrentDateTime();
+
     // Helper to send built message
     void sendMessage();
 

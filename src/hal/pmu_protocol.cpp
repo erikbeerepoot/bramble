@@ -404,6 +404,11 @@ void Protocol::onWakeNotification(WakeNotificationCallback callback)
     wakeNotificationCallback_ = callback;
 }
 
+void Protocol::onWakeDateTime(DateTimeCallback callback)
+{
+    wakeDateTimeCallback_ = callback;
+}
+
 void Protocol::onScheduleComplete(ScheduleCompleteCallback callback)
 {
     scheduleCompleteCallback_ = callback;
@@ -532,7 +537,8 @@ void Protocol::handleWakeNotification(const uint8_t *data, uint8_t length)
 
     // Parse schedule entry data (sent with scheduled wake events)
     static ScheduleEntry entry;
-    if (length >= schedule_offset + SCHEDULE_ENTRY_SIZE) {
+    bool has_schedule = (length >= schedule_offset + SCHEDULE_ENTRY_SIZE);
+    if (has_schedule) {
         // Has schedule data - parse it
         entry.hour = data[schedule_offset];
         entry.minute = data[schedule_offset + 1];
@@ -543,12 +549,25 @@ void Protocol::handleWakeNotification(const uint8_t *data, uint8_t length)
         entry.periodMinutes = data[schedule_offset + 7] | (data[schedule_offset + 8] << 8);
         entry.windowMinutes = data[schedule_offset + 9] | (data[schedule_offset + 10] << 8);
         log.debug("ValveId=%d", entry.valveId);
-        wakeNotificationCallback_(reason, &entry, state_valid, state_blob, valve_reset);
-        log.debug("Callback done");
-    } else {
-        // Periodic or external wake (no schedule data)
-        wakeNotificationCallback_(reason, nullptr, state_valid, state_blob, valve_reset);
     }
+
+    // Newer PMU firmware appends its current datetime (year-since-2000, month,
+    // day, weekday, hour, minute, second) after the optional schedule entry.
+    // Deliver it first so the node can set its RTC before any wake-time logic
+    // runs — otherwise wall time is only valid after a later LoRa sync, which is
+    // too late for e.g. computing a valve auto-close deadline.
+    static constexpr uint8_t WAKE_DATETIME_SIZE = 7;
+    size_t datetime_offset = schedule_offset + (has_schedule ? SCHEDULE_ENTRY_SIZE : 0);
+    if (wakeDateTimeCallback_ && length >= datetime_offset + WAKE_DATETIME_SIZE) {
+        DateTime dt(data[datetime_offset], data[datetime_offset + 1], data[datetime_offset + 2],
+                    data[datetime_offset + 3], data[datetime_offset + 4], data[datetime_offset + 5],
+                    data[datetime_offset + 6]);
+        wakeDateTimeCallback_(true, dt);
+    }
+
+    wakeNotificationCallback_(reason, has_schedule ? &entry : nullptr, state_valid, state_blob,
+                              valve_reset);
+    log.debug("Callback done");
 }
 
 void Protocol::handleScheduleComplete()

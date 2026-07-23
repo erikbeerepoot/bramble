@@ -447,6 +447,13 @@ void ReliablePmuClient::onWake(WakeCallback callback)
     wakeCallback_ = callback;
 }
 
+void ReliablePmuClient::onWakeDateTime(DateTimeCallback callback)
+{
+    // Unsolicited data delivered alongside the wake notification — register
+    // straight on the protocol (no reliability bookkeeping needed).
+    client_->getProtocol().onWakeDateTime(callback);
+}
+
 void ReliablePmuClient::onScheduleComplete(ScheduleCompleteCallback callback)
 {
     scheduleCompleteCallback_ = callback;
