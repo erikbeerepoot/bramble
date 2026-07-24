@@ -2,7 +2,10 @@
 from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 from flask_compress import Compress
+import collections
+import hmac
 import logging
+import threading
 import time
 from typing import Optional
 
@@ -400,6 +403,121 @@ def _queue_master_actuator(db, group, command, duration_seconds=0):
                                  duration_seconds=duration_seconds)
     if cmd_id is not None:
         db.set_command_huey_task(cmd_id, result.id)
+
+
+class NodeNotFound(Exception):
+    """Raised when a device_id cannot be resolved to a node address."""
+
+
+def _run_valve_once(device_id: int, valve: int, duration_seconds: int,
+                    source: Optional[str] = None) -> dict:
+    """Queue a one-shot valve run and mirror it onto any group master valve.
+
+    Shared by the HTTP run-valve endpoint and the Rachio webhook so both go
+    through identical validation, audit logging, and master-valve mirroring.
+
+    Raises NodeNotFound if the node is unknown and ValueError on an invalid
+    valve index or duration. Returns a result dict on success.
+    """
+    address = _resolve_node_address(device_id)
+    if address is None:
+        raise NodeNotFound(f'Node with device_id {device_id} not found')
+
+    valve_count = _node_valve_count(device_id)
+    if not isinstance(valve, int) or not 0 <= valve < valve_count:
+        raise ValueError(f'valve must be 0..{valve_count - 1}')
+    if not isinstance(duration_seconds, int) or not 1 <= duration_seconds <= 7200:
+        raise ValueError('duration_seconds must be 1-7200')
+
+    from command_queue import queue_send_actuator, COMMAND_TTL_DEFAULTS
+    db = get_database()
+
+    # Record the command in the audit log BEFORE queueing so the dashboard can
+    # surface "pending" state immediately on poll.
+    params = {'valve': valve, 'duration_seconds': duration_seconds}
+    if source:
+        params['source'] = source
+    command_id = db.insert_command(
+        device_id=device_id,
+        command_type='valve_open',
+        params=params,
+        ttl_seconds=COMMAND_TTL_DEFAULTS['valve_open'],
+    )
+
+    # Send actuator ON with duration — firmware sets an RTC alarm to auto-close
+    # after the duration (the node sleeps in between).
+    result = queue_send_actuator(
+        node_address=address,
+        actuator_type=1,  # ACTUATOR_VALVE
+        command=1,        # CMD_TURN_ON
+        param=valve,
+        duration_seconds=duration_seconds,
+    )
+    if command_id is not None:
+        db.set_command_huey_task(command_id, result.id)
+
+    # Mirror the run onto the group's master valve (same duration so both
+    # auto-close together).
+    group = db.get_group_for_zone_valve(device_id, valve)
+    if group:
+        _queue_master_actuator(db, group, command=1,
+                               duration_seconds=duration_seconds)
+
+    return {
+        'task_id': result.id,
+        'command_id': command_id,
+        'address': address,
+        'valve': valve,
+        'duration_seconds': duration_seconds,
+    }
+
+
+def _stop_valve_once(device_id: int, valve: int,
+                     source: Optional[str] = None) -> dict:
+    """Queue an immediate valve stop and mirror it onto any group master valve.
+
+    Shared by the HTTP stop endpoint and the Rachio webhook. Raises NodeNotFound
+    / ValueError on bad input; returns a result dict on success.
+    """
+    address = _resolve_node_address(device_id)
+    if address is None:
+        raise NodeNotFound(f'Node with device_id {device_id} not found')
+
+    valve_count = _node_valve_count(device_id)
+    if not isinstance(valve, int) or not 0 <= valve < valve_count:
+        raise ValueError(f'valve must be 0..{valve_count - 1}')
+
+    from command_queue import queue_send_actuator, COMMAND_TTL_DEFAULTS
+    db = get_database()
+    params = {'valve': valve}
+    if source:
+        params['source'] = source
+    command_id = db.insert_command(
+        device_id=device_id,
+        command_type='valve_close',
+        params=params,
+        ttl_seconds=COMMAND_TTL_DEFAULTS['valve_close'],
+    )
+
+    result = queue_send_actuator(
+        node_address=address,
+        actuator_type=1,  # ACTUATOR_VALVE
+        command=0,        # CMD_TURN_OFF
+        param=valve,
+    )
+    if command_id is not None:
+        db.set_command_huey_task(command_id, result.id)
+
+    group = db.get_group_for_zone_valve(device_id, valve)
+    if group:
+        _queue_master_actuator(db, group, command=0)
+
+    return {
+        'task_id': result.id,
+        'command_id': command_id,
+        'address': address,
+        'valve': valve,
+    }
 
 
 @app.route('/api/nodes', methods=['GET'])
@@ -1155,71 +1273,33 @@ def run_valve(device_id: int):
         JSON response with task_id for tracking (202 Accepted)
     """
     try:
-        address = _resolve_node_address(device_id)
-        if address is None:
-            return jsonify({'error': f'Node with device_id {device_id} not found'}), 404
-
         data = request.get_json()
         if not data:
             return jsonify({'error': 'Request body must be JSON'}), 400
 
         valve = data.get('valve')
         duration_seconds = data.get('duration_seconds')
-
         if valve is None or duration_seconds is None:
             return jsonify({'error': 'Missing required fields: valve, duration_seconds'}), 400
 
-        valve_count = _node_valve_count(device_id)
-        if not isinstance(valve, int) or not 0 <= valve < valve_count:
-            return jsonify({'error': f'valve must be 0..{valve_count - 1}'}), 400
-
-        if not 1 <= duration_seconds <= 7200:
-            return jsonify({'error': 'duration_seconds must be 1-7200'}), 400
-
-        # Record the command in the audit log BEFORE queueing so the dashboard
-        # can surface "pending" state immediately on poll.
-        from command_queue import queue_send_actuator, COMMAND_TTL_DEFAULTS
-        db = get_database()
-        command_id = db.insert_command(
-            device_id=device_id,
-            command_type='valve_open',
-            params={'valve': valve, 'duration_seconds': duration_seconds},
-            ttl_seconds=COMMAND_TTL_DEFAULTS['valve_open'],
-        )
-
-        # Send actuator ON command with duration — firmware sets RTC Alarm A
-        # for auto-close after the specified duration (node sleeps in between)
-        actuator_type = 1  # ACTUATOR_VALVE
-        command = 1  # CMD_TURN_ON
-        result = queue_send_actuator(
-            node_address=address,
-            actuator_type=actuator_type,
-            command=command,
-            param=valve,
-            duration_seconds=duration_seconds,
-        )
-
-        if command_id is not None:
-            db.set_command_huey_task(command_id, result.id)
-
-        # Mirror the run onto the group's master valve (same duration so both
-        # auto-close together).
-        group = db.get_group_for_zone_valve(device_id, valve)
-        if group:
-            _queue_master_actuator(db, group, command=1,
-                                   duration_seconds=duration_seconds)
+        result = _run_valve_once(device_id, valve, duration_seconds)
 
         return jsonify({
             'status': 'queued',
-            'task_id': result.id,
-            'command_id': command_id,
+            'task_id': result['task_id'],
+            'command_id': result['command_id'],
             'device_id': str(device_id),
-            'address': address,
-            'valve': valve,
-            'duration_seconds': duration_seconds,
-            'message': f'Valve {valve} run-once command queued ({duration_seconds}s)'
+            'address': result['address'],
+            'valve': result['valve'],
+            'duration_seconds': result['duration_seconds'],
+            'message': f'Valve {result["valve"]} run-once command queued '
+                       f'({result["duration_seconds"]}s)'
         }), 202
 
+    except NodeNotFound as e:
+        return jsonify({'error': str(e)}), 404
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
     except Exception as e:
         logger.error(f"Error running valve for node {device_id}: {e}")
         return jsonify({'error': str(e)}), 500
@@ -1240,55 +1320,27 @@ def stop_valve(device_id: int):
         JSON response with task_id for tracking (202 Accepted)
     """
     try:
-        address = _resolve_node_address(device_id)
-        if address is None:
-            return jsonify({'error': f'Node with device_id {device_id} not found'}), 404
-
         data = request.get_json()
         if not data:
             return jsonify({'error': 'Request body must be JSON'}), 400
 
         valve = data.get('valve')
-        valve_count = _node_valve_count(device_id)
-        if not isinstance(valve, int) or not 0 <= valve < valve_count:
-            return jsonify({'error': f'valve must be 0..{valve_count - 1}'}), 400
-
-        from command_queue import queue_send_actuator, COMMAND_TTL_DEFAULTS
-        db = get_database()
-        command_id = db.insert_command(
-            device_id=device_id,
-            command_type='valve_close',
-            params={'valve': valve},
-            ttl_seconds=COMMAND_TTL_DEFAULTS['valve_close'],
-        )
-
-        actuator_type = 1  # ACTUATOR_VALVE
-        command = 0  # CMD_TURN_OFF
-        result = queue_send_actuator(
-            node_address=address,
-            actuator_type=actuator_type,
-            command=command,
-            param=valve,
-        )
-
-        if command_id is not None:
-            db.set_command_huey_task(command_id, result.id)
-
-        # Mirror the stop onto the group's master valve.
-        group = db.get_group_for_zone_valve(device_id, valve)
-        if group:
-            _queue_master_actuator(db, group, command=0)
+        result = _stop_valve_once(device_id, valve)
 
         return jsonify({
             'status': 'queued',
-            'task_id': result.id,
-            'command_id': command_id,
+            'task_id': result['task_id'],
+            'command_id': result['command_id'],
             'device_id': str(device_id),
-            'address': address,
-            'valve': valve,
-            'message': f'Valve {valve} stop command queued'
+            'address': result['address'],
+            'valve': result['valve'],
+            'message': f'Valve {result["valve"]} stop command queued'
         }), 202
 
+    except NodeNotFound as e:
+        return jsonify({'error': str(e)}), 404
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
     except Exception as e:
         logger.error(f"Error stopping valve for node {device_id}: {e}")
         return jsonify({'error': str(e)}), 500
@@ -2358,6 +2410,208 @@ def set_node_zone(device_id: int):
 
     except Exception as e:
         logger.error(f"Error setting zone for node {device_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Rachio webhook integration — an external Rachio controller drives Bramble
+# valves. On a mapped zone start we run the corresponding Bramble valve; on stop
+# we close it. Mappings live in the rachio_zone_mappings table.
+# ---------------------------------------------------------------------------
+
+# In-memory dedup of recently-seen Rachio event ids. Rachio retries deliveries,
+# so the same event id can arrive several times; we act on each only once. This
+# is process-local (cleared on restart), which is acceptable: a missed dedup
+# after a restart at worst re-runs an already-idempotent valve command.
+_RACHIO_SEEN_LOCK = threading.Lock()
+_RACHIO_SEEN_IDS: 'collections.OrderedDict[str, bool]' = collections.OrderedDict()
+_RACHIO_SEEN_MAX = 512
+
+
+def _rachio_event_is_new(event_id: str) -> bool:
+    """Return True the first time an event id is seen, False on repeats."""
+    if not event_id:
+        return True  # nothing to dedup on; treat as new
+    with _RACHIO_SEEN_LOCK:
+        if event_id in _RACHIO_SEEN_IDS:
+            return False
+        _RACHIO_SEEN_IDS[event_id] = True
+        while len(_RACHIO_SEEN_IDS) > _RACHIO_SEEN_MAX:
+            _RACHIO_SEEN_IDS.popitem(last=False)
+        return True
+
+
+def _rachio_secret_ok(payload: dict) -> bool:
+    """Constant-time check of the payload's externalId against our secret.
+
+    Returns False when the integration is disabled (no secret configured).
+    """
+    expected = Config.RACHIO_WEBHOOK_SECRET or ''
+    if not expected:
+        return False
+    provided = str(payload.get('externalId') or '')
+    return hmac.compare_digest(provided, expected)
+
+
+def _rachio_run_duration(payload: dict, fallback_seconds: int) -> int:
+    """Pick the run duration: Rachio's payload `duration` (seconds) when valid,
+    else the mapping's fallback. Clamped to the 1..7200 firmware range."""
+    duration = payload.get('duration')
+    if not isinstance(duration, int) or duration <= 0:
+        duration = fallback_seconds
+    return max(1, min(7200, duration))
+
+
+@app.route('/api/integrations/rachio/webhook', methods=['POST'])
+def rachio_webhook():
+    """Receive Rachio ZONE_STATUS webhooks and drive mapped Bramble valves.
+
+    Public (no @require_token): Rachio cannot send our bearer token nor pass
+    Cloudflare Access, so this path must be excluded from Access at the edge and
+    is authenticated instead by the shared `externalId` secret in the payload.
+
+    ZONE_STARTED runs the mapped valve; ZONE_STOPPED/ZONE_COMPLETED stops it.
+    Returns 200 quickly on anything non-auth so Rachio does not retry on our
+    slow work; problems are logged, not surfaced back to Rachio.
+    """
+    payload = request.get_json(silent=True) or {}
+
+    if not _rachio_secret_ok(payload):
+        logger.warning("Rachio webhook rejected: bad or missing externalId")
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    event_id = str(payload.get('id') or '')
+    if not _rachio_event_is_new(event_id):
+        return jsonify({'status': 'duplicate'}), 200
+
+    sub_type = payload.get('subType')
+    rachio_device_id = str(payload.get('deviceId') or '')
+    zone_number = payload.get('zoneNumber')
+    if not rachio_device_id or not isinstance(zone_number, int):
+        logger.info(f"Rachio webhook ignored (subType={sub_type}): "
+                    f"missing deviceId/zoneNumber")
+        return jsonify({'status': 'ignored'}), 200
+
+    try:
+        db = get_database()
+        mapping = db.get_rachio_mapping(rachio_device_id, zone_number)
+        if not mapping or not mapping['enabled']:
+            logger.info(f"Rachio zone {zone_number} on {rachio_device_id} has no "
+                        f"enabled mapping; ignoring {sub_type}")
+            return jsonify({'status': 'unmapped'}), 200
+
+        bramble_device_id = mapping['bramble_device_id']
+        bramble_valve = mapping['bramble_valve']
+
+        if sub_type == 'ZONE_STARTED':
+            duration = _rachio_run_duration(payload, mapping['duration_seconds'])
+            result = _run_valve_once(bramble_device_id, bramble_valve,
+                                     duration, source='rachio')
+            logger.info(f"Rachio zone {zone_number} started → Bramble "
+                        f"{bramble_device_id} valve {bramble_valve} for {duration}s")
+            return jsonify({'status': 'ran', **result}), 200
+
+        if sub_type in ('ZONE_STOPPED', 'ZONE_COMPLETED'):
+            result = _stop_valve_once(bramble_device_id, bramble_valve,
+                                      source='rachio')
+            logger.info(f"Rachio zone {zone_number} {sub_type} → Bramble "
+                        f"{bramble_device_id} valve {bramble_valve} stop")
+            return jsonify({'status': 'stopped', **result}), 200
+
+        # Other subtypes (ZONE_CYCLING, ZONE_PAUSED, …) — acknowledge, don't act.
+        return jsonify({'status': 'ignored', 'subType': sub_type}), 200
+
+    except (NodeNotFound, ValueError) as e:
+        logger.error(f"Rachio webhook could not act on zone {zone_number}: {e}")
+        return jsonify({'status': 'error', 'error': str(e)}), 200
+    except Exception as e:
+        logger.error(f"Rachio webhook error: {e}")
+        return jsonify({'status': 'error', 'error': str(e)}), 200
+
+
+def _rachio_mapping_response(mapping: dict) -> dict:
+    """Stringify the 64-bit Bramble device id for JS-safe JSON."""
+    return {**mapping, 'bramble_device_id': str(mapping['bramble_device_id'])}
+
+
+@app.route('/api/integrations/rachio/mappings', methods=['GET'])
+def list_rachio_mappings():
+    """List all Rachio zone → Bramble valve mappings."""
+    try:
+        mappings = get_database().get_all_rachio_mappings()
+        return jsonify({'mappings': [_rachio_mapping_response(m) for m in mappings]})
+    except Exception as e:
+        logger.error(f"Error listing Rachio mappings: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/integrations/rachio/mappings', methods=['POST'])
+@require_token
+def create_or_update_rachio_mapping():
+    """Create or update a Rachio zone → Bramble valve mapping.
+
+    Request body:
+        {
+            "rachio_device_id": "<controller uuid>",
+            "rachio_zone_number": 1,
+            "bramble_device_id": "1234567890",
+            "bramble_valve": 0,
+            "duration_seconds": 900,
+            "enabled": true
+        }
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Request body must be JSON'}), 400
+
+        rachio_device_id = data.get('rachio_device_id')
+        rachio_zone_number = data.get('rachio_zone_number')
+        bramble_valve = data.get('bramble_valve')
+        duration_seconds = data.get('duration_seconds')
+        enabled = data.get('enabled', True)
+
+        if not rachio_device_id or not isinstance(rachio_zone_number, int):
+            return jsonify({'error': 'rachio_device_id and integer '
+                                     'rachio_zone_number are required'}), 400
+        try:
+            bramble_device_id = int(data.get('bramble_device_id'))
+        except (TypeError, ValueError):
+            return jsonify({'error': 'valid bramble_device_id is required'}), 400
+        if not isinstance(duration_seconds, int) or not 1 <= duration_seconds <= 7200:
+            return jsonify({'error': 'duration_seconds must be 1-7200'}), 400
+
+        valve_count = _node_valve_count(bramble_device_id)
+        if not isinstance(bramble_valve, int) or not 0 <= bramble_valve < valve_count:
+            return jsonify({'error': f'bramble_valve must be 0..{valve_count - 1}'}), 400
+
+        mapping = get_database().upsert_rachio_mapping(
+            rachio_device_id=str(rachio_device_id),
+            rachio_zone_number=rachio_zone_number,
+            bramble_device_id=bramble_device_id,
+            bramble_valve=bramble_valve,
+            duration_seconds=duration_seconds,
+            enabled=bool(enabled),
+        )
+        return jsonify(_rachio_mapping_response(mapping)), 200
+    except Exception as e:
+        logger.error(f"Error upserting Rachio mapping: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/integrations/rachio/mappings/<rachio_device_id>/<int:rachio_zone_number>',
+           methods=['DELETE'])
+@require_token
+def delete_rachio_mapping_route(rachio_device_id: str, rachio_zone_number: int):
+    """Delete a Rachio zone mapping."""
+    try:
+        removed = get_database().delete_rachio_mapping(rachio_device_id,
+                                                       rachio_zone_number)
+        if not removed:
+            return jsonify({'error': 'Mapping not found'}), 404
+        return jsonify({'status': 'deleted'}), 200
+    except Exception as e:
+        logger.error(f"Error deleting Rachio mapping: {e}")
         return jsonify({'error': str(e)}), 500
 
 
