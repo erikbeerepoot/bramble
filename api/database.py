@@ -299,6 +299,22 @@ class SensorDatabase:
 
     CREATE INDEX IF NOT EXISTS idx_vgms_group
         ON valve_group_master_slots(group_id);
+
+    -- Maps a Rachio controller zone to a Bramble valve. When Rachio fires a
+    -- zone-start webhook we look up (rachio_device_id, rachio_zone_number) and
+    -- run the mapped Bramble valve. duration_seconds is the fallback run time
+    -- when the Rachio payload omits its own duration. Disabled rows are ignored.
+    CREATE TABLE IF NOT EXISTS rachio_zone_mappings (
+        rachio_device_id VARCHAR NOT NULL,
+        rachio_zone_number INTEGER NOT NULL,
+        bramble_device_id UBIGINT NOT NULL,
+        bramble_valve INTEGER NOT NULL,
+        duration_seconds INTEGER NOT NULL,
+        enabled BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (rachio_device_id, rachio_zone_number)
+    );
     """
 
     def __init__(self, db_path: str = Config.SENSOR_DB_PATH):
@@ -1458,6 +1474,83 @@ class SensorDatabase:
             if not row:
                 return None
             return self._valve_group_row(conn, row[0])
+
+    # ------------------------------------------------------------------
+    # Rachio zone → Bramble valve mappings
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _rachio_mapping_row(row) -> dict:
+        """Shape a rachio_zone_mappings row tuple into a dict."""
+        return {
+            'rachio_device_id': row[0],
+            'rachio_zone_number': row[1],
+            'bramble_device_id': row[2],
+            'bramble_valve': row[3],
+            'duration_seconds': row[4],
+            'enabled': bool(row[5]),
+            'created_at': row[6],
+            'updated_at': row[7],
+        }
+
+    def get_rachio_mapping(self, rachio_device_id: str,
+                           rachio_zone_number: int) -> Optional[dict]:
+        """Return the mapping for a Rachio (device, zone), or None."""
+        with self._get_connection() as conn:
+            row = conn.execute("""
+                SELECT rachio_device_id, rachio_zone_number, bramble_device_id,
+                       bramble_valve, duration_seconds, enabled, created_at, updated_at
+                FROM rachio_zone_mappings
+                WHERE rachio_device_id = ? AND rachio_zone_number = ?
+            """, (rachio_device_id, rachio_zone_number)).fetchone()
+            return self._rachio_mapping_row(row) if row else None
+
+    def get_all_rachio_mappings(self) -> list[dict]:
+        """Return all Rachio zone mappings, ordered by device then zone."""
+        with self._get_connection() as conn:
+            rows = conn.execute("""
+                SELECT rachio_device_id, rachio_zone_number, bramble_device_id,
+                       bramble_valve, duration_seconds, enabled, created_at, updated_at
+                FROM rachio_zone_mappings
+                ORDER BY rachio_device_id, rachio_zone_number
+            """).fetchall()
+            return [self._rachio_mapping_row(r) for r in rows]
+
+    def upsert_rachio_mapping(self, rachio_device_id: str, rachio_zone_number: int,
+                              bramble_device_id: int, bramble_valve: int,
+                              duration_seconds: int, enabled: bool = True) -> dict:
+        """Insert or update a Rachio zone mapping; returns the stored row."""
+        now = int(time.time())
+        with self._get_connection() as conn:
+            conn.execute("""
+                INSERT INTO rachio_zone_mappings
+                    (rachio_device_id, rachio_zone_number, bramble_device_id,
+                     bramble_valve, duration_seconds, enabled, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (rachio_device_id, rachio_zone_number) DO UPDATE SET
+                    bramble_device_id = EXCLUDED.bramble_device_id,
+                    bramble_valve = EXCLUDED.bramble_valve,
+                    duration_seconds = EXCLUDED.duration_seconds,
+                    enabled = EXCLUDED.enabled,
+                    updated_at = EXCLUDED.updated_at
+            """, (rachio_device_id, rachio_zone_number, bramble_device_id,
+                  bramble_valve, duration_seconds, enabled, now, now))
+        return self.get_rachio_mapping(rachio_device_id, rachio_zone_number)
+
+    def delete_rachio_mapping(self, rachio_device_id: str,
+                              rachio_zone_number: int) -> bool:
+        """Delete a Rachio zone mapping; returns True if a row was removed."""
+        with self._get_connection() as conn:
+            existed = conn.execute("""
+                SELECT 1 FROM rachio_zone_mappings
+                WHERE rachio_device_id = ? AND rachio_zone_number = ?
+            """, (rachio_device_id, rachio_zone_number)).fetchone() is not None
+            if existed:
+                conn.execute("""
+                    DELETE FROM rachio_zone_mappings
+                    WHERE rachio_device_id = ? AND rachio_zone_number = ?
+                """, (rachio_device_id, rachio_zone_number))
+            return existed
 
     def list_master_slots(self, master_device_id: int) -> list[dict]:
         """List the master schedule slots the API currently owns for a master node."""

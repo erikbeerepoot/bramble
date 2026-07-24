@@ -120,6 +120,7 @@ Environment variables:
 | `PORT` | `5000` | API server port |
 | `DEBUG` | `False` | Enable debug logging |
 | `API_TOKEN` | `` (empty) | Bearer token required on mutating valve endpoints. Empty disables enforcement. See [docs/API.md](docs/API.md#authentication). |
+| `RACHIO_WEBHOOK_SECRET` | `` (empty) | Shared secret authenticating the public Rachio webhook (matched against the payload `externalId`). Empty disables the integration. See [Rachio integration](#rachio-integration). |
 
 ## API Endpoints
 
@@ -264,6 +265,55 @@ Environment variables:
   "position": 3
 }
 ```
+
+## Rachio Integration
+
+Bramble can mirror an existing Rachio irrigation controller: when a Rachio zone
+starts, a mapped Bramble valve runs automatically (and stops when the Rachio zone
+stops). No app interaction — a saved mapping drives the action.
+
+### How it works
+
+1. Rachio POSTs a `ZONE_STATUS` webhook to
+   `POST /api/integrations/rachio/webhook` on each zone start/stop.
+2. The endpoint is **public** (Rachio can't send our bearer token or pass
+   Cloudflare Access). It authenticates by comparing the payload's `externalId`
+   against `RACHIO_WEBHOOK_SECRET`, so **the webhook path must be excluded from
+   Cloudflare Access** at the edge.
+3. On `ZONE_STARTED`, the mapped Bramble valve runs for Rachio's reported
+   duration (falling back to the mapping's `duration_seconds`); on
+   `ZONE_STOPPED` / `ZONE_COMPLETED` it stops. Group master valves mirror the
+   run, same as a manual valve command.
+
+### Setup
+
+1. Set `RACHIO_WEBHOOK_SECRET` in the API container env to a strong random string.
+2. Find your Rachio controller id and zone numbers, then register the webhook:
+   ```bash
+   export RACHIO_API_TOKEN=<your-rachio-api-key>   # app.rach.io → Account → Get API key
+   python scripts/register_rachio_webhook.py list   # shows controllers, zones, event types
+   python scripts/register_rachio_webhook.py register \
+       --device-id <controller-uuid> \
+       --url https://api.bramble.ag/api/integrations/rachio/webhook \
+       --secret "$RACHIO_WEBHOOK_SECRET"
+   ```
+3. Add a zone → valve mapping (repeat per zone):
+   ```bash
+   curl -X POST https://api.bramble.ag/api/integrations/rachio/mappings \
+     -H "Authorization: Bearer $API_TOKEN" -H "Content-Type: application/json" \
+     -d '{"rachio_device_id":"<controller-uuid>","rachio_zone_number":1,
+          "bramble_device_id":"1234567890","bramble_valve":0,"duration_seconds":900}'
+   ```
+
+### Mapping endpoints
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/api/integrations/rachio/mappings` | — | List all zone → valve mappings |
+| `POST` | `/api/integrations/rachio/mappings` | Bearer | Create/update a mapping (upsert on `rachio_device_id` + `rachio_zone_number`) |
+| `DELETE` | `/api/integrations/rachio/mappings/{rachio_device_id}/{rachio_zone_number}` | Bearer | Delete a mapping |
+
+Zones without an enabled mapping are logged and ignored.
 
 ## Usage Examples
 
