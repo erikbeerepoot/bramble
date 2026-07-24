@@ -46,3 +46,11 @@ class Config:
     # Command queue settings (huey with SQLite backend)
     QUEUE_DB_PATH: str = os.getenv('QUEUE_DB_PATH', '/data/queue.db')
     QUEUE_IMMEDIATE: bool = os.getenv('QUEUE_IMMEDIATE', 'false').lower() == 'true'
+
+    # Rachio webhook integration. Rachio POSTs zone-start/stop events to
+    # /api/integrations/rachio/webhook. That endpoint is public (Rachio cannot
+    # send our bearer token nor pass Cloudflare Access), so it authenticates by
+    # comparing this secret against the `externalId` echoed in every payload —
+    # the same value we register with Rachio. Empty disables the integration
+    # (the webhook rejects everything).
+    RACHIO_WEBHOOK_SECRET = os.getenv('RACHIO_WEBHOOK_SECRET', '')

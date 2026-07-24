@@ -24,6 +24,9 @@ services:
       # Bearer token required on mutating valve endpoints (iOS widget). Set in the
       # host environment / .env; empty disables enforcement.
       - API_TOKEN=${API_TOKEN:-}
+      # Shared secret authenticating the public Rachio webhook. Must match the
+      # externalId registered with Rachio. Empty disables the integration.
+      - RACHIO_WEBHOOK_SECRET=${RACHIO_WEBHOOK_SECRET:-}
     mem_limit: 128m
     restart: unless-stopped
     group_add:
