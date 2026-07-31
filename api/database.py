@@ -449,6 +449,9 @@ class SensorDatabase:
             ).fetchall()
             unique_cols = constraint_rows[0][0] if constraint_rows else []
             if 'data_hex' not in unique_cols:
+                # Drop any orphan table left by a previously-interrupted
+                # migration — otherwise CREATE fails and the migration wedges.
+                conn.execute("DROP TABLE IF EXISTS node_events_new")
                 conn.execute("""
                     CREATE TABLE node_events_new (
                         id INTEGER PRIMARY KEY,
@@ -481,6 +484,9 @@ class SensorDatabase:
                 "WHERE table_name = 'node_events' AND column_name = 'timestamp'"
             ).fetchall()
             if ts_cols and ts_cols[0][0] != 'BIGINT':
+                # Drop any orphan table left by a previously-interrupted
+                # migration — otherwise CREATE fails and the migration wedges.
+                conn.execute("DROP TABLE IF EXISTS node_events_new")
                 conn.execute("""
                     CREATE TABLE node_events_new (
                         id INTEGER PRIMARY KEY,
@@ -494,7 +500,8 @@ class SensorDatabase:
                 """)
                 conn.execute("""
                     INSERT INTO node_events_new
-                    SELECT id, device_id, timestamp * 1000, event_code, data_hex, received_at
+                    SELECT id, device_id, CAST(timestamp AS BIGINT) * 1000,
+                           event_code, data_hex, received_at
                     FROM node_events
                 """)
                 conn.execute("DROP TABLE node_events")
