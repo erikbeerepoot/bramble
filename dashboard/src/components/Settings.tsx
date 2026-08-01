@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getApiUrl, setApiUrl, checkHealth } from '../api/client';
 import { useAppContext } from '../App';
+import RachioMappings from './RachioMappings';
 
 function Settings() {
   const navigate = useNavigate();
@@ -43,7 +44,7 @@ function Settings() {
   };
 
   return (
-    <div className="max-w-lg">
+    <div className="max-w-3xl">
       <h2 className="text-xl font-semibold text-gray-900 mb-6">Settings</h2>
 
       <div className="card">
@@ -91,6 +92,8 @@ function Settings() {
           </div>
         </div>
       </div>
+
+      <RachioMappings />
 
       <div className="card mt-4">
         <h3 className="text-lg font-medium text-gray-900 mb-2">About</h3>

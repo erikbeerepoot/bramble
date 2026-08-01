@@ -15,6 +15,8 @@ import type {
   NodeCommandsResponse,
   NodeCommandStatus,
   IrrigationSchedulesResponse,
+  RachioMapping,
+  RachioMappingsResponse,
 } from '../types';
 
 const API_URL_KEY = 'bramble_api_url';
@@ -450,4 +452,34 @@ export async function controlCurtain(
     method: 'POST',
     body: JSON.stringify({ action }),
   });
+}
+
+// Rachio zone → Bramble valve mappings
+
+export async function getRachioMappings(): Promise<RachioMappingsResponse> {
+  return fetchApi<RachioMappingsResponse>('/api/integrations/rachio/mappings');
+}
+
+export async function upsertRachioMapping(mapping: {
+  rachio_device_id: string;
+  rachio_zone_number: number;
+  bramble_device_id: string;
+  bramble_valve: number;
+  duration_seconds: number;
+  enabled: boolean;
+}): Promise<RachioMapping> {
+  return fetchApi<RachioMapping>('/api/integrations/rachio/mappings', {
+    method: 'POST',
+    body: JSON.stringify(mapping),
+  });
+}
+
+export async function deleteRachioMapping(
+  rachioDeviceId: string,
+  rachioZoneNumber: number
+): Promise<void> {
+  await fetchApi<{ message: string }>(
+    `/api/integrations/rachio/mappings/${encodeURIComponent(rachioDeviceId)}/${rachioZoneNumber}`,
+    { method: 'DELETE' }
+  );
 }
