@@ -49,11 +49,13 @@ def _get(token: str, path: str) -> dict:
 
 def _zone_status_event_type_id(token: str) -> str:
     """Return the numeric id of the ZONE_STATUS webhook event type."""
+    # Rachio names this event type "ZONE_STATUS_EVENT"; accept the bare
+    # "ZONE_STATUS" too in case the API label ever changes.
     types = _get(token, "notification/webhook_event_type")
     for entry in types:
-        if entry.get("name") == "ZONE_STATUS":
+        if entry.get("name") in ("ZONE_STATUS_EVENT", "ZONE_STATUS"):
             return str(entry["id"])
-    raise SystemExit("Could not find a ZONE_STATUS webhook event type; "
+    raise SystemExit("Could not find a ZONE_STATUS_EVENT webhook event type; "
                      "run `list` to see available types.")
 
 
