@@ -488,3 +488,22 @@ export function getOverallNodeHealth(node: Node): OverallHealth {
 
   return 'green';
 }
+
+// Rachio zone → Bramble valve mapping. When a mapped Rachio zone starts, the
+// Bramble valve runs; when it stops, the valve closes. bramble_device_id is a
+// stringified 64-bit id to preserve precision. duration_seconds is the fallback
+// run length used when the Rachio event omits its own duration.
+export interface RachioMapping {
+  rachio_device_id: string;
+  rachio_zone_number: number;
+  bramble_device_id: string;
+  bramble_valve: number;
+  duration_seconds: number;
+  enabled: boolean;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface RachioMappingsResponse {
+  mappings: RachioMapping[];
+}
