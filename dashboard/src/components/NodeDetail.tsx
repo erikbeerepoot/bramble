@@ -27,6 +27,7 @@ import {
   setWakeInterval,
   getNodeEvents,
   getNodeCommands,
+  stopValve,
 } from '../api/client';
 import { NodeType } from '../types';
 import CurtainControl from './CurtainControl';
@@ -42,6 +43,8 @@ import HealthStatus from './HealthStatus';
 import BacklogStatus from './BacklogStatus';
 import { RecentEvents } from './RecentEvents';
 import type { PendingEvent } from './RecentEvents';
+import { ActiveWateringCard } from './ActiveWateringCard';
+import { pairValveEvents, classifyValveRuns, sortedActiveRuns, useNow } from '../utils/valveRuns';
 import { REFRESH_INTERVAL_MS } from '../config';
 import { EventCode } from '../types';
 
@@ -365,6 +368,26 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
   );
   const isHealthy = healthStatus === 'healthy';
   const [statusExpanded, setStatusExpanded] = useState(!isHealthy);
+
+  // Valve runs currently in progress, derived from the event log. Shared by the
+  // status card and the per-valve LIVE badge so both agree on what's open.
+  const valvePairing = useMemo(() => pairValveEvents(events), [events]);
+  // Only run the 1 Hz clock while a valve could still be open.
+  const now = useNow(1000, valvePairing.unpairedOpenByValve.size > 0);
+  const activeRuns = useMemo(
+    () => sortedActiveRuns(classifyValveRuns(valvePairing, commands, now)),
+    [valvePairing, commands, now]
+  );
+  const runningValves = useMemo(() => new Set(activeRuns.map((run) => run.valveId)), [activeRuns]);
+
+  const handleStopValve = async (valve: number) => {
+    await stopValve(node.device_id, valve);
+    // Give the node a moment to report the close before refreshing.
+    setTimeout(() => {
+      fetchEvents();
+      fetchCommands();
+    }, 3000);
+  };
 
   return (
     <div>
@@ -729,6 +752,15 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
 
         {/* Controls column — renders first on mobile */}
         <div className="lg:col-span-2 space-y-4 order-first lg:order-none">
+          {node.type === NodeType.IRRIGATION && (
+            <ActiveWateringCard
+              runs={activeRuns}
+              now={now}
+              valveNames={node.valves}
+              onStop={handleStopValve}
+            />
+          )}
+
           {node.type === NodeType.GREENHOUSE && (
             <CurtainControl address={node.address} onCommandQueued={handleCommandQueued} />
           )}
@@ -738,6 +770,7 @@ function NodeDetail({ node, zones, onBack, onUpdate, onDelete, onZoneCreated }: 
               deviceId={node.device_id}
               valveCount={node.valve_count ?? 2}
               valveNames={node.valves}
+              runningValves={runningValves}
               onEventTriggered={() => {
                 fetchEvents();
                 fetchCommands();

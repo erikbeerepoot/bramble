@@ -26,7 +26,8 @@ interface ValveState {
 interface IrrigationControlProps {
   deviceId: string;
   valveCount: number;
-  valveNames?: Record<string, string>;  // Friendly names keyed by valve index
+  valveNames?: Record<string, string>; // Friendly names keyed by valve index
+  runningValves?: Set<number>; // Valves currently open, per the event log
   onEventTriggered?: () => void;
 }
 
@@ -57,7 +58,13 @@ function formatDurationShort(minutes: number): string {
   return `${minutes}m`;
 }
 
-function IrrigationControl({ deviceId, valveCount, valveNames, onEventTriggered }: IrrigationControlProps) {
+function IrrigationControl({
+  deviceId,
+  valveCount,
+  valveNames,
+  runningValves,
+  onEventTriggered,
+}: IrrigationControlProps) {
   // Valve indices [0..valveCount-1], driving every valve-dependent UI section
   const valveIndices = Array.from({ length: valveCount }, (_, i) => i);
 
@@ -167,9 +174,7 @@ function IrrigationControl({ deviceId, valveCount, valveNames, onEventTriggered 
 
   // Returns a badge descriptor for a given valve on this node, or null if the
   // valve isn't part of any group.
-  const valveGroupBadge = (
-    valve: number
-  ): { label: string; tone: 'master' | 'member' } | null => {
+  const valveGroupBadge = (valve: number): { label: string; tone: 'master' | 'member' } | null => {
     for (const group of valveGroups) {
       if (group.master_device_id === deviceId && group.master_valve === valve) {
         return { label: `Master · ${group.name}`, tone: 'master' };
@@ -296,6 +301,7 @@ function IrrigationControl({ deviceId, valveCount, valveNames, onEventTriggered 
     const isStopSending = valveState.state === 'sending' && valveState.action === 'stop';
 
     const groupBadge = valveGroupBadge(valve);
+    const isRunning = runningValves?.has(valve) ?? false;
 
     return (
       <div key={valve} className="space-y-3">
@@ -357,6 +363,18 @@ function IrrigationControl({ deviceId, valveCount, valveNames, onEventTriggered 
               }
             >
               {groupBadge.label}
+            </span>
+          )}
+          {isRunning && (
+            <span
+              className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-600 text-white"
+              title="This valve is open right now."
+            >
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="absolute inline-flex h-full w-full rounded-full bg-white opacity-75 animate-ping" />
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-white" />
+              </span>
+              LIVE
             </span>
           )}
         </div>
