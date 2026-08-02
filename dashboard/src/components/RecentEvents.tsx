@@ -25,7 +25,7 @@ import {
   Settings2,
 } from 'lucide-react';
 import { format, isToday, isYesterday } from 'date-fns';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { NodeEvent, NodeCommand, NodeCommandType } from '../types';
 import {
@@ -38,6 +38,8 @@ import {
   EventCode,
 } from '../types';
 import type { CurtainAction } from './CurtainControl';
+import type { ValveRuns } from '../utils/valveRuns';
+import { pairValveEvents, classifyValveRuns, runningLabel, useNow } from '../utils/valveRuns';
 
 export interface PendingEvent {
   action: CurtainAction;
@@ -436,210 +438,6 @@ function CommandStatusBadge({ status }: { status: NodeCommand['status'] }) {
 // Event codes that collapse into summary rows (per-wake-cycle noise).
 const WAKE_CYCLE_CODES = new Set<number>([EventType.WAKE, EventType.SLEEP_ENTER]);
 
-// A VALVE_OPEN with no matching close yet — the valve is presumed still open.
-export interface ActiveRun {
-  valveId: number;
-  openTimestamp: number; // unix milliseconds
-  plannedSeconds: number | null; // requested run time, when the command is known
-}
-
-interface ValveRuns {
-  // OPEN event timestamp -> measured open→close time in seconds.
-  durationByOpenTimestamp: Map<number, number>;
-  // OPEN event timestamp -> run still in progress.
-  activeRunByOpenTimestamp: Map<number, ActiveRun>;
-  // OPEN event timestamps whose close never arrived and is now too old to trust.
-  staleOpenTimestamps: Set<number>;
-}
-
-// How long past the requested run time we keep believing a missing close means
-// "still open". Past this the close event was most likely never logged.
-const RUN_GRACE_SECONDS = 5 * 60;
-// Same idea for opens with no known requested duration (e.g. schedule-driven).
-const UNKNOWN_RUN_CAP_SECONDS = 6 * 60 * 60;
-
-// Window around a VALVE_OPEN event in which a valve_open command counts as the
-// request that produced it.
-const COMMAND_MATCH_BEFORE_SECONDS = 15 * 60;
-const COMMAND_MATCH_AFTER_SECONDS = 2 * 60;
-
-// Requested run time for an open, taken from the most recent valve_open command
-// for the same valve issued just before it. Null when nothing plausibly matches
-// (schedule-driven opens, or commands scrolled out of the loaded window).
-function plannedSecondsForOpen(
-  openTimestamp: number,
-  valveId: number,
-  commands: NodeCommand[]
-): number | null {
-  let bestCreatedAt = -Infinity;
-  let bestSeconds: number | null = null;
-  for (const command of commands) {
-    if (command.command_type !== 'valve_open') continue;
-    const params = command.params as Record<string, unknown>;
-    if (params.valve !== valveId) continue;
-    if (typeof params.duration_seconds !== 'number') continue;
-    // command.created_at is unix seconds; event timestamps are milliseconds.
-    const offsetSeconds = openTimestamp / 1000 - command.created_at;
-    if (offsetSeconds < -COMMAND_MATCH_AFTER_SECONDS) continue;
-    if (offsetSeconds > COMMAND_MATCH_BEFORE_SECONDS) continue;
-    if (command.created_at > bestCreatedAt) {
-      bestCreatedAt = command.created_at;
-      bestSeconds = params.duration_seconds;
-    }
-  }
-  return bestSeconds;
-}
-
-interface ValvePairing {
-  durationByOpenTimestamp: Map<number, number>;
-  // Opens with no close yet, keyed by valve — may be running or simply stale.
-  unpairedOpenByValve: Map<number, NodeEvent>;
-  staleOpenTimestamps: Set<number>;
-}
-
-// Pair VALVE_OPEN events with the next matching VALVE_CLOSE / VALVE_TIMER_CLOSE
-// (same valve_id) to derive a duration. Events arrive newest-first. Clock-free
-// so callers can test for open runs without re-running on every tick.
-function pairValveEvents(events: NodeEvent[]): ValvePairing {
-  const durationByOpenTimestamp = new Map<number, number>();
-  const staleOpenTimestamps = new Set<number>();
-  const openByValve = new Map<number, NodeEvent>();
-  // Walk oldest -> newest so opens come before closes.
-  for (let i = events.length - 1; i >= 0; i--) {
-    const event = events[i];
-    const valveId = parseEventDetail(event.data_hex);
-    if (valveId === null) continue;
-    if (event.event_code === EventType.VALVE_OPEN) {
-      // A second open with no close in between means the first one's close was
-      // lost — it can never resolve, so retire it as stale now.
-      const previous = openByValve.get(valveId);
-      if (previous) staleOpenTimestamps.add(previous.timestamp);
-      openByValve.set(valveId, event);
-    } else if (
-      event.event_code === EventType.VALVE_CLOSE ||
-      event.event_code === EventType.VALVE_TIMER_CLOSE
-    ) {
-      const open = openByValve.get(valveId);
-      if (open) {
-        // event.timestamp is unix milliseconds; formatDuration expects seconds.
-        const duration = Math.round((event.timestamp - open.timestamp) / 1000);
-        if (duration > 0) {
-          durationByOpenTimestamp.set(open.timestamp, duration);
-        }
-        openByValve.delete(valveId);
-      }
-    }
-  }
-
-  return { durationByOpenTimestamp, unpairedOpenByValve: openByValve, staleOpenTimestamps };
-}
-
-// Split the unpaired opens into runs still in progress and opens whose close is
-// now too overdue to still be pending.
-function classifyValveRuns(pairing: ValvePairing, commands: NodeCommand[], now: number): ValveRuns {
-  const activeRunByOpenTimestamp = new Map<number, ActiveRun>();
-  const staleOpenTimestamps = new Set<number>(pairing.staleOpenTimestamps);
-
-  for (const [valveId, open] of pairing.unpairedOpenByValve) {
-    const plannedSeconds = plannedSecondsForOpen(open.timestamp, valveId, commands);
-    const elapsedSeconds = Math.round((now - open.timestamp) / 1000);
-    const limitSeconds =
-      plannedSeconds !== null ? plannedSeconds + RUN_GRACE_SECONDS : UNKNOWN_RUN_CAP_SECONDS;
-    if (elapsedSeconds < 0 || elapsedSeconds > limitSeconds) {
-      staleOpenTimestamps.add(open.timestamp);
-    } else {
-      activeRunByOpenTimestamp.set(open.timestamp, {
-        valveId,
-        openTimestamp: open.timestamp,
-        plannedSeconds,
-      });
-    }
-  }
-
-  return {
-    durationByOpenTimestamp: pairing.durationByOpenTimestamp,
-    activeRunByOpenTimestamp,
-    staleOpenTimestamps,
-  };
-}
-
-// Live description of a run in progress. Never reuses the bare-duration form
-// used for completed runs, so the two can't be confused at a glance.
-function runningLabel(run: ActiveRun, now: number): string {
-  const elapsedSeconds = Math.max(0, Math.round((now - run.openTimestamp) / 1000));
-  if (run.plannedSeconds === null) {
-    return `running · ${formatDuration(elapsedSeconds)} elapsed`;
-  }
-  const remainingSeconds = run.plannedSeconds - elapsedSeconds;
-  return remainingSeconds > 0
-    ? `running · ${formatDuration(remainingSeconds)} left of ${formatDuration(run.plannedSeconds)}`
-    : `running · ${formatDuration(elapsedSeconds)} elapsed · past ${formatDuration(run.plannedSeconds)}`;
-}
-
-// Banner row for a valve that is open right now — live countdown plus a
-// progress bar when the requested run time is known.
-function ActiveRunRow({
-  run,
-  now,
-  valveNames,
-}: {
-  run: ActiveRun;
-  now: number;
-  valveNames?: Record<string, string>;
-}) {
-  const elapsedSeconds = Math.max(0, Math.round((now - run.openTimestamp) / 1000));
-  const remainingSeconds = run.plannedSeconds !== null ? run.plannedSeconds - elapsedSeconds : null;
-  const progressPercent =
-    run.plannedSeconds !== null && run.plannedSeconds > 0
-      ? Math.min(100, (elapsedSeconds / run.plannedSeconds) * 100)
-      : null;
-
-  return (
-    <div>
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="relative flex h-2 w-2 flex-shrink-0">
-            <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-          </span>
-          <span className="text-sm font-medium text-emerald-900 truncate">
-            {valveLabel(run.valveId, valveNames)} watering
-          </span>
-        </div>
-        <span className="text-xs font-mono text-emerald-700 flex-shrink-0">
-          {remainingSeconds === null
-            ? `${formatDuration(elapsedSeconds)} elapsed`
-            : remainingSeconds > 0
-              ? `${formatDuration(remainingSeconds)} left`
-              : `past ${formatDuration(run.plannedSeconds ?? 0)} — awaiting close`}
-        </span>
-      </div>
-      {progressPercent !== null && (
-        <div className="mt-1.5 h-1 rounded-full bg-emerald-100 overflow-hidden">
-          <motion.div
-            className="h-full rounded-full bg-emerald-500"
-            animate={{ width: `${progressPercent}%` }}
-            transition={{ duration: 0.4, ease: 'linear' }}
-          />
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Re-render on a fixed cadence so elapsed/remaining counters stay live. Only
-// ticks while `enabled`, so an idle timeline doesn't repaint once a second.
-function useNow(intervalMilliseconds: number, enabled: boolean): number {
-  const [now, setNow] = useState<number>(() => Date.now());
-  useEffect(() => {
-    if (!enabled) return;
-    setNow(Date.now());
-    const id = setInterval(() => setNow(Date.now()), intervalMilliseconds);
-    return () => clearInterval(id);
-  }, [intervalMilliseconds, enabled]);
-  return now;
-}
-
 // One row of the timeline — events (single or collapsed run of WAKE/SLEEP_ENTER)
 // or commands. Commands use their created_at as the timeline timestamp so the
 // row stays in place across pending → confirmed transitions.
@@ -779,9 +577,6 @@ export function RecentEvents({
   // Only run the 1 Hz clock while a valve could still be open.
   const now = useNow(1000, pairing.unpairedOpenByValve.size > 0);
   const runs = classifyValveRuns(pairing, commands ?? [], now);
-  const activeRuns = [...runs.activeRunByOpenTimestamp.values()].sort(
-    (a, b) => b.openTimestamp - a.openTimestamp
-  );
 
   // Merge events + commands into a single timeline, then bucket by day.
   const timeline = mergeTimeline(filteredEvents, commands ?? []);
@@ -829,25 +624,6 @@ export function RecentEvents({
         <h2 className="font-semibold text-gray-900">Recent Activity</h2>
         <p className="text-xs text-gray-500 mt-0.5">{totalRows} entries</p>
       </div>
-
-      <AnimatePresence>
-        {activeRuns.length > 0 && (
-          <motion.div
-            key="active-runs"
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.25 }}
-            className="overflow-hidden border-b border-emerald-100 bg-emerald-50/60"
-          >
-            <div className="px-5 py-3 space-y-2.5">
-              {activeRuns.map((run) => (
-                <ActiveRunRow key={run.openTimestamp} run={run} now={now} valveNames={valveNames} />
-              ))}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {loading ? (
         <div className="p-4 animate-pulse space-y-2">
