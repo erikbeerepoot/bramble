@@ -1,0 +1,10 @@
+[Unit]
+Description=Check the Cloudflare tunnel once a minute
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=1min
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target
