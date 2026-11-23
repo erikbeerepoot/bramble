@@ -108,6 +108,35 @@ sudo systemctl enable bramble-api
 sudo systemctl start bramble-api
 ```
 
+### Hub network resilience
+
+The hub reaches the internet over WiFi through a Cloudflare tunnel. It has been
+seen to stay up but lose its route to Cloudflare (stuck on a bad access point),
+which shows up as 5xx errors on the dashboard until the hub is power cycled.
+Three things on the hub guard against that:
+
+```bash
+# 1. Tunnel watchdog: reconnects WiFi after 5 minutes without a tunnel connection
+sudo install -m 755 systemd/bramble-tunnel-watchdog.sh /usr/local/bin/bramble-tunnel-watchdog
+sudo cp systemd/bramble-tunnel-watchdog.service systemd/bramble-tunnel-watchdog.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now bramble-tunnel-watchdog.timer
+
+# 2. Persistent journal: Raspberry Pi OS keeps logs in RAM by default
+sudo install -D -m 644 systemd/journald-persistent.conf /etc/systemd/journald.conf.d/50-bramble-persistent.conf
+sudo systemctl restart systemd-journald && sudo journalctl --flush
+
+# 3. WiFi: disable power save and pin the profile to the nearest access point
+sudo nmcli connection modify <profile> 802-11-wireless.powersave 2 802-11-wireless.bssid <access point BSSID>
+sudo nmcli connection up <profile>
+```
+
+Watchdog settings (`FAILURES_BEFORE_RECONNECT`, `WIFI_INTERFACE`,
+`TUNNEL_CONTAINER`) can be overridden in `/etc/default/bramble-tunnel-watchdog`.
+If the pinned access point disappears, the watchdog removes the pin so the hub
+can join any access point on the network. Check its activity with
+`journalctl -t bramble-tunnel-watchdog`.
+
 ## Configuration
 
 Environment variables:

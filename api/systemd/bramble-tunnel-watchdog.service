@@ -1,0 +1,11 @@
+[Unit]
+Description=Reconnect hub WiFi when the Cloudflare tunnel is down
+After=docker.service NetworkManager.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/default/bramble-tunnel-watchdog
+RuntimeDirectory=bramble-tunnel-watchdog
+RuntimeDirectoryPreserve=yes
+ExecStart=/usr/local/bin/bramble-tunnel-watchdog
+SyslogIdentifier=bramble-tunnel-watchdog
